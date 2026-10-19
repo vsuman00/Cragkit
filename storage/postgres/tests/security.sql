@@ -1,0 +1,139 @@
+-- Administrative security assertions and temporary nonowner probe; all probe changes roll back.
+BEGIN;
+SET LOCAL search_path = pg_catalog;
+SET LOCAL statement_timeout = '30s';
+SET LOCAL lock_timeout = '5s';
+SET LOCAL idle_in_transaction_session_timeout = '30s';
+SELECT pg_advisory_xact_lock(1129464148, 1);
+
+DO $inventory$
+DECLARE
+    api record;
+    item record;
+    schema_id oid;
+    table_count integer;
+BEGIN
+    SELECT oid INTO STRICT schema_id FROM pg_namespace WHERE nspname = 'cragkit';
+    SELECT count(*) INTO table_count FROM pg_class
+        WHERE relnamespace = schema_id AND relkind = 'r';
+    IF table_count <> 9 THEN
+        RAISE EXCEPTION 'unexpected cragkit table inventory';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relnamespace = schema_id
+        AND (relkind NOT IN ('r', 'i', 'S', 't') OR (relkind = 'r' AND NOT relrowsecurity))) THEN
+        RAISE EXCEPTION 'unexpected relation or missing RLS';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_policy policy JOIN pg_class relation ON relation.oid = policy.polrelid
+        WHERE relation.relnamespace = schema_id) THEN
+        RAISE EXCEPTION 'unexpected cragkit row policy';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace = schema_id AND prosecdef) THEN
+        RAISE EXCEPTION 'unexpected cragkit SECURITY DEFINER function';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_namespace n,
+        LATERAL aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) acl
+        WHERE n.oid = schema_id AND acl.grantee = 0)
+        OR EXISTS (SELECT 1 FROM pg_class relation,
+            LATERAL aclexplode(coalesce(relation.relacl,
+                acldefault(CASE WHEN relation.relkind = 'S' THEN 'S'::"char" ELSE 'r'::"char" END,
+                    relation.relowner))) acl
+            WHERE relation.relnamespace = schema_id AND relation.relkind IN ('r', 'S') AND acl.grantee = 0)
+        OR EXISTS (SELECT 1 FROM pg_proc routine,
+            LATERAL aclexplode(coalesce(routine.proacl, acldefault('f', routine.proowner))) acl
+            WHERE routine.pronamespace = schema_id AND acl.grantee = 0)
+        OR EXISTS (SELECT 1 FROM pg_type domain_type,
+            LATERAL aclexplode(coalesce(domain_type.typacl, acldefault('T', domain_type.typowner))) acl
+            WHERE domain_type.typnamespace = schema_id AND domain_type.typtype = 'd' AND acl.grantee = 0) THEN
+        RAISE EXCEPTION 'PUBLIC retains cragkit object privileges';
+    END IF;
+    FOR api IN SELECT oid, rolname, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles
+        WHERE rolname IN ('anon', 'authenticated', 'service_role') LOOP
+        IF api.rolsuper OR api.rolcreaterole OR api.rolcreatedb THEN
+            RAISE EXCEPTION 'API role has unexpected administrative attributes';
+        END IF;
+        IF has_schema_privilege(api.oid, schema_id, 'USAGE,CREATE') THEN
+            RAISE EXCEPTION 'API role can reach cragkit schema';
+        END IF;
+        FOR item IN SELECT nspowner AS owner FROM pg_namespace WHERE oid = schema_id
+            UNION SELECT relowner FROM pg_class WHERE relnamespace = schema_id
+            UNION SELECT proowner FROM pg_proc WHERE pronamespace = schema_id
+            UNION SELECT typowner FROM pg_type WHERE typnamespace = schema_id AND typtype = 'd' LOOP
+            IF pg_has_role(api.oid, item.owner, 'USAGE') OR pg_has_role(api.oid, item.owner, 'SET') THEN
+                RAISE EXCEPTION 'API role can assume a cragkit owner';
+            END IF;
+        END LOOP;
+        FOR item IN SELECT oid, relkind FROM pg_class WHERE relnamespace = schema_id LOOP
+            IF item.relkind = 'r' AND (
+                has_table_privilege(api.oid, item.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+                OR has_any_column_privilege(api.oid, item.oid, 'SELECT,INSERT,UPDATE,REFERENCES')) THEN
+                RAISE EXCEPTION 'API role retains cragkit table privileges';
+            ELSIF item.relkind = 'S' AND has_sequence_privilege(api.oid, item.oid, 'USAGE,SELECT,UPDATE') THEN
+                RAISE EXCEPTION 'API role retains cragkit sequence privileges';
+            END IF;
+        END LOOP;
+        IF EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace = schema_id
+            AND has_function_privilege(api.oid, oid, 'EXECUTE')) THEN
+            RAISE EXCEPTION 'API role retains cragkit function privileges';
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = schema_id AND typtype = 'd'
+            AND has_type_privilege(api.oid, oid, 'USAGE')) THEN
+            RAISE EXCEPTION 'API role retains cragkit domain privileges';
+        END IF;
+    END LOOP;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cragkit_security_probe') THEN
+        RAISE EXCEPTION 'security probe role already exists';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM cragkit.migration_history) THEN
+        RAISE EXCEPTION 'security probe requires a populated migration ledger';
+    END IF;
+END
+$inventory$;
+
+SELECT count(*) AS checked_api_roles FROM pg_roles
+    WHERE rolname IN ('anon', 'authenticated', 'service_role');
+
+INSERT INTO cragkit.collections (tenant_id, collection_id)
+    VALUES ('cragkit-security-probe', 'security-probe');
+CREATE ROLE cragkit_security_probe NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+DO $membership$
+BEGIN
+    EXECUTE format('GRANT cragkit_security_probe TO %I WITH SET TRUE', current_user);
+END
+$membership$;
+GRANT USAGE ON SCHEMA cragkit TO cragkit_security_probe;
+GRANT USAGE ON DOMAIN cragkit.identity_text, cragkit.collection_text TO cragkit_security_probe;
+GRANT SELECT ON cragkit.collections, cragkit.documents, cragkit.document_revisions,
+    cragkit.index_generations, cragkit.chunks, cragkit.chunk_lexical,
+    cragkit.document_grants, cragkit.ingestion_jobs, cragkit.migration_history TO cragkit_security_probe;
+GRANT INSERT ON cragkit.collections TO cragkit_security_probe;
+SET LOCAL ROLE cragkit_security_probe;
+
+DO $probe$
+DECLARE
+    table_name text;
+    visible_rows bigint;
+BEGIN
+    IF current_user <> 'cragkit_security_probe' OR EXISTS (
+        SELECT 1 FROM pg_roles WHERE rolname = current_user AND (rolsuper OR rolbypassrls OR rolcanlogin)
+    ) THEN
+        RAISE EXCEPTION 'invalid nonowner probe role';
+    END IF;
+    FOREACH table_name IN ARRAY ARRAY['collections', 'documents', 'document_revisions',
+        'index_generations', 'chunks', 'chunk_lexical', 'document_grants', 'ingestion_jobs', 'migration_history'] LOOP
+        EXECUTE format('SELECT count(*) FROM cragkit.%I', table_name) INTO visible_rows;
+        IF visible_rows <> 0 THEN
+            RAISE EXCEPTION 'default deny exposed rows';
+        END IF;
+    END LOOP;
+    BEGIN
+        INSERT INTO cragkit.collections (tenant_id, collection_id)
+            VALUES ('cragkit-security-probe', 'denied-insert');
+        RAISE EXCEPTION 'default deny allowed an insert';
+    EXCEPTION WHEN insufficient_privilege THEN
+        NULL;
+    END;
+END
+$probe$;
+
+ROLLBACK;
+SELECT 'cragkit_security_probe_ok';

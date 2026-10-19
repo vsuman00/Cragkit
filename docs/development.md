@@ -216,3 +216,12 @@ python3 tools/check_postgres.py --check --confirm-dedicated-target --integration
 ```
 
 Hosted commands are prepared, not verified. No Cragkit project or connection configuration was available during this session. Project provisioning/cost selection, certificate verification, actual role privileges and Supabase advisors remain pending. Existing unrelated projects were not modified. Administrative local tests use a privileged role; they do not prove least-privilege runtime access, pool behavior or RLS policy isolation. See [Supabase connections](https://supabase.com/docs/guides/database/connecting-to-postgres) and [PostgreSQL TLS verification](https://www.postgresql.org/docs/current/libpq-ssl.html).
+
+
+### V1-01-H: Supabase security preparation
+
+The [Supabase runbook](supabase.md), scoped deployment hardening and SQL security probe are implemented and locally verified. Hosted provisioning is waiting for the plugin-required organization choice. No Cragkit Supabase project, cost quote, hosted SQL or advisor run was created during this preparation. [Security evidence](../evaluation/reports/V1/V1-01-H.md).
+
+Root ran `python3 artifacts/V1/run_supabase_security_local.py` using the existing temporary-cluster harness. It reapplied all migration/integrity checks, seeded three representative API roles and unsafe privileges, verified removal and safe hardening reruns, verified nine-table RLS and populated-row denial under a temporary nonowner role, detected owner-assumption/admin-attribute/RLS/privilege regressions, and preserved unrelated-schema grants. The cluster stopped and its files were removed. The generated harness/result remain ignored local artifacts; the deployment and probe SQL are committed.
+
+`uv run --project packages/python --frozen pytest tools/tests/test_check_postgres.py -q` passed all 17 tests; `python3 tools/check_seal.py` verified all 16 sealed files. The native package sources and initial migration bytes are unchanged. These results are local preparation, not hosted security or native TLS evidence.
