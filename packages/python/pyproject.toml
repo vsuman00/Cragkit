@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cragkit"
+version = "0.0.0"
+requires-python = ">=3.14,<3.15"
+dependencies = ["pydantic==2.14.1"]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]==3.3.6", "psycopg-pool==3.3.3"]
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "mypy==2.4.0", "build==1.6.1", "jsonschema==4.26.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cragkit"]

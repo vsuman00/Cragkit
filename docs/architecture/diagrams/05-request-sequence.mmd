@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant App as Application
+    participant Lib as Native library
+    participant Pool as PostgreSQL pool
+    participant DB as PostgreSQL
+    participant Model as Model adapter
+    App->>Lib: retrieve(request, trusted scope)
+    Lib->>Lib: Validate and establish shared deadline
+    Lib->>Model: Embed query under budget
+    Model-->>Lib: Vector and profile
+    Lib->>Pool: Acquire before deadline
+    Pool-->>Lib: Connection
+    Lib->>DB: Begin read transaction; bind scoped context
+    Lib->>DB: Scoped candidate query, active generation snapshot
+    DB-->>Lib: Ranked lists and immutable revision IDs
+    Lib->>DB: End read transaction
+    Lib->>Pool: Release connection
+    Lib->>Lib: Merge and fuse
+    Lib->>Model: Bounded rerank and optional assessment
+    Model-->>Lib: Scores and facet estimates
+    opt Useful correction with remaining budget
+        Lib->>Lib: Rewrite missing facet; repeat bounded search
+    end
+    Lib->>Pool: Acquire for authorized source fetch
+    Lib->>DB: Recheck grants/tombstones; fetch exact revision spans
+    DB-->>Lib: Allowed evidence or revocation
+    Lib->>Pool: Release in finally
+    Lib->>Lib: Verify spans; pack; count; reassess
+    Lib-->>App: Evidence result, limitations and usage

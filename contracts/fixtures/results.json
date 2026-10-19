@@ -1,0 +1,1360 @@
+{
+  "revision": "0.1",
+  "cases": [
+    {
+      "id": "empty-insufficient",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "insufficient"
+      },
+      "valid": true
+    },
+    {
+      "id": "unicode-large-id-unknown-partial",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "assessed-sufficient",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "sufficient",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "supported",
+            "evidence_ids": [
+              "ev-1"
+            ],
+            "assessment_method": "fixture.review",
+            "assessment_version": "1"
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [],
+        "versions": {
+          "policy": "fixture.review.v1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "degraded-independent-of-coverage",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "sufficient",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "supported",
+            "evidence_ids": [
+              "ev-1"
+            ],
+            "assessment_method": "fixture.review",
+            "assessment_version": "1"
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "degraded_search"
+          }
+        ],
+        "versions": {
+          "policy": "fixture.review.v1"
+        },
+        "execution": "degraded"
+      },
+      "valid": true
+    },
+    {
+      "id": "explicit-known-zero-usage",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "usage": {
+          "provider_input_tokens": 0,
+          "provider_output_tokens": 0,
+          "cost_usd": 0,
+          "cost_kind": "known",
+          "context_tokens": 0,
+          "context_counting": "estimated"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "declared-strict-counting",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "usage": {
+          "context_tokens": 17,
+          "context_counting": "strict"
+        },
+        "versions": {
+          "tokenizer": "fixture-tokenizer-v1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "unknown-cannot-be-sufficient",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "sufficient",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "degraded-needs-limitation",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "execution": "degraded"
+      },
+      "valid": false
+    },
+    {
+      "id": "unknown-cost-is-not-zero",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "usage": {
+          "cost_usd": 0
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "known-cost-needs-value",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "usage": {
+          "cost_kind": "known"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unknown-count-is-not-zero",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "usage": {
+          "context_tokens": 0
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "strict-needs-tokenizer",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "usage": {
+          "context_tokens": 17,
+          "context_counting": "strict"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "boolean-attempt-count",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "usage": {
+          "attempt_count": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unknown-execution",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "execution": "success"
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-schema",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "schema_version": "99"
+      },
+      "valid": false
+    },
+    {
+      "id": "unknown-field",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "scope": {
+          "tenant_id": "foreign"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "wrong-byte-end",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 8,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "digest-mismatch",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "uppercase-digest",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "numeric-document-id",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": 7,
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "orphan-facet-reference",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "absent"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "duplicate-evidence-id",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          },
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "duplicate-facet-id",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          },
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "supported-needs-evidence",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "supported",
+            "evidence_ids": [],
+            "assessment_method": "fixture"
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-cannot-reference-evidence",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "missing",
+            "evidence_ids": [
+              "ev-1"
+            ],
+            "assessment_method": "fixture"
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "conflicting-needs-two",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "conflicting",
+            "evidence_ids": [
+              "ev-1"
+            ],
+            "assessment_method": "fixture"
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-limitation-reference",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "absent"
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "duplicate-stage",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "partial",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "unknown",
+            "evidence_ids": [
+              "ev-1"
+            ]
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [
+          {
+            "code": "coverage_unknown",
+            "facet_ids": [
+              "facet-1"
+            ]
+          }
+        ],
+        "usage": {
+          "stage_durations": [
+            {
+              "stage": "search",
+              "duration_ms": 1
+            },
+            {
+              "stage": "search",
+              "duration_ms": 2
+            }
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unassessed-policy-cannot-be-sufficient",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "sufficient",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "supported",
+            "evidence_ids": [
+              "ev-1"
+            ],
+            "assessment_method": "fixture.review",
+            "assessment_version": "1"
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": []
+      },
+      "valid": false
+    },
+    {
+      "id": "sufficient-needs-required-facet",
+      "kind": "result",
+      "input": {
+        "request_id": "r",
+        "status": "sufficient",
+        "versions": {
+          "policy": "fixture"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "partial-needs-evidence",
+      "kind": "result",
+      "input": {
+        "request_id": "r",
+        "status": "partial"
+      },
+      "valid": false
+    },
+    {
+      "id": "same-revision-digest-conflict",
+      "kind": "result",
+      "input": {
+        "request_id": "request-1",
+        "status": "sufficient",
+        "evidence": [
+          {
+            "evidence_id": "ev-1",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "de83e21f000f265c2677eff473eb7dbaa339a38e26668343cc4b68db40f98430",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          },
+          {
+            "evidence_id": "ev-2",
+            "collection": "engineering",
+            "document_id": "900719925474099312345",
+            "revision_id": "revision-1",
+            "chunk_id": "chunk-1",
+            "source_locator": "runbook:retry:revision-1",
+            "start_byte": 7,
+            "end_byte": 37,
+            "text": "Retry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+            "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "text_sha256": "5b72fa9701c95d487ff64484e64ce75ebf9fb23396e801af517a09df5564207b"
+          }
+        ],
+        "facets": [
+          {
+            "facet_id": "facet-1",
+            "question": "How is ERR-17 retried?",
+            "state": "supported",
+            "evidence_ids": [
+              "ev-1"
+            ],
+            "assessment_method": "fixture.review",
+            "assessment_version": "1"
+          }
+        ],
+        "context": "[ev-1]\nRetry caf\u00e9 \ud83d\ude42 with ERR-17.\n",
+        "limitations": [],
+        "versions": {
+          "policy": "fixture.review.v1"
+        }
+      },
+      "valid": false
+    }
+  ]
+}

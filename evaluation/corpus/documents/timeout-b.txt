@@ -1,0 +1,3 @@
+Gateway timeout note B
+For GATE-6, set the timeout to 45 seconds.
+This note does not state which other note it supersedes.

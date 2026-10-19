@@ -1,0 +1,15 @@
+flowchart LR
+    USER[Untrusted user or agent query] --> APP[Application authentication]
+    APP --> SCOPE[Trusted tenant and principal scope]
+    USER --> REQ[Validated query and allowlisted filters]
+    SCOPE --> ENGINE[Native engine]
+    REQ --> ENGINE
+    ENGINE --> FILTER[Scope AND required filters]
+    FILTER --> SEARCH[Filtered database candidate search]
+    SEARCH --> CHECK[Authorize candidate content]
+    CHECK --> PROVIDER[Explicitly allowed model provider]
+    PROVIDER --> FETCH[Final source authorization and integrity check]
+    FETCH --> OUT[Evidence to caller]
+    DOC[Untrusted document instructions] -.-> DATA[Handled only as source data]
+    DATA -.-> CHECK
+    ENGINE --> TRACE[Redacted metadata; raw content off by default]

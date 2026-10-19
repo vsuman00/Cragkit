@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1050" viewBox="0 0 1400 1050" role="img" aria-labelledby="title desc">
+<title id="title">Cragkit | System architecture</title><desc id="desc">Installable native libraries. Application-owned database, providers, identity, and final answers.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#63716d" stroke-width="1.5"/></marker></defs>
+<rect width="1400" height="1050" fill="#fcfaf5"/>
+<text x="60" y="55" font-family="sans-serif" font-size="30" font-weight="700" fill="#253b35">Cragkit | System architecture</text>
+<text x="60" y="87" font-family="sans-serif" font-size="17" fill="#52605b">Installable native libraries. Application-owned database, providers, identity, and final answers.</text>
+<path d="M700.0 226 L700.0 263.0 L275.0 263.0 L275.0 300" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M700.0 226 L700.0 263.0 L1125.0 263.0 L1125.0 300" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M275.0 396 L275.0 433.0 L700.0 433.0 L700.0 470" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1125.0 396 L1125.0 433.0 L700.0 433.0 L700.0 470" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M700.0 566 L700.0 608.0 L275.0 608.0 L275.0 650" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M700.0 566 L700.0 608.0 L700.0 608.0 L700.0 650" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M700.0 566 L700.0 608.0 L1125.0 608.0 L1125.0 650" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+
+<rect x="525" y="130" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="543" y="159" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Your application</text>
+<text x="543" y="184" font-family="sans-serif" font-size="15" fill="#3f5049">Authentication and trusted scope</text>
+<text x="543" y="204" font-family="sans-serif" font-size="15" fill="#3f5049">Final-answer generation and actions</text>
+<rect x="100" y="300" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="118" y="329" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Python library</text>
+<text x="118" y="354" font-family="sans-serif" font-size="15" fill="#3f5049">Pydantic + asyncio</text>
+<text x="118" y="374" font-family="sans-serif" font-size="15" fill="#3f5049">Native execution in the Python process</text>
+<rect x="950" y="300" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="968" y="329" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">TypeScript library</text>
+<text x="968" y="354" font-family="sans-serif" font-size="15" fill="#3f5049">Zod + async / AbortSignal</text>
+<text x="968" y="374" font-family="sans-serif" font-size="15" fill="#3f5049">Native execution in the Node process</text>
+<rect x="525" y="300" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="543" y="329" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Shared specification</text>
+<text x="543" y="354" font-family="sans-serif" font-size="15" fill="#3f5049">Schemas, policies and golden fixtures</text>
+<text x="543" y="374" font-family="sans-serif" font-size="15" fill="#3f5049">Behavioral parity, no Python service</text>
+<rect x="525" y="470" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="543" y="499" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Same logical pipeline</text>
+<text x="543" y="524" font-family="sans-serif" font-size="15" fill="#3f5049">Plan &gt; search &gt; fuse &gt; rerank &gt; assess</text>
+<text x="543" y="544" font-family="sans-serif" font-size="15" fill="#3f5049">Bounded correction &gt; extractive packing</text>
+<rect x="100" y="650" width="350" height="96" rx="12" fill="#e5eaf2" stroke="#b8c5bd"/>
+<text x="118" y="679" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">PostgreSQL reference adapter</text>
+<text x="118" y="704" font-family="sans-serif" font-size="15" fill="#3f5049">Canonical revisions + pgvector + FTS</text>
+<text x="118" y="724" font-family="sans-serif" font-size="15" fill="#3f5049">Scoped reads; atomic publication</text>
+<rect x="525" y="650" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="543" y="679" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Configured model adapters</text>
+<text x="543" y="704" font-family="sans-serif" font-size="15" fill="#3f5049">Embeddings, reranker, optional planner</text>
+<text x="543" y="724" font-family="sans-serif" font-size="15" fill="#3f5049">Local or explicitly allowed remote calls</text>
+<rect x="950" y="650" width="350" height="96" rx="12" fill="#e5eaf2" stroke="#b8c5bd"/>
+<text x="968" y="679" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Qdrant alternative adapter</text>
+<text x="968" y="704" font-family="sans-serif" font-size="15" fill="#3f5049">Dense / declared sparse profile</text>
+<text x="968" y="724" font-family="sans-serif" font-size="15" fill="#3f5049">SourceStore + publication manifest</text>
+<rect x="525" y="820" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="543" y="849" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Diagnostics and integrations</text>
+<text x="543" y="874" font-family="sans-serif" font-size="15" fill="#3f5049">Redacted events and evaluation</text>
+<text x="543" y="894" font-family="sans-serif" font-size="15" fill="#3f5049">Optional tools / MCP use the engine</text>
+<text x="60" y="970" font-family="sans-serif" font-size="16" fill="#52605b">Proposed architecture; modules are not separate services. Ingestion is a separate write path (see ingestion view).</text>
+<text x="60" y="994" font-family="sans-serif" font-size="16" fill="#52605b">Python and TypeScript share contracts and fixtures. Framework adapters and MCP remain optional.</text>
+<path d="M875 518 L910 518 L910 868 L875 868" fill="none" stroke="#63716d" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+<path d="M525 348 L450 348" fill="none" stroke="#63716d" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+<path d="M875 348 L950 348" fill="none" stroke="#63716d" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+</svg>

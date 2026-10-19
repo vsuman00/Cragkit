@@ -1,0 +1,15 @@
+flowchart TD
+    A[Caller text or supported loader] --> B[Validate write scope, metadata and size]
+    B --> C[Preserve source digest; extract canonical UTF-8]
+    C --> D[Structure-aware chunks with byte spans]
+    D --> E[Create immutable revision and staging generation]
+    E --> F[Bounded embeddings and lexical indexing]
+    F --> G[Validate digests, dimensions and completeness]
+    G --> H{Generation ready?}
+    H -->|Yes| I[Atomic compare-and-swap publication]
+    H -->|No| J[Record failure; retain prior active generation]
+    I --> K[New requests see published generation]
+    J --> F
+    DEL[Authorized delete] --> T[Tombstone immediately]
+    T --> P[Purge indexes, source and caches per retention]
+    ACL[Authorized permission update] --> R[Change authorization revision and invalidate caches]

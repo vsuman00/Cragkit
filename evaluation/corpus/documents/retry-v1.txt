@@ -1,0 +1,4 @@
+Queue retry policy, revision r1
+ERR-17 permits two retry attempts.
+The delay between attempts is 100 milliseconds.
+This revision is superseded by r2.

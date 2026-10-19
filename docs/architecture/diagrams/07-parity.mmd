@@ -1,0 +1,10 @@
+flowchart TB
+    CONTRACT[Normative schemas and behavior specification] --> FIX[Shared deterministic fixtures]
+    FIX --> PY[Python engine tests]
+    FIX --> TS[TypeScript engine tests]
+    PY --> COMP[Compare outputs, ordering, spans and error codes]
+    TS --> COMP
+    COMP --> DB[Cross-runtime shared database integration tests]
+    DB --> LIVE[Separate live-provider quality and performance tests]
+    LIVE --> PKG[Clean wheel, sdist and npm tarball install tests]
+    PKG --> RELEASE[Versioned release evidence]

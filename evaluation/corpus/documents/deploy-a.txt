@@ -1,0 +1,3 @@
+Deployment runbook A
+For DEP-9, drain traffic before replacing the worker.
+After replacement, require three successful health checks before routing traffic.

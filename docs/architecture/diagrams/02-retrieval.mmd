@@ -1,0 +1,22 @@
+flowchart TD
+    A[Query and trusted scope] --> B[Validate capabilities, limits and profiles]
+    B --> C[Preserve original query and plan facets]
+    C --> D[Scoped dense, lexical and identifier retrieval]
+    D --> E[Stable identity merge and weighted RRF]
+    E --> F[Bounded reranking]
+    F --> G[Assess evidence per required facet]
+    G --> H{Useful correction within budget?}
+    H -->|Yes| I[Target missing facets; preserve scope; retain evidence]
+    I --> D
+    H -->|No| J[Reauthorize source fetch and validate exact spans]
+    J --> K[Deduplicate, expand context, pack and count]
+    K --> L[Reassess only packed evidence]
+    L --> M[Sufficient, partial or insufficient estimate]
+    B -.-> X[Typed operational failure or cancellation]
+    D -.-> X
+    F -.-> X
+    J -.-> X
+    K -.-> X
+    LEDGER[Shared deadline, call and candidate limits] -.-> D
+    LEDGER -.-> I
+    LEDGER -.-> K

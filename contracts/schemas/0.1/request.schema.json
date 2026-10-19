@@ -1,0 +1,448 @@
+{
+  "$defs": {
+    "EqualityFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "enum": [
+            "document_id",
+            "revision_id",
+            "language",
+            "kind",
+            "tag"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "eq",
+            "ne"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "op",
+        "field",
+        "value"
+      ],
+      "title": "EqualityFilter",
+      "type": "object"
+    },
+    "GroupFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "filters": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "and": "#/$defs/GroupFilter",
+                "eq": "#/$defs/EqualityFilter",
+                "gt": "#/$defs/OrderFilter",
+                "gte": "#/$defs/OrderFilter",
+                "in": "#/$defs/MembershipFilter",
+                "lt": "#/$defs/OrderFilter",
+                "lte": "#/$defs/OrderFilter",
+                "ne": "#/$defs/EqualityFilter",
+                "not": "#/$defs/NotFilter",
+                "or": "#/$defs/GroupFilter"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EqualityFilter"
+              },
+              {
+                "$ref": "#/$defs/OrderFilter"
+              },
+              {
+                "$ref": "#/$defs/MembershipFilter"
+              },
+              {
+                "$ref": "#/$defs/GroupFilter"
+              },
+              {
+                "$ref": "#/$defs/NotFilter"
+              }
+            ]
+          },
+          "maxLength": 16,
+          "minLength": 1,
+          "title": "Filters",
+          "type": "array"
+        },
+        "op": {
+          "enum": [
+            "and",
+            "or"
+          ],
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "filters"
+      ],
+      "title": "GroupFilter",
+      "type": "object"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "properties": {
+        "deadline_ms": {
+          "default": 10000,
+          "ge": 1,
+          "le": 300000,
+          "title": "Deadline Ms",
+          "type": "integer"
+        },
+        "max_attempts": {
+          "default": 3,
+          "ge": 1,
+          "le": 10,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "max_candidates": {
+          "default": 200,
+          "ge": 1,
+          "le": 10000,
+          "title": "Max Candidates",
+          "type": "integer"
+        },
+        "max_context_tokens": {
+          "default": 2000,
+          "ge": 1,
+          "le": 1000000,
+          "title": "Max Context Tokens",
+          "type": "integer"
+        },
+        "max_provider_calls": {
+          "default": 16,
+          "ge": 0,
+          "le": 1000,
+          "title": "Max Provider Calls",
+          "type": "integer"
+        },
+        "max_spend_usd": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0,
+              "le": 1000000
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Spend Usd"
+        },
+        "max_subqueries": {
+          "default": 4,
+          "ge": 1,
+          "le": 16,
+          "title": "Max Subqueries",
+          "type": "integer"
+        }
+      },
+      "title": "Limits",
+      "type": "object"
+    },
+    "MembershipFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "enum": [
+            "document_id",
+            "revision_id",
+            "language",
+            "kind",
+            "tag"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "op": {
+          "const": "in",
+          "title": "Op",
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "field",
+        "values"
+      ],
+      "title": "MembershipFilter",
+      "type": "object"
+    },
+    "NotFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "filter": {
+          "discriminator": {
+            "mapping": {
+              "and": "#/$defs/GroupFilter",
+              "eq": "#/$defs/EqualityFilter",
+              "gt": "#/$defs/OrderFilter",
+              "gte": "#/$defs/OrderFilter",
+              "in": "#/$defs/MembershipFilter",
+              "lt": "#/$defs/OrderFilter",
+              "lte": "#/$defs/OrderFilter",
+              "ne": "#/$defs/EqualityFilter",
+              "not": "#/$defs/NotFilter",
+              "or": "#/$defs/GroupFilter"
+            },
+            "propertyName": "op"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/EqualityFilter"
+            },
+            {
+              "$ref": "#/$defs/OrderFilter"
+            },
+            {
+              "$ref": "#/$defs/MembershipFilter"
+            },
+            {
+              "$ref": "#/$defs/GroupFilter"
+            },
+            {
+              "$ref": "#/$defs/NotFilter"
+            }
+          ],
+          "title": "Filter"
+        },
+        "op": {
+          "const": "not",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "filter"
+      ],
+      "title": "NotFilter",
+      "type": "object"
+    },
+    "OrderFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "enum": [
+            "document_id",
+            "revision_id",
+            "language",
+            "kind",
+            "tag"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "gt",
+            "gte",
+            "lt",
+            "lte"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "op",
+        "field",
+        "value"
+      ],
+      "title": "OrderFilter",
+      "type": "object"
+    },
+    "OutputProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "counting_mode": {
+          "default": "estimated",
+          "enum": [
+            "estimated",
+            "strict"
+          ],
+          "title": "Counting Mode",
+          "type": "string"
+        },
+        "envelope_reserve_tokens": {
+          "default": 256,
+          "ge": 0,
+          "le": 1000000,
+          "title": "Envelope Reserve Tokens",
+          "type": "integer"
+        },
+        "renderer": {
+          "default": "cragkit.context.v1",
+          "title": "Renderer",
+          "type": "string"
+        },
+        "tokenizer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenizer"
+        }
+      },
+      "title": "OutputProfile",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "collection": {
+      "title": "Collection",
+      "type": "string"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits"
+    },
+    "output_profile": {
+      "$ref": "#/$defs/OutputProfile"
+    },
+    "query": {
+      "title": "Query",
+      "type": "string"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "required_filters": {
+      "default": [],
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "and": "#/$defs/GroupFilter",
+            "eq": "#/$defs/EqualityFilter",
+            "gt": "#/$defs/OrderFilter",
+            "gte": "#/$defs/OrderFilter",
+            "in": "#/$defs/MembershipFilter",
+            "lt": "#/$defs/OrderFilter",
+            "lte": "#/$defs/OrderFilter",
+            "ne": "#/$defs/EqualityFilter",
+            "not": "#/$defs/NotFilter",
+            "or": "#/$defs/GroupFilter"
+          },
+          "propertyName": "op"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/EqualityFilter"
+          },
+          {
+            "$ref": "#/$defs/OrderFilter"
+          },
+          {
+            "$ref": "#/$defs/MembershipFilter"
+          },
+          {
+            "$ref": "#/$defs/GroupFilter"
+          },
+          {
+            "$ref": "#/$defs/NotFilter"
+          }
+        ]
+      },
+      "title": "Required Filters",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "search_hints": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "maxLength": 8,
+      "title": "Search Hints",
+      "type": "array"
+    }
+  },
+  "required": [
+    "query",
+    "collection"
+  ],
+  "title": "RetrievalRequest",
+  "type": "object"
+}

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="950" viewBox="0 0 1400 950" role="img" aria-labelledby="title desc">
+<title id="title">Cragkit | Retrieval flow</title><desc id="desc">A bounded evidence pipeline with explicit uncertainty, source integrity, and independent execution status.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#63716d" stroke-width="1.5"/></marker></defs>
+<rect width="1400" height="950" fill="#fcfaf5"/>
+<text x="60" y="55" font-family="sans-serif" font-size="30" font-weight="700" fill="#253b35">Cragkit | Retrieval flow</text>
+<text x="60" y="87" font-family="sans-serif" font-size="17" fill="#52605b">A bounded evidence pipeline with explicit uncertainty, source integrity, and independent execution status.</text>
+<path d="M430 178 L525 178" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M875 178 L970 178" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1145.0 226 L1145.0 268.0 L1145.0 268.0 L1145.0 310" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M970 358 L875 358" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M525 358 L430 358" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M255.0 406 L255.0 453.0 L255.0 453.0 L255.0 500" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="263.0" y="445.0" font-family="sans-serif" font-size="14" fill="#52605b">stop correcting</text>
+<path d="M430 548 L525 548" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M875 548 L970 548" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1145.0 596 L1145.0 643.0 L1145.0 643.0 L1145.0 690" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="80" y="130" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="98" y="159" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">1. Validate and bind</text>
+<text x="98" y="184" font-family="sans-serif" font-size="15" fill="#3f5049">Query, trusted scope, capabilities</text>
+<text x="98" y="204" font-family="sans-serif" font-size="15" fill="#3f5049">Deadline and shared resource ledger</text>
+<rect x="525" y="130" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="543" y="159" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">2. Preserve intent and plan</text>
+<text x="543" y="184" font-family="sans-serif" font-size="15" fill="#3f5049">Original question + required facets</text>
+<text x="543" y="204" font-family="sans-serif" font-size="15" fill="#3f5049">Optional structured decomposition</text>
+<rect x="970" y="130" width="350" height="96" rx="12" fill="#e5eaf2" stroke="#b8c5bd"/>
+<text x="988" y="159" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">3. Search published evidence</text>
+<text x="988" y="184" font-family="sans-serif" font-size="15" fill="#3f5049">Dense + lexical + identifier lists</text>
+<text x="988" y="204" font-family="sans-serif" font-size="15" fill="#3f5049">Same immutable access constraints</text>
+<rect x="970" y="310" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="988" y="339" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">4. Fuse and rerank</text>
+<text x="988" y="364" font-family="sans-serif" font-size="15" fill="#3f5049">Stable IDs and weighted RRF</text>
+<text x="988" y="384" font-family="sans-serif" font-size="15" fill="#3f5049">Bounded reranker with raw scores</text>
+<rect x="525" y="310" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="543" y="339" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">5. Assess required facets</text>
+<text x="543" y="364" font-family="sans-serif" font-size="15" fill="#3f5049">Supported / missing / unknown</text>
+<text x="543" y="384" font-family="sans-serif" font-size="15" fill="#3f5049">Conflicts and source applicability</text>
+<rect x="80" y="310" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="98" y="339" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">6. Correction decision</text>
+<text x="98" y="364" font-family="sans-serif" font-size="15" fill="#3f5049">Target deficits; retain useful evidence</text>
+<text x="98" y="384" font-family="sans-serif" font-size="15" fill="#3f5049">Stop on limits, repeats or no progress</text>
+<rect x="80" y="500" width="350" height="96" rx="12" fill="#e5eaf2" stroke="#b8c5bd"/>
+<text x="98" y="529" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">7. Reauthorize and fetch</text>
+<text x="98" y="554" font-family="sans-serif" font-size="15" fill="#3f5049">Recheck grants and tombstones</text>
+<text x="98" y="574" font-family="sans-serif" font-size="15" fill="#3f5049">Verify immutable byte spans + digest</text>
+<rect x="525" y="500" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="543" y="529" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">8. Pack exact source excerpts</text>
+<text x="543" y="554" font-family="sans-serif" font-size="15" fill="#3f5049">Merge overlaps; preserve context</text>
+<text x="543" y="574" font-family="sans-serif" font-size="15" fill="#3f5049">Count serialized text and citations</text>
+<rect x="970" y="500" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="988" y="529" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">9. Reassess packed evidence</text>
+<text x="988" y="554" font-family="sans-serif" font-size="15" fill="#3f5049">Only returned spans count</text>
+<text x="988" y="574" font-family="sans-serif" font-size="15" fill="#3f5049">Rebalance once or report limitations</text>
+<rect x="970" y="690" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="988" y="719" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">10. Typed evidence result</text>
+<text x="988" y="744" font-family="sans-serif" font-size="15" fill="#3f5049">Sufficient / partial / insufficient</text>
+<text x="988" y="764" font-family="sans-serif" font-size="15" fill="#3f5049">Complete / degraded + usage + trace</text>
+<rect x="80" y="690" width="350" height="96" rx="12" fill="#f4dfd6" stroke="#b8c5bd"/>
+<text x="98" y="719" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Operational failure path</text>
+<text x="98" y="744" font-family="sans-serif" font-size="15" fill="#3f5049">Typed errors and cancellation</text>
+<text x="98" y="764" font-family="sans-serif" font-size="15" fill="#3f5049">Release connections and child tasks</text>
+<rect x="525" y="690" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="543" y="719" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Recovery returns to search</text>
+<text x="543" y="744" font-family="sans-serif" font-size="15" fill="#3f5049">Same scope and required filters</text>
+<text x="543" y="764" font-family="sans-serif" font-size="15" fill="#3f5049">All attempts share one finite budget</text>
+<text x="60" y="870" font-family="sans-serif" font-size="16" fill="#52605b">Recovery: step 6 may return to step 3 only with a useful allowed action and remaining budget.</text>
+<text x="60" y="894" font-family="sans-serif" font-size="16" fill="#52605b">Every stage observes cancellation; operational errors are distinct from insufficient evidence.</text>
+<text x="60" y="918" font-family="sans-serif" font-size="16" fill="#52605b">Sufficient is a policy estimate. Exact source matching does not establish that the source is true.</text>
+<path d="M80 358 L40 358 L40 112 L1145 112 L1145 130" fill="none" stroke="#9b674d" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+<text x="570" y="105" font-family="sans-serif" font-size="14" fill="#9b674d">Useful correction + remaining budget</text>
+</svg>

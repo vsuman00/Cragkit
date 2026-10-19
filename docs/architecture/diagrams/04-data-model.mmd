@@ -1,0 +1,36 @@
+erDiagram
+    COLLECTION ||--o{ DOCUMENT : contains
+    DOCUMENT ||--o{ DOCUMENT_REVISION : versions
+    DOCUMENT ||--o{ DOCUMENT_GRANT : permits
+    DOCUMENT_REVISION ||--o{ INDEX_GENERATION : indexes
+    INDEX_GENERATION ||--o{ CHUNK : contains
+    CHUNK ||--o{ CHUNK_VECTOR : embeds
+    CHUNK ||--o| CHUNK_LEXICAL : indexes
+    INDEX_GENERATION ||--o{ INGESTION_JOB : builds
+    DOCUMENT {
+        string tenant_id
+        string collection_id
+        string document_id
+        string active_generation_id
+        string authorization_revision
+        boolean tombstoned
+    }
+    DOCUMENT_REVISION {
+        string revision_id
+        string canonical_text_digest
+        string parser_profile
+        string source_locator
+    }
+    INDEX_GENERATION {
+        string generation_id
+        string embedding_profile
+        string chunker_profile
+        string lexical_profile
+        string status
+    }
+    CHUNK {
+        string chunk_id
+        int start_byte
+        int end_byte
+        string text_digest
+    }

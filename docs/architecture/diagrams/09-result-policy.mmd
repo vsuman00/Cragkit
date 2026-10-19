@@ -1,0 +1,13 @@
+flowchart TD
+    A[Completed packed evidence] --> B{Any usable evidence?}
+    B -->|No| I[Insufficient]
+    B -->|Yes| C{All required facets supported?}
+    C -->|No or unknown| P[Partial]
+    C -->|Yes| D{Unresolved required conflict?}
+    D -->|Yes| P
+    D -->|No| S[Sufficient estimate]
+    I --> EXEC[Attach independent complete or degraded execution state]
+    P --> EXEC
+    S --> EXEC
+    EXEC --> OUT[Return limitations, provenance and accounting]
+    FAIL[Operational failure or cancellation] --> ERR[Typed error; never disguise as absent evidence]

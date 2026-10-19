@@ -1,0 +1,72 @@
+{
+  "downloaded_on": "2026-10-19",
+  "papers": [
+    {
+      "filename": "2015-hidden-technical-debt-in-machine-learning-systems.pdf",
+      "title": "Hidden Technical Debt in Machine Learning Systems",
+      "source": "https://papers.nips.cc/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf",
+      "resolved_url": "https://papers.nips.cc/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf",
+      "downloaded_on": "2026-10-19",
+      "bytes": 165614,
+      "pages": 9,
+      "sha256": "1a67da09a8bd5ba9a3577176e30aa2fbd88534e6baf0bc31522b4999f643d2a1",
+      "verification": "PDF signature, successful parsing, and expected title terms on first page"
+    },
+    {
+      "filename": "2009-reciprocal-rank-fusion.pdf",
+      "title": "Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods",
+      "source": "https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf",
+      "resolved_url": "https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf",
+      "downloaded_on": "2026-10-19",
+      "bytes": 66196,
+      "pages": 2,
+      "sha256": "5c1f9f1fe0d80f67d82041bbe151ea17437bc7a7d9a920564cf122d1b09eafb5",
+      "verification": "PDF signature, successful parsing, and expected title terms on first page"
+    },
+    {
+      "filename": "2021-beir.pdf",
+      "title": "BEIR: A Heterogeneous Benchmark for Zero-shot Evaluation of Information Retrieval Models",
+      "source": "https://arxiv.org/pdf/2104.08663",
+      "resolved_url": "https://arxiv.org/pdf/2104.08663",
+      "downloaded_on": "2026-10-19",
+      "bytes": 2094824,
+      "pages": 24,
+      "sha256": "1925755aeb627123d1a63c66f02e5aa2432f7e92751a02bea7c8c3b6bbb6ec33",
+      "verification": "PDF signature, successful parsing, and expected title terms on first page"
+    },
+    {
+      "filename": "2024-corrective-retrieval-augmented-generation.pdf",
+      "title": "Corrective Retrieval Augmented Generation",
+      "source": "https://arxiv.org/pdf/2401.15884",
+      "resolved_url": "https://arxiv.org/pdf/2401.15884",
+      "downloaded_on": "2026-10-19",
+      "bytes": 667756,
+      "pages": 16,
+      "sha256": "975aa1fd3c1b603126e93ff99d6504858b61301bf1d34c9df88ebe53a0b026cb",
+      "verification": "PDF signature, successful parsing, and expected title terms on first page"
+    },
+    {
+      "filename": "2024-ragtruth.pdf",
+      "title": "RAGTruth: A Hallucination Corpus for Developing Trustworthy Retrieval-Augmented Language Models",
+      "source": "https://aclanthology.org/2024.acl-long.585.pdf",
+      "resolved_url": "https://aclanthology.org/2024.acl-long.585.pdf",
+      "downloaded_on": "2026-10-19",
+      "bytes": 1020530,
+      "pages": 17,
+      "sha256": "17afb377ca5ea8cf672efa9a95fca5889713e94c6fd0355f89f8e01651ddfd4d",
+      "verification": "PDF signature, successful parsing, and expected title terms on first page"
+    },
+    {
+      "filename": "2023-alce-generating-text-with-citations.pdf",
+      "title": "Enabling Large Language Models to Generate Text with Citations",
+      "source": "https://arxiv.org/pdf/2305.14627",
+      "resolved_url": "https://arxiv.org/pdf/2305.14627",
+      "downloaded_on": "2026-10-19",
+      "bytes": 611779,
+      "pages": 24,
+      "sha256": "ac8809fe3ca1d52a413f41ef97afd71c43924944d512c90477ec0c28f2ea3a4d",
+      "verification": "PDF signature, successful parsing, and expected title terms on first page"
+    }
+  ],
+  "errors": []
+}

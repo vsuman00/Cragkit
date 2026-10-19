@@ -1,0 +1,21 @@
+flowchart TB
+    APP[Application: trusted identity and final answers]
+    TOOL[Optional framework tool adapter]
+    MCP[Optional MCP host]
+    APP --> PY[Native Python library]
+    APP --> TS[Native TypeScript library]
+    TOOL --> PY
+    TOOL --> TS
+    MCP --> PY
+    MCP --> TS
+    SPEC[Shared contracts and conformance fixtures] -.-> PY
+    SPEC -.-> TS
+    PY --> PORTS[Store and model adapter interfaces]
+    TS --> PORTS
+    PORTS --> PG[(PostgreSQL reference store)]
+    PORTS --> QD[(Qdrant alternative profile)]
+    PORTS --> MODEL[Configured local or remote model providers]
+    PORTS --> OBS[Opt-in redacted telemetry]
+    ING[Separate ingestion write path] --> PG
+    ING --> QD
+    QD --> SRC[SourceStore and publication manifest]

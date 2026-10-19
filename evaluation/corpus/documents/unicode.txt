@@ -1,0 +1,5 @@
+Unicode routing notes
+The service label is Café Relay 🙂.
+Its diagnostics path is /var/log/café/relay.log.
+The service runs in zone west-2.
+Identifiers and accents must remain unchanged.

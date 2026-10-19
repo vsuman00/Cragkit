@@ -1,0 +1,4 @@
+Tenant B queue retry policy
+ERR-17 permits one retry attempt.
+The delay between attempts is 900 milliseconds.
+After failure, park the job in the amber queue.

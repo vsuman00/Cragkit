@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "collection": {
+      "title": "Collection",
+      "type": "string"
+    },
+    "query": {
+      "title": "Query",
+      "type": "string"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "search_hints": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "maxLength": 8,
+      "title": "Search Hints",
+      "type": "array"
+    }
+  },
+  "required": [
+    "query",
+    "collection"
+  ],
+  "title": "ToolRequest",
+  "type": "object"
+}

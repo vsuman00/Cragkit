@@ -1,0 +1,449 @@
+{
+  "$defs": {
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "collection": {
+          "title": "Collection",
+          "type": "string"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "end_byte": {
+          "ge": 0,
+          "le": 9007199254740991,
+          "title": "End Byte",
+          "type": "integer"
+        },
+        "evidence_id": {
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "source_locator": {
+          "title": "Source Locator",
+          "type": "string"
+        },
+        "source_sha256": {
+          "title": "Source Sha256",
+          "type": "string"
+        },
+        "start_byte": {
+          "ge": 0,
+          "le": 9007199254740991,
+          "title": "Start Byte",
+          "type": "integer"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "text_sha256": {
+          "title": "Text Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "collection",
+        "document_id",
+        "revision_id",
+        "chunk_id",
+        "source_locator",
+        "start_byte",
+        "end_byte",
+        "text",
+        "source_sha256",
+        "text_sha256"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Facet": {
+      "additionalProperties": false,
+      "properties": {
+        "assessment_method": {
+          "default": "none",
+          "title": "Assessment Method",
+          "type": "string"
+        },
+        "assessment_version": {
+          "default": "0",
+          "title": "Assessment Version",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxLength": 64,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "facet_id": {
+          "title": "Facet Id",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "supported",
+            "missing",
+            "unknown",
+            "conflicting"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "facet_id",
+        "question",
+        "state"
+      ],
+      "title": "Facet",
+      "type": "object"
+    },
+    "Limitation": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "coverage_unknown",
+            "incomplete_facets",
+            "stale_evidence",
+            "truncated_evidence",
+            "budget_exhausted",
+            "degraded_search"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxLength": 64,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "facet_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxLength": 32,
+          "title": "Facet Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "Limitation",
+      "type": "object"
+    },
+    "StageDuration": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "ge": 0,
+          "le": 300000,
+          "title": "Duration Ms"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "duration_ms"
+      ],
+      "title": "StageDuration",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_count": {
+          "default": 0,
+          "ge": 0,
+          "le": 10,
+          "title": "Attempt Count",
+          "type": "integer"
+        },
+        "context_counting": {
+          "default": "unknown",
+          "enum": [
+            "unknown",
+            "estimated",
+            "strict"
+          ],
+          "title": "Context Counting",
+          "type": "string"
+        },
+        "context_tokens": {
+          "anyOf": [
+            {
+              "ge": 0,
+              "le": 1000000,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Tokens"
+        },
+        "cost_kind": {
+          "default": "unknown",
+          "enum": [
+            "unknown",
+            "estimated",
+            "known"
+          ],
+          "title": "Cost Kind",
+          "type": "string"
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0,
+              "le": 1000000
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Usd"
+        },
+        "provider_calls": {
+          "default": 0,
+          "ge": 0,
+          "le": 1000,
+          "title": "Provider Calls",
+          "type": "integer"
+        },
+        "provider_input_tokens": {
+          "anyOf": [
+            {
+              "ge": 0,
+              "le": 9007199254740991,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Input Tokens"
+        },
+        "provider_output_tokens": {
+          "anyOf": [
+            {
+              "ge": 0,
+              "le": 9007199254740991,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Output Tokens"
+        },
+        "stage_durations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/StageDuration"
+          },
+          "maxLength": 32,
+          "title": "Stage Durations",
+          "type": "array"
+        }
+      },
+      "title": "Usage",
+      "type": "object"
+    },
+    "Versions": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "default": "0.0.0",
+          "title": "Engine",
+          "type": "string"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "policy": {
+          "default": "unassessed.v0",
+          "title": "Policy",
+          "type": "string"
+        },
+        "tokenizer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenizer"
+        }
+      },
+      "title": "Versions",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "context": {
+      "default": "",
+      "title": "Context",
+      "type": "string"
+    },
+    "evidence": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      },
+      "maxLength": 64,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "execution": {
+      "default": "complete",
+      "enum": [
+        "complete",
+        "degraded"
+      ],
+      "title": "Execution",
+      "type": "string"
+    },
+    "facets": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Facet"
+      },
+      "maxLength": 32,
+      "title": "Facets",
+      "type": "array"
+    },
+    "limitations": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Limitation"
+      },
+      "maxLength": 32,
+      "title": "Limitations",
+      "type": "array"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "sufficient",
+        "partial",
+        "insufficient"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Id"
+    },
+    "usage": {
+      "$ref": "#/$defs/Usage"
+    },
+    "versions": {
+      "$ref": "#/$defs/Versions"
+    }
+  },
+  "required": [
+    "request_id",
+    "status"
+  ],
+  "title": "RetrievalResult",
+  "type": "object"
+}

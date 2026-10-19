@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="990" viewBox="0 0 1400 990" role="img" aria-labelledby="title desc">
+<title id="title">Cragkit | Ingestion and lifecycle</title><desc id="desc">Build immutable evidence and derived indexes before making a revision searchable.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#63716d" stroke-width="1.5"/></marker></defs>
+<rect width="1400" height="990" fill="#fcfaf5"/>
+<text x="60" y="55" font-family="sans-serif" font-size="30" font-weight="700" fill="#253b35">Cragkit | Ingestion and lifecycle</text>
+<text x="60" y="87" font-family="sans-serif" font-size="17" fill="#52605b">Build immutable evidence and derived indexes before making a revision searchable.</text>
+<path d="M430 178 L525 178" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M875 178 L970 178" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1145.0 226 L1145.0 273.0 L1145.0 273.0 L1145.0 320" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M970 368 L875 368" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M525 368 L430 368" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M255.0 416 L255.0 468.0 L255.0 468.0 L255.0 520" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="263.0" y="460.0" font-family="sans-serif" font-size="14" fill="#52605b">valid</text>
+<path d="M430 568 L525 568" fill="none" stroke="#63716d" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="80" y="130" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="98" y="159" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">1. Accept and validate</text>
+<text x="98" y="184" font-family="sans-serif" font-size="15" fill="#3f5049">Caller text or supported file loader</text>
+<text x="98" y="204" font-family="sans-serif" font-size="15" fill="#3f5049">Write scope, identity, metadata, size</text>
+<rect x="525" y="130" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="543" y="159" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">2. Preserve and extract</text>
+<text x="543" y="184" font-family="sans-serif" font-size="15" fill="#3f5049">Source bytes or immutable locator</text>
+<text x="543" y="204" font-family="sans-serif" font-size="15" fill="#3f5049">Canonical UTF-8 + parser profile</text>
+<rect x="970" y="130" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="988" y="159" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">3. Structure-aware chunks</text>
+<text x="988" y="184" font-family="sans-serif" font-size="15" fill="#3f5049">Headings, code and surrounding context</text>
+<text x="988" y="204" font-family="sans-serif" font-size="15" fill="#3f5049">UTF-8 byte spans and source mapping</text>
+<rect x="970" y="320" width="350" height="96" rx="12" fill="#e5eaf2" stroke="#b8c5bd"/>
+<text x="988" y="349" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">4. Create staging generation</text>
+<text x="988" y="374" font-family="sans-serif" font-size="15" fill="#3f5049">Immutable revision and stable intent</text>
+<text x="988" y="394" font-family="sans-serif" font-size="15" fill="#3f5049">Atomic uniqueness for safe retries</text>
+<rect x="525" y="320" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="543" y="349" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">5. Build derived indexes</text>
+<text x="543" y="374" font-family="sans-serif" font-size="15" fill="#3f5049">Bounded embedding batches</text>
+<text x="543" y="394" font-family="sans-serif" font-size="15" fill="#3f5049">Lexical entries and identifiers</text>
+<rect x="80" y="320" width="350" height="96" rx="12" fill="#e5ede8" stroke="#b8c5bd"/>
+<text x="98" y="349" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">6. Check completeness</text>
+<text x="98" y="374" font-family="sans-serif" font-size="15" fill="#3f5049">Span digests, vector dimensions</text>
+<text x="98" y="394" font-family="sans-serif" font-size="15" fill="#3f5049">Expected chunks and index readiness</text>
+<rect x="80" y="520" width="350" height="96" rx="12" fill="#e5eaf2" stroke="#b8c5bd"/>
+<text x="98" y="549" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">7. Publish atomically</text>
+<text x="98" y="574" font-family="sans-serif" font-size="15" fill="#3f5049">Compare expected active generation</text>
+<text x="98" y="594" font-family="sans-serif" font-size="15" fill="#3f5049">Model calls stay outside transaction</text>
+<rect x="525" y="520" width="350" height="96" rx="12" fill="#e5eaf2" stroke="#b8c5bd"/>
+<text x="543" y="549" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">8. Serve published revisions</text>
+<text x="543" y="574" font-family="sans-serif" font-size="15" fill="#3f5049">New requests use active generation</text>
+<text x="543" y="594" font-family="sans-serif" font-size="15" fill="#3f5049">Previous revision retained per policy</text>
+<rect x="970" y="520" width="350" height="96" rx="12" fill="#f4dfd6" stroke="#b8c5bd"/>
+<text x="988" y="549" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Failure before publication</text>
+<text x="988" y="574" font-family="sans-serif" font-size="15" fill="#3f5049">Keep previous generation active</text>
+<text x="988" y="594" font-family="sans-serif" font-size="15" fill="#3f5049">Retry staging or collect failed records</text>
+<rect x="80" y="720" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="98" y="749" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Content / model update</text>
+<text x="98" y="774" font-family="sans-serif" font-size="15" fill="#3f5049">Build a new shadow generation</text>
+<text x="98" y="794" font-family="sans-serif" font-size="15" fill="#3f5049">Evaluate, then switch active pointer</text>
+<rect x="525" y="720" width="350" height="96" rx="12" fill="#f1e8dd" stroke="#b8c5bd"/>
+<text x="543" y="749" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Access change</text>
+<text x="543" y="774" font-family="sans-serif" font-size="15" fill="#3f5049">Update authorization revision</text>
+<text x="543" y="794" font-family="sans-serif" font-size="15" fill="#3f5049">Invalidate caches; recheck on fetch</text>
+<rect x="970" y="720" width="350" height="96" rx="12" fill="#f4dfd6" stroke="#b8c5bd"/>
+<text x="988" y="749" font-family="sans-serif" font-size="19" font-weight="600" fill="#253b35">Deletion</text>
+<text x="988" y="774" font-family="sans-serif" font-size="15" fill="#3f5049">Tombstone first; block retrieval</text>
+<text x="988" y="794" font-family="sans-serif" font-size="15" fill="#3f5049">Purge content and indexes per policy</text>
+<text x="60" y="910" font-family="sans-serif" font-size="16" fill="#52605b">Failed or incomplete generations are never searchable. Concurrent updates use compare-and-swap publication.</text>
+<text x="60" y="934" font-family="sans-serif" font-size="16" fill="#52605b">Cross-store Qdrant deployments need a publication manifest and repair protocol; PostgreSQL is the first profile.</text>
+</svg>

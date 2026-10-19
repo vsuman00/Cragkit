@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "authorization_revision": {
+      "title": "Authorization Revision",
+      "type": "string"
+    },
+    "grant_ids": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "maxLength": 64,
+      "title": "Grant Ids",
+      "type": "array"
+    },
+    "principal_id": {
+      "title": "Principal Id",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tenant_id",
+    "principal_id",
+    "authorization_revision"
+  ],
+  "title": "TrustedScope",
+  "type": "object"
+}

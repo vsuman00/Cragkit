@@ -1,0 +1,137 @@
+{
+  "schema_version": "0.1",
+  "documents": [
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "retry-policy",
+      "revision_id": "r1",
+      "family_id": "queue-retry",
+      "split": "development",
+      "active": false,
+      "path": "documents/retry-v1.txt",
+      "canonical_sha256": "5fa4ae4b3c9f411c5da71c8411f6b2ee150765f65735899daae55e95fc2111f6"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "retry-policy",
+      "revision_id": "r2",
+      "family_id": "queue-retry",
+      "split": "development",
+      "active": true,
+      "path": "documents/retry-v2.txt",
+      "canonical_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "cache-policy",
+      "revision_id": "r1",
+      "family_id": "cache",
+      "split": "development",
+      "active": true,
+      "path": "documents/cache.txt",
+      "canonical_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5"
+    },
+    {
+      "tenant_id": "tenant-b",
+      "collection": "engineering",
+      "document_id": "retry-policy",
+      "revision_id": "r1",
+      "family_id": "queue-retry",
+      "split": "development",
+      "active": true,
+      "path": "documents/tenant-b-retry.txt",
+      "canonical_sha256": "ed5c8f366a17962ff090874ed1eecc5b56d8ff20fe3294d536a001a06175e3a3"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "900719925474099312345",
+      "revision_id": "r1",
+      "family_id": "unicode-routing",
+      "split": "development",
+      "active": true,
+      "path": "documents/unicode.txt",
+      "canonical_sha256": "9802d1c25a1d17e10a3b39b130556062af65e3d658c67f15550feb45c47ded28"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "index-runbook",
+      "revision_id": "r1",
+      "family_id": "index-runbook",
+      "split": "development",
+      "active": true,
+      "path": "documents/injection.txt",
+      "canonical_sha256": "7ee028d96172c5f5967198025d1fe517a8c5a3294327148a5a9cc753db0faeef"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "backup-policy",
+      "revision_id": "r1",
+      "family_id": "backup",
+      "split": "development",
+      "active": true,
+      "path": "documents/backup.txt",
+      "canonical_sha256": "459535af9fa209d7bf0a934936f6fb8893733f00226ae60b8a002bdbfc89d26d"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "timeout-policy-a",
+      "revision_id": "r1",
+      "family_id": "timeout-conflict",
+      "split": "development",
+      "active": true,
+      "path": "documents/timeout-a.txt",
+      "canonical_sha256": "ab4acbdbc0a9dd4a54dc21941d9134c525a50951c528c83a59b07429c4db1532"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "timeout-policy-b",
+      "revision_id": "r1",
+      "family_id": "timeout-conflict",
+      "split": "development",
+      "active": true,
+      "path": "documents/timeout-b.txt",
+      "canonical_sha256": "0a1aebe7c036148a10e6aa301f8f0c91d46e6d04042327ab8b93c235b9a30103"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "deploy-runbook",
+      "revision_id": "r1",
+      "family_id": "deployment",
+      "split": "held_out",
+      "active": true,
+      "path": "documents/deploy-a.txt",
+      "canonical_sha256": "69e891eda0b7464fd7cbc6ff355eb4403d942838462ec9ddec5980902755a8bc"
+    },
+    {
+      "tenant_id": "tenant-b",
+      "collection": "engineering",
+      "document_id": "deploy-runbook",
+      "revision_id": "r1",
+      "family_id": "deployment",
+      "split": "held_out",
+      "active": true,
+      "path": "documents/deploy-b.txt",
+      "canonical_sha256": "847199ad57ff6d99bfb423005daf47e92b5a61ba4761fd15c59f725ae989ae4a"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "rotation-policy",
+      "revision_id": "r1",
+      "family_id": "key-rotation",
+      "split": "held_out",
+      "active": true,
+      "path": "documents/rotation.txt",
+      "canonical_sha256": "6da8ffc9d724eb16aa68b938c63368d43f7736c9513c55def9f8ab31c67ed802"
+    }
+  ]
+}

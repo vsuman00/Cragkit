@@ -1,0 +1,182 @@
+# Cragkit development
+
+## V0-01 baseline
+
+Observed locally on 19 October 2026 before package setup. This is a workspace and tool inventory; supported runtime ranges and dependency compatibility remain pending V0-03. The [V0-01 resource report](../evaluation/reports/V0/V0-01.md) records hardware, disk, memory, existing services and database preconditions. Completion state lives in [the tracker](../tasks/todo.md).
+
+The workspace contains architecture, plans, papers, analysis artifacts and project skills. File discovery found no Python or npm package manifests, lockfiles, TypeScript configuration or implementation test configuration. `git status --short` exited 128 because this directory is not a Git checkout. No Git initialization was performed; existing files were preserved.
+
+### Verified tools
+
+Commands below ran from the project root. Version probes establish availability only; they do not establish package compatibility.
+
+| Command | Actual result | Exit |
+| --- | --- | --- |
+| `python3 --version` | Python 3.14.6 | 0 |
+| `node --version` | v26.5.0 | 0 |
+| `npm --version` | 11.17.0 | 0 |
+| `uv --version` | uv 0.11.8 (0e961dd9a 2026-04-27 aarch64-apple-darwin) | 0 |
+| `pnpm --version` | 9.15.9 | 0 |
+| `git --version` | git version 2.50.1 (Apple Git-155) | 0 |
+| `tsc --version` | Command not found | 127 |
+| `pyright --version` | Command not found | 127 |
+| `mypy --version` | Command not found | 127 |
+| `pytest --version` | Command not found | 127 |
+
+`command -v python3 node npm uv tsc pyright mypy pytest pnpm yarn git` found Python, Node, npm, uv, pnpm and Git; it exited 1 because some requested commands were absent. Python, Node, npm and pnpm resolve under `/opt/homebrew/bin`; Git resolves to `/usr/bin/git`; uv resolves to the user's `.local/bin/uv`. TypeScript/Python checking tools, pytest and yarn were absent from this shell's PATH. This does not prove they are absent from every environment on the machine.
+
+Workspace discovery commands actually run:
+
+```sh
+git status --short
+rg --files -g '!node_modules' -g '!.git'
+rg --files -g 'AGENTS.md' -g 'package.json' -g 'pyproject.toml' -g '*lock*' -g 'tsconfig*' -g 'development.md' -g '.git' -g '!node_modules'
+rg --files --hidden -g '!.git' -g '!node_modules' -g '!papers/**' -g '!docs/architecture/diagrams/**'
+```
+
+The scoped manifest discovery returned only `AGENTS.md` before this document existed. Hidden-file discovery also found both project skill entrypoints. These inventories are a snapshot; reinspect before establishing package commands.
+
+### Resource and database policy
+
+The resource report observed an Apple M4 with 16 GiB RAM and 10 logical CPUs, macOS 27.0.1 on arm64, and 22 GiB available disk space. Its snapshot recorded 2855.75 MB allocated swap; this does not establish active swap growth. No listeners appeared on the selected database/model/service ports. These observations support small setup steps with fresh headroom checks, rather than a capacity or service-readiness guarantee; the report preserves the commands and visibility limits.
+
+Use one local test process and one language integration suite at a time. Routine checks use fake providers, small fixtures and no database. Independent agent writers must own separate files under [the coordination protocol](agents/WORKFLOW.md); shared contracts, manifests, lockfiles and tracker updates keep one owner. Stop and reduce concurrency or batch size if memory pressure or responsiveness deteriorates. Recheck headroom before installs or larger evaluations.
+
+Hosted Supabase PostgreSQL is the selected development database. Provisioning, credentials and connectivity remain pending. No dedicated target or schema has been verified, and no database connection was attempted for this baseline. Before any hosted test, verify a dedicated nonproduction target, connection mode, privileges, isolated schema/test data and required extension versions. Keep credentials and credential-bearing URLs out of reports and fixtures. Local PostgreSQL or Docker installation is optional and was not needed for V0-01. See the resource report for the full isolation checklist.
+
+For example, a 500 MB model file uses disk even when no model process is running; process memory changes while that process runs. A hosted database's storage belongs to the remote database, so it is measured separately from laptop memory and disk. This baseline avoids starting services to make an inventory look complete. A failure case is treating an installed `node` executable as proof that the future TypeScript package passes its typecheck: no such package or typecheck exists yet.
+
+### Commands still pending
+
+| Purpose | State and owning task |
+| --- | --- |
+| Package installation and core import | Pending V0-02 package manifests and smoke checks |
+| Focused Python and TypeScript tests | Pending V0-02 test setup |
+| Dependency versions and typecheck commands | Pending V0-03 compatibility/dependency policy |
+| Shared contract conformance | Pending V0-04 and V0-05 contracts |
+| Database integration | Pending the owning retrieval task and verified isolated target |
+| Package builds and resource measurements | Pending package setup and V0-07 baseline checkpoint |
+| Hosted CI | Pending an available repository and V0-07 configuration |
+
+No dependency installation, package test, typecheck, build, provider call or CI run was performed for V0-01. Add commands here only after their manifests/configuration exist and the commands have actually run. Runtime support ranges remain undecided until compatibility probes pass.
+
+Learning exercise: identify which measurement would change when a model file is downloaded, when it is loaded, and when evidence is inserted into the hosted database. Learning remains pending until the learner practices or explains it.
+
+## V0-02 package smoke checks
+
+Both internal packages export version `0.0.0` and perform no retrieval yet. Package names remain provisional; the npm package is private. No license or publication decision has been made. Python uses a `src/cragkit` layout; TypeScript compiles strict ESM and declarations to `dist`.
+
+Actual commands from the root, run sequentially:
+
+```sh
+uv venv .venv --python python3.14
+uv pip install --python .venv/bin/python --editable packages/python
+.venv/bin/python -m unittest discover -s packages/python/tests -v
+```
+
+The selected `python3.14` interpreter was CPython 3.14.4, while the baseline shell's `python3` reports 3.14.6. Python installed successfully with no runtime dependencies and passed one isolated import test. The test blocks socket activity, subprocesses, filesystem mutation, non-module reads and external dependency imports during core import.
+
+Actual commands in `packages/typescript`, also sequential:
+
+```sh
+npm install --ignore-scripts
+npm run typecheck
+npm test
+```
+
+Installation added four development packages. Typecheck and build passed using TypeScript 7.0.2 and Node 26.5.0. One import smoke test passed with dependency and I/O guards. The npm lockfile records exact resolutions. No database driver, model runtime, service or provider was used. The import tests establish these small package entrypoints' behavior, not future optional integrations.
+
+## Reproducible environment and compatibility
+
+The current Python environment is `packages/python/.venv`, using CPython 3.14.6. The root `.venv` was an initial V0-02 smoke environment and is no longer used by project commands. Python direct and transitive versions/hashes are locked in `packages/python/uv.lock`; npm versions/integrities are locked in `packages/typescript/package-lock.json`. Update manifests and locks together, then run the affected compatibility and conformance checks. The internal release uses exact direct versions; widening public dependency ranges is future release work.
+
+Verified root commands:
+
+```sh
+uv sync --project packages/python --frozen
+uv run --project packages/python --frozen pytest packages/python/tests
+uv run --project packages/python --frozen mypy --config-file packages/python/pyproject.toml packages/python/src
+uv tree --project packages/python
+```
+
+Verified TypeScript commands, from `packages/typescript`:
+
+```sh
+npm run typecheck
+npm test
+npm ls --all
+```
+
+Reproducible npm setup uses `npm ci --ignore-scripts`; its lockfile was generated by `npm install --ignore-scripts`. The final checkpoint will exercise clean installation and package artifacts. Run Python and TypeScript checks sequentially, without database/model services. Python's `postgres` extra is optional; the core depends only on Pydantic, and TypeScript's core depends only on Zod. No frameworks, transports or model runtimes are installed.
+
+The [compatibility report](../evaluation/reports/V0/V0-03.md) records tested pins, dependency sizes and driver-import probes. Only the installed macOS arm64/Python 3.14 and Node 26.5 combination has local evidence. Hosted database integration is not yet available; no database-test command is claimed. Upstream APIs checked before use: [Pydantic strict mode](https://docs.pydantic.dev/latest/concepts/strict_mode/) and [Zod strict schemas](https://zod.dev/api).
+
+## Request contract verification
+
+The [wire specification](../contracts/README.md) separates application requests, tool input and trusted scope. Python imports its models from `cragkit.contracts`; TypeScript imports from `cragkit/contracts`. The package root remains a minimal version export, with validation exposed through an explicit module/subpath. Neither path starts a retrieval engine or connects a service.
+
+Verified root commands:
+
+```sh
+uv run --project packages/python --frozen python tools/check_contracts.py
+uv run --project packages/python --frozen python tools/export_schemas.py
+uv run --project packages/python --frozen python tools/export_schemas.py --check
+```
+
+The first command compares both runtimes on shared fixtures after building TypeScript. The second exports structural schemas from the Python models; the third fails on schema drift. Native implementations enforce additional semantic rules beyond JSON Schema. Fixture hashes identify exact checked-in UTF-8 file bytes, including formatting; normalized wire comparisons ignore object key order and compare JSON numbers by value. No universal canonicalization of arbitrary floating-point JSON is claimed.
+
+For example, Python `parse_request({"query": "Find ERR-17", "collection": "engineering"})` and the TypeScript helper validate the same shape and fill explicit defaults. `parse_tool_request` rejects an extra `scope` or `limits` field. See [V0-04 evidence](../evaluation/reports/V0/V0-04.md) for the full checks and failure cases.
+
+## Result contract verification
+
+The [result specification](../contracts/RESULTS.md) defines immutable source spans, facet estimates, execution state and nullable accounting. `parse_result` is exported alongside request validation in both runtimes. It checks UTF-8 excerpt lengths/digests and internal references; a full canonical-source check requires the future source store.
+
+Verified root command, after the TypeScript build:
+
+```sh
+uv run --project packages/python --frozen python tools/check_contracts.py --fixtures results
+```
+
+This passed all 32 result cases in addition to the 34 request cases. The full Python suite passed 110 tests and TypeScript passed 78 at V0-05, with both strict typechecks green. See [V0-05 evidence](../evaluation/reports/V0/V0-05.md). Unknown provider usage and costs remain null; a declared tokenizer identity is a schema requirement, not proof that any token counting ran.
+
+## Corpus checks and human review
+
+Verified root commands:
+
+```sh
+uv run --project packages/python --frozen pytest tools/tests/test_check_corpus.py -q
+uv run --project packages/python --frozen python tools/check_corpus.py
+uv run --project packages/python --frozen python tools/check_corpus.py --include-held-out
+```
+
+The corpus validator's 16 focused tests passed. The default command checks all 12 source digests but loads only 24 development questions; explicit initial held-out review checks all 30 questions and 26 labelled support spans. Output contains counts and stable error codes, without query/source text. These checks make no retrieval-quality claim.
+
+The user explicitly approved all 30 labels on 19 October 2026. After recording that decision, `--include-held-out --require-human-review` passed with zero pending reviews. All 16 approved input hashes match [the seal](../evaluation/review/seal.json). Routine checks use development labels only and verify the held-out bytes through hashes; no held-out scoring occurred. [V0-06 evidence](../evaluation/reports/V0/V0-06.md) preserves both the historical pending gate and the final human acceptance.
+
+## Complete local V0 check
+
+Verified from the project root:
+
+```sh
+python3 tools/check_v0.py
+```
+
+All 12 stages passed: frozen setup, both typechecks, 155 Python/tool tests, 78 TypeScript tests/build, four schema checks, 66 native conformance cases, approved development-corpus validation, sealed input integrity and clean package verification. See [the CI profile](ci.md) for the stage policy and future hosted-job definition. Git was initialized afterward and the private [GitHub repository](https://github.com/vsuman00/Cragkit) was created under GIT-01. Hosted CI remains unrun; see [version control](version-control.md) for the current workflow.
+
+Verified individual integrity and artifact commands:
+
+```sh
+python3 tools/check_seal.py
+python3 tools/check_artifacts.py --output-dir artifacts/V0
+```
+
+The artifact command runs these build operations with absolute task-owned output paths and then checks clean installations:
+
+```sh
+uv build packages/python --out-dir artifacts/V0/python --no-python-downloads
+uv build artifacts/V0/python/cragkit-0.0.0.tar.gz --wheel --out-dir artifacts/V0/rebuilt --no-python-downloads
+```
+
+In `packages/typescript`, it runs `npm run build` followed by `npm pack --json --ignore-scripts --pack-destination <absolute-artifact-directory>`. The standalone and runner commands share the same verifier; the recorded successful execution used the runner. Temporary default installations passed guarded imports outside the checkout, and the source distribution rebuilt identical wheel contents. Generated archives and detailed results remain under ignored `artifacts/V0/`; [V0-07 evidence](../evaluation/reports/V0/V0-07.md) records hashes, counts, resource methods and limitations.
+
+There is no database-test command yet because no database integration exists. V0 produces internal contract packages and fixtures; it does not implement retrieval or demonstrate live model quality. Local package acceptance is separate from public distribution, license/name decisions, hosted CI and later platform support.
