@@ -180,3 +180,39 @@ uv build artifacts/V0/python/cragkit-0.0.0.tar.gz --wheel --out-dir artifacts/V0
 In `packages/typescript`, it runs `npm run build` followed by `npm pack --json --ignore-scripts --pack-destination <absolute-artifact-directory>`. The standalone and runner commands share the same verifier; the recorded successful execution used the runner. Temporary default installations passed guarded imports outside the checkout, and the source distribution rebuilt identical wheel contents. Generated archives and detailed results remain under ignored `artifacts/V0/`; [V0-07 evidence](../evaluation/reports/V0/V0-07.md) records hashes, counts, resource methods and limitations.
 
 There is no database-test command yet because no database integration exists. V0 produces internal contract packages and fixtures; it does not implement retrieval or demonstrate live model quality. Local package acceptance is separate from public distribution, license/name decisions, hosted CI and later platform support.
+
+
+## V1-01: PostgreSQL schema and migration checks
+
+The schema and explicit administrative runner are implemented and verified against a disposable local PostgreSQL 17.11 database. V1-01 remains `IMPLEMENTED_UNVALIDATED` for its required dedicated Supabase target, connection mode, TLS and permission checks. [Evidence and limitations](../evaluation/reports/V1/V1-01.md); [storage contract](../storage/postgres/README.md). Native package adapters and retrieval are not implemented by this task.
+
+Verified from the project root on 19 October 2026:
+
+```sh
+uv run --project packages/python --frozen pytest tools/tests/test_check_postgres.py -q
+uv run --project packages/python --frozen pytest packages/python/tests tools/tests -q
+python3 tools/check_postgres.py --help
+```
+
+Results: 17 focused tooling tests and 172 combined Python/tool tests passed. `npm test` from `packages/typescript` built TypeScript and passed all 78 tests. Both core import guards still passed; no native source or dependency changes were made.
+
+### Database commands
+
+The runner uses existing `psql`; it does not add a database-driver dependency to either package. These exact runner actions passed with `PGHOST` set to an absolute task-owned Unix-socket directory, `PGDATABASE=postgres` and `PGUSER=cragkit_admin`:
+
+```sh
+python3 tools/check_postgres.py --apply --confirm-dedicated-target --local-socket "$PGHOST" --integration
+python3 tools/check_postgres.py --check --confirm-dedicated-target --local-socket "$PGHOST" --integration
+python3 tools/check_postgres.py --check --confirm-dedicated-target --local-socket "$PGHOST"
+```
+
+The disposable cluster was created with the installed PostgreSQL 17 binaries, UTF-8 encoding and a private socket, with TCP listening disabled, 16 MB shared buffers and 10 maximum connections. The local harness also verified unchanged reruns, checksum/unknown-history rejection, failed-migration DDL and ledger rollback, and rejection of nonempty integration targets. Its generated script/result are in ignored `artifacts/V1/`; the committed SQL probes are `storage/postgres/tests/invariants.sql`. The harness stopped the server and removed the temporary cluster after each run, including failed runs. Do not point integration probes at a shared application database. They require all eight application tables to be empty, take exclusive locks, and roll back their synthetic rows.
+
+For hosted Supabase, first identify a dedicated development project and confirm a direct or session connection suitable for administrative work. Configure scalar `PGHOST`, `PGDATABASE`, `PGUSER`, a protected password source, `PGSSLMODE=verify-full` and the downloaded certificate path in `PGSSLROOTCERT`. Service files, connection-string database values and host redirection are rejected by this initial developer runner. The dedicated-target flag is an operator acknowledgment; it does not detect a production database. The hosted invocation omits `--local-socket`:
+
+```sh
+python3 tools/check_postgres.py --apply --confirm-dedicated-target --integration
+python3 tools/check_postgres.py --check --confirm-dedicated-target --integration
+```
+
+Hosted commands are prepared, not verified. No Cragkit project or connection configuration was available during this session. Project provisioning/cost selection, certificate verification, actual role privileges and Supabase advisors remain pending. Existing unrelated projects were not modified. Administrative local tests use a privileged role; they do not prove least-privilege runtime access, pool behavior or RLS policy isolation. See [Supabase connections](https://supabase.com/docs/guides/database/connecting-to-postgres) and [PostgreSQL TLS verification](https://www.postgresql.org/docs/current/libpq-ssl.html).

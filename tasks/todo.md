@@ -2,7 +2,7 @@
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. Next smallest task: V1-01 (READY, not started). Complete each task's acceptance before starting its dependents.
+V0: COMPLETE locally. Next smallest task: V1-01 (IMPLEMENTED_UNVALIDATED; local checks passed, hosted target pending). Complete each task's acceptance before starting its dependents.
 
 Use status notes when needed: READY, IN_PROGRESS, BLOCKED, IMPLEMENTED_UNVALIDATED, COMPLETE. Check a box only for COMPLETE and attach evidence. Public publication remains pending until actually authorized and verified.
 
@@ -44,7 +44,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 [Version plan](versions/V1-first-library.md)
 
-- [ ] V1-01: [Schema and explicit migrations](versions/V1-first-library.md#v1-01-schema-and-explicit-migrations) — evidence: pending.
+- [ ] V1-01: [Schema and explicit migrations](versions/V1-first-library.md#v1-01-schema-and-explicit-migrations) — IMPLEMENTED_UNVALIDATED; schema/tooling and local PostgreSQL checks passed; required dedicated Supabase target/verification pending. [Evidence](../evaluation/reports/V1/V1-01.md).
 
 - [ ] V1-02: [Python connection lifecycle](versions/V1-first-library.md#v1-02-python-connection-lifecycle) — evidence: pending.
 
@@ -278,3 +278,27 @@ Learning practiced / still unclear:
 Blocked decision, if any:
 Next smallest action:
 ```
+
+
+## V1-01 active assignment
+
+Shared outcome: explicit, versioned PostgreSQL lexical storage schema with composite tenant/collection/document references and repeatable database verification. Contract V1-01-r1: private `cragkit` schema; no application package imports or automatic migrations; no vector tables/extensions, public API grants, provider calls, corpus changes or V1-02 adapter work. Administrative migrations use explicit developer tooling; native packages stay read-only. An isolated dedicated Supabase target and certificate-verified connection are required for hosted acceptance. Existing unrelated Supabase projects are excluded.
+
+- V1-01-A: `/root/coordinate_peer`, Sol `gpt-6.1-sol`, implementation and assembler. Owns `storage/postgres/migrations/` and `storage/postgres/README.md`. Delivers immutable revision, scoped relations, lexical indexes and a documented migration contract. Read-only: architecture section 7, active V1 plan, E18 and peer tooling/tests.
+- V1-01-B: `/root/manager_peer`, Sol `gpt-6.1-sol`, implementation. Owns `tools/check_postgres.py`, `tools/tests/test_check_postgres.py` and `storage/postgres/tests/`. Delivers explicit application/rerun tooling and integration assertions for scoped references, immutability, constraints and failure handling. Read-only: schema and package code.
+- `/root`: coordinator, final integrator, tracker, reports, development documentation and Git. Owns manifests/lockfiles if required, pending target discovery and hosted runs. No peer Git mutations or concurrent test processes.
+
+Peers agree exact column names and runner boundary directly before dependent edits, report contract revisions and ownership changes to root, and escalate unresolved material decisions through root to Astra. Both do substantive work; A assembles and root performs final acceptance. All paths outside the assigned subsystem are protected. One test process at a time, small synthetic SQL fixtures, no service startup or tool installation merely for a lane. Acceptance: empty isolated database migration, safe rerun, mismatched migration rejection, invalid cross-scope foreign keys, immutable revision update failure, and core import isolation. Hosted target discovery found no Cragkit project or database environment configuration; the target question is pending while local implementation proceeds. State: assigned.
+
+Contract V1-01-r1 frozen directly by both peers: raw `0001_initial.sql`; runner owns transactions, advisory lock and checksummed `cragkit.migration_history`. Eight logical lexical tables, scoped generation/job relationships, immutable revision updates, purge deletion allowed, built-in SHA-256 and no extension install. PostgreSQL 17.11 binaries are already installed and no server was running. Root will use an explicitly configured, task-owned temporary Unix-socket cluster for additional local integration validation, then stop/remove it. This does not replace the dedicated Supabase acceptance checks. No Docker or new tool download.
+
+
+V1-01 handoff: A and B completed their disjoint implementation work and direct contract coordination; A assembled the result and root inspected it. Root corrected review findings through the owning peer and ran one test process at a time. V1-01-A (schema) and V1-01-B (tooling/probes) are implemented and verified locally. Parent V1-01 remains IMPLEMENTED_UNVALIDATED; its checkbox stays open. Required hosted validation is the remaining acceptance step, and V1-02 has not started.
+
+Changed files: storage/postgres/migrations/0001_initial.sql, storage/postgres/README.md, storage/postgres/tests/invariants.sql, tools/check_postgres.py, tools/tests/test_check_postgres.py, README.md, docs/development.md, tasks/versions/V1-first-library.md, this tracker and evaluation/reports/V1/V1-01.md. Root owns final documentation/status and Git; peers have stopped writing except requested probe corrections. Public contracts, native source, dependency locks and sealed corpus are preserved.
+
+Actual checks: 17 focused tool tests, 172 combined Python/tool tests, TypeScript build and 78 tests passed. Real PostgreSQL 17.11 local checks passed for empty apply, rerun with unchanged ledger timestamp, read-only history check, scoped FK/immutability/byte/FTS/purge invariants, checksum and unknown-history rejection, failed-migration DDL+ledger rollback, and nonempty integration-target rejection without data loss. An initial failed emoji-vector test was corrected to the actual declared tokenizer output and rerun successfully. No hosted SQL, target provisioning, model evaluation, hosted CI or package publication. Final prose/link/whitespace/staging and push checks are recorded at integration completion.
+
+Resources: 23 GiB disk available and 74% system-wide memory free before the run. Used existing PostgreSQL binaries, private temporary Unix sockets, 16 MB shared buffers and 10 maximum connections. No tool/model installs or Docker; every task-owned cluster stopped and removed on success/failure. Learning remains pending; optional exercise is to explain composite keys and the active-generation pointer. Next smallest action: answer the pending dedicated Supabase target question, verify connection mode/certificate/permissions/schema compatibility, run migration/rerun/invariants and advisors there, then close V1-01 before V1-02.
+
+Final V1-01 local integration: final SQL rerun passed after the digest and exact-byte-limit probes were added; the assembler confirmed those probes by inspection. All 16 sealed hashes passed. Six prose files and 118 local links/anchors passed with zero deterministic text changes; whitespace passed. No PostgreSQL processes remain. The focused local implementation is ready for the authorized commit/push; parent acceptance still requires the dedicated hosted target.

@@ -1,6 +1,6 @@
 # V1: First usable lexical library
 
-Status: planned, not implemented. Progress is tracked only in [todo.md](../todo.md).
+Status: started with V1-01 schema and migration tooling; local verification passed and required hosted verification is pending. Completion is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 

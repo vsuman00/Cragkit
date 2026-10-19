@@ -2,7 +2,7 @@
 
 Cragkit is a native Python and TypeScript retrieval library in development. The consuming application owns identity, data, providers and final answers. The planned library returns source-linked evidence, coverage estimates, limitations and execution diagnostics.
 
-V0 is complete locally: both internal packages validate request, trusted-scope, evidence and result contracts against shared fixtures. The project includes a human-reviewed synthetic corpus, sealed inputs, native conformance checks and a sequential local acceptance pipeline. V1 retrieval and database execution are not implemented. Package version `0.0.0` and the `cragkit` package names are provisional; no registry publication or license decision has been made.
+V0 is complete locally: both internal packages validate request, trusted-scope, evidence and result contracts against shared fixtures. The project includes a human-reviewed synthetic corpus, sealed inputs, native conformance checks and a sequential local acceptance pipeline. V1 lexical schema and explicit migration tooling are implemented and verified locally; dedicated Supabase verification remains pending. Native database adapters and retrieval are not implemented. Package version `0.0.0` and the `cragkit` package names are provisional; no registry publication or license decision has been made.
 
 ## Run local checks
 
