@@ -25,4 +25,4 @@ The runner installs frozen dependencies, checks both native packages and shared 
 
 Earlier proposals, reviews, analysis artifacts and saved papers remain as project history. The consolidated architecture and later user decisions govern where those historical materials disagree.
 
-GitHub repository: [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit), private, with the HTTPS remote configured as `origin`. The initial commit and push are pending GIT-01 verification. Hosted CI remains unconfigured; the local pipeline passing does not establish a hosted run.
+GitHub repository: [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit), private, with the HTTPS remote configured as `origin`. The initial V0 baseline was committed and pushed to `main` as `feb2bdd`; matching local and remote commits were verified. Hosted CI remains unconfigured; the local pipeline passing does not establish a hosted run.

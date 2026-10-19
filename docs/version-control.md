@@ -2,7 +2,7 @@
 
 The user has authorized a private GitHub baseline and ongoing version control for completed, plan-aligned changes. After each accepted atomic change, commit and immediately push to the configured GitHub remote unless the user explicitly requests local-only work. Keep implementation, local verification, commit, push and hosted CI evidence distinct.
 
-The initial branch is `main`. The private repository [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) exists with an HTTPS `origin` remote; its initial commit and push remain pending GIT-01 verification. Read [the tracker](../tasks/todo.md) for current state. Repository availability does not configure hosted CI. This task activates no workflows and publishes no packages.
+The initial branch is `main`. The private repository [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) uses an HTTPS `origin` remote. The initial 119-file V0 baseline, commit `feb2bdd374041d0f5bf6990c81b5b3d71fa4f229`, was pushed successfully and verified against GitHub with zero ahead/behind and a clean working tree. Read [the tracker](../tasks/todo.md) for current state. Repository availability does not configure hosted CI. No workflows or package publication were activated by repository creation.
 
 ## Make a scoped commit
 

@@ -1,6 +1,14 @@
 # GIT-01: Baseline upload scope review
 
-State: READY_FOR_COMMIT, subject to the integrator's final staged review. This report does not claim that a commit or push occurred. The root integrator reports creating the private repository [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) and configuring its HTTPS origin; final remote commit and synchronization checks remain root-owned.
+State: COMPLETE for the baseline publication. Root created the private repository [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit), configured the HTTPS `origin`, and pushed the reviewed baseline to `main`. The peer audit below records preparation; root's verified publication evidence follows it.
+
+## Publication evidence
+
+Initial baseline: `feb2bdd374041d0f5bf6990c81b5b3d71fa4f229`, subject `feat(v0): establish Cragkit foundations`. It contains 119 reviewed project files. `git push -u origin main` succeeded and configured `origin/main` as upstream. After `git fetch origin`, local `HEAD` and `git ls-remote --heads origin main` matched that full commit; ahead/behind was `0 0` and `git status --porcelain=v1` was empty. GitHub independently reported the repository private and nonempty with default branch `main`.
+
+Final staged credential/ignore review passed with the one documented localhost placeholder finding. All 16 approved files matched their seal hashes in the Git index as well as the working tree. `git diff --cached --check` passed; eight updated Markdown files passed 124 local link/anchor checks and self-contained prose cleaning with zero Unicode changes. No new native implementation tests were run for this Git/documentation task; the prior V0 acceptance remains recorded under its actual inputs.
+
+The repository guide and tracker record the successful initial publication in a separate documentation update, following the same commit/push/synchronization rule. No actual credential was identified in the reviewed scope; local environments, generated archives and package distributions were excluded. No package release, hosted CI workflow, branch protection or repository visibility change was performed.
 
 ## Audited scope
 
@@ -36,4 +44,4 @@ Before committing, root must inspect the explicit staged scope, credential findi
 
 Root final preparation: private-key extensions `*.pem`, `*.key`, `*.p12` and `*.pfx` were added to the ignore rules and verified. The initial staged inventory contains 119 explicit project paths. `git diff --cached --check` first identified three whitespace-only lines in the historical HTML; root trimmed only those blank-line spaces and verified that substantive lines were unchanged. The staged whitespace check then passed, and all 16 approved seal hashes still matched. Native source, manifests, locks and approved labels were unchanged during GIT-01, so their preceding V0 acceptance results were not rerun or presented as a new test run.
 
-One failure case: staging an ignored local environment with force would bypass this candidate audit. Use explicit intended paths and inspect the staged diff. Learning remains pending; the next small action is the authorized baseline commit/push and remote verification.
+One failure case: staging an ignored local environment with force would bypass this candidate audit. Use explicit intended paths and inspect the staged diff. Learning remains pending. The next product task is V1-01; completed future slices use the recorded scoped commit and immediate-push workflow.
