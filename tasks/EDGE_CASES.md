@@ -106,6 +106,7 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 | E65 | Stored PostgreSQL catalog-OID types prevent a hosted database upgrade | Store lexical configuration names as text, resolve them with the fixed search path at use, reject missing names and preserve existing vectors through the migration. | V1-01-C, V6-07 | I |
 | E66 | A hosted endpoint certificate cannot be verified or plaintext startup is attempted | Reject the connection without downgrading TLS; verify the selected endpoint's certificate and hostname, and test enforced plaintext rejection without sending a password. | V1-01-H, V1-02, V1-03 | I |
 | E67 | A rotated database password is followed by pooler rejection and a direct network ban | Distinguish cached pooler authentication from direct reachability, stop repeated attempts/resets, verify authorized ban removal and use a bounded direct check before judging the saved password. Cache involvement requires evidence. | V1-01-D, V1-02, V1-03 | I/M |
+| E68 | A driver returns a connection after its acquisition deadline before the timer callback runs | Recheck the absolute deadline before yielding, return the late connection and release admission; distinguish configured acquisition timeout from request deadline expiry. | V1-02A, V1-03 | U |
 
 ## Evidence record
 

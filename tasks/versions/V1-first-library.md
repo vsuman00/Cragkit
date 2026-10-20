@@ -1,6 +1,6 @@
 # V1: First usable lexical library
 
-Status: V1-01 is complete after local, hosted administrative and authenticated native verification. V1-02 Python connection lifecycle is next and has not started. Completion is tracked only in [todo.md](../todo.md).
+Status: V1-01 is complete after local, hosted administrative and authenticated native verification. V1-02 has started with its internal pool resource child; schema/capability and transaction-local scope work remains next. Completion is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
@@ -35,6 +35,8 @@ Expected areas: `storage/postgres/migrations/`, `database integration tests`.
 Dependency: V1-01. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.
 
 Build: Implement the Python pool adapter, capability checks, parameterized filters and transaction-local scope with runtime-role tests.
+
+Implementation children: V1-02A provides the internal optional-driver pool resource layer, explicit owned startup, borrowed-pool preservation and bounded lifecycle. V1-02B adds schema/capability validation, parameterized scope/filter handling and real runtime-role tests. Both children are required for this parent; an administrative resource smoke check alone does not establish scoped application access.
 
 Acceptance: Owned resources close idempotently; caller pools remain open; statement and pool acquisition timeouts are bounded.
 

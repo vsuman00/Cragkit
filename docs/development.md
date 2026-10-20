@@ -257,3 +257,35 @@ On 20 October, the user explicitly approved removing the listed ban for their re
 The successful command was an inline Python harness calling `tools.check_postgres.connection_environment`, `migrations`, `migration_script(..., apply=False)` and `execute` with the three SQL scripts concatenated for one connection. Its ignored result is `artifacts/V1/native-direct-after-unban.json`. The CLI command above remains the repeatable history/integration entrypoint, but it uses separate connections and was not rerun after this single-connection acceptance. V1-01 is COMPLETE; V1-02 Python connection lifecycle is READY and unstarted. Native package sources, contracts, dependency locks, migration bytes and sealed evaluation inputs were unchanged; product regression suites were not rerun for this documentation/configuration acceptance.
 
 Supabase's [rotation guidance](https://supabase.com/docs/guides/troubleshooting/supavisor-error-password-authentication-failed-after-password-rotation) explains why a pooler can reject a correct newly rotated password. That possibility was initially missed; the exact cache contribution here was not established. The successful direct login proves the saved password works now. No further reset is required. No local service, installation, live model or runtime pool adapter was introduced.
+
+## V1-02A: Optional Python pool resources
+
+The internal `cragkit._postgres_pool` module now provides `PoolConfig`, `parse_pool_config` and `PoolResource`. The top-level package and public request/result contracts are unchanged. The optional driver loads only when opening an owned resource; construction/configuration performs no network or private-file access. Owned startup validates the configured CA file and owner-only regular password file. It rejects populated `PG*` environment values so hidden libpq settings cannot override the scalar configuration. Borrowed pools stay caller-owned and are never opened, reconfigured or closed by the wrapper.
+
+All operations for a resource belong to one event loop. A lease's absolute `loop.time()` deadline bounds acquisition. It does not yet enforce the yielded body's deadline, begin a scoped transaction or set a statement timeout; V1-02B supplies those policies. Raw leases require caller-managed transactions. Closing the wrapper rejects new work, cancels its own active/queued requests and uses a shared bounded close budget; unrelated caller leases survive. Driver failures return fixed errors without raw driver text. A configured acquisition timeout maps to `ProviderUnavailable`; expiration of the request's acquisition deadline maps to `DeadlineExceeded`.
+
+For example, an internal caller acquires and returns a connection as follows after explicit resource startup:
+
+```python
+loop = asyncio.get_running_loop()
+async with resource.lease(deadline=loop.time() + 1.0) as connection:
+    # The future store adapter will bind scope and perform a bounded transaction.
+    pass
+await resource.close()
+```
+
+Commands actually run on the final source:
+
+```sh
+uv sync --project packages/python --frozen --extra postgres
+uv run --project packages/python --frozen pytest packages/python/tests/test_postgres_pool.py -q
+uv run --project packages/python --frozen --extra postgres python artifacts/V1/check_pool_resources.py
+uv sync --project packages/python --frozen
+uv run --project packages/python --frozen pytest packages/python/tests tools/tests -q
+uv run --project packages/python --frozen mypy --config-file packages/python/pyproject.toml packages/python/src
+python3 tools/check_seal.py
+```
+
+Results: 27 focused cases; 199 combined Python/tool cases in the default environment without optional drivers; strict typing passed for seven source files; 16 sealed hashes matched. The workspace-only hosted harness passed on the established direct connection with `verify-full` and TLS 1.3. It demonstrated owned reuse, acquisition deadline/saturation/cancellation, owned shutdown, borrowed-pool preservation and an unrelated caller lease remaining usable. It used fixed SELECTs and explicit caller transactions, changed no application/schema/role/policy data, closed every task-owned pool and used at most two connections. The ignored harness and sanitized result are local evidence, not integration artifacts shipped in a fresh checkout. [Detailed evidence and limits](../evaluation/reports/V1/V1-02A.md).
+
+No manifests/locks, public schemas, migrations, TypeScript or approved corpus changed. No TypeScript/artifact/hosted-CI/live-model run occurred for this child. V1-02A is complete; parent V1-02 remains incomplete until V1-02B schema/capability, transaction scope, statement budgets and runtime-role checks pass. Failure case: a connection returned just after its acquisition deadline must be returned without entering the caller body, even if the event-loop timeout callback has not run yet.
