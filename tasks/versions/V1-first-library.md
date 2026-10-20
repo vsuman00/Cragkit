@@ -1,6 +1,6 @@
 # V1: First usable lexical library
 
-Status: V1-01 schema and migration tooling passed local and hosted administrative checks; native authenticated connection verification remains pending. Completion is tracked only in [todo.md](../todo.md).
+Status: V1-01 is complete after local, hosted administrative and authenticated native verification. V1-02 Python connection lifecycle is next and has not started. Completion is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
