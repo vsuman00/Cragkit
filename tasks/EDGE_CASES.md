@@ -108,6 +108,11 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 | E67 | A rotated database password is followed by pooler rejection and a direct network ban | Distinguish cached pooler authentication from direct reachability, stop repeated attempts/resets, verify authorized ban removal and use a bounded direct check before judging the saved password. Cache involvement requires evidence. | V1-01-D, V1-02, V1-03 | I/M |
 | E68 | A driver returns a connection after its acquisition deadline before the timer callback runs | Recheck the absolute deadline before yielding, return the late connection and release admission; distinguish configured acquisition timeout from request deadline expiry. | V1-02A, V1-03 | U |
 
+| E69 | Hosted CREATEROLE administrator cannot use DROP OWNED for a temporary runtime role | Revoke the fixture's exact table/domain/schema grants, remove its role-specific policies/data, drop only its role and verify cleanup without granting broader administrator or runtime privileges. | V1-02B, V1-03 | I |
+| E70 | A scoped session handle escapes its transaction, or a deadline is too large for a float | Reject cross-task/expired handles and malformed deadlines before SQL; recheck elapsed deadlines after driver returns and caller body completion. | V1-02B, V1-03 | U |
+
+| E71 | A driver suppresses a rollback error or reports failed transaction exit without raising | Verify the connection is IDLE after rollback; discard a nonidle connection and return a typed failure within the cleanup budget. | V1-02B, V1-03 | U/I |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.

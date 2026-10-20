@@ -289,3 +289,45 @@ python3 tools/check_seal.py
 Results: 27 focused cases; 199 combined Python/tool cases in the default environment without optional drivers; strict typing passed for seven source files; 16 sealed hashes matched. The workspace-only hosted harness passed on the established direct connection with `verify-full` and TLS 1.3. It demonstrated owned reuse, acquisition deadline/saturation/cancellation, owned shutdown, borrowed-pool preservation and an unrelated caller lease remaining usable. It used fixed SELECTs and explicit caller transactions, changed no application/schema/role/policy data, closed every task-owned pool and used at most two connections. The ignored harness and sanitized result are local evidence, not integration artifacts shipped in a fresh checkout. [Detailed evidence and limits](../evaluation/reports/V1/V1-02A.md).
 
 No manifests/locks, public schemas, migrations, TypeScript or approved corpus changed. No TypeScript/artifact/hosted-CI/live-model run occurred for this child. V1-02A is complete; parent V1-02 remains incomplete until V1-02B schema/capability, transaction scope, statement budgets and runtime-role checks pass. Failure case: a connection returned just after its acquisition deadline must be returned without entering the caller body, even if the event-loop timeout callback has not run yet.
+
+## V1-02B: Scoped Python sessions
+
+`cragkit._postgres_session.PostgresSession` builds on the internal pool resource. Construct it once around an explicitly opened `PoolResource`. `validate(deadline=...)` checks the leased runtime connection's role, UTF-8/native FTS support, table/column types, RLS flags, absence of security-definer routines and exact migration history. These are compatibility checks, not proof against an administrator changing the database. Migrations remain explicit and separate.
+
+For example, trusted application code can run the bounded identifier probe:
+
+```python
+adapter = PostgresSession(resource)
+loop = asyncio.get_running_loop()
+await adapter.validate(deadline=loop.time() + 5.0)
+async with adapter.transaction(request, scope=trusted_scope,
+                               deadline=loop.time() + 5.0) as session:
+    identifiers = await session.visible_documents(limit=20)
+```
+
+This probe returns published ready document/revision identifiers. It does not rank evidence, load source text or implement `SearchStore`. Its filter capability is string `document_id`/`revision_id` with `eq`, `ne`, `in`, `and`, `or` and `not`. Valid but unsupported fields, numeric comparisons or scalar types fail with `UnsupportedCapability` before SQL. Values remain parameters; column names and operators come from fixed code. All predicates are combined with tenant, collection, tombstone, authorization revision and principal/grant checks before the result limit.
+
+Every transaction checks the actual leased database role. Administrative, owner, bypass, write-capable and owner-member roles are rejected. The runtime needs narrowly granted reads and application-managed RLS policies, including read access to the migration ledger; the dedicated development deployment's default deny state is preserved outside the explicit temporary acceptance fixture. Borrowed pools retain caller ownership and transport configuration. The caller must provide idle compatible psycopg connections and configure their TLS verification; the session layer validates the actual database role for borrowed and owned connections alike.
+
+Transactions are read-only at repeatable-read isolation, with a fixed search path and transaction-local tenant/principal/authorization/grant settings. The effective deadline is the earlier of the supplied absolute loop deadline and request limit. Each statement uses the remaining budget, and the Python timeout also bounds caller body awaits. Cleanup rolls back even on success, with a separate bounded release budget; an uncertain begin or failed rollback discards the connection. Cooperative cancellation is required of caller code and drivers. Scoped handles cannot be used after exit or from a different task.
+
+Final verification passed; see [the task report](../evaluation/reports/V1/V1-02B.md). A failure case is a pooled connection retaining tenant A's session settings when tenant B reuses it. Transaction-local context plus rollback prevents that carryover; fixed query predicates provide a separate scope boundary. Exercise: trace acquire, begin, validate, bind, query, rollback and release, and explain why a valid `TrustedScope` object does not authenticate its caller.
+
+
+Verified final commands from the root:
+
+```sh
+uv sync --project packages/python --frozen --extra postgres
+uv run --project packages/python --frozen --extra postgres pytest packages/python/tests/test_postgres_pool.py packages/python/tests/test_postgres_session.py -q
+uv run --project packages/python --frozen --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/supabase/python-runtime-check.json" --allow-test-writes
+uv sync --project packages/python --frozen
+uv run --project packages/python --frozen pytest packages/python/tests tools/tests -q
+uv run --project packages/python --frozen mypy --config-file packages/python/pyproject.toml packages/python/src
+python3 tools/check_seal.py
+```
+
+Results: 66 focused and 238 combined cases passed; strict typing passed for nine source files without optional drivers; 16 sealed hashes matched. Final hosted runtime-role, same-connection tenant reuse, principal/grant/revision and literal-filter checks, observed blocked-query timeout/cancellation, unsafe-administrator rejection and schema rejection/restoration passed. The harness verified complete fixture/role/policy cleanup. Final administrative history, invariants and security probes also passed in one native session. A fresh V1-02A hosted lifecycle smoke run passed separately; its ignored harness remains workspace-only evidence.
+
+The committed harness requires an owner-only regular JSON configuration file containing scalar `PoolConfig` fields. Use absolute strings for `sslrootcert` and `passfile`; the latter points to the existing private libpq password file. Never put a password or connection URI in that JSON or the repository. The tested configuration used maximum pool size one, one waiter, startup five seconds, acquisition one second, close three seconds and release one second. The harness forces runtime pool size one, uses a temporary SCRAM-authenticated LOGIN role with a ten-minute expiry and one-connection limit, and permits at most two native client connections. It refuses without the test-write flag, nonempty application tables or preexisting Cragkit policies. Run it only against an unused dedicated development target: it temporarily renames a schema column to verify incompatibility rejection. It takes the migration advisory lock and restores the schema, revokes its exact grants, removes synthetic rows/policies and drops the role in bounded cleanup. Its total request-work timeout is 90 seconds and final cleanup has a separate 25-second budget. Hard process termination can interrupt cleanup; a reported cleanup failure requires inspection before another run.
+
+An initial cleanup failure exposed the distinction between `CREATEROLE` and permission to `DROP OWNED BY`; exact revokes fixed it without broader privileges. One intermediate run returned a safe `ProviderUnavailable`; traced and canonical follow-ups passed, and the cause was not established. Driver-source inspection independently led to an IDLE check after rollback because transaction exit can suppress errors. These findings and their scope are preserved in the report. No permanent application runtime role or positive RLS policies remain configured; the acceptance role was temporary. V1-02 is complete; V1-03 is next.

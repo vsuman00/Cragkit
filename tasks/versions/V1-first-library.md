@@ -1,6 +1,6 @@
 # V1: First usable lexical library
 
-Status: V1-01 is complete after local, hosted administrative and authenticated native verification. V1-02 has started with its internal pool resource child; schema/capability and transaction-local scope work remains next. Completion is tracked only in [todo.md](../todo.md).
+Status: V1-01 and V1-02 are complete after local and authenticated native hosted verification, including Python runtime-login scope and cleanup tests. V1-03 native TypeScript connection lifecycle is next. Completion is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 

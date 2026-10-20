@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 from typing import AsyncIterator, Callable, Protocol, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -201,7 +202,8 @@ class PoolResource:
     async def lease(self, *, deadline: float) -> AsyncIterator[ConnectionProtocol]:
         """Bound acquisition by an absolute loop deadline; the caller bounds body work."""
         loop = asyncio.get_running_loop()
-        if isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or not math.isfinite(deadline):
+        if (isinstance(deadline, bool) or not isinstance(deadline, (int, float))
+                or abs(deadline) > sys.float_info.max or not math.isfinite(deadline)):
             raise InvalidRequest()
         if deadline <= loop.time():
             raise DeadlineExceeded()

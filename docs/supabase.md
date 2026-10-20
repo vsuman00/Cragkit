@@ -100,3 +100,10 @@ Record migration hashes/rerun results, application-table rollback purity, effect
 V1-01 is COMPLETE after the recorded hosted and native authenticated acceptance. No V1-02 pool adapter, permissive RLS policy, new auth flow or production-readiness claim follows from this runbook.
 
 Learning remains pending. One failure case is a native client that connects with encryption but skips hostname verification: the plugin's successful SQL response cannot close that gap. Exercise: explain which check proves object privileges, which proves row denial, and which proves the native client's TLS identity verification.
+
+
+## Python runtime lifecycle acceptance
+
+V1-02 is now complete. The [committed explicit harness](../tools/check_python_postgres.py) passed native certificate/hostname-verified tests using a temporary nonowner, nonbypass LOGIN role, role-specific RLS policies and synthetic data. It proved separate trusted scope on a reused physical connection, principal/grant/revision checks, parameterized identifier filters, observed blocked-statement timeout/cancellation, schema incompatibility rejection and restoration, and administrative-role rejection. All fixture policies, data, grants, credentials and the temporary role were removed; the deployment remains private with default-deny RLS. This does not provision permanent application credentials or authorize production tenant policy design. See [commands and configuration](development.md#v1-02b-scoped-python-sessions) and [full evidence](../evaluation/reports/V1/V1-02B.md).
+
+Post-cleanup native history/invariants/security probes passed. Security advisors report nine INFO [RLS-without-policy notices](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy), matching the deliberate default-deny deployment; performance advisors report two INFO [unused lexical indexes](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index). No WARN/ERROR advisories were returned. Permanent runtime permission and policy work remains in its planned task.
