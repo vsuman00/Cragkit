@@ -59,6 +59,8 @@ For this target, root obtained the dashboard CA and verified a PostgreSQL SSLReq
 
 Owner-only CA and nonsecret target configuration were prepared outside the repository. The user saved a private password file; root verified its owner and mode `0600`. The native runner and bounded `psql` diagnostic reached password authentication failure with `verify-full` configured. No authenticated SQL session succeeded; the user must correct the saved project database password through the hidden prompt's explicit `--replace` option. The successful handshake proves this transport's certificate-chain/hostname verification; it does not prove database login or SQL privileges. Network restrictions currently allow all IPs; a restricted source allowlist has not been configured or verified.
 
+On the next private-save attempt, the direct endpoint refused connections before authentication. The project remained ACTIVE_HEALTHY and direct DNS was IPv6-only. Root independently checked the actual session pooler: native libpq with the downloaded Supabase CA and `verify-full` passed transport verification but received password authentication failure. A system-CA attempt was rejected, not trusted or downgraded. The temporary pooler credential file was removed and the selected direct configuration preserved. No native authenticated SQL acceptance passed; see the latest [follow-up evidence](../evaluation/reports/V1/V1-01-H-hosted.md#acceptance-and-next-action).
+
 The explicit `--local-socket` option is for isolated task-owned local tests only. It requires an absolute existing socket directory matching `PGHOST`, rejects redirection and cannot fall back to TCP. It is not a hosted connection workaround or evidence of remote TLS acceptance.
 
 ## Run and record acceptance
