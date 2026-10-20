@@ -103,6 +103,9 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 | E63 | Approximate vector index is proposed for measured scale needs | Test filtered recall/underfill and bounded expansion/exact fallback with unchanged scope. Exact search remains the baseline until justified. | V2-08, V6-03, conditional optimization gate | I/L |
 | E64 | Final-answer generation is added to a demo | Evaluate unsupported claims and citation support separately; retrieval tests alone do not establish answer faithfulness. | V6-02, conditional demo gate | L/M |
 
+| E65 | Stored PostgreSQL catalog-OID types prevent a hosted database upgrade | Store lexical configuration names as text, resolve them with the fixed search path at use, reject missing names and preserve existing vectors through the migration. | V1-01-C, V6-07 | I |
+| E66 | A hosted endpoint certificate cannot be verified or plaintext startup is attempted | Reject the connection without downgrading TLS; verify the selected endpoint's certificate and hostname, and test enforced plaintext rejection without sending a password. | V1-01-H, V1-02, V1-03 | I |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.

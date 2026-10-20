@@ -21,7 +21,7 @@ The SQL file is the authoritative column and constraint definition. Every docume
 | `document_revisions` | Document key and revision; source locator/digest, immutable canonical text/digest and parser identity. |
 | `index_generations` | Document key and generation; scoped revision, chunker/lexical profiles, optional embedding-profile declaration, staging/ready/failed state and expected count. |
 | `chunks` | Full generation/revision key and chunk; scoped parent, ordinal, canonical byte span, exact text/digest and object metadata. |
-| `chunk_lexical` | Full chunk key; explicit `regconfig`, maintained `tsvector` and separate exact identifier tokens. |
+| `chunk_lexical` | Full chunk key; text configuration name resolved as `regconfig` during vector maintenance, maintained `tsvector` and separate exact identifier tokens. |
 | `document_grants` | Document key and grant; optional principal and authorization revision. Membership resolution belongs to the application. |
 | `ingestion_jobs` | Tenant, collection and stable intent; scoped document/generation, payload digest, state, nonnegative safe attempt count and allowlisted error code. |
 
@@ -31,7 +31,7 @@ Canonical revision digests are checked against `convert_to(canonical_text, 'UTF8
 
 All revision updates are rejected, including locator or timestamp updates. Deletion remains available for explicit purge: clear active-generation and retained-job references before deleting a revision, or delete the owning document and its derived rows together. Scoped cascading foreign keys remove derived data. These are administrative capabilities, not an automatic retention policy. Deferred active-generation and parent/job references are checked at transaction completion or an explicit constraint check.
 
-The lexical trigger computes `to_tsvector(language_config, chunk.text)` from the referenced chunk on lexical insert/update, and refreshes it after a chunk text update. The search vector and exact identifier array have independent GIN indexes. This is native PostgreSQL FTS, not BM25. Declaring a generation `ready` or setting an active pointer does not itself validate expected counts or implement the later compare-and-swap publication protocol.
+After `0002_portable_lexical_config.sql`, the lexical trigger computes `to_tsvector(language_config::regconfig, chunk.text)` from the referenced chunk on lexical insert/update, and refreshes it after a chunk text update. The search vector and exact identifier array have independent GIN indexes. Configuration names are stored as text to avoid the hosted upgrade limitation of stored `regconfig` OIDs. Names are validated by the explicit cast during lexical insert/update; changing a configuration rebuilds its vector. Three additional composite indexes cover parent-chunk, active-generation and ingestion-job foreign keys. This is native PostgreSQL FTS, not BM25. Declaring a generation `ready` or setting an active pointer does not itself validate expected counts or implement the later compare-and-swap publication protocol.
 
 ## Explicit connection and checks
 
@@ -47,7 +47,7 @@ python3 tools/check_postgres.py --check --confirm-dedicated-target --integration
 
 The integration fixture takes the migration lock and exclusive application-table locks, requires empty application tables, inserts only synthetic data and rolls everything back. It exercises scoped foreign keys, immutable revisions, Unicode byte spans, identity bounds and transaction rollback. It does not delete preexisting data or establish runtime-role isolation. The runner suppresses raw database output and returns bounded, redacted status messages.
 
-An explicitly selected task-owned Unix socket can support disposable local verification with `--local-socket /absolute/socket/directory`, matching `PGHOST`. Only this mode disables TLS; it cannot silently fall back to TCP. Existing PostgreSQL binaries may be used without installing tools. Local SQL results and hosted Supabase results must be recorded separately in [development evidence](../../docs/development.md) and [the tracker](../../tasks/todo.md). A dedicated Supabase target is still pending; local verification does not satisfy that hosted acceptance requirement.
+An explicitly selected task-owned Unix socket can support disposable local verification with `--local-socket /absolute/socket/directory`, matching `PGHOST`. Only this mode disables TLS; it cannot silently fall back to TCP. Existing PostgreSQL binaries may be used without installing tools. Local SQL results and hosted Supabase results must be recorded separately in [development evidence](../../docs/development.md) and [the tracker](../../tasks/todo.md). The user-created Cragkit target in Singapore has passed hosted administrative migration and security probes; see [the current hosted evidence](../../evaluation/reports/V1/V1-01-H-hosted.md). A direct TLS handshake verified the CA and hostname. Password-authenticated native SQL is a separate pending check.
 
 ## Access boundary and pending work
 

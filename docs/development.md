@@ -225,3 +225,25 @@ The [Supabase runbook](supabase.md), scoped deployment hardening and SQL securit
 Root ran `python3 artifacts/V1/run_supabase_security_local.py` using the existing temporary-cluster harness. It reapplied all migration/integrity checks, seeded three representative API roles and unsafe privileges, verified removal and safe hardening reruns, verified nine-table RLS and populated-row denial under a temporary nonowner role, detected owner-assumption/admin-attribute/RLS/privilege regressions, and preserved unrelated-schema grants. The cluster stopped and its files were removed. The generated harness/result remain ignored local artifacts; the deployment and probe SQL are committed.
 
 `uv run --project packages/python --frozen pytest tools/tests/test_check_postgres.py -q` passed all 17 tests; `python3 tools/check_seal.py` verified all 16 sealed files. The native package sources and initial migration bytes are unchanged. These results are local preparation, not hosted security or native TLS evidence.
+
+
+## Hosted Supabase checkpoint: 20 October 2026
+
+Current target: the user-created Cragkit project, Singapore, PostgreSQL 17.11 and UTF-8. Root used the Supabase plugin to apply the exact checksummed initial migration, private-schema hardening and `0002_portable_lexical_config.sql`. Hosted schema/integrity and nonowner security probes passed; guarded reruns retained both original checksums and application timestamps. The plugin endpoint's transactional rollback was tested before application. [Hosted evidence](../evaluation/reports/V1/V1-01-H-hosted.md), [connection and security guide](supabase.md).
+
+The new migration resolves the stored-`regconfig` upgrade warning and four unindexed-foreign-key advisor findings using text configuration names and three covering indexes. Fixed-path casts validate configuration names when maintaining vectors. Root ran `python3 artifacts/V1/run_supabase_0002_local.py`: fresh two-migration installation, populated 0001-to-0002 vector preservation, safe reruns, rollback/drift checks, lexical configuration changes and security probes passed. The task-owned cluster stopped and its files were removed. E65/E66 record the discovered upgrade and TLS failure cases.
+
+Final hosted advisors reported no WARN/ERROR: nine INFO notices reflect intentional default-deny RLS without policies; two performance INFO notices concern unused GIN indexes in the empty development database. These notices are retained and explained, not suppressed with broad policies or removed indexes. All eight application tables are empty after the probes; the temporary role and failure-probe schema are absent. This is scoped development evidence, not production readiness or measured retrieval performance.
+
+Dashboard controls: mandatory database TLS enabled after its restart; unused Data API disabled and independently observed on its settings page. Private-schema access is revoked from PUBLIC and Supabase API roles, and all nine tables have RLS. Network restrictions still allow all IPs; no allowlist was invented without development-network requirements. Administrative credentials remain separate from future runtime credentials.
+
+A PostgreSQL SSLRequest handshake from native Python to the actual direct endpoint verified the downloaded CA and hostname with TLS 1.3. A plaintext startup without a password was rejected with SQLSTATE 28000. The session-pooler handshake failed certificate verification with that CA; it was rejected and not selected. The direct endpoint is selected in an owner-readable configuration outside Git. No password has been requested in chat.
+
+Native authenticated SQL remains pending until the user saves the database password through the private local prompt. The workspace-only helper `python3 artifacts/V1/configure_private_password.py` uses a hidden terminal prompt and writes an owner-only libpq password file outside the repository. It preserves an existing file and prints no password. The CA and nonsecret connection environment are under `~/.config/cragkit/supabase/`. After saving, load the prepared settings and run:
+
+```sh
+source ~/.config/cragkit/supabase/ksvzlzklspfghrhirogt.env
+python3 tools/check_postgres.py --check --confirm-dedicated-target --integration
+```
+
+This native command is prepared, not yet verified. It does not apply migrations; initial hosted DDL was explicit through the plugin. Full regression rerun after the corrective migration: 172 Python/tool tests passed; `npm test` built TypeScript and passed 78 tests; all 16 sealed hashes matched. No package release, hosted CI, runtime pool adapter or live-model evaluation occurred.

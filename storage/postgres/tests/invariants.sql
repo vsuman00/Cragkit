@@ -130,7 +130,7 @@ SELECT tenant_id,collection_id,'shared','shared-rev','shared-gen','shared-chunk'
     encode(sha256(convert_to('Café 🙂','UTF8')),'hex')
 FROM cragkit.documents WHERE document_id='shared';
 INSERT INTO cragkit.chunk_lexical(tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,language_config,search_vector)
-SELECT tenant_id,collection_id,'shared','shared-rev','shared-gen','shared-chunk','pg_catalog.simple'::regconfig,'forged'::tsvector
+SELECT tenant_id,collection_id,'shared','shared-rev','shared-gen','shared-chunk','pg_catalog.simple','forged'::tsvector
 FROM cragkit.documents WHERE document_id='shared';
 INSERT INTO cragkit.document_grants(tenant_id,collection_id,document_id,grant_id)
 SELECT tenant_id,collection_id,'shared','read' FROM cragkit.documents WHERE document_id='shared';
@@ -144,14 +144,14 @@ DO $probe$ BEGIN
         RAISE EXCEPTION 'repeated_scoped_identifiers_failed';
     END IF;
     IF EXISTS (SELECT 1 FROM cragkit.chunk_lexical WHERE document_id='shared'
-        AND search_vector <> to_tsvector(language_config,'Café 🙂')) THEN
+        AND search_vector <> to_tsvector(language_config::regconfig,'Café 🙂')) THEN
         RAISE EXCEPTION 'forged_lexical_vector_not_replaced';
     END IF;
 END $probe$;
 UPDATE cragkit.chunk_lexical SET search_vector='forged'::tsvector WHERE document_id='shared';
 DO $probe$ BEGIN
     IF EXISTS (SELECT 1 FROM cragkit.chunk_lexical WHERE document_id='shared'
-        AND search_vector <> to_tsvector(language_config,'Café 🙂')) THEN
+        AND search_vector <> to_tsvector(language_config::regconfig,'Café 🙂')) THEN
         RAISE EXCEPTION 'lexical_vector_update_not_replaced';
     END IF;
 END $probe$;
@@ -159,10 +159,41 @@ UPDATE cragkit.chunks SET start_byte=6,end_byte=10,text='🙂',
     text_sha256=encode(sha256(convert_to('🙂','UTF8')),'hex') WHERE document_id='shared';
 DO $probe$ BEGIN
     IF EXISTS (SELECT 1 FROM cragkit.chunk_lexical WHERE document_id='shared'
-        AND (search_vector <> to_tsvector(language_config,'🙂')
-            OR search_vector = to_tsvector(language_config,'Café 🙂'))) THEN
+        AND (search_vector <> to_tsvector(language_config::regconfig,'🙂')
+            OR search_vector = to_tsvector(language_config::regconfig,'Café 🙂'))) THEN
         RAISE EXCEPTION 'chunk_text_change_did_not_refresh_lexical_vector';
     END IF;
+END $probe$;
+-- Text configuration names must remain valid and changing them must rebuild the vector.
+INSERT INTO cragkit.document_revisions(tenant_id,collection_id,document_id,revision_id,source_sha256,source_locator,canonical_text,canonical_sha256,parser_id)
+VALUES ('probe-a','docs','shared','config-rev',
+    encode(sha256(convert_to('Running workers jumped.','UTF8')),'hex'),'synthetic:config',
+    'Running workers jumped.',encode(sha256(convert_to('Running workers jumped.','UTF8')),'hex'),'probe.v1');
+INSERT INTO cragkit.index_generations(tenant_id,collection_id,document_id,revision_id,generation_id,chunker_profile,lexical_profile,expected_chunk_count)
+VALUES ('probe-a','docs','shared','config-rev','config-gen','probe.v1','native_fts.v1',1);
+INSERT INTO cragkit.chunks(tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,ordinal,start_byte,end_byte,text,text_sha256)
+VALUES ('probe-a','docs','shared','config-rev','config-gen','config-chunk',0,0,
+    octet_length('Running workers jumped.'),'Running workers jumped.',
+    encode(sha256(convert_to('Running workers jumped.','UTF8')),'hex'));
+INSERT INTO cragkit.chunk_lexical(tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,language_config,search_vector)
+VALUES ('probe-a','docs','shared','config-rev','config-gen','config-chunk','pg_catalog.simple','forged');
+UPDATE cragkit.chunk_lexical SET language_config='pg_catalog.english' WHERE chunk_id='config-chunk';
+DO $probe$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM cragkit.chunk_lexical WHERE chunk_id='config-chunk'
+        AND language_config='pg_catalog.english'
+        AND search_vector=to_tsvector('pg_catalog.english'::regconfig,'Running workers jumped.')
+        AND search_vector<>to_tsvector('pg_catalog.simple'::regconfig,'Running workers jumped.')) THEN
+        RAISE EXCEPTION 'configuration_change_did_not_rebuild_lexical_vector';
+    END IF;
+    BEGIN
+        UPDATE cragkit.chunk_lexical SET language_config='cragkit_missing_configuration'
+            WHERE chunk_id='config-chunk';
+        RAISE EXCEPTION 'missing_configuration_name_accepted';
+    EXCEPTION WHEN undefined_object THEN NULL; END;
+    BEGIN
+        UPDATE cragkit.chunk_lexical SET language_config=NULL WHERE chunk_id='config-chunk';
+        RAISE EXCEPTION 'null_configuration_name_accepted';
+    EXCEPTION WHEN not_null_violation THEN NULL; END;
 END $probe$;
 DELETE FROM cragkit.documents WHERE document_id='shared';
 SET CONSTRAINTS ALL IMMEDIATE;

@@ -2,7 +2,7 @@
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. Next smallest task: V1-01 (IMPLEMENTED_UNVALIDATED; local checks passed, hosted target pending). Complete each task's acceptance before starting its dependents.
+V0: COMPLETE locally. Next smallest task: V1-01 (IMPLEMENTED_UNVALIDATED; hosted schema/security passed, native authenticated check pending). Complete each task's acceptance before starting its dependents.
 
 Use status notes when needed: READY, IN_PROGRESS, BLOCKED, IMPLEMENTED_UNVALIDATED, COMPLETE. Check a box only for COMPLETE and attach evidence. Public publication remains pending until actually authorized and verified.
 
@@ -44,7 +44,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 [Version plan](versions/V1-first-library.md)
 
-- [ ] V1-01: [Schema and explicit migrations](versions/V1-first-library.md#v1-01-schema-and-explicit-migrations) — IMPLEMENTED_UNVALIDATED; schema/tooling and local PostgreSQL checks passed; required dedicated Supabase target/verification pending. [Evidence](../evaluation/reports/V1/V1-01.md).
+- [ ] V1-01: [Schema and explicit migrations](versions/V1-first-library.md#v1-01-schema-and-explicit-migrations) — IMPLEMENTED_UNVALIDATED; schema/tooling, hosted migrations and security checks passed; native authenticated connection verification pending. [Evidence](../evaluation/reports/V1/V1-01.md).
 
 - [ ] V1-02: [Python connection lifecycle](versions/V1-first-library.md#v1-02-python-connection-lifecycle) — evidence: pending.
 
@@ -322,3 +322,25 @@ V1-01-H handoff: local security preparation and final integration passed. A deli
 Hosted configuration is WAITING_FOR_ORGANIZATION_CHOICE. Plugin tools explicitly require choosing the organization before cost/provisioning; root asked whether to use vsuman00's Org and Mumbai. No answer, cost quote, project creation, hosted SQL or advisors yet. Root opened an authenticated dashboard session for unsupported settings; no project setting was changed. Native TLS/CA/connection-mode and runtime permissions remain unverified. Parent V1-01 stays unchecked/IMPLEMENTED_UNVALIDATED; V1-02 has not started. Next: receive the organization choice, quote actual cost, obtain approval for any nonzero cost, provision dedicated target and perform hosted security/configuration checks. Learning remains pending.
 
 Final preparation checks: four prose files/104 local links passed, no deterministic text changes, initial migration preserved, common libpq credential-file ignores verified and whitespace clean. The locally verified security preparation follows the authorized commit/push workflow; hosted state remains pending the organization choice.
+
+
+## V1-01-H hosted execution: 20 October 2026
+
+The user created the dedicated Cragkit project. Root discovered and verified project `ksvzlzklspfghrhirogt`, name Cragkit, region ap-southeast-1 (Singapore), in the existing organization, ACTIVE_HEALTHY, PostgreSQL17.11/UTF8. This supersedes the proposed new Mumbai project; no provisioning/cost action is needed from root. Read-only preflight returned no public/cragkit application tables, no cragkit schema and no recorded Supabase migrations. Server SSL is enabled and the plugin SQL session uses SSL. Native client verification remains separate and unconfigured.
+
+Shared outcome H-r2: securely configure the user-created dedicated target, apply immutable initial migration and private-schema hardening, execute hosted relational/security probes, review advisors and record platform/client TLS evidence accurately. No new project, cost approval, unrelated project changes, new auth flow or V1-02 adapter work.
+
+- H-r2-A: `/root/coordinate_peer`, Sol `gpt-6.1-sol`, owns docs/supabase.md and is assembler. Update the secure runbook with verified target/setup and explicit remaining native-client limitations; review root's plugin migration transaction/ledger method.
+- H-r2-B: `/root/manager_peer`, Sol `gpt-6.1-sol`, owns evaluation/reports/V1/V1-01-H-hosted.md. Independently audit hosted security evidence and advisor findings supplied by root, prepare scoped acceptance/limitations and coordinate claims directly with A.
+- Root owns every remote/UI/credential operation, SQL/tool artifacts, tracker, development/status docs and Git. Existing migration/deployment/probe files retain frozen revisions; one remote writer and one test process. No peer hosted calls, services, credentials, installs or Git. Root sends actual results to both; peers resolve dependencies directly, report material changes and escalate unresolved reasoning to root/Astra. Root performs final checks and tracker completion. State: running.
+
+H-r2 corrective child V1-01-C approved: hosted advisor found one actionable unsupported_reg_types warning for stored regconfig and four unindexed-FK notices. A/B agreed a plain-text config name resolved with explicit ::regconfig at use, preserving the fixed pg_catalog search path and all lexical semantics. A now solely owns new storage/postgres/migrations/0002_portable_lexical_config.sql and storage/postgres/tests/invariants.sql in addition to its runbook; B remains sole hosted-report owner and has stopped SQL writing. Add three covering indexes for parent chunks, active document generations and job generations (the last covers the document prefix too). Preserve 0001 bytes, no new policies/global grants/public API change. Root verifies locally before hosted application and reruns hosted probes/advisors. Initial/hardening/guarded-rerun and hosted integrity/security probes passed; core ledger initial checksum/timestamp remained unchanged. Dashboard TLS enforcement enabled and visibly verified after its restart; native credentials remain unconfigured.
+
+
+H-r2 integration handoff: both hosted migrations and hardening passed; the first empty-target API rollback probe failed deliberately and left no schema/table/audit entry. Initial/rerun, both version checksums/timestamps, updated relational/integrity/configuration and security probes passed. All eight application tables remain empty and temporary role/schema are absent. Supabase migration audit records are separate from the two-row Cragkit checksum ledger. V1-01-C resolved the unsupported regconfig warning with plain-text configuration names and three missing-FK covering indexes; populated local upgrade preserved vectors and the initial ledger. A owned 0002/invariants/runbook, B owned hosted evidence, communicated directly and assembled under A; root inspected and ran final checks.
+
+Actual final security state: 9 RLS tables, no row policies (deny by default), no API-role private schema/object access, mandatory database TLS enabled and Data API disabled. Final advisors: 9 intended RLS INFO and 2 unused-GIN INFO, no WARN/ERROR; no permissive policies/index removals to silence notices. Native direct TLS1.3 required-CA/hostname verification passed and plaintext startup without password was rejected with SQLSTATE 28000; pooler CA verification failed and was not downgraded. Direct CA/nonsecret env prepared outside Git with owner-only files; private pgpass is pending. The user selected the private-save option and will reply saved; this is intent, not a successful native login.
+
+Final regression checks rerun: 172 Python/tool tests, TypeScript build/78 tests and 16 sealed hashes passed. Temporary local PostgreSQL cluster stopped/removed; no tools/models/optional drivers installed. Native source/contracts/locks and 0001 bytes preserved. E65/E66 added for upgrade/catalog-OID and TLS failure regressions. Docs updated for actual target/configuration. Parent V1-01 remains IMPLEMENTED_UNVALIDATED and V1-02 has not started. Next: after user saves privately, run authenticated native --check/--integration, then close acceptance and choose V1-02. Learning remains pending.
+
+Final review: ten changed prose files and 160 local links/anchors passed; deterministic prose cleanup made no changes. Whitespace and scoped credential-pattern checks passed. Both migration hashes match the hosted ledger, and 0001 remains byte-identical to the prior commit. No task-owned PostgreSQL process remains. The twelve-path change is ready for the authorized commit/push; the private password file is still absent, so authenticated native acceptance remains pending.

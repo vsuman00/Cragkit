@@ -6,9 +6,15 @@ Cragkit uses Supabase as hosted PostgreSQL. Native Python and TypeScript librari
 
 ## Current evidence and pending setup
 
-At this runbook's preparation, no dedicated project has been created. The plugin listed one organization, `vsuman00's Org`; the required explicit organization choice is pending. Do not select an organization, paid option, region or existing unrelated project by inference. Root owns provisioning and records the user's actual decisions and resulting target in the tracker and task evidence.
+On 20 October 2026, root verified the user-created dedicated `Cragkit` project, reference `ksvzlzklspfghrhirogt` in Singapore (`ap-southeast-1`), in the existing organization, with `ACTIVE_HEALTHY` status and PostgreSQL 17.11 using UTF-8. This supersedes the earlier proposed Mumbai project; no new provisioning or cost action is needed for this target. Use this identified project rather than an unrelated existing project.
 
-Initial migration, rerun, history, relational, byte/digest, FTS and purge checks have passed on a task-owned local PostgreSQL 17.11 Unix-socket cluster. That cluster was stopped and removed. Hosted execution, project compatibility, native certificate-verified connectivity, dashboard settings and hosted security/advisor results remain pending. Local superuser checks do not prove a hosted runtime role's permissions or authorization policy.
+Root's read-only hosted preflight found no `cragkit` schema, no public or Cragkit application tables and no recorded Supabase migrations. The plugin session ran as administrative `postgres`, which was not a superuser but had role-creation and RLS-bypass attributes. Server SSL was enabled and the plugin SQL session used SSL. Root subsequently enabled the distinct dashboard SSL-enforcement setting and observed it enabled after the project restart. These observations do not prove a native client's certificate-chain or hostname verification or Data API configuration. Native connection environment and credential files were not configured at preflight.
+
+Initial migration, rerun, history, relational, byte/digest, FTS and purge checks previously passed on a task-owned local PostgreSQL 17.11 Unix-socket cluster, including local deployment-hardening and transactional nonowner security probes. That cluster was stopped and removed. Root has now applied the initial migration and hardening to the dedicated hosted target. Hosted relational and security probes passed; at that initial checkpoint, the guarded initial-migration rerun retained one Cragkit ledger row and its original checksum and application timestamp. These administrative checks do not prove a hosted runtime role's positive authorization policy. See [the hosted evidence report](../evaluation/reports/V1/V1-01-H-hosted.md) for the actual records.
+
+Hosted advisors initially identified a `regconfig` storage-type upgrade warning and four missing foreign-key indexes. The [second migration](../storage/postgres/migrations/0002_portable_lexical_config.sql) is now verified locally and applied on the hosted target: it stores configuration names as text, validates them through explicit casts when maintaining vectors, and adds three indexes covering all four foreign keys. Fresh application, a populated initial-schema upgrade, FTS preservation, reruns, configuration-change/rejection probes and security checks passed locally. Root removed the temporary cluster afterward. Hosted integrity/security reruns passed, the text column and three indexes were confirmed, and the initial migration checksum/timestamp were preserved.
+
+Final hosted advisors report nine informational RLS-without-policy findings, matching deliberate default denial, and two unused GIN-index notices in the new empty database. The upgrade warning and missing-FK-index notices are resolved. Root confirmed all nine tables have RLS and all eight application tables remain empty. Data API is disabled. Authenticated native database access remains pending; transport and platform-setting results are recorded below.
 
 The plugin's administrative SQL and advisor tools can inspect database configuration. Its currently available capabilities do not include SSL-enforcement or Data API settings controls. An authorized dashboard session may be needed to inspect and configure those settings. Do not record an unperformed dashboard action as complete, or treat an unavailable setting tool as proof of a secure default.
 
@@ -21,6 +27,8 @@ Use the project's Connect panel to obtain its actual host, port, database and us
 ## Keep the schema private
 
 Do not expose `cragkit` through the Data API. Inspect the project's exposed-schema list; when the project uses no Data API, configure it disabled where available. Keep private-schema privileges absent for `PUBLIC`, `anon`, `authenticated` and `service_role`. The service role's RLS bypass makes privilege revocation necessary even when all tables have RLS enabled. Supabase distinguishes object grants from row policies; neither a private-sounding schema name nor RLS alone proves the API boundary. [API access controls](https://supabase.com/docs/guides/api/securing-your-api), [RLS behavior](https://supabase.com/docs/guides/database/postgres/row-level-security).
+
+For this dedicated target, root changed the Enable Data API switch from enabled to disabled and saved it. A separate settings tab then explicitly reported "Data API is disabled". This is an observed platform configuration, in addition to the private-schema privilege checks.
 
 After the initial migration, root explicitly applies [the deployment hardening SQL](../storage/postgres/deployment/supabase.sql). It revokes current API-role access in the `cragkit` schema, covers the current creator's per-schema defaults, and enables deny-by-default RLS on the application tables and migration ledger. It creates no broad runtime policy or permanent application login. It must not modify unrelated Supabase schemas or global default privileges.
 
@@ -47,6 +55,10 @@ The runner rejects `PGSERVICE`, `PGSERVICEFILE` and `PGHOSTADDR` redirection, UR
 
 Download the CA from the actual project's SSL configuration and keep the correct DNS hostname. `require` encrypts without hostname verification; `verify-ca` omits the hostname check. Do not silently reduce TLS verification when a connection fails. Diagnose endpoint, network, certificate and connection-mode configuration instead. Separately inspect and enable platform-side SSL enforcement where supported. A plugin-admin query is not evidence of this client's TLS path. [SSL modes and enforcement](https://supabase.com/docs/guides/platform/ssl-enforcement).
 
+For this target, root obtained the dashboard CA and verified a PostgreSQL SSLRequest/TLS handshake to the actual direct DNS endpoint using Python SSL with `CERT_REQUIRED`, hostname checking and TLS 1.3. The session pooler rejected that same CA with `SSLCertVerificationError`; no verification downgrade or silent fallback was used. The direct endpoint is selected. Root also tested a plaintext startup without sending a password; the server rejected it with SQLSTATE `28000` and a no-encryption indication. This corroborates the observed SSL-enforcement setting on the tested direct path.
+
+Owner-only CA and nonsecret target configuration were prepared outside the repository. The user agreed to save the database password privately but has not yet confirmed doing so; no authenticated libpq SQL session has run. The successful handshake proves this transport's certificate-chain/hostname verification; it does not prove database login, SQL privileges or libpq's actual connection path. Network restrictions currently allow all IPs; a restricted source allowlist has not been configured or verified.
+
 The explicit `--local-socket` option is for isolated task-owned local tests only. It requires an absolute existing socket directory matching `PGHOST`, rejects redirection and cannot fall back to TCP. It is not a hosted connection workaround or evidence of remote TLS acceptance.
 
 ## Run and record acceptance
@@ -60,6 +72,12 @@ python3 tools/check_postgres.py --check --confirm-dedicated-target
 ```
 
 The first apply creates the checksummed migration history and schema. The second must leave already applied migration timestamps unchanged. The check must reject unknown, changed, missing or out-of-order history. Preserve the applied `0001_initial.sql` bytes; a later change needs its own reviewed migration.
+
+An administrative plugin migration is a separate execution path. Before application DDL, root tested the actual endpoint with one multi-statement migration that created a task-only private probe schema/table and then divided by zero. The call failed with SQLSTATE `22012`; a separate catalog query confirmed both objects absent, and Supabase's migration history remained empty. No cleanup was required. This establishes rollback for the tested endpoint path, rather than inferring atomicity from the tool description or a multi-statement string.
+
+For that verified path, root adapts the existing runner's generated SQL by removing only its outer `BEGIN`, trailing `COMMIT` and terminal success marker. Preserve every nested DO/function block, the advisory lock, timeouts, history checks, exact initial DDL and checksummed ledger insert together within the endpoint transaction. Keep Supabase's migration history separate from `cragkit.migration_history`; a second endpoint call can add a Supabase record even when the inner Cragkit migration is correctly skipped. Record actual application and rerun results separately from the endpoint rollback probe.
+
+After both migrations, root reran the complete guarded script on the hosted target. Both Cragkit ledger rows retained their checksums and timestamps. Supabase recorded five migration audit entries across these deployment operations; those are separate from the two Cragkit schema versions.
 
 Before adding application data, run the explicit empty-target integration check:
 

@@ -1,6 +1,6 @@
 # V1: First usable lexical library
 
-Status: started with V1-01 schema and migration tooling; local verification passed and required hosted verification is pending. Completion is tracked only in [todo.md](../todo.md).
+Status: V1-01 schema and migration tooling passed local and hosted administrative checks; native authenticated connection verification remains pending. Completion is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 

@@ -1,0 +1,71 @@
+# V1-01-H: Dedicated hosted PostgreSQL evidence
+
+Date: 20 October 2026. State: IN_PROGRESS. This report records the root integrator's supplied hosted observations and their limits. The report author has made no project calls, credential reads or hosted changes. Root owns remote execution and final acceptance; V1-02 has not started.
+
+## Verified preflight
+
+The user created the dedicated Cragkit project. Root verified project reference `ksvzlzklspfghrhirogt`, name Cragkit, region `ap-southeast-1` (Singapore), status `ACTIVE_HEALTHY`, PostgreSQL 17.11 and UTF-8 encoding. This target supersedes the earlier proposed Mumbai provisioning path; no new project or cost action was performed by this reporting lane.
+
+Root's read-only preflight found no application tables in `public` or `cragkit`, no `cragkit` schema and no recorded Supabase migrations. That established the clean starting inventory before migration; subsequent execution evidence is recorded below.
+
+Server SSL is enabled, and the plugin's SQL session reports SSL in use. No native client environment or root environment files were configured at preflight. Plugin-session encryption does not establish libpq CA or hostname verification, the application's connection mode, or platform enforcement against non-TLS connections.
+
+## Hosted evidence and remaining gates
+
+| Area | Current evidence | Acceptance still needed |
+| --- | --- | --- |
+| Initial migration and ledger | Hosted initial migration, corrective 0002, hardening and reruns passed. Two ledger rows exist; initial checksum/timestamp stayed unchanged. | Final acceptance remains root-owned. |
+| Relational and content invariants | Hosted updated invariant script returned `cragkit_migration_ok` after 0002. Local fresh/upgrade/invariant/rerun checks also passed. | No native authenticated-client run yet. |
+| Private-schema hardening | Hosted rehardening and updated security probes passed after 0002; `cragkit_security_probe_ok` returned. Earlier cleanup inventory found no probe role/schema. | Repeat after future object creation; runtime positive policies remain deferred. |
+| Advisors | Final security output contains only nine RLS/no-policy INFO findings; performance output contains only two unused-GIN INFO findings. The type warning and four FK findings are gone. | Expected INFO findings remain disclosed, not silenced by permissive policies. |
+| Data API exposure | Root disabled Enable Data API, saved it, and verified a separate settings tab explicitly said Data API is disabled. | Keep this setting private-schema boundary under review after future platform changes. |
+| Platform SSL enforcement | Dashboard enforcement is enabled; a direct plaintext PostgreSQL startup without a password was rejected with SQLSTATE `28000`, reason class no encryption. | Authenticated native-client checks remain separate. |
+| Native PostgreSQL client | Direct-host PostgreSQL SSLRequest handshake passed with the dashboard CA, TLS 1.3, required certificates and hostname checking. No authenticated login yet. | Private password setup and authenticated native `verify-full` migration/check run. |
+| Runtime authorization | No positive runtime policy or login has been provisioned by this task. | Later scoped runtime-role and adapter tests; administrative probes do not establish application access. |
+
+The plugin's Supabase migration history and `cragkit.migration_history` are separate records. Root tested the plugin endpoint's transaction behavior before application DDL: a multi-statement migration created a task-only probe schema/table and then deliberately raised division-by-zero SQLSTATE `22012`. A separate catalog read found both objects absent, and the Supabase migration list remained empty. No residual probe object or cleanup was needed. This establishes rollback for the tested endpoint path; it is not inferred from metadata alone. Root adapted the existing runner by removing only its outer transaction and success marker while retaining advisory locking, bounded waits, DO blocks, checksums and ledger checks. The subsequent initial migration and private-schema hardening passed, as did a guarded initial rerun submitted as a separate plugin audit entry. At the initial-rerun checkpoint before 0002, the Cragkit ledger contained one row, with checksum `5a7259e6375f8578c8775fe91994bd28b85ff76734744dc2c2b4ee63f623d92f` and unchanged timestamp `2026-10-20T05:13:00.689365+00`. The extra plugin audit entry was not a second Cragkit schema version. At the final checkpoint, the guarded rerun of both migrations passed with two Cragkit ledger rows and both checksums/timestamps unchanged. Supabase audit history held five entries: initial schema, hardening, initial verification, portable lexical configuration and current verification. Audit-entry count and schema-version count have distinct meanings.
+
+Update this table only from actual root results. A planned command, plugin-admin success or local test is not interchangeable with the corresponding hosted/native evidence.
+
+## Hosted advisors and correction review
+
+Root supplied these actual advisor findings after the hosted migration and probes:
+
+- Nine security INFO findings, `rls_enabled_no_policy`, cover the deny-by-default tables. No allow-all policy is justified merely to remove these notices.
+- One security WARN, `unsupported_reg_types`, identifies the stored `language_config` regconfig column as a `pg_upgrade` compatibility problem. This required a reviewed correction; it is not a demonstrated cross-tenant access leak. [Advisor explanation](https://supabase.com/docs/guides/database/database-linter?lint=unsupported_reg_types).
+- Four performance INFO findings identify unindexed foreign keys: chunk parent, document active generation, job document and job generation.
+- Two performance INFO findings identify unused GIN indexes in the new empty database. No workload has exercised them; this is not evidence that planned lexical indexes are unnecessary.
+
+The peers directly reviewed a proposed new migration: store the language configuration as text with explicit regconfig casts when computing vectors, and add three covering indexes for the four FK findings. The job-generation index's leading document-key columns cover its document FK too. Plain text avoids adding a new type/privilege contract. Preserve the initial migration checksum; do not rewrite an already applied migration. Root approved this correction as V1-01-C and the schema peer delivered `0002_portable_lexical_config.sql` and updated invariant assertions. This reporting lane independently inspected the source: conversion order, fixed search path, both FTS casts and three scoped covering indexes matched the approved design. No SQL was changed by the report author.
+
+Root then passed a local fresh-schema/security/rerun/failure/drift harness and a populated initial-schema upgrade. The upgrade preserved the FTS vector and initial ledger checksum/timestamp; repeated apply and updated invariants passed. The task-owned cluster stopped and was removed. Hosted 0002 plus rehardening passed, followed by updated integrity and security success markers. Catalog inspection verified text storage and all three indexes. The 0002 ledger checksum is `a7380a57690791bc5766d969decba36b5a5ec4591d7481601eb0fd5ce096c875`, applied at `2026-10-20T05:19:25.256249+00`; the initial entry stayed unchanged.
+
+Final advisors returned only the nine expected `rls_enabled_no_policy` INFO findings and two unused-GIN INFO findings. No security WARN or ERROR was observed in that result. The unsupported-reg-type warning and all four unindexed-FK findings were absent. The RLS notices are intentional at this phase: no positive runtime policies exist, so nonowner access stays denied; adding permissive policies to silence them would weaken that boundary. [RLS semantics](https://supabase.com/docs/guides/database/postgres/row-level-security). This is the actual scoped advisor result; it is not a claim of universal security or measured index performance.
+
+## Platform and client configuration
+
+Root explicitly enabled SSL enforcement on the dedicated Cragkit project through the dashboard, confirmed the action, waited for restart completion and observed the enabled switch afterward. This is actual platform-setting evidence beyond the earlier server/plugin SSL observations. A direct plaintext PostgreSQL startup attempt, sent without a password, was subsequently rejected with SQLSTATE `28000` and the reason class no encryption. No raw client address is recorded. Network restrictions currently allow all IPs; no restricted source allowlist has been configured or verified. Do not describe TLS enforcement as network isolation.
+
+Root downloaded the actual dashboard CA and tested the PostgreSQL SSLRequest handshake using Python standard-library TLS. The direct database hostname succeeded with TLS 1.3, `CERT_REQUIRED` and hostname checking enabled. The pooler failed certificate verification with the same CA (`SSLCertVerificationError`); no weaker verification or unverified fallback was selected. The direct endpoint is the selected native path.
+
+The CA and nonsecret direct-endpoint environment files were prepared outside the repository with mode `0600`. The password file is still absent, and authenticated native database login remains unverified. The user expressed an intent to save the credential privately but has not confirmed it saved; intent is not evidence that a file exists or that login succeeded. The successful TLS handshake verifies transport identity, not database credentials, permissions or execution of the libpq runner. No password, connection string or private environment value is recorded here. Root then changed Enable Data API from 1 to 0, completed Save and verified that a separate settings tab explicitly stated Data API is disabled. This persisted observation closes the API-setting check; it does not substitute for the separately passed database privilege probes.
+
+## Security review boundaries
+
+The [deployment hardening SQL](../../../storage/postgres/deployment/supabase.sql) targets the private schema and current objects, including the migration ledger, without editing the frozen initial migration or granting public API access. Its per-creator, per-schema default revocations cannot override every global default. Future object creation requires renewed hardening and effective-privilege checks.
+
+The [security probes](../../../storage/postgres/tests/security.sql) inspect effective PUBLIC/API-role access, administrative attributes, owner-assumption paths, RLS and security-definer/policy inventory. Their temporary nonowner role receives narrow test grants to distinguish row denial from missing object privileges, must see no rows, must fail its test insert, and is rolled back. These checks establish only their observed target and role conditions. They do not create a permanent runtime login, authorize all future objects or prove tenant-specific positive policies.
+
+`service_role` normally bypasses RLS. The relevant boundary is denied access to the private schema and objects, together with the actual privilege inventory; enabling RLS alone is insufficient. A successful administrator query also cannot demonstrate denial under an ordinary runtime identity.
+
+Credentials, credential-bearing URLs, raw private source/query content and private environment values do not belong in this report. Native connection setup must follow the scalar libpq configuration, certificate verification and explicit mode requirements in [the Supabase runbook](../../../docs/supabase.md). Keep platform-setting observations, plugin SQL and native-client verification distinct.
+
+## Final regression and cleanup observations
+
+Root reran the full Python/tool suite (172 tests), TypeScript build and suite (78 tests), and all 16 sealed input hashes successfully. Final hosted catalog inventory showed nine RLS-enabled tables, all eight application-table row counts zero and plugin-session SSL true. The synthetic security role/schema were absent at the earlier cleanup checkpoint. Local task clusters were stopped and removed; this report author started no services or processes. These results establish the stated regression and setup scope, not retrieval quality or application runtime authorization.
+
+## Acceptance and next action
+
+Parent V1-01 remains incomplete while required hosted or native-client evidence is missing. The hosted migration, hardening, probes, advisor correction and platform settings now have the evidence above. Authenticated native-client acceptance remains incomplete pending private credential setup and actual SQL execution. Root owns the final acceptance decision and any subsequent native-result update. No production-readiness, live-model quality or measured retrieval-performance claim follows from setup checks.
+
+Learning remains pending. One failure case is treating an encrypted plugin connection as proof of native hostname verification. The next smallest action is private credential setup followed by authenticated native-client verification. Do not infer completion from the user's stated intention to save a credential. The Data API setting, advisor correction and hosted probe reruns have passed.
