@@ -2,7 +2,7 @@
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. V1-01: COMPLETE, including authenticated native hosted checks. V1-02 Python connection lifecycle: COMPLETE, including actual runtime-login hosted acceptance. Next smallest task: V1-04 (canonical text and source spans); V1-03 and V1-C1 are complete. Complete each task's acceptance before starting its dependents.
+V0: COMPLETE locally. V1-01: COMPLETE, including authenticated native hosted checks. V1-02 Python connection lifecycle: COMPLETE, including actual runtime-login hosted acceptance. Next smallest task: V1-05 (Python staged ingestion); V1-03/V1-C1 and V1-04 are complete. Complete each task's acceptance before starting its dependents.
 
 Use status notes when needed: READY, IN_PROGRESS, BLOCKED, IMPLEMENTED_UNVALIDATED, COMPLETE. Check a box only for COMPLETE and attach evidence. Public publication remains pending until actually authorized and verified.
 
@@ -54,7 +54,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V1-C1: COMPLETE; Python 238/Node 136 regressions, both typechecks, 66 shared cases, four schemas, SQL parity and 16 sealed hashes passed; learning exercise offered, learning remains pending. [Evidence](../evaluation/reports/V1/V1-03.md).
 
-- [ ] V1-04: [Canonical text and source spans](versions/V1-first-library.md#v1-04-canonical-text-and-source-spans) — evidence: pending.
+- [x] V1-04: [Canonical text and source spans](versions/V1-first-library.md#v1-04-canonical-text-and-source-spans) — COMPLETE; 52 Python/72 Node focused cases, both typechecks/build and 23 exact shared fixtures passed. [Evidence](../evaluation/reports/V1/V1-04.md).
 
 - [ ] V1-05: [Python staged ingestion](versions/V1-first-library.md#v1-05-python-staged-ingestion) — evidence: pending.
 
@@ -403,4 +403,11 @@ V1-03/V1-C1 handoff: COMPLETE. Sol A assembled two native Node source modules, S
 
 ## V1-04: Canonical text and source spans
 
-State: RUNNING. Outcome C-r1: identical bounded text/Markdown normalization and structural UTF-8 chunk spans in native Python/TypeScript, with exact digests and deterministic IDs. Sol coordinate_peer owns Python `canonical.py` and `test_canonical.py`, and assembles; Sol manager_peer owns TypeScript `canonical.ts` and `canonical.test.mjs`. Root owns shared `contracts/fixtures/canonical.json`, public contract decisions, tracker/docs/Git and serialized verification. Wire schemas, approved corpus and migrations remain protected. Peers freeze semantics directly before edits, report ownership/outcome changes and unresolved issues to root/Astra. No database/model/service is needed. Acceptance: shared Unicode/CRLF/BOM/Markdown/code fixtures, exact byte reconstruction and digests, unsupported/oversized/malformed input rejection, bounded chunk count, optional declared token counter limits, both strict typechecks and native parity. Work follows completed V1-03/V1-C1 acceptance; its Git publication is owned by root separately.
+State: COMPLETE after final integration. Outcome C-r1: identical bounded text/Markdown normalization and structural UTF-8 chunk spans in native Python/TypeScript, with exact digests and deterministic IDs. Sol coordinate_peer owns Python `canonical.py` and `test_canonical.py`, and assembles; Sol manager_peer owns TypeScript `canonical.ts` and `canonical.test.mjs`. Root owns shared `contracts/fixtures/canonical.json`, public contract decisions, tracker/docs/Git and serialized verification. Wire schemas, approved corpus and migrations remain protected. Peers freeze semantics directly before edits, report ownership/outcome changes and unresolved issues to root/Astra. No database/model/service is needed. Acceptance: shared Unicode/CRLF/BOM/Markdown/code fixtures, exact byte reconstruction and digests, unsupported/oversized/malformed input rejection, bounded chunk count, optional declared token counter limits, both strict typechecks and native parity. Work follows completed V1-03/V1-C1 acceptance; its Git publication is owned by root separately.
+
+
+V1-04 handoff: COMPLETE. Sol Python/TypeScript peers owned separate source/tests, froze C-r1 directly, assembled and transferred all files to root. Root owns shared23fixture oracle and corrected token-call ordering/byte packer and malformed async-counter cleanup. Final focused checks: 52 Python cases, strict typing ten files; 72 Node cases and strict typecheck/build. Shared fixtures preserve source/canonical hashes, profiles, IDs, byte spans and flags; 200 additional deterministic native comparisons matched. No DB/model/services/install, migration, wire-schema or sealed-corpus changes. Resource usage remained small fixtures/one test process. Learning remains pending. Next: V1-05; V1 remains in progress.
+
+## V1-05: Python staged ingestion
+
+State: RUNNING. Outcome I-r1: bounded explicit Python text ingestion writes immutable revisions/chunks/native FTS and publishes one ready generation atomically; same intent/payload replays, changed payload conflicts, interrupted work preserves the prior active generation. Sol coordinate_peer owns packages/python/src/cragkit/ingestion.py and assembles. Sol manager_peer owns packages/python/tests/test_ingestion.py and tools/check_ingestion.py. Root owns the shared native fixture bridge tools/check_python_postgres.py, any shared ingestion fixtures, docs/tracker/Git and all database execution. Native contracts/schema/corpus and completed canonical modules are read-only. Peers agree receipt/hash/ingestion API directly, escalate material scope/ownership changes to root/Astra, and stop before transfers. One serialized test process, at most two database connections, synthetic empty-target fixture only, no providers/models/services. Actual nonowner writer-role RLS, idempotency/conflict, pre-publication failure/rollback, scoped keys and digest/count checks are required before V1-06.

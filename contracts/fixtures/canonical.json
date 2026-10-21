@@ -1,0 +1,581 @@
+{
+  "version": "cragkit.canonical.v1",
+  "cases": [
+    {
+      "id": "plain",
+      "options": {},
+      "expected": {
+        "canonical_text": "alpha\n\nbeta\n",
+        "source_sha256": "0e937c34625ef864d694878f01fd96318893d29014a51536006dacd150d809ec",
+        "canonical_sha256": "0e937c34625ef864d694878f01fd96318893d29014a51536006dacd150d809ec",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=2048:max=32768",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "8a87c8ec9d3fe966a9b5ad0dbfdd171a3933332288346d4c84d7f42b6da97d66",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 12,
+            "text": "alpha\n\nbeta\n",
+            "text_sha256": "0e937c34625ef864d694878f01fd96318893d29014a51536006dacd150d809ec",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "alpha\n\nbeta\n"
+    },
+    {
+      "id": "bom-newlines",
+      "options": {},
+      "expected": {
+        "canonical_text": "a\nb\nc",
+        "source_sha256": "7058ce6d6786f9d267b50be0cfc0df97e322ea15aaffd3e59d1369a5e99ebdd1",
+        "canonical_sha256": "ea7fb08b7a2dc4619ffb7c7bb38d95a2047935fa165d71b12efd3852a2e6d0cc",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=2048:max=32768",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "625c9c9ccc0df33b084d96b67fbdab3c55d067b1cc93212e92e0872ba9cfe629",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 5,
+            "text": "a\nb\nc",
+            "text_sha256": "ea7fb08b7a2dc4619ffb7c7bb38d95a2047935fa165d71b12efd3852a2e6d0cc",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "\ufeffa\r\nb\rc"
+    },
+    {
+      "id": "scalar-unicode",
+      "options": {},
+      "expected": {
+        "canonical_text": "e\u0301 \ud83d\ude00\n\u6f22\u5b57\n",
+        "source_sha256": "f7b1dcd9adc431ded148107683ecc8523f5a6493f43937543abb9041340c4793",
+        "canonical_sha256": "f7b1dcd9adc431ded148107683ecc8523f5a6493f43937543abb9041340c4793",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=2048:max=32768",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "4ca3685e5568ade17411753e1ca7fff2be961935fc835d841061ae93e0b2e90b",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 16,
+            "text": "e\u0301 \ud83d\ude00\n\u6f22\u5b57\n",
+            "text_sha256": "f7b1dcd9adc431ded148107683ecc8523f5a6493f43937543abb9041340c4793",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "e\u0301 \ud83d\ude00\n\u6f22\u5b57\n"
+    },
+    {
+      "id": "byte-source",
+      "options": {},
+      "expected": {
+        "canonical_text": "\u00e9\n",
+        "source_sha256": "64da669b12bbeda0ca8f2840891bd8834e5b8206f24c7703e20ac1d472612b0e",
+        "canonical_sha256": "edd3a863872a04239eb29ad4bc12fc892b3d4ae57cc7e786a3697816f8e141c2",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=2048:max=32768",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "bc917477203d63182adf06c0f3e027b5a8878135c6230b773c6b0931cef4b441",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 3,
+            "text": "\u00e9\n",
+            "text_sha256": "edd3a863872a04239eb29ad4bc12fc892b3d4ae57cc7e786a3697816f8e141c2",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source_hex": "c3a90d0a"
+    },
+    {
+      "id": "paragraph-boundaries",
+      "options": {
+        "target_bytes": 4,
+        "max_chunk_bytes": 8
+      },
+      "expected": {
+        "canonical_text": "aa\n\nbb\n\ncc",
+        "source_sha256": "24ebc7580d0c6c9ce9ef15d257d3965dbaf212b3eed7803e1895e39dd37e9742",
+        "canonical_sha256": "24ebc7580d0c6c9ce9ef15d257d3965dbaf212b3eed7803e1895e39dd37e9742",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=4:max=8",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "666b8f7223af102e742af8c4dbce39ef5ef1b6f5a4380c8b11d1f81aeeb517c9",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 4,
+            "text": "aa\n\n",
+            "text_sha256": "5165a34bea76768531b54cdab3168391af460e19812823086c1f72c99ab9752e",
+            "oversized_split": false,
+            "token_count": null
+          },
+          {
+            "chunk_id": "85304c9b1e5dbe83ce9bf07109ea4eef695986f298adbc5783f6ea7c6e2923e4",
+            "ordinal": 1,
+            "start_byte": 4,
+            "end_byte": 8,
+            "text": "bb\n\n",
+            "text_sha256": "09f29a1fdda4de463b72de0671a9a10be691099baf5371912b38670daff82055",
+            "oversized_split": false,
+            "token_count": null
+          },
+          {
+            "chunk_id": "0d8b8ca76e2422de68b4cba3eb2f9a0588d7ab7723692bdc2bf37f7b919d2737",
+            "ordinal": 2,
+            "start_byte": 8,
+            "end_byte": 10,
+            "text": "cc",
+            "text_sha256": "355b1bbfc96725cdce8f4a2708fda310a80e6d13315aec4e5eed2a75fe8032ce",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "aa\n\nbb\n\ncc"
+    },
+    {
+      "id": "utf8-split",
+      "options": {
+        "target_bytes": 4,
+        "max_chunk_bytes": 8
+      },
+      "expected": {
+        "canonical_text": "\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+        "source_sha256": "6d765426282a92f4b13cf7b0498f36d26b56f227a6743ce80993834ba230bc83",
+        "canonical_sha256": "6d765426282a92f4b13cf7b0498f36d26b56f227a6743ce80993834ba230bc83",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=4:max=8",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "9e238b31b4b4ba80a50928198803e6ce2324a9b84cb75f4f905632fe7b2fa020",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 4,
+            "text": "\ud83d\ude00",
+            "text_sha256": "f0443a342c5ef54783a111b51ba56c938e474c32324d90c3a60c9c8e3a37e2d9",
+            "oversized_split": true,
+            "token_count": null
+          },
+          {
+            "chunk_id": "b5f8c7663eab7aa73114e5709d13507eb63261b79d61bb2d8b8da6d64ea1402a",
+            "ordinal": 1,
+            "start_byte": 4,
+            "end_byte": 8,
+            "text": "\ud83d\ude00",
+            "text_sha256": "f0443a342c5ef54783a111b51ba56c938e474c32324d90c3a60c9c8e3a37e2d9",
+            "oversized_split": true,
+            "token_count": null
+          },
+          {
+            "chunk_id": "2d64f163ab951fe617b1fe07602fd1497a5f61698dde5dcac9e99775dda506d8",
+            "ordinal": 2,
+            "start_byte": 8,
+            "end_byte": 12,
+            "text": "\ud83d\ude00",
+            "text_sha256": "f0443a342c5ef54783a111b51ba56c938e474c32324d90c3a60c9c8e3a37e2d9",
+            "oversized_split": true,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+    },
+    {
+      "id": "line-separator-is-not-lf",
+      "options": {
+        "target_bytes": 4,
+        "max_chunk_bytes": 4
+      },
+      "expected": {
+        "canonical_text": "a\u2028b",
+        "source_sha256": "fe2d3b945530c806f1ff5298f4486e3f1d2656c1bb026709f785a5f84d23af64",
+        "canonical_sha256": "fe2d3b945530c806f1ff5298f4486e3f1d2656c1bb026709f785a5f84d23af64",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=4:max=4",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "bc449985068792b4636e04885a827340b6d6b9fc65acfb77a1064062392b1cb0",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 4,
+            "text": "a\u2028",
+            "text_sha256": "b25ade361721727aa70f147849e814bf65c7bf72b1879f45062939b19547e244",
+            "oversized_split": true,
+            "token_count": null
+          },
+          {
+            "chunk_id": "521a2d7793a1646ad0677d033a4ce4cfaabf40ee84b2cdf893414ba3f05d04a4",
+            "ordinal": 1,
+            "start_byte": 4,
+            "end_byte": 5,
+            "text": "b",
+            "text_sha256": "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+            "oversized_split": true,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "a\u2028b"
+    },
+    {
+      "id": "heading-plain",
+      "options": {
+        "target_bytes": 4,
+        "max_chunk_bytes": 16
+      },
+      "expected": {
+        "canonical_text": "aa\n# h\nbb\n",
+        "source_sha256": "4982061297199ff9b28ea122ec3093261ebbb1253e7ba8719eaa1e48ebbfb277",
+        "canonical_sha256": "4982061297199ff9b28ea122ec3093261ebbb1253e7ba8719eaa1e48ebbfb277",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=4:max=16",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "1839e51e40c7bdf556837761c66a1dae58061c0f078c2cced8b892fc449a2977",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 10,
+            "text": "aa\n# h\nbb\n",
+            "text_sha256": "4982061297199ff9b28ea122ec3093261ebbb1253e7ba8719eaa1e48ebbfb277",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "aa\n# h\nbb\n"
+    },
+    {
+      "id": "heading-markdown",
+      "options": {
+        "format": "text/markdown",
+        "target_bytes": 4,
+        "max_chunk_bytes": 16
+      },
+      "expected": {
+        "canonical_text": "aa\n# h\nbb\n",
+        "source_sha256": "4982061297199ff9b28ea122ec3093261ebbb1253e7ba8719eaa1e48ebbfb277",
+        "canonical_sha256": "4982061297199ff9b28ea122ec3093261ebbb1253e7ba8719eaa1e48ebbfb277",
+        "parser_id": "cragkit.markdown.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=4:max=16",
+        "format": "text/markdown",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "32dbd8c60dff618e19b5ac0cc126e624bb23cb493f05650b5540e130b54f5d9f",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 3,
+            "text": "aa\n",
+            "text_sha256": "d9cd8155764c3543f10fad8a480d743137466f8d55213c8eaefcd12f06d43a80",
+            "oversized_split": false,
+            "token_count": null
+          },
+          {
+            "chunk_id": "237a4b1dcfc7351fcaf6e21628ad9e02e1480fba8ba127505c0396c8fd6b4d40",
+            "ordinal": 1,
+            "start_byte": 3,
+            "end_byte": 7,
+            "text": "# h\n",
+            "text_sha256": "ccf3cbc2965e4a636ba80e1fe36907f85afbf156b01bf4d148fed2cd65d5a431",
+            "oversized_split": false,
+            "token_count": null
+          },
+          {
+            "chunk_id": "44f65bb1ae931763cd977c2200daaa868c20a9c5a210a23bfc1f00c07dc6f5d5",
+            "ordinal": 2,
+            "start_byte": 7,
+            "end_byte": 10,
+            "text": "bb\n",
+            "text_sha256": "a81c31ac62620b9215a14ff00544cb07a55b765594f3ab3be77e70923ae27cf1",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "aa\n# h\nbb\n"
+    },
+    {
+      "id": "fenced-markdown",
+      "options": {
+        "format": "text/markdown"
+      },
+      "expected": {
+        "canonical_text": "```py\nx = 1\n\n# retained\n```\n",
+        "source_sha256": "b073f68f92142fff4f00567b4f4b8f41257b0ddbac5de27542f9959931202c59",
+        "canonical_sha256": "b073f68f92142fff4f00567b4f4b8f41257b0ddbac5de27542f9959931202c59",
+        "parser_id": "cragkit.markdown.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=2048:max=32768",
+        "format": "text/markdown",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "7933276a2e57609958fa4d7a2c55c3f100a8dc5aed970786ed8dde9186c3a2c7",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 28,
+            "text": "```py\nx = 1\n\n# retained\n```\n",
+            "text_sha256": "b073f68f92142fff4f00567b4f4b8f41257b0ddbac5de27542f9959931202c59",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "```py\nx = 1\n\n# retained\n```\n"
+    },
+    {
+      "id": "unmatched-fence",
+      "options": {
+        "format": "text/markdown"
+      },
+      "expected": {
+        "canonical_text": "~~~/code\nvalue\n",
+        "source_sha256": "2e6c473ed1da0803ac67374abc1750699d84ad21c07611c8bbb5d0ed7002fa96",
+        "canonical_sha256": "2e6c473ed1da0803ac67374abc1750699d84ad21c07611c8bbb5d0ed7002fa96",
+        "parser_id": "cragkit.markdown.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=2048:max=32768",
+        "format": "text/markdown",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "c5b829cf48ae8dfbfa34c25477bb00026b3f26516ebc782d8d26b23382ed2cb0",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 15,
+            "text": "~~~/code\nvalue\n",
+            "text_sha256": "2e6c473ed1da0803ac67374abc1750699d84ad21c07611c8bbb5d0ed7002fa96",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "~~~/code\nvalue\n"
+    },
+    {
+      "id": "nel-is-content",
+      "options": {},
+      "expected": {
+        "canonical_text": "\u0085",
+        "source_sha256": "f7e0ef1c73a0bb196477a2fa9a5de1d790b0a32c6c8ea20e72e2b7e092bf1985",
+        "canonical_sha256": "f7e0ef1c73a0bb196477a2fa9a5de1d790b0a32c6c8ea20e72e2b7e092bf1985",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=2048:max=32768",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "b57a4dc76687935c107ef83149b3bd9822f5e41788369361548d02006f5f41f3",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 2,
+            "text": "\u0085",
+            "text_sha256": "f7e0ef1c73a0bb196477a2fa9a5de1d790b0a32c6c8ea20e72e2b7e092bf1985",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "\u0085"
+    },
+    {
+      "id": "second-bom-preserved",
+      "options": {},
+      "expected": {
+        "canonical_text": "\ufeffx",
+        "source_sha256": "aa9d9d8ad7a736cb08a7f3fff0e5429898dbfa9abefe332f3c598f75c63ae0e5",
+        "canonical_sha256": "84144a41283d6dc344addf4e83189d83fdd656439675abf54e6f44ccb73b4eb6",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=2048:max=32768",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "f7a5dae2b31416f9819d6426d686b59cd0b8ae2f4b98b8a230f591e858cd9f85",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 4,
+            "text": "\ufeffx",
+            "text_sha256": "84144a41283d6dc344addf4e83189d83fdd656439675abf54e6f44ccb73b4eb6",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      },
+      "source": "\ufeff\ufeffx"
+    },
+    {
+      "id": "empty",
+      "options": {},
+      "error": "invalid_request",
+      "source": ""
+    },
+    {
+      "id": "ascii-blank",
+      "options": {},
+      "error": "invalid_request",
+      "source": " \t\r\n"
+    },
+    {
+      "id": "nul",
+      "options": {},
+      "error": "invalid_request",
+      "source": "a\u0000b"
+    },
+    {
+      "id": "unsupported",
+      "options": {
+        "format": "application/pdf"
+      },
+      "error": "invalid_request",
+      "source": "data"
+    },
+    {
+      "id": "oversize",
+      "options": {
+        "max_source_bytes": 4
+      },
+      "error": "invalid_request",
+      "source": "12345"
+    },
+    {
+      "id": "invalid-utf8",
+      "options": {},
+      "error": "invalid_request",
+      "source_hex": "ff"
+    },
+    {
+      "id": "surrogate",
+      "options": {},
+      "error": "invalid_request",
+      "source": "\ud800"
+    },
+    {
+      "id": "target-over-max",
+      "options": {
+        "target_bytes": 8,
+        "max_chunk_bytes": 4
+      },
+      "error": "invalid_request",
+      "source": "x"
+    },
+    {
+      "id": "vertical-tab-not-blank",
+      "source": "a\n\u000b\nb\n",
+      "options": {
+        "target_bytes": 2,
+        "max_chunk_bytes": 8
+      },
+      "expected": {
+        "canonical_text": "a\n\u000b\nb\n",
+        "source_sha256": "cc447cc27be642b330a115c33dc446517eaea437a7e5c1b2ad9d69e06b1131af",
+        "canonical_sha256": "cc447cc27be642b330a115c33dc446517eaea437a7e5c1b2ad9d69e06b1131af",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=2:max=8",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "c1888a3c17f3a78b3722a78780e9409718978d7b065cc296ec6574f3cdd67477",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 6,
+            "text": "a\n\u000b\nb\n",
+            "text_sha256": "cc447cc27be642b330a115c33dc446517eaea437a7e5c1b2ad9d69e06b1131af",
+            "oversized_split": false,
+            "token_count": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "split-tail-packing",
+      "source": "aaa\n\nbbbbbbbb\n\nz",
+      "options": {
+        "target_bytes": 6,
+        "max_chunk_bytes": 8
+      },
+      "expected": {
+        "canonical_text": "aaa\n\nbbbbbbbb\n\nz",
+        "source_sha256": "13731094f4bbe0e3c595cdad55f3db3b5d98229d674ed527fc92ed5f7d3bd800",
+        "canonical_sha256": "13731094f4bbe0e3c595cdad55f3db3b5d98229d674ed527fc92ed5f7d3bd800",
+        "parser_id": "cragkit.text.v1",
+        "chunker_profile": "cragkit.structure.bytes.v1:target=6:max=8",
+        "format": "text/plain",
+        "tokenizer_id": null,
+        "token_count": null,
+        "chunks": [
+          {
+            "chunk_id": "7ad83de7ce3a1efea5fb2962a9540203fee10f1d40bffe59ad7db5498ffb97d0",
+            "ordinal": 0,
+            "start_byte": 0,
+            "end_byte": 5,
+            "text": "aaa\n\n",
+            "text_sha256": "adf417d9a591826192cc92d7c3f828a0b47212b30f3a602732a8278fb8567882",
+            "oversized_split": false,
+            "token_count": null
+          },
+          {
+            "chunk_id": "a4c965534519993e1d627a9e0101db794d8d6bbedc02e20080c0b50fe82ca924",
+            "ordinal": 1,
+            "start_byte": 5,
+            "end_byte": 11,
+            "text": "bbbbbb",
+            "text_sha256": "4625fd63b0e96fc0d656ae7381605e48d4a0f63a319fc743adf22688613883c7",
+            "oversized_split": true,
+            "token_count": null
+          },
+          {
+            "chunk_id": "a348a3d698d33c6d84aee86b11a482df96bdfda796da08e23417a0a0bde48f31",
+            "ordinal": 2,
+            "start_byte": 11,
+            "end_byte": 16,
+            "text": "bb\n\nz",
+            "text_sha256": "02d0b76dc9fad1a1fcedadc962bc8bf218b3c22fb3534b079f6f0ec4480cf8c2",
+            "oversized_split": true,
+            "token_count": null
+          }
+        ]
+      }
+    }
+  ]
+}

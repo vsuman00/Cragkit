@@ -113,6 +113,8 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 
 | E71 | A driver suppresses a rollback error or reports failed transaction exit without raising | Verify the connection is IDLE after rollback; discard a nonidle connection and return a typed failure within the cleanup budget. | V1-02B, V1-03 | U/I |
 
+| E72 | Native text parsers disagree on CR/BOM, Unicode line boundaries, split packing or tokenizer work | Shared exact byte/digest/profile fixtures and bounded counter regressions agree; asynchronous/malformed counters fail without leaked work. | V1-04, V1-06 | U |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.
