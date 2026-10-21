@@ -132,7 +132,7 @@ test('native harness refuses authorization before reading nonexistent private co
 
 import { PostgresSession, compile_filters, EXPECTED_HISTORY, _ROLE_SQL, _CATALOG_SQL, _HISTORY_SQL, _COLLECTION_SQL, _SCOPE_SQL } from '../dist/postgres-session.js';
 import { parse_request, parse_scope } from '../dist/contracts.js';
-import { UnauthorizedScope, UnsupportedCapability } from '../dist/errors.js';
+import { IntegrityViolation, UnauthorizedScope, UnsupportedCapability } from '../dist/errors.js';
 const request=()=>parse_request({query:'synthetic',collection:'collection'});
 const scope=tenant=>parse_scope({tenant_id:tenant,principal_id:'principal',authorization_revision:'revision',grant_ids:['grant']});
 class SessionClient extends Client {
@@ -199,7 +199,7 @@ test('session body exception retains explicit cause after rollback',async()=>{
   const {client,resource,session}=sessionFixture();const cause=new Error('synthetic cause');const error=new Error('body',{cause});
   await assert.rejects(session.transaction(request(),{...options(),scope:scope('tenant')},async()=>{throw error;}),actual=>actual===error&&actual.cause===cause);assert.equal(client.status,'I');await resource.close();
 });
-for(const [code,kind] of [['57014',DeadlineExceeded],['42501',UnauthorizedScope],['42703',UnsupportedCapability],['XX000',ProviderUnavailable]])test(`driver SQLSTATE ${code} redacts details`,async()=>{
+for(const [code,kind] of [['57014',DeadlineExceeded],...['23502','23503','23505','23514','23P01'].map(code=>[code,IntegrityViolation]),['42501',UnauthorizedScope],['42703',UnsupportedCapability],['XX000',ProviderUnavailable]])test(`driver SQLSTATE ${code} redacts details`,async()=>{
   const {client,resource,session}=sessionFixture();client.failure={text:_ROLE_SQL,error:Object.assign(new Error('private-source-password'),{code})};
   await assert.rejects(session.validate(options()),error=>error instanceof kind&&!String(error).includes('private'));await resource.close();
 });
@@ -229,4 +229,19 @@ test('internal module imports have no optional driver, network or filesystem wri
   `;
   const result=spawnSync(process.execPath,['--input-type=module','-e',script],{cwd:new URL('..',import.meta.url),encoding:'utf8',timeout:5000});
   assert.equal(result.status,0,result.stderr);assert.equal(result.stdout,'');
+});
+
+for (const [changes,scope_changes] of [
+  [{query:'bad\0query'},{}],[{collection:'bad\0collection'},{}],
+  [{},{tenant_id:'bad\0tenant'}],[{},{principal_id:'bad\0principal'}],
+  [{},{authorization_revision:'bad\0revision'}],[{},{grant_ids:['bad\0grant']}],
+  [{required_filters:[{op:'eq',field:'document_id',value:'bad\0id'}]},{}],
+  [{required_filters:[{op:'in',field:'revision_id',values:['bad\0id']}]},{}],
+  [{required_filters:[{op:'not',filter:{op:'eq',field:'document_id',value:'bad\0id'}}]},{}],
+]) test(`Postgres NUL boundary ${JSON.stringify([changes,scope_changes])}`,async()=>{
+  const {client,resource,session}=sessionFixture();
+  const input=parse_request({query:'synthetic',collection:'collection',...changes});
+  const bound=parse_scope({...scope('tenant'),...scope_changes});
+  await assert.rejects(session.transaction(input,{...options(),scope:bound},async()=>assert.fail('invalid lease')),InvalidRequest);
+  assert.equal(client.queries.length,0);assert.equal(client.releases.length,0);await resource.close();
 });

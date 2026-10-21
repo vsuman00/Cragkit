@@ -13,7 +13,7 @@ import cragkit._postgres_session as implementation
 from cragkit._postgres_filters import compile_filters
 from cragkit._postgres_session import PostgresSession
 from cragkit.contracts import parse_request, parse_scope
-from cragkit.errors import DeadlineExceeded, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability
+from cragkit.errors import DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability
 
 
 class Cursor:
@@ -252,7 +252,7 @@ def test_body_exception_identity_and_cancel_are_preserved_and_scope_is_reset():
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize('state,error', [('57014', DeadlineExceeded), ('42501', UnauthorizedScope),
+@pytest.mark.parametrize('state,error', [('57014', DeadlineExceeded), *[(state, IntegrityViolation) for state in ('23502','23503','23505','23514','23P01')], ('42501', UnauthorizedScope),
     ('42P01', UnsupportedCapability), ('42703', UnsupportedCapability), (None, ProviderUnavailable)])
 def test_driver_failures_are_typed_redacted_and_rolled_back(state, error):
     async def scenario():
@@ -443,3 +443,25 @@ def test_driver_suppressed_rollback_failure_discards_nonidle_connection():
             await PostgresSession(resource).validate(deadline=asyncio.get_running_loop().time() + 1)
         assert connection.closed == 1 and resource.returned == 1
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('changes,scope_changes', [
+    ({'query': 'bad\0query'}, {}), ({'collection': 'bad\0collection'}, {}),
+    ({}, {'tenant_id': 'bad\0tenant'}), ({}, {'principal_id': 'bad\0principal'}),
+    ({}, {'authorization_revision': 'bad\0revision'}), ({}, {'grant_ids': ['bad\0grant']}),
+    ({'required_filters': [{'op': 'eq', 'field': 'document_id', 'value': 'bad\0id'}]}, {}),
+    ({'required_filters': [{'op': 'in', 'field': 'revision_id', 'values': ['bad\0id']}]}, {}),
+    ({'required_filters': [{'op': 'not', 'filter': {'op': 'eq', 'field': 'document_id', 'value': 'bad\0id'}}]}, {}),
+])
+def test_postgres_nul_boundaries_reject_before_lease_without_changing_wire_contract(changes, scope_changes):
+    async def run():
+        connection = Connection()
+        resource = Resource(connection)
+        session = PostgresSession(resource)
+        bound_scope = parse_scope({**scope().model_dump(mode='json'), **scope_changes})
+        parsed = parse_request({'query': 'synthetic', 'collection': 'engineering', **changes})
+        with pytest.raises(InvalidRequest):
+            async with session.transaction(parsed, scope=bound_scope, deadline=asyncio.get_running_loop().time() + 1):
+                pytest.fail('invalid input leased a connection')
+        assert resource.leased == 0 and connection.calls == []
+    asyncio.run(run())

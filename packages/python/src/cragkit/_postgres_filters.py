@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from .contracts.models import EqualityFilter, Filter, GroupFilter, MembershipFilter, NotFilter
-from .errors import UnsupportedCapability
+from .errors import InvalidRequest, UnsupportedCapability
 
 
 def compile_filters(filters: tuple[Filter, ...]) -> tuple[str, tuple[object, ...]]:
@@ -20,12 +20,16 @@ def compile_filters(filters: tuple[Filter, ...]) -> tuple[str, tuple[object, ...
         if isinstance(item, EqualityFilter):
             if not isinstance(item.value, str):
                 raise UnsupportedCapability()
+            if '\0' in item.value:
+                raise InvalidRequest()
             parameters.append(item.value)
             operator = '=' if item.op == 'eq' else '<>'
             return f'({column} {operator} %s)'
         if isinstance(item, MembershipFilter):
             if not all(isinstance(value, str) for value in item.values):
                 raise UnsupportedCapability()
+            if any(isinstance(value, str) and '\0' in value for value in item.values):
+                raise InvalidRequest()
             parameters.append(list(item.values))
             return f'({column} = ANY(%s::text[]))'
         raise UnsupportedCapability()

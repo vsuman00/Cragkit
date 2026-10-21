@@ -15,7 +15,7 @@ from ._postgres_filters import compile_filters
 from ._postgres_pool import PoolResource
 from .contracts import RetrievalRequest, TrustedScope, parse_request, parse_scope
 from .errors import (
-    CragkitError, DeadlineExceeded, InvalidRequest, ProviderUnavailable,
+    CragkitError, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable,
     UnauthorizedScope, UnsupportedCapability,
 )
 
@@ -152,6 +152,8 @@ def _safe_error(error: Exception) -> CragkitError:
     state = getattr(error, 'sqlstate', None)
     if state == '57014':
         return DeadlineExceeded()
+    if isinstance(state, str) and state.startswith('23'):
+        return IntegrityViolation()
     if state == '42501':
         return UnauthorizedScope()
     if state in ('42P01', '42703', '42883', '3F000'):
@@ -316,6 +318,9 @@ class PostgresSession:
             invalid = True
         if invalid:
             raise InvalidRequest() from None
+        if any('\0' in value for value in (request.query, request.collection, scope.tenant_id,
+                scope.principal_id, scope.authorization_revision, *scope.grant_ids)):
+            raise InvalidRequest()
         predicate, parameters = compile_filters(request.required_filters)
         deadline = min(deadline, asyncio.get_running_loop().time() + request.limits.deadline_ms / 1000)
         async with self._transaction(deadline) as connection:

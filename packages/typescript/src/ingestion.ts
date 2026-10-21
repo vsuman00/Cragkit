@@ -105,6 +105,7 @@ function safe_error(error: unknown): Error {
   if (error instanceof CragkitError || (error instanceof DOMException && error.name === 'AbortError')) return error;
   const code = error !== null && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
   if (code === '57014') return new DeadlineExceeded();
+  if (typeof code === 'string' && code.startsWith('23')) return new IntegrityViolation();
   if (code === '42501') return new UnauthorizedScope();
   if (['42P01', '42703', '42883', '3F000'].includes(String(code))) return new UnsupportedCapability();
   return new ProviderUnavailable();

@@ -121,7 +121,7 @@ for (const [document,kind] of [[['active',true,'auth'],UnauthorizedScope],[['act
     assert.equal(client.rollbacks,1);assert.deepEqual(client.staged,[]);await resource.close();
   });
 }
-for (const [code,kind] of [['57014',DeadlineExceeded],['42501',UnauthorizedScope],['42P01',UnsupportedCapability],['XX000',ProviderUnavailable]]) {
+for (const [code,kind] of [['57014',DeadlineExceeded],...['23502','23503','23505','23514','23P01'].map(code=>[code,IntegrityViolation]),['42501',UnauthorizedScope],['42P01',UnsupportedCapability],['XX000',ProviderUnavailable]]) {
   test(`redacted driver error ${code}`,async()=>{
     const {client,indexer,resource}=fixture();client.failure=['INSERT INTO cragkit.index_generations',Object.assign(new Error('private-driver-secret'),{code})];
     await assert.rejects(ingest(indexer),error=>error instanceof kind&&!String(error).includes('private'));

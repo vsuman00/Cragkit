@@ -2,7 +2,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { PoolResource, bounded, check_options, now, type LeaseOptions, type PgClient } from './postgres-pool.js';
 import { parse_request, parse_scope, type RetrievalRequest, type TrustedScope } from './contracts.js';
-import { CragkitError, DeadlineExceeded, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from './errors.js';
+import { CragkitError, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from './errors.js';
 
 export const EXPECTED_HISTORY: readonly (readonly string[])[] = Object.freeze([["0001_initial", "5a7259e6375f8578c8775fe91994bd28b85ff76734744dc2c2b4ee63f623d92f"], ["0002_portable_lexical_config", "a7380a57690791bc5766d969decba36b5a5ec4591d7481601eb0fd5ce096c875"]].map(row => Object.freeze(row)));
 export const _CATALOG_SQL = `
@@ -158,11 +158,13 @@ export function compile_filters(filters: RetrievalRequest['required_filters'], s
     if (!column) throw new UnsupportedCapability();
     if (item.op === 'eq' || item.op === 'ne') {
       if (typeof item.value !== 'string') throw new UnsupportedCapability();
+      if (item.value.includes('\0')) throw new InvalidRequest();
       values.push(item.value);
       return `(${column} ${item.op === 'eq' ? '=' : '<>'} $${start + values.length - 1})`;
     }
     if (item.op === 'in') {
       if (!item.values.every(value => typeof value === 'string')) throw new UnsupportedCapability();
+      if (item.values.some(value => (value as string).includes('\0'))) throw new InvalidRequest();
       values.push([...item.values]);
       return `(${column} = ANY($${start + values.length - 1}::text[]))`;
     }
@@ -174,6 +176,7 @@ function safe_error(error: unknown): Error {
   if (error instanceof CragkitError || (error instanceof DOMException && error.name === 'AbortError')) return error;
   const code = error !== null && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
   if (code === '57014') return new DeadlineExceeded();
+  if (typeof code === 'string' && code.startsWith('23')) return new IntegrityViolation();
   if (code === '42501') return new UnauthorizedScope();
   if (['42P01', '42703', '42883', '3F000'].includes(String(code))) return new UnsupportedCapability();
   return new ProviderUnavailable();
@@ -276,6 +279,8 @@ export class PostgresSession {
     check_options(options);
     const request = parse_request(input);
     const scope = parse_scope(options.scope);
+    if ([request.query, request.collection, scope.tenant_id, scope.principal_id,
+         scope.authorization_revision, ...scope.grant_ids].some(value => value.includes('\0'))) throw new InvalidRequest();
     const [predicate, parameters] = compile_filters(request.required_filters, 7);
     const deadline = Math.min(options.deadline, now() + request.limits.deadline_ms / 1000);
     return this.run({ deadline, signal: options.signal }, async (client, scoped) => {

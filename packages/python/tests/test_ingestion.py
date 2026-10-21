@@ -235,7 +235,7 @@ def test_nonidle_caller_connection_is_untouched():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize('state,kind',[('57014',DeadlineExceeded),('42501',UnauthorizedScope),('42P01',UnsupportedCapability),('XX000',ProviderUnavailable)])
+@pytest.mark.parametrize('state,kind',[('57014',DeadlineExceeded),*[(state,IntegrityViolation) for state in ('23502','23503','23505','23514','23P01')],('42501',UnauthorizedScope),('42P01',UnsupportedCapability),('XX000',ProviderUnavailable)])
 def test_driver_errors_are_typed_redacted_and_rolled_back(state,kind):
     async def run():
         connection, resource, indexer=fixture();connection.failure=('INSERT INTO cragkit.index_generations',DriverError(state))
