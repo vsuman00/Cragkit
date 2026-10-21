@@ -2,7 +2,7 @@
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. V1-01: COMPLETE, including authenticated native hosted checks. V1-02 Python connection lifecycle: COMPLETE, including actual runtime-login hosted acceptance. Next smallest task: V1-07 (scoped lexical retrieval); V1-03/V1-C1 and V1-04 are complete. Complete each task's acceptance before starting its dependents.
+V0: COMPLETE locally. V1-01: COMPLETE, including authenticated native hosted checks. V1-02 Python connection lifecycle: COMPLETE, including actual runtime-login hosted acceptance. Next smallest task: V1-08 (source-backed result assembly); V1-03/V1-C1 and V1-04 are complete. Complete each task's acceptance before starting its dependents.
 
 Use status notes when needed: READY, IN_PROGRESS, BLOCKED, IMPLEMENTED_UNVALIDATED, COMPLETE. Check a box only for COMPLETE and attach evidence. Public publication remains pending until actually authorized and verified.
 
@@ -62,7 +62,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V1-C2: COMPLETE; 266 Node/329 Python-tool regressions, both typechecks/build, 66 wire cases, four schemas and 16 sealed hashes passed; hosted parity/rollback demonstrated, learning pending. [Evidence](../evaluation/reports/V1/V1-06.md).
 
-- [ ] V1-07: [Scoped lexical retrieval](versions/V1-first-library.md#v1-07-scoped-lexical-retrieval) — evidence: pending.
+- [x] V1-07: [Scoped lexical retrieval](versions/V1-first-library.md#v1-07-scoped-lexical-retrieval) — COMPLETE; 62 Python/87 Node focused cases, 357 Python-tool/300 Node regressions and 19 hosted groups passed, including both runtime filter-before-limit and exclusion checks. [Evidence](../evaluation/reports/V1/V1-07.md).
 
 - [ ] V1-08: [Source-backed result assembly](versions/V1-first-library.md#v1-08-source-backed-result-assembly) — evidence: pending.
 
@@ -432,3 +432,11 @@ State: RUNNING. Root is the sole writer; Sol peers remain unavailable. Outcome: 
 
 
 V1-H1 handoff: COMPLETE. Root's H1A/H1B changes reject PostgreSQL-specific NUL text before SQL and map class-23 constraints to redacted IntegrityViolation in both native read/write adapters. Focused checks: 97 Python/135 Node cases. Full regressions: 348 Python-tool/285 Node cases, strict mypy 11 files and Node typecheck/build, 66 wire parity cases and 16 sealed hashes passed. First mypy narrowing failure was fixed and rerun successfully. Default Python remains driver-absent; no hosted DB/service/model/install or migration/wire/corpus changes. Eight implementation/test paths changed across the two bounded children; root owns docs/Git. Sol peers remain unavailable; no substitution or unverified agent review. External SECURITY-EVALUATION.md remains untracked and preserved. Detailed commands/scope are in V1-H1 evidence. Learning pending. Next: V1-07; V1 remains in progress.
+
+
+## V1-07: Scoped lexical candidates
+
+State: RUNNING. Root is sole writer/integrator while Sol peers remain unavailable. Outcome L-r1: native FTS candidate identifiers and scores from active ready generations, exact tenant/principal/revision/tombstone predicates and supported required filters before LIMIT, with stable ties. 07A owns both session modules and focused tests; 07B owns serialized native fixture/helper adaptations. Root owns docs, tracker/Git and shared SQL review. Migrations, public request/result schemas, approved corpus and locks remain read-only. One test process, max two native clients; no models/services. Acceptance: two-tenant identical source, grant/revision/tombstone/required-filter exclusions, deterministic ties and limit, real read-only runtime-role queries in both runtimes, bounded deadline/abort and regression/typechecks. Candidate identifiers are not released excerpts; source-backed typed result assembly remains V1-08.
+
+
+V1-07 handoff: COMPLETE. Root's 07A/07B changes add native scoped FTS candidates, shared logical SQL, strict immutable candidate boundaries and explicit hosted lexical helpers. Final evidence: 62 Python/87 Node focused cases; 357 Python-tool/300 full Node cases, both strict typechecks/build, 66 wire cases/four schemas/16 sealed hashes, normalized lexical SQL parity and 19 hosted groups passed. Actual read-only LOGIN tests cover identical two-tenant text, stable ties, filter-before-limit with the second tied document, principal/revision/filter exclusions, tombstones and unready generations, and Python/Node exact candidate parity. An EXPLAIN Limit node was inspected without a performance claim. Initial Node native offset rejection exposed bigint string parsing; exact safe-integer conversion and six regressions fixed it, cleanup passed, and full native acceptance was rerun. Final default Python is driver-absent; independent plugin query confirms zero roles/policies/connections/documents/collections. No migrations/wire/lock/corpus/model/service/registry changes. Sol peers remain unavailable; root sole writer/integrator. Resource limits/headroom and changed paths are in V1-07 evidence. External security evaluation remains untracked. Learning pending. Candidates contain IDs/offsets/rank, not verified source excerpts. Next: V1-08. V1 remains in progress.

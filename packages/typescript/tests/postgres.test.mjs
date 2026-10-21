@@ -130,18 +130,20 @@ test('native harness refuses authorization before reading nonexistent private co
   assert.equal(child.status,2);assert.equal(JSON.parse(child.stdout).code,'explicit_runtime_authorization_required');assert.equal(child.stderr,'');
 });
 
-import { PostgresSession, compile_filters, EXPECTED_HISTORY, _ROLE_SQL, _CATALOG_SQL, _HISTORY_SQL, _COLLECTION_SQL, _SCOPE_SQL } from '../dist/postgres-session.js';
+import { PostgresSession, compile_filters, EXPECTED_HISTORY, _ROLE_SQL, _CATALOG_SQL, _HISTORY_SQL, _COLLECTION_SQL, _SCOPE_SQL, _LEXICAL_SQL } from '../dist/postgres-session.js';
 import { parse_request, parse_scope } from '../dist/contracts.js';
 import { IntegrityViolation, UnauthorizedScope, UnsupportedCapability } from '../dist/errors.js';
 const request=()=>parse_request({query:'synthetic',collection:'collection'});
 const scope=tenant=>parse_scope({tenant_id:tenant,principal_id:'principal',authorization_revision:'revision',grant_ids:['grant']});
 class SessionClient extends Client {
+  candidates=[['tenant','collection','document','revision','generation','chunk',0,4,'a'.repeat(64),0.1,'native_fts.v1','pg_catalog.simple']];
   role=[[true]];catalog=[[true]];history=EXPECTED_HISTORY.map(row=>[...row]);collection=[['0.1','native_fts.v1']];documents=[['document','revision','native_fts.v1']];gucs=[];failure;rollbackBad=false;
   async query(query) {
     this.queries.push(query);assert.equal(query.rowMode,'array');
     if(this.failure?.text===query.text)throw this.failure.error;
     if(query.text.startsWith('BEGIN'))this.status='T';
     if(query.text==='ROLLBACK'){this.status=this.rollbackBad?'E':'I';this.gucs=[];}
+    if(query.text.startsWith(_LEXICAL_SQL.split('{predicate}')[0]))return {rows:this.candidates};
     const rows=query.text===_ROLE_SQL?this.role:query.text===_CATALOG_SQL?this.catalog:query.text===_HISTORY_SQL?this.history:query.text===_COLLECTION_SQL?this.collection:query.text.includes('SELECT d.document_id')?this.documents:[];
     if(query.text===_SCOPE_SQL)this.gucs=[...query.values];
     return {rows};
@@ -244,4 +246,34 @@ for (const [changes,scope_changes] of [
   const bound=parse_scope({...scope('tenant'),...scope_changes});
   await assert.rejects(session.transaction(input,{...options(),scope:bound},async()=>assert.fail('invalid lease')),InvalidRequest);
   assert.equal(client.queries.length,0);assert.equal(client.releases.length,0);await resource.close();
+});
+
+test('scoped lexical candidates bind query/filter values and expire',async()=>{
+  const {client,resource,session}=sessionFixture();let escaped;
+  const input=parse_request({query:"private' OR TRUE --",collection:'collection',required_filters:[{op:'eq',field:'document_id',value:'document'}]});
+  const result=await session.transaction(input,{...options(),scope:scope('tenant')},async handle=>{
+    escaped=handle;return handle.lexical_candidates({limit:1});
+  });
+  assert.equal(result.length,1);assert.equal(result[0].score,0.1);assert.equal(Object.isFrozen(result[0]),true);
+  const query=client.queries.find(item=>item.text.startsWith('\nWITH search'));
+  assert.equal(query.values[0],input.query);assert.deepEqual(query.values.slice(-2),['document',1]);
+  assert.ok(!query.text.includes(input.query));assert.ok(query.text.includes('$8')&&query.text.includes('LIMIT $9'));
+  await assert.rejects(escaped.lexical_candidates(),InvalidRequest);await resource.close();
+});
+for(const [index,value,kind] of [[0,'other',IntegrityViolation],[1,'other',IntegrityViolation],[6,-1,IntegrityViolation],
+ [7,0,IntegrityViolation],[8,'bad',IntegrityViolation],[9,NaN,IntegrityViolation],[10,'other',UnsupportedCapability],[11,'pg_catalog.english',UnsupportedCapability]])test(`lexical candidate corruption ${index}`,async()=>{
+  const {client,resource,session}=sessionFixture();client.candidates[0][index]=value;
+  await assert.rejects(session.transaction(request(),{...options(),scope:scope('tenant')},handle=>handle.lexical_candidates()),kind);
+  await resource.close();
+});
+
+test('native bigint offset strings convert without losing byte precision',async()=>{
+  const {client,resource,session}=sessionFixture();client.candidates[0][6]='0';client.candidates[0][7]='4';
+  const result=await session.transaction(request(),{...options(),scope:scope('tenant')},handle=>handle.lexical_candidates());
+  assert.equal(result[0].start_byte,0);assert.equal(result[0].end_byte,4);await resource.close();
+});
+for(const value of ['9007199254740992','1.5','-1',true,null])test(`invalid native bigint offset ${value}`,async()=>{
+  const {client,resource,session}=sessionFixture();client.candidates[0][7]=value;
+  await assert.rejects(session.transaction(request(),{...options(),scope:scope('tenant')},handle=>handle.lexical_candidates()),IntegrityViolation);
+  await resource.close();
 });

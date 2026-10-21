@@ -120,6 +120,8 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 
 | E75 | RLS allows reading/inserting a staging generation but silently hides its ready UPDATE | Require exactly one ready-transition row before changing the active pointer; rollback the entire generation on a missing publication barrier. | V1-05, V1-06 | U/I |
 
+| E76 | Node returns PostgreSQL bigint/domain byte offsets as decimal strings | Decode only canonical nonnegative integer strings and enforce the safe-integer range; reject fractional, Boolean, null or unsafe offsets before returning candidates. | V1-07, V1-08 | U/I |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.

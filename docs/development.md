@@ -359,3 +359,9 @@ Run the existing native fixture command with `--ingestion --typescript --allow-t
 ## V1-H1 PostgreSQL adapter hardening
 
 Read/write adapters map SQLSTATE class 23 constraint failures to IntegrityViolation. Read adapters reject NUL in the query, collection, trusted scope and supported identifier-filter values before leasing; ingestion already rejects those inputs. Backend-neutral request/scope schemas are unchanged. [H1 evidence](../evaluation/reports/V1/V1-H1.md) records 97 Python/135 Node focused cases, 348 Python-tool/285 full Node regressions, both typechecks/build, 66 wire cases and 16 sealed hashes. These checks used fake drivers and no hosted database.
+
+## V1-07 scoped lexical candidates
+
+`ScopedSession.lexical_candidates` in each native session returns immutable candidate IDs, byte offsets, text digests and native FTS ranks from active ready generations. Scope/grants/revision/tombstone predicates and supported required filters run before candidate LIMIT; ties use explicit C collation and chunk ordinal. Native FTS is not BM25, and candidate ranks do not estimate semantic coverage. Source excerpts and typed results remain V1-08.
+
+Use the existing private-config fixture command with `--lexical --allow-test-writes` for combined ingestion and both native read-only lexical checks. [V1-07 evidence](../evaluation/reports/V1/V1-07.md) records 62 Python/87 Node focused checks, 357 Python-tool/300 Node regressions, both typechecks/build, 66 wire cases, four schemas, 16 sealed hashes and 19 hosted groups. PostgreSQL bigint offsets arrive as strings in Node and are converted only when exact safe integers. The final fixture and independent plugin cleanup checks passed.

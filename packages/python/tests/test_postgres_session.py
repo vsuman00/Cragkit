@@ -37,6 +37,7 @@ class Connection:
         self.catalog = [(True,)]
         self.history = list(implementation.EXPECTED_HISTORY)
         self.collection = [('0.1', 'native_fts.v1')]
+        self.candidates = [('tenant-a', 'engineering', 'document', 'revision', 'generation', 'chunk', 0, 4, 'a' * 64, 0.1, 'native_fts.v1', 'pg_catalog.simple')]
         self.documents = [('document', 'revision', 'native_fts.v1')]
         self.block = None
         self.block_started = asyncio.Event()
@@ -65,6 +66,7 @@ class Connection:
             'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY', 'SET LOCAL search_path = pg_catalog'
         ) and 'statement_timeout' not in query:
             raise self.failure
+        if query.startswith(implementation._LEXICAL_SQL.split("{predicate}")[0]): return Cursor(self.candidates)
         if query == implementation._ROLE_SQL: return Cursor(self.role)
         if query == implementation._CATALOG_SQL: return Cursor(self.catalog)
         if query == implementation._HISTORY_SQL: return Cursor(self.history)
@@ -464,4 +466,37 @@ def test_postgres_nul_boundaries_reject_before_lease_without_changing_wire_contr
             async with session.transaction(parsed, scope=bound_scope, deadline=asyncio.get_running_loop().time() + 1):
                 pytest.fail('invalid input leased a connection')
         assert resource.leased == 0 and connection.calls == []
+    asyncio.run(run())
+
+
+def test_scoped_lexical_candidates_bind_query_filters_before_limit_and_expire():
+    async def run():
+        connection = Connection()
+        resource = Resource(connection)
+        session = PostgresSession(resource)
+        parsed = request(filters=[{'op': 'eq', 'field': 'document_id', 'value': "id' OR TRUE --"}])
+        async with session.transaction(parsed, scope=scope(), deadline=asyncio.get_running_loop().time()+1) as handle:
+            candidates = await handle.lexical_candidates(limit=1)
+            assert len(candidates) == 1 and candidates[0].score == 0.1
+            assert candidates[0].tenant_id == 'tenant-a'
+            sql, values = next((sql, values) for sql, values in connection.calls if sql.startswith('\nWITH search'))
+            assert values[0] == 'private query' and values[-2:] == ("id' OR TRUE --", 1)
+            assert "id' OR TRUE" not in sql and sql.index('authorization_revision') < sql.index('LIMIT')
+        with pytest.raises(InvalidRequest):
+            await handle.lexical_candidates()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('index,value,error', [(0,'other-tenant',implementation.IntegrityViolation),
+    (1,'other-collection',implementation.IntegrityViolation),(6,-1,implementation.IntegrityViolation),
+    (7,0,implementation.IntegrityViolation),(8,'bad',implementation.IntegrityViolation),
+    (9,float('nan'),implementation.IntegrityViolation),(10,'other',UnsupportedCapability),(11,'pg_catalog.english',UnsupportedCapability)])
+def test_lexical_candidate_corruption_rejects(index,value,error):
+    async def run():
+        connection = Connection()
+        row = list(connection.candidates[0]); row[index] = value; connection.candidates = [tuple(row)]
+        session = PostgresSession(Resource(connection))
+        with pytest.raises(error):
+            async with session.transaction(request(), scope=scope(), deadline=asyncio.get_running_loop().time()+1) as handle:
+                await handle.lexical_candidates()
     asyncio.run(run())

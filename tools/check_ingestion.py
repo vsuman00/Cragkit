@@ -11,7 +11,7 @@ def require(condition: bool, code: str) -> None:
         raise IngestionCheckError(code)
 
 
-async def run(config, fixture: dict, admin, *, typescript: bool = False) -> dict:
+async def run(config, fixture: dict, admin, *, typescript: bool = False, lexical: bool = False) -> dict:
     import asyncio
     import hashlib
     from cragkit._postgres_pool import PoolResource
@@ -235,6 +235,10 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False) -> dict
                     require(await cursor.fetchall() == [(canonical_node.source_sha256, canonical_node.canonical_sha256, canonical_node.canonical_text)], 'node_write_python_source_read')
             require(await rows("SELECT count(*) FROM cragkit.ingestion_jobs WHERE intent_id IN ('failed-node-intent','aborted-node-intent','stale-node-intent')") == [(0,)], 'node_failed_staging_leaked')
             checks.append('node_write_python_read_exact_source_and_intent_replay')
+        if lexical:
+            await resource.close()
+            from check_lexical import run as run_lexical
+            checks.extend(await run_lexical(config, fixture, admin))
         return {'state': 'passed', 'checks': checks}
     finally:
         await resource.close()

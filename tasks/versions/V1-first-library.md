@@ -1,6 +1,6 @@
 # V1: First usable lexical library
 
-Status: V1-01 and V1-02 are complete after local and authenticated native hosted verification, including Python runtime-login scope and cleanup tests. V1-03 and checkpoint V1-C1 are also complete; V1-04 canonical text/source spans is complete; V1-05 Python staged ingestion is next. Completion is tracked only in [todo.md](../todo.md).
+Status: Tasks V1-01 through V1-07, checkpoints V1-C1/V1-C2 and the adapter hardening follow-up have passed their scoped local/native hosted checks. Next is V1-08 source-backed result assembly. V1 as a whole remains in progress. Completion and evidence are tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 

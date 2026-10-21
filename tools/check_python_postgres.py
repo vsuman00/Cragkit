@@ -42,7 +42,7 @@ def pgpass_field(value: str) -> str:
     return value.replace('\\', '\\\\').replace(':', '\\:')
 
 
-async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False) -> dict:
+async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False, lexical: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -143,7 +143,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                                    authorization_revision='scope-rev', grant_ids=[])
                                for tenant, principal in zip(tenants, principals)],
                     'document_ids': ['document-0', 'document-1'],
-                }, admin, typescript=typescript)
+                }, admin, typescript=typescript, lexical=lexical)
             except IngestionCheckError as error:
                 code = str(error) if re.fullmatch(r'[a-z_]{1,80}', str(error)) else 'check_failed'
                 raise RuntimeCheckError('ingestion_' + code) from None
@@ -426,14 +426,15 @@ def main() -> int:
     parser.add_argument('--allow-test-writes', action='store_true')
     parser.add_argument('--typescript', action='store_true')
     parser.add_argument('--ingestion', action='store_true')
+    parser.add_argument('--lexical', action='store_true')
     args = parser.parse_args()
     if not args.allow_test_writes:
         print('Runtime checks require explicit test-write authorization.')
         return 2
     try:
         async def bounded():
-            async with asyncio.timeout(180 if args.ingestion and args.typescript else 90):
-                return await check(args.config, typescript=args.typescript, ingestion=args.ingestion)
+            async with asyncio.timeout(300 if args.lexical else 180 if args.ingestion and args.typescript else 90):
+                return await check(args.config, typescript=args.typescript or args.lexical, ingestion=args.ingestion or args.lexical, lexical=args.lexical)
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:
         code = str(error) if re.fullmatch(r'[a-z_]+', str(error)) else 'runtime_check_failed'

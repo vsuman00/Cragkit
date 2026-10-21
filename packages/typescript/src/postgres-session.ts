@@ -1,4 +1,5 @@
-/** Internal read-only scoped lifecycle. This is not a ranked retrieval adapter. */
+/** Internal read-only scoped lifecycle and native lexical candidates. */
+import { z } from 'zod';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { PoolResource, bounded, check_options, now, type LeaseOptions, type PgClient } from './postgres-pool.js';
 import { parse_request, parse_scope, type RetrievalRequest, type TrustedScope } from './contracts.js';
@@ -148,6 +149,35 @@ ORDER BY d.document_id COLLATE pg_catalog."C", g.revision_id COLLATE pg_catalog.
 LIMIT {limit}
 `;
 
+export const _LEXICAL_SQL = `
+WITH search AS (SELECT websearch_to_tsquery('pg_catalog.simple'::regconfig,$1) AS query)
+SELECT d.tenant_id,d.collection_id,d.document_id,g.revision_id,g.generation_id,c.chunk_id,
+ c.start_byte,c.end_byte,c.text_sha256,ts_rank_cd(l.search_vector,search.query)::double precision,g.lexical_profile,l.language_config
+FROM cragkit.documents d
+JOIN cragkit.index_generations g ON g.tenant_id=d.tenant_id AND g.collection_id=d.collection_id
+ AND g.document_id=d.document_id AND g.generation_id=d.active_generation_id
+JOIN cragkit.chunks c ON c.tenant_id=g.tenant_id AND c.collection_id=g.collection_id
+ AND c.document_id=g.document_id AND c.revision_id=g.revision_id AND c.generation_id=g.generation_id
+JOIN cragkit.chunk_lexical l ON l.tenant_id=c.tenant_id AND l.collection_id=c.collection_id
+ AND l.document_id=c.document_id AND l.revision_id=c.revision_id AND l.generation_id=c.generation_id AND l.chunk_id=c.chunk_id
+CROSS JOIN search
+WHERE d.tenant_id=$2 AND d.collection_id=$3 AND NOT d.tombstoned
+ AND d.authorization_revision=$4 AND g.status='ready'
+ AND EXISTS(SELECT 1 FROM cragkit.document_grants x WHERE x.tenant_id=d.tenant_id AND x.collection_id=d.collection_id
+  AND x.document_id=d.document_id AND x.authorization_revision=$5
+  AND (x.principal_id=$6 OR (x.principal_id IS NULL AND x.grant_id=ANY($7::text[]))))
+ AND ({predicate}) AND l.search_vector @@ search.query
+ORDER BY ts_rank_cd(l.search_vector,search.query) DESC,d.document_id COLLATE pg_catalog."C",
+ g.revision_id COLLATE pg_catalog."C",c.ordinal,c.chunk_id COLLATE pg_catalog."C"
+LIMIT {limit}
+`;
+const CandidateSchema = z.strictObject({
+  tenant_id: z.string(), collection: z.string(), document_id: z.string(), revision_id: z.string(),
+  generation_id: z.string(), chunk_id: z.string(), start_byte: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  end_byte: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), text_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  score: z.number().finite().min(0),
+});
+export type LexicalCandidate = Readonly<z.infer<typeof CandidateSchema>>;
 export function compile_filters(filters: RetrievalRequest['required_filters'], start = 1): readonly [string, readonly unknown[]] {
   const values: unknown[] = [];
   const visit = (item: RetrievalRequest['required_filters'][number]): string => {
@@ -226,6 +256,36 @@ export class ScopedSession {
       return Object.freeze(rows.map(row => Object.freeze([row[0] as string, row[1] as string] as const)));
     } finally { this.busy = false; }
   }
+  async lexical_candidates(options: { limit?: number } = {}): Promise<readonly LexicalCandidate[]> {
+    if (!this.active || this.busy || context.getStore() !== this.token) throw new InvalidRequest();
+    if (!options || typeof options !== 'object') throw new InvalidRequest();
+    const limit = options.limit === undefined ? 100 : options.limit;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new InvalidRequest();
+    this.busy = true;
+    try {
+      // The query parameter shifts identifier-filter placeholders by one.
+      const [predicate, parameters] = compile_filters(this.request.required_filters, 8);
+      const text = _LEXICAL_SQL.replace('{predicate}', predicate).replace('{limit}', `$${8 + parameters.length}`);
+      const rows = await query(this.client, text, [this.request.query, this.scope.tenant_id, this.request.collection,
+        this.scope.authorization_revision, this.scope.authorization_revision, this.scope.principal_id,
+        [...this.scope.grant_ids], ...parameters, Math.min(limit, this.request.limits.max_candidates)], this.options);
+      const fields = Object.keys(CandidateSchema.shape);
+      return Object.freeze(rows.map(row => {
+        if (row.length !== 12 || row[10] !== 'native_fts.v1' || row[11] !== 'pg_catalog.simple') throw new UnsupportedCapability();
+        const values = row.slice(0, 10);
+        // pg returns bigint/domain offsets as decimal strings. Convert only exact safe integers.
+        for (const index of [6, 7]) {
+          const value = values[index];
+          if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) values[index] = Number(value);
+        }
+        const parsed = CandidateSchema.safeParse(Object.fromEntries(fields.map((field, index) => [field, values[index]])));
+        if (!parsed.success || parsed.data.tenant_id !== this.scope.tenant_id || parsed.data.collection !== this.request.collection
+            || parsed.data.end_byte <= parsed.data.start_byte) throw new IntegrityViolation();
+        return Object.freeze(parsed.data);
+      }));
+    } finally { this.busy = false; }
+  }
+
 }
 export class PostgresSession {
   constructor(private readonly resource: PoolResource) {}
