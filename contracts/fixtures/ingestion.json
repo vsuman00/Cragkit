@@ -1,0 +1,82 @@
+{
+  "version": "cragkit.ingest.v1",
+  "metadata_cases": [
+    {
+      "id": "empty",
+      "value": {},
+      "sha256": "fc4a3d5af293d9a8fb363eb5443024d212a80b7432b286bf24d4628eac27a57c",
+      "encoded_length": 5
+    },
+    {
+      "id": "integer",
+      "value": {
+        "x": 1
+      },
+      "sha256": "38be0185eb3fb5e39eb4f620cf50b9b8ea81906c0cd234e4a1ea0a624aa130f7",
+      "encoded_length": 20
+    },
+    {
+      "id": "integral-float",
+      "value": {
+        "x": 1.0
+      },
+      "sha256": "38be0185eb3fb5e39eb4f620cf50b9b8ea81906c0cd234e4a1ea0a624aa130f7",
+      "encoded_length": 20
+    },
+    {
+      "id": "negative-zero",
+      "value": {
+        "x": -0.0
+      },
+      "sha256": "0bbc9cbecc4888d508399c45085509d24d629af571a5a81575589a6912225bfe",
+      "encoded_length": 20
+    },
+    {
+      "id": "positive-zero",
+      "value": {
+        "x": 0
+      },
+      "sha256": "0bbc9cbecc4888d508399c45085509d24d629af571a5a81575589a6912225bfe",
+      "encoded_length": 20
+    },
+    {
+      "id": "nested",
+      "value": {
+        "items": [
+          null,
+          true,
+          false,
+          1.25,
+          "Caf\u00e9\ud83d\ude42"
+        ]
+      },
+      "sha256": "d8df5b6776a7d0de3d12224c10b4eca873cea85de851269f397e922c6ce8cd4e",
+      "encoded_length": 46
+    },
+    {
+      "id": "utf8-key-order",
+      "value": {
+        "\ud83d\ude00": "a",
+        "\uffff": "b",
+        "a": "c"
+      },
+      "sha256": "45e63057ed6539cdce5398c3d00afbf6c13c3c49f8e2b83fbfd5de7f7416ad05",
+      "encoded_length": 46
+    },
+    {
+      "id": "nested-order",
+      "value": {
+        "b": {
+          "y": 2,
+          "x": 1
+        },
+        "a": [
+          3,
+          "x"
+        ]
+      },
+      "sha256": "9daf486b9a0b220835cc09a304f32804707452e55700c2bfe32179a07a0c3f24",
+      "encoded_length": 72
+    }
+  ]
+}

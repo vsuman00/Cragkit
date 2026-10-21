@@ -42,7 +42,7 @@ def pgpass_field(value: str) -> str:
     return value.replace('\\', '\\\\').replace(':', '\\:')
 
 
-async def check(config_path: Path, *, typescript: bool = False) -> dict:
+async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -64,7 +64,8 @@ async def check(config_path: Path, *, typescript: bool = False) -> dict:
     principals = ['principal_a_' + token, 'principal_b_' + token]
     tables = ('collections', 'documents', 'document_revisions', 'index_generations',
               'chunks', 'chunk_lexical', 'document_grants', 'ingestion_jobs')
-    selected = ('collections', 'documents', 'index_generations', 'document_grants', 'migration_history')
+    selected = (tables + ('migration_history',) if ingestion else
+                ('collections', 'documents', 'index_generations', 'document_grants', 'migration_history'))
     policy = role + '_select'
     admin = runtime = node_process = None
     locked = created_role = renamed = False
@@ -105,14 +106,18 @@ async def check(config_path: Path, *, typescript: bool = False) -> dict:
             await command(sql.SQL('GRANT USAGE ON SCHEMA cragkit TO {}').format(sql.Identifier(role)))
             await command(sql.SQL('GRANT USAGE ON DOMAIN cragkit.identity_text,cragkit.collection_text,cragkit.sha256_hex,cragkit.safe_count TO {}').format(sql.Identifier(role)))
             for table in selected:
-                await command(sql.SQL('GRANT SELECT ON cragkit.{} TO {}').format(sql.Identifier(table), sql.Identifier(role)))
+                permissions = 'SELECT,INSERT,UPDATE' if ingestion and table != 'migration_history' else 'SELECT'
+                await command(sql.SQL('GRANT ' + permissions + ' ON cragkit.{} TO {}').format(sql.Identifier(table), sql.Identifier(role)))
                 if table == 'migration_history':
                     predicate = sql.SQL('true')
                 else:
                     predicate = sql.SQL("tenant_id=current_setting('cragkit.tenant_id',true) AND tenant_id IN ({},{}) AND collection_id={}").format(sql.Literal(tenants[0]), sql.Literal(tenants[1]), sql.Literal(collection))
-                await command(sql.SQL('CREATE POLICY {} ON cragkit.{} FOR SELECT TO {} USING ({})').format(sql.Identifier(policy), sql.Identifier(table), sql.Identifier(role), predicate))
+                if ingestion and table != 'migration_history':
+                    await command(sql.SQL('CREATE POLICY {} ON cragkit.{} FOR ALL TO {} USING ({}) WITH CHECK ({})').format(sql.Identifier(policy), sql.Identifier(table), sql.Identifier(role), predicate, predicate))
+                else:
+                    await command(sql.SQL('CREATE POLICY {} ON cragkit.{} FOR SELECT TO {} USING ({})').format(sql.Identifier(policy), sql.Identifier(table), sql.Identifier(role), predicate))
             digest = hashlib.sha256(b'synthetic runtime fixture').hexdigest()
-            for index, (tenant, principal) in enumerate(zip(tenants, principals)):
+            for index, (tenant, principal) in enumerate([] if ingestion else zip(tenants, principals)):
                 document, revision = f'document-{index}', f'revision-{index}'
                 await command('INSERT INTO cragkit.collections(tenant_id,collection_id) VALUES (%s,%s)', (tenant, collection))
                 await command('INSERT INTO cragkit.documents(tenant_id,collection_id,document_id,authorization_revision) VALUES (%s,%s,%s,%s)', (tenant, collection, document, 'scope-rev'))
@@ -128,6 +133,23 @@ async def check(config_path: Path, *, typescript: bool = False) -> dict:
         with os.fdopen(descriptor, 'w', encoding='utf-8') as destination:
             destination.write(':'.join(pgpass_field(value) for value in (config.host, str(config.port), config.dbname, role, password)) + '\n')
         runtime_config = config.model_copy(update={'user': role, 'passfile': passfile})
+        if ingestion:
+            if typescript:
+                raise RuntimeCheckError('typescript_ingestion_not_implemented')
+            from check_ingestion import IngestionCheckError, run
+            CURRENT_STAGE = 'python_ingestion'
+            try:
+                result = await run(runtime_config, {
+                    'collection': collection,
+                    'scopes': [dict(tenant_id=tenant, principal_id=principal,
+                                   authorization_revision='scope-rev', grant_ids=[])
+                               for tenant, principal in zip(tenants, principals)],
+                    'document_ids': ['document-0', 'document-1'],
+                }, admin)
+            except IngestionCheckError as error:
+                code = str(error) if re.fullmatch(r'[a-z_]{1,80}', str(error)) else 'check_failed'
+                raise RuntimeCheckError('ingestion_' + code) from None
+            return {**result, 'runtime': 'python', 'cleanup_verified': True, 'maximum_connections': 2}
         if typescript:
             CURRENT_STAGE = 'typescript_runtime'
             fixture_path = Path(temporary.name) / 'fixture.json'
@@ -365,7 +387,8 @@ async def check(config_path: Path, *, typescript: bool = False) -> dict:
                         async with admin.transaction():
                             for table in selected:
                                 await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.{}').format(sql.Identifier(policy), sql.Identifier(table)))
-                                await command(sql.SQL('REVOKE SELECT ON cragkit.{} FROM {}').format(sql.Identifier(table), sql.Identifier(role)))
+                                permissions = 'SELECT,INSERT,UPDATE' if ingestion and table != 'migration_history' else 'SELECT'
+                                await command(sql.SQL('REVOKE ' + permissions + ' ON cragkit.{} FROM {}').format(sql.Identifier(table), sql.Identifier(role)))
                             await command('DELETE FROM cragkit.documents WHERE tenant_id=ANY(%s) AND collection_id=%s', (tenants, collection))
                             await command('DELETE FROM cragkit.collections WHERE tenant_id=ANY(%s) AND collection_id=%s', (tenants, collection))
                             # CREATEROLE does not grant permission to DROP OWNED BY
@@ -402,6 +425,7 @@ def main() -> int:
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--allow-test-writes', action='store_true')
     parser.add_argument('--typescript', action='store_true')
+    parser.add_argument('--ingestion', action='store_true')
     args = parser.parse_args()
     if not args.allow_test_writes:
         print('Runtime checks require explicit test-write authorization.')
@@ -409,7 +433,7 @@ def main() -> int:
     try:
         async def bounded():
             async with asyncio.timeout(90):
-                return await check(args.config, typescript=args.typescript)
+                return await check(args.config, typescript=args.typescript, ingestion=args.ingestion)
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:
         code = str(error) if re.fullmatch(r'[a-z_]+', str(error)) else 'runtime_check_failed'

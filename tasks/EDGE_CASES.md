@@ -115,6 +115,9 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 
 | E72 | Native text parsers disagree on CR/BOM, Unicode line boundaries, split packing or tokenizer work | Shared exact byte/digest/profile fixtures and bounded counter regressions agree; asynchronous/malformed counters fail without leaked work. | V1-04, V1-06 | U |
 
+| E73 | A same-tenant caller has read scope but no document write permission | Require a separately bound application write authorizer before parsing/leasing, reauthorize intent replay, preserve existing ACLs and reject an overprivileged ingestion role. | V1-05, V1-06 | U/I |
+| E74 | COMMIT acknowledgement is lost or times out | Discard the uncertain connection; report the operational failure and resolve with the same intent. Never claim a failed acknowledgement proves no publication. | V1-05, V1-06, V1-11 | U/I |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.

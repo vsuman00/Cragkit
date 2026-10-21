@@ -2,7 +2,7 @@
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. V1-01: COMPLETE, including authenticated native hosted checks. V1-02 Python connection lifecycle: COMPLETE, including actual runtime-login hosted acceptance. Next smallest task: V1-05 (Python staged ingestion); V1-03/V1-C1 and V1-04 are complete. Complete each task's acceptance before starting its dependents.
+V0: COMPLETE locally. V1-01: COMPLETE, including authenticated native hosted checks. V1-02 Python connection lifecycle: COMPLETE, including actual runtime-login hosted acceptance. Next smallest task: V1-06 (TypeScript ingestion parity); V1-03/V1-C1 and V1-04 are complete. Complete each task's acceptance before starting its dependents.
 
 Use status notes when needed: READY, IN_PROGRESS, BLOCKED, IMPLEMENTED_UNVALIDATED, COMPLETE. Check a box only for COMPLETE and attach evidence. Public publication remains pending until actually authorized and verified.
 
@@ -56,7 +56,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V1-04: [Canonical text and source spans](versions/V1-first-library.md#v1-04-canonical-text-and-source-spans) — COMPLETE; 52 Python/72 Node focused cases, both typechecks/build and 23 exact shared fixtures passed. [Evidence](../evaluation/reports/V1/V1-04.md).
 
-- [ ] V1-05: [Python staged ingestion](versions/V1-first-library.md#v1-05-python-staged-ingestion) — evidence: pending.
+- [x] V1-05: [Python staged ingestion](versions/V1-first-library.md#v1-05-python-staged-ingestion) — COMPLETE; 37 focused/327 combined Python-tool cases, strict typing and eight hosted runtime-role ingestion/cleanup groups passed. [Evidence](../evaluation/reports/V1/V1-05.md).
 
 - [ ] V1-06: [TypeScript ingestion parity](versions/V1-first-library.md#v1-06-typescript-ingestion-parity) — evidence: pending.
 
@@ -411,3 +411,6 @@ V1-04 handoff: COMPLETE. Sol Python/TypeScript peers owned separate source/tests
 ## V1-05: Python staged ingestion
 
 State: RUNNING. Outcome I-r1: bounded explicit Python text ingestion writes immutable revisions/chunks/native FTS and publishes one ready generation atomically; same intent/payload replays, changed payload conflicts, interrupted work preserves the prior active generation. Sol coordinate_peer owns packages/python/src/cragkit/ingestion.py and assembles. Sol manager_peer owns packages/python/tests/test_ingestion.py and tools/check_ingestion.py. Root owns the shared native fixture bridge tools/check_python_postgres.py, any shared ingestion fixtures, docs/tracker/Git and all database execution. Native contracts/schema/corpus and completed canonical modules are read-only. Peers agree receipt/hash/ingestion API directly, escalate material scope/ownership changes to root/Astra, and stop before transfers. One serialized test process, at most two database connections, synthetic empty-target fixture only, no providers/models/services. Actual nonowner writer-role RLS, idempotency/conflict, pre-publication failure/rollback, scoped keys and digest/count checks are required before V1-06.
+
+
+V1-05 handoff: COMPLETE. Both Sol peers reached their usage limit after writing drafts; root confirmed inactive writers and reclaimed their paths. Root integrated mandatory bound write authorization, adapter-safe input checks, stable TLV metadata identity, transaction disposal/error corrections and test-double state repairs. Actual final checks: 37 focused/327 combined Python-tool cases; strict mypy 11 source files; 16 sealed hashes; eight actual hosted ingestion groups including denied same-tenant principal, replay/conflict, Unicode/FTS, tenant isolation, rollback, CAS and cancellation/reuse. Fixture cleanup and an independent plugin query passed. Default frozen sync removed optional drivers. Changed files and exact commands/limitations are in V1-05 evidence. No migration/wire/lock/approved-corpus/TypeScript changes, services or models. Disk headroom 20 GiB; max two native clients and one test process. Untracked SECURITY-EVALUATION.md remains user/external-owned and excluded from commits; its SQLSTATE classification finding is an explicit adapter hardening follow-up. Lost COMMIT acknowledgements remain ambiguous until same-intent retry; no process-kill or simultaneous-two-transaction recovery claim. Learning pending. Next smallest action: V1-06 native TypeScript ingestion parity; V1 remains in progress.
