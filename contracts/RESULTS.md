@@ -1,6 +1,6 @@
 # Evidence and result contract, revision 0.1
 
-This extends [the request contract](README.md) and uses its strict objects, scalar Unicode, safe finite numbers, integer normalization and native-input bounds. Result validation checks declarations and internal consistency. Source authorization, source-store digest verification, coverage assessment and token counting remain later executable stages.
+This extends [the request contract](README.md) and uses its strict objects, scalar Unicode, safe finite numbers, integer normalization and native-input bounds. Result validation checks declarations and internal consistency. V1-08 now performs scoped source authorization and canonical source/digest verification in the native PostgreSQL runtimes. Coverage assessment and strict tokenizer-based counting remain later executable stages.
 
 ## Envelope and evidence
 
@@ -8,7 +8,7 @@ This extends [the request contract](README.md) and uses its strict objects, scal
 
 At most 64 `Evidence` values are allowed. Each requires identity strings `evidence_id`, `collection`, `document_id`, `revision_id`, `chunk_id` and `source_locator`; the latter is an opaque application label, never fetched or interpreted as executable markup. Required `start_byte` and `end_byte` are safe nonnegative integers, start inclusive and end exclusive. Required `text` is nonempty scalar Unicode, at most 32,768 UTF-8 bytes. Require `end_byte > start_byte` and `end_byte - start_byte == len(text.encode("utf-8"))`.
 
-Required `source_sha256` and `text_sha256` are lowercase 64-digit hex strings. Verify `text_sha256` against the excerpt's UTF-8 bytes. For each `(collection, document_id, revision_id)` in a result, all source digests must agree. The full source digest can only be verified against the immutable canonical source later; checking its syntax does not establish source fidelity or truth. IDs remain strings, including IDs beyond JavaScript's safe integer range. Evidence IDs are unique within a result. Parsed revisions and collections are immutable snapshots.
+Required `source_sha256` and `text_sha256` are lowercase 64-digit hex strings. Verify `text_sha256` against the excerpt's UTF-8 bytes. For each `(collection, document_id, revision_id)` in a result, all source digests must agree. At source release, the full source digest is verified against the immutable canonical source; checking its syntax does not establish source fidelity or truth. IDs remain strings, including IDs beyond JavaScript's safe integer range. Evidence IDs are unique within a result. Parsed revisions and collections are immutable snapshots.
 
 ## Facets and evidence estimates
 

@@ -1,6 +1,6 @@
 # V1: First usable lexical library
 
-Status: Tasks V1-01 through V1-07, checkpoints V1-C1/V1-C2 and the adapter hardening follow-up have passed their scoped local/native hosted checks. Next is V1-08 source-backed result assembly. V1 as a whole remains in progress. Completion and evidence are tracked only in [todo.md](../todo.md).
+Status: Tasks V1-01 through V1-08, checkpoints V1-C1/V1-C2 and the adapter hardening follow-up have passed their scoped local/native hosted checks. Next is V1-09 revision publication and deletion. V1 as a whole remains in progress. Completion and evidence are tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 

@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ._postgres_filters import compile_filters
 from ._postgres_pool import PoolResource
+from ._postgres_source import SourceFetch, _SOURCE_SQL, verify_source
 from .contracts import RetrievalRequest, TrustedScope, parse_request, parse_scope
 from .errors import (
     CragkitError, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable,
@@ -291,6 +292,43 @@ class ScopedSession:
                 raise IntegrityViolation()
             candidates.append(candidate)
         return tuple(candidates)
+
+
+    async def fetch_evidence(self, candidate: LexicalCandidate, *, max_source_bytes: int) -> SourceFetch:
+        if not self._active or asyncio.current_task() is not self._task:
+            raise InvalidRequest()
+        if type(max_source_bytes) is not int or not 0 <= max_source_bytes <= 16_777_216:
+            raise InvalidRequest()
+        if not isinstance(candidate, LexicalCandidate):
+            raise InvalidRequest()
+        validated = None
+        try:
+            validated = LexicalCandidate.model_validate(candidate.model_dump(mode='json'))
+        except (ValidationError, ValueError, TypeError):
+            pass
+        if validated is None:
+            raise InvalidRequest()
+        candidate = validated
+        identities = (candidate.tenant_id, candidate.collection, candidate.document_id,
+                      candidate.revision_id, candidate.generation_id, candidate.chunk_id)
+        try:
+            malformed = (len(candidate.collection) > 128 or len(candidate.collection.encode('utf-8')) > 128
+                         or any(not value.strip(' \t\r\n\f\v') or '\0' in value
+                                or len(value) > 256 or len(value.encode('utf-8')) > 256 for value in identities))
+        except UnicodeError:
+            malformed = True
+        if malformed or candidate.end_byte <= candidate.start_byte:
+            raise InvalidRequest()
+        if candidate.tenant_id != self._scope.tenant_id or candidate.collection != self._request.collection:
+            raise UnauthorizedScope()
+        rows = await _query(self._connection, _SOURCE_SQL.format(predicate=self._predicate), (
+            max_source_bytes, *identities, self._scope.tenant_id, self._request.collection,
+            self._scope.authorization_revision, self._scope.authorization_revision,
+            self._scope.principal_id, list(self._scope.grant_ids), *self._parameters,
+        ), self._deadline)
+        result = verify_source(candidate, rows, max_source_bytes)
+        _remaining(self._deadline)
+        return result
 
 
 class PostgresSession:

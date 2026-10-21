@@ -1,5 +1,7 @@
 /** Internal read-only scoped lifecycle and native lexical candidates. */
 import { z } from 'zod';
+import { valid_native_json } from './shared.js';
+import { verify_source, type SourceFetch } from './postgres-source.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { PoolResource, bounded, check_options, now, type LeaseOptions, type PgClient } from './postgres-pool.js';
 import { parse_request, parse_scope, type RetrievalRequest, type TrustedScope } from './contracts.js';
@@ -171,6 +173,31 @@ ORDER BY ts_rank_cd(l.search_vector,search.query) DESC,d.document_id COLLATE pg_
  g.revision_id COLLATE pg_catalog."C",c.ordinal,c.chunk_id COLLATE pg_catalog."C"
 LIMIT {limit}
 `;
+export const _SOURCE_SQL = `
+SELECT c.tenant_id,c.collection_id,c.document_id,c.revision_id,c.generation_id,c.chunk_id,
+ r.canonical_sha256,octet_length(r.canonical_text),
+ CASE WHEN octet_length(r.canonical_text)<=$1 AND octet_length(r.canonical_text)<=16777216
+      THEN r.canonical_text ELSE NULL END,
+ c.start_byte,c.end_byte,octet_length(c.text),
+ CASE WHEN octet_length(c.text)<=32768 THEN c.text ELSE NULL END,
+ c.text_sha256,r.source_locator,g.lexical_profile,
+ (d.active_generation_id IS NOT DISTINCT FROM g.generation_id)
+FROM cragkit.documents d
+JOIN cragkit.index_generations g ON g.tenant_id=d.tenant_id AND g.collection_id=d.collection_id
+ AND g.document_id=d.document_id
+JOIN cragkit.document_revisions r ON r.tenant_id=g.tenant_id AND r.collection_id=g.collection_id
+ AND r.document_id=g.document_id AND r.revision_id=g.revision_id
+JOIN cragkit.chunks c ON c.tenant_id=g.tenant_id AND c.collection_id=g.collection_id
+ AND c.document_id=g.document_id AND c.revision_id=g.revision_id AND c.generation_id=g.generation_id
+WHERE c.tenant_id=$2 AND c.collection_id=$3 AND c.document_id=$4 AND c.revision_id=$5
+ AND c.generation_id=$6 AND c.chunk_id=$7
+ AND d.tenant_id=$8 AND d.collection_id=$9 AND NOT d.tombstoned
+ AND d.authorization_revision=$10 AND g.status='ready'
+ AND EXISTS(SELECT 1 FROM cragkit.document_grants x WHERE x.tenant_id=d.tenant_id AND x.collection_id=d.collection_id
+  AND x.document_id=d.document_id AND x.authorization_revision=$11
+  AND (x.principal_id=$12 OR (x.principal_id IS NULL AND x.grant_id=ANY($13::text[]))))
+ AND ({predicate})
+`;
 const CandidateSchema = z.strictObject({
   tenant_id: z.string(), collection: z.string(), document_id: z.string(), revision_id: z.string(),
   generation_id: z.string(), chunk_id: z.string(), start_byte: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
@@ -254,6 +281,30 @@ export class ScopedSession {
         [...this.scope.grant_ids], ...this.parameters, Math.min(limit, this.request.limits.max_candidates)], this.options);
       if (rows.some(row => row.length !== 3 || typeof row[0] !== 'string' || typeof row[1] !== 'string' || row[2] !== 'native_fts.v1')) throw new UnsupportedCapability();
       return Object.freeze(rows.map(row => Object.freeze([row[0] as string, row[1] as string] as const)));
+    } finally { this.busy = false; }
+  }
+  async fetch_evidence(input: LexicalCandidate, options: { max_source_bytes: number }): Promise<SourceFetch> {
+    if (!this.active || this.busy || context.getStore() !== this.token) throw new InvalidRequest();
+    if (!valid_native_json(input) || !valid_native_json(options)) throw new InvalidRequest();
+    const budget = z.strictObject({ max_source_bytes: z.number().int().min(0).max(16777216) }).safeParse(options);
+    if (!budget.success) throw new InvalidRequest();
+    const maxSourceBytes = budget.data.max_source_bytes;
+    const parsed = CandidateSchema.safeParse(input);
+    const identityValues = parsed.success ? [parsed.data.tenant_id, parsed.data.collection, parsed.data.document_id, parsed.data.revision_id, parsed.data.generation_id, parsed.data.chunk_id] : [];
+    if (!parsed.success || parsed.data.end_byte <= parsed.data.start_byte || identityValues.some(value => value.length > 256 || !/[^ \t\r\n\f\v]/.test(value) || value.includes('\0') || /[\uD800-\uDFFF]/u.test(value) || Buffer.byteLength(value) > 256)
+      || (parsed.success && Buffer.byteLength(parsed.data.collection) > 128)
+      || !options || !Number.isSafeInteger(options.max_source_bytes) || options.max_source_bytes < 0 || options.max_source_bytes > 16777216) throw new InvalidRequest();
+    const candidate = Object.freeze(parsed.data);
+    if (candidate.tenant_id !== this.scope.tenant_id || candidate.collection !== this.request.collection) throw new UnauthorizedScope();
+    this.busy = true;
+    try {
+      const [predicate, parameters] = compile_filters(this.request.required_filters, 14);
+      const rows = await query(this.client, _SOURCE_SQL.replace('{predicate}', predicate), [maxSourceBytes,
+        candidate.tenant_id,candidate.collection,candidate.document_id,candidate.revision_id,candidate.generation_id,candidate.chunk_id,
+        this.scope.tenant_id,this.request.collection,this.scope.authorization_revision,this.scope.authorization_revision,this.scope.principal_id,[...this.scope.grant_ids],...parameters],this.options);
+      const result = verify_source(candidate, rows, maxSourceBytes);
+      check_options(this.options);
+      return result;
     } finally { this.busy = false; }
   }
   async lexical_candidates(options: { limit?: number } = {}): Promise<readonly LexicalCandidate[]> {

@@ -122,6 +122,8 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 
 | E76 | Node returns PostgreSQL bigint/domain byte offsets as decimal strings | Decode only canonical nonnegative integer strings and enforce the safe-integer range; reject fractional, Boolean, null or unsafe offsets before returning candidates. | V1-07, V1-08 | U/I |
 
+| E77 | Original source bytes differ from normalized canonical bytes, or a source budget changes during an awaited fetch | Verify/return the canonical digest and exact immutable bytes; snapshot the requested byte allowance before SQL and preserve opaque source labels. | V1-08 | U/I |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.
