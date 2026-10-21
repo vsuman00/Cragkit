@@ -118,6 +118,8 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 | E73 | A same-tenant caller has read scope but no document write permission | Require a separately bound application write authorizer before parsing/leasing, reauthorize intent replay, preserve existing ACLs and reject an overprivileged ingestion role. | V1-05, V1-06 | U/I |
 | E74 | COMMIT acknowledgement is lost or times out | Discard the uncertain connection; report the operational failure and resolve with the same intent. Never claim a failed acknowledgement proves no publication. | V1-05, V1-06, V1-11 | U/I |
 
+| E75 | RLS allows reading/inserting a staging generation but silently hides its ready UPDATE | Require exactly one ready-transition row before changing the active pointer; rollback the entire generation on a missing publication barrier. | V1-05, V1-06 | U/I |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.

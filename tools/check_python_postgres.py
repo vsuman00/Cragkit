@@ -134,8 +134,6 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
             destination.write(':'.join(pgpass_field(value) for value in (config.host, str(config.port), config.dbname, role, password)) + '\n')
         runtime_config = config.model_copy(update={'user': role, 'passfile': passfile})
         if ingestion:
-            if typescript:
-                raise RuntimeCheckError('typescript_ingestion_not_implemented')
             from check_ingestion import IngestionCheckError, run
             CURRENT_STAGE = 'python_ingestion'
             try:
@@ -145,11 +143,11 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                                    authorization_revision='scope-rev', grant_ids=[])
                                for tenant, principal in zip(tenants, principals)],
                     'document_ids': ['document-0', 'document-1'],
-                }, admin)
+                }, admin, typescript=typescript)
             except IngestionCheckError as error:
                 code = str(error) if re.fullmatch(r'[a-z_]{1,80}', str(error)) else 'check_failed'
                 raise RuntimeCheckError('ingestion_' + code) from None
-            return {**result, 'runtime': 'python', 'cleanup_verified': True, 'maximum_connections': 2}
+            return {**result, 'runtime': 'python_and_node' if typescript else 'python', 'cleanup_verified': True, 'maximum_connections': 2}
         if typescript:
             CURRENT_STAGE = 'typescript_runtime'
             fixture_path = Path(temporary.name) / 'fixture.json'
@@ -385,6 +383,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                         raise RuntimeCheckError('schema_restore_failed')
                     if created_role:
                         async with admin.transaction():
+                            if ingestion:
+                                await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.index_generations').format(sql.Identifier(role + '_block_ready')))
                             for table in selected:
                                 await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.{}').format(sql.Identifier(policy), sql.Identifier(table)))
                                 permissions = 'SELECT,INSERT,UPDATE' if ingestion and table != 'migration_history' else 'SELECT'
@@ -432,7 +432,7 @@ def main() -> int:
         return 2
     try:
         async def bounded():
-            async with asyncio.timeout(90):
+            async with asyncio.timeout(180 if args.ingestion and args.typescript else 90):
                 return await check(args.config, typescript=args.typescript, ingestion=args.ingestion)
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:

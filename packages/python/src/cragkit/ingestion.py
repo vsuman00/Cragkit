@@ -366,7 +366,8 @@ class PostgresIndexer:
         if hook is not None:
             await hook()
         _check_deadline(deadline)
-        await query('UPDATE cragkit.index_generations SET status=\'ready\' WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s RETURNING 1', (*key, receipt.generation_id))
+        if await query('UPDATE cragkit.index_generations SET status=\'ready\' WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s RETURNING 1', (*key, receipt.generation_id)) != [(1,)]:
+            raise IntegrityViolation()
         changed = await query('UPDATE cragkit.documents SET active_generation_id=%s,metadata=%s::jsonb WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND active_generation_id IS NOT DISTINCT FROM %s AND NOT tombstoned AND authorization_revision=%s RETURNING 1', (receipt.generation_id, metadata_json, *key, expected, scope.authorization_revision))
         if changed != [(1,)]:
             raise IndexNotReady()

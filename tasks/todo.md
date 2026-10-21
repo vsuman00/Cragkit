@@ -2,7 +2,7 @@
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. V1-01: COMPLETE, including authenticated native hosted checks. V1-02 Python connection lifecycle: COMPLETE, including actual runtime-login hosted acceptance. Next smallest task: V1-06 (TypeScript ingestion parity); V1-03/V1-C1 and V1-04 are complete. Complete each task's acceptance before starting its dependents.
+V0: COMPLETE locally. V1-01: COMPLETE, including authenticated native hosted checks. V1-02 Python connection lifecycle: COMPLETE, including actual runtime-login hosted acceptance. Next smallest task: adapter hardening V1-H1, then V1-07 (scoped lexical retrieval); V1-03/V1-C1 and V1-04 are complete. Complete each task's acceptance before starting its dependents.
 
 Use status notes when needed: READY, IN_PROGRESS, BLOCKED, IMPLEMENTED_UNVALIDATED, COMPLETE. Check a box only for COMPLETE and attach evidence. Public publication remains pending until actually authorized and verified.
 
@@ -58,9 +58,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V1-05: [Python staged ingestion](versions/V1-first-library.md#v1-05-python-staged-ingestion) — COMPLETE; 37 focused/327 combined Python-tool cases, strict typing and eight hosted runtime-role ingestion/cleanup groups passed. [Evidence](../evaluation/reports/V1/V1-05.md).
 
-- [ ] V1-06: [TypeScript ingestion parity](versions/V1-first-library.md#v1-06-typescript-ingestion-parity) — evidence: pending.
+- [x] V1-06: [TypeScript ingestion parity](versions/V1-first-library.md#v1-06-typescript-ingestion-parity) — COMPLETE; 58 Node/39 Python focused cases, exact shared identifier oracle and 14 hosted groups with both write/read directions passed. [Evidence](../evaluation/reports/V1/V1-06.md).
 
-- [ ] V1-C2: Demonstration, relevant regression checks, learning review and resource note through V1-06.
+- [x] V1-C2: COMPLETE; 266 Node/329 Python-tool regressions, both typechecks/build, 66 wire cases, four schemas and 16 sealed hashes passed; hosted parity/rollback demonstrated, learning pending. [Evidence](../evaluation/reports/V1/V1-06.md).
 
 - [ ] V1-07: [Scoped lexical retrieval](versions/V1-first-library.md#v1-07-scoped-lexical-retrieval) — evidence: pending.
 
@@ -414,3 +414,13 @@ State: RUNNING. Outcome I-r1: bounded explicit Python text ingestion writes immu
 
 
 V1-05 handoff: COMPLETE. Both Sol peers reached their usage limit after writing drafts; root confirmed inactive writers and reclaimed their paths. Root integrated mandatory bound write authorization, adapter-safe input checks, stable TLV metadata identity, transaction disposal/error corrections and test-double state repairs. Actual final checks: 37 focused/327 combined Python-tool cases; strict mypy 11 source files; 16 sealed hashes; eight actual hosted ingestion groups including denied same-tenant principal, replay/conflict, Unicode/FTS, tenant isolation, rollback, CAS and cancellation/reuse. Fixture cleanup and an independent plugin query passed. Default frozen sync removed optional drivers. Changed files and exact commands/limitations are in V1-05 evidence. No migration/wire/lock/approved-corpus/TypeScript changes, services or models. Disk headroom 20 GiB; max two native clients and one test process. Untracked SECURITY-EVALUATION.md remains user/external-owned and excluded from commits; its SQLSTATE classification finding is an explicit adapter hardening follow-up. Lost COMMIT acknowledgements remain ambiguous until same-intent retry; no process-kill or simultaneous-two-transaction recovery claim. Learning pending. Next smallest action: V1-06 native TypeScript ingestion parity; V1 remains in progress.
+
+
+## V1-06: Native TypeScript ingestion parity
+
+State: RUNNING. Outcome I-r2 preserves the accepted Python write-authorizer/hash/receipt/publication semantics in native Node, with cross-runtime reads and retries on the dedicated hosted fixture. Sol peers remain unavailable after their reported usage limit; root is the sole writer and final integrator under the project skill fallback. Writable paths: TypeScript ingestion module/tests, new native child helper, existing Python native fixture/helper for serialized cross-runtime verification, shared ingestion fixture only if independent oracle additions are needed, docs/tracker/Git. Read-only: Python accepted ingestion/canonical sources, wire contracts, migrations, dependency locks and approved corpus. No replacement model, provider/model/services or registry publication. One test process, max two native clients. Acceptance: exact shared metadata/identifier parity, both runtime write/read directions, intent conflict/replay, bounded AbortSignal/deadline cleanup, strict typing and full checkpoint regressions.
+
+V1-06 integration scope refinement: 06A owns native source/tests and shared identifier fixtures; 06B owns the serialized hosted child/bridge; C2 owns combined regression evidence/docs. Root remains their single writer. Review found an accepted Python publication gap: a policy could make the staging-to-ready UPDATE return no rows. Root authorizes the minimal matching Python/TypeScript correction and regressions before accepting parity; a missing ready barrier must roll back, not advance the active pointer. This correction preserves wire/schema/hash contracts.
+
+
+V1-06/V1-C2 handoff: COMPLETE. Root integrated native Node ingestion, 58 Node/39 Python focused checks and eight independent full-identifier fixtures alongside the metadata oracle. A missing ready-transition row now fails both runtimes before active publication; real restrictive RLS confirms rollback. The added DDL test initially fetched nonexistent result rows, leaving its temporary policy and preventing cleanup. Root removed only its exact failed fixture, corrected command handling and parent cleanup, then reran all 14 hosted groups successfully. Both runtime write/read/replay directions matched. Independent plugin checks: zero fixture roles/policies/connections/documents/collections; security advisor only nine expected INFO no-policy findings. Final default driver-absent Python 329 cases/mypy 11 files, Node 266 cases/build/typecheck, 66 wire cases/four schemas/16 sealed hashes passed. Runtime pools/child processes closed, max two native clients, no services/models/publication. Headroom 20 GiB disk/49% memory free. Sol peers remained unavailable; root was sole writer, no replacement model or unverified review. Untracked SECURITY-EVALUATION.md excluded. Detailed changed paths, commands and limitations are in V1-06 evidence. Learning pending. Next: V1-H1 adapter SQLSTATE/NUL hardening identified during security review, then V1-07. V1 remains in progress.

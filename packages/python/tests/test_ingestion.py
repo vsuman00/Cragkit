@@ -45,6 +45,7 @@ class Connection:
         self.failure = None
         self.rollback_bad = False
         self.rollback_block = None
+        self.ready_rows = [(1,)]
         self.commit_error = None
         self.commit_block = False
         self.block_query = None
@@ -96,6 +97,8 @@ class Connection:
         stripped = query.lstrip()
         if stripped.startswith(('INSERT ', 'UPDATE ')):
             self.staged.append((query, copy.deepcopy(params)))
+            if stripped.startswith('UPDATE cragkit.index_generations'):
+                return Cursor(self.ready_rows)
             if stripped.startswith('UPDATE cragkit.documents'):
                 self.published.append(copy.deepcopy(params))
             if stripped.startswith('INSERT INTO cragkit.documents'):
@@ -392,4 +395,30 @@ def test_begin_and_setup_driver_failures_are_redacted():
             await ingest(indexer)
         assert caught.value.__cause__ is None and 'private' not in str(caught.value)
         assert connection.rolled_back == 1 and resource.returned == 1
+    asyncio.run(run())
+
+
+def test_shared_identifier_oracle_matches_python():
+    import json
+    from cragkit.canonical import CanonicalDocument
+    root = Path(__file__).resolve().parents[3]
+    fixtures = json.loads((root / 'contracts/fixtures/ingestion.json').read_text())
+    canonical = json.loads((root / 'contracts/fixtures/canonical.json').read_text())['cases']
+    for case in fixtures['identifier_cases']:
+        document = next(item['expected'] for item in canonical if item['id'] == case['canonical_case'])
+        document = CanonicalDocument.model_validate_json(json.dumps(document))
+        metadata = next(item for item in fixtures['metadata_cases'] if item['id'] == case['metadata_case'])
+        actual = implementation._identifiers(document, parse_scope(case['scope']), case['collection'],
+            case['document_id'], case['intent_id'], case['source_locator'], metadata['sha256'], case['expected_generation_id'])
+        assert list(actual) == case['expected'], case['id']
+
+
+def test_missing_ready_publication_barrier_cannot_publish_document():
+    async def run():
+        connection, resource, indexer = fixture()
+        connection.ready_rows = []
+        with pytest.raises(IntegrityViolation):
+            await ingest(indexer)
+        assert connection.committed == 0 and connection.rolled_back == 1
+        assert connection.published == [] and connection.staged == []
     asyncio.run(run())

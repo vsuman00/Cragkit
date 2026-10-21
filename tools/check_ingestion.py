@@ -11,14 +11,14 @@ def require(condition: bool, code: str) -> None:
         raise IngestionCheckError(code)
 
 
-async def run(config, fixture: dict, admin) -> dict:
+async def run(config, fixture: dict, admin, *, typescript: bool = False) -> dict:
     import asyncio
     import hashlib
     from cragkit._postgres_pool import PoolResource
     from cragkit.canonical import canonicalize
     from cragkit.contracts import parse_scope
     from cragkit.ingestion import PostgresIndexer
-    from cragkit.errors import IndexNotReady, InvalidRequest, UnauthorizedScope
+    from cragkit.errors import IndexNotReady, IntegrityViolation, InvalidRequest, UnauthorizedScope
 
     scopes = [parse_scope(value) for value in fixture['scopes']]
     require(len(scopes) == 2 and scopes[0].tenant_id != scopes[1].tenant_id, 'fixture_scope_shape')
@@ -28,10 +28,13 @@ async def run(config, fixture: dict, admin) -> dict:
     checks: list[str] = []
     loop = asyncio.get_running_loop()
 
-    async def rows(query, params=None):
+    async def command(query, params=None):
         async with asyncio.timeout(10):
-            cursor = await admin.execute(query, params)
-            return await cursor.fetchall()
+            return await admin.execute(query, params)
+
+    async def rows(query, params=None):
+        cursor = await command(query, params)
+        return await cursor.fetchall()
 
     async def snapshot():
         output = []
@@ -162,6 +165,76 @@ async def run(config, fixture: dict, admin) -> dict:
         replay = await ingest(indexer, 'published replacement🙂', intent_id='replacement-intent', expected_generation_id=first.generation_id)
         require(replay.replayed is True, 'pool_not_reusable_after_cancellation')
         checks.append('cancelled_staging_rollback_pool_reuse')
+        # A restrictive UPDATE policy can silently hide the ready-transition row.
+        from psycopg import sql
+        policy_name = config.user + '_block_ready'
+        before = await snapshot()
+        await command(sql.SQL('CREATE POLICY {} ON cragkit.index_generations AS RESTRICTIVE FOR UPDATE TO {} USING (false) WITH CHECK (false)').format(sql.Identifier(policy_name), sql.Identifier(config.user)))
+        try:
+            rejected = False
+            try:
+                await ingest(indexer, 'blocked readiness transition', intent_id='blocked-ready-intent',
+                             expected_generation_id=updated.generation_id)
+            except IntegrityViolation:
+                rejected = True
+            require(rejected and await snapshot() == before, 'missing_ready_barrier_published')
+        finally:
+            await command(sql.SQL('DROP POLICY {} ON cragkit.index_generations').format(sql.Identifier(policy_name)))
+        checks.append('rls_hidden_ready_transition_rolls_back_publication')
+        if typescript:
+            # Close Python's native client before starting Node: admin plus one runtime only.
+            await resource.close()
+            import json
+            import os
+            from pathlib import Path
+            import tempfile
+            with tempfile.TemporaryDirectory(prefix='cragkit-ingestion-') as directory:
+                config_path = Path(directory) / 'runtime.json'
+                fixture_path = Path(directory) / 'fixture.json'
+                node_fixture = {**fixture, 'python_source': source, 'python_receipt': first.model_dump(mode='json')}
+                for path, value in ((config_path, config.model_dump(mode='json')), (fixture_path, node_fixture)):
+                    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(descriptor, 'w', encoding='utf-8') as destination:
+                        json.dump(value, destination)
+                process = await asyncio.create_subprocess_exec(
+                    'node', str(Path(__file__).with_name('check_typescript_ingestion.mjs').resolve()),
+                    '--allow-ingestion-checks', str(config_path), str(fixture_path),
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=8192)
+                try:
+                    async with asyncio.timeout(60):
+                        output, _ = await process.communicate()
+                    require(len(output) <= 8192, 'node_result_size')
+                    result = json.loads(output)
+                    require(process.returncode == 0 and result.get('state') == 'passed',
+                            result.get('code', 'node_failed') if isinstance(result, dict) else 'node_failed')
+                    node_checks = result.get('checks')
+                    require(isinstance(node_checks, list) and len(node_checks) == 4
+                            and all(isinstance(item, str) and item.replace('_', '').isalpha() for item in node_checks), 'node_result_shape')
+                    checks.extend(node_checks)
+                finally:
+                    if process.returncode is None:
+                        process.kill()
+                        await process.wait()
+            # Node has closed its pool; Python now reads/replays Node's immutable generation.
+            resource = PoolResource(config.model_copy(update={'max_size': 1}))
+            await resource.open()
+            async def authorize_node(scope, target_collection, target_document):
+                return scope in scopes and target_collection == collection and target_document == 'node-document'
+            indexer = PostgresIndexer(resource, authorize_write=authorize_node)
+            node_source = '\ufeffNode Café🙂\r\n\r\nNative source\n'
+            node_receipt = await ingest(indexer, node_source, document_id='node-document', intent_id='node-intent',
+                                        metadata={'🙂': [None, True, 1.0], 'z': -0.0})
+            expected_receipt = {**result['receipt'], 'replayed': True}
+            require(node_receipt.model_dump(mode='json') == expected_receipt, 'node_write_python_intent_parity')
+            canonical_node = canonicalize(node_source, target_bytes=8, max_chunk_bytes=16)
+            async with resource.lease(deadline=loop.time() + 8) as connection:
+                async with connection.transaction(force_rollback=True):
+                    await connection.execute("SELECT set_config('cragkit.tenant_id',%s,true)", (scopes[0].tenant_id,))
+                    cursor = await connection.execute('SELECT source_sha256,canonical_sha256,canonical_text FROM cragkit.document_revisions WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND revision_id=%s',
+                        (scopes[0].tenant_id, collection, 'node-document', node_receipt.revision_id))
+                    require(await cursor.fetchall() == [(canonical_node.source_sha256, canonical_node.canonical_sha256, canonical_node.canonical_text)], 'node_write_python_source_read')
+            require(await rows("SELECT count(*) FROM cragkit.ingestion_jobs WHERE intent_id IN ('failed-node-intent','aborted-node-intent','stale-node-intent')") == [(0,)], 'node_failed_staging_leaked')
+            checks.append('node_write_python_read_exact_source_and_intent_replay')
         return {'state': 'passed', 'checks': checks}
     finally:
         await resource.close()
