@@ -42,7 +42,7 @@ def pgpass_field(value: str) -> str:
     return value.replace('\\', '\\\\').replace(':', '\\:')
 
 
-async def check(config_path: Path) -> dict:
+async def check(config_path: Path, *, typescript: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -66,7 +66,7 @@ async def check(config_path: Path) -> dict:
               'chunks', 'chunk_lexical', 'document_grants', 'ingestion_jobs')
     selected = ('collections', 'documents', 'index_generations', 'document_grants', 'migration_history')
     policy = role + '_select'
-    admin = runtime = None
+    admin = runtime = node_process = None
     locked = created_role = renamed = False
     completed = []
     temporary = tempfile.TemporaryDirectory(prefix='cragkit-runtime-')
@@ -128,6 +128,91 @@ async def check(config_path: Path) -> dict:
         with os.fdopen(descriptor, 'w', encoding='utf-8') as destination:
             destination.write(':'.join(pgpass_field(value) for value in (config.host, str(config.port), config.dbname, role, password)) + '\n')
         runtime_config = config.model_copy(update={'user': role, 'passfile': passfile})
+        if typescript:
+            CURRENT_STAGE = 'typescript_runtime'
+            fixture_path = Path(temporary.name) / 'fixture.json'
+            runtime_path = Path(temporary.name) / 'runtime.json'
+            fixture = {
+                'collection': collection,
+                'scopes': [dict(tenant_id=tenant, principal_id=principal,
+                               authorization_revision='scope-rev', grant_ids=[])
+                           for tenant, principal in zip(tenants, principals)],
+                'expected_documents': [[f'document-{index}', f'revision-{index}'] for index in range(2)],
+                'admin_config': str(config_path.resolve()),
+            }
+            for path, value in ((fixture_path, fixture),
+                                (runtime_path, runtime_config.model_dump(mode='json'))):
+                descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as destination:
+                    json.dump(value, destination)
+            node_process = await asyncio.create_subprocess_exec(
+                'node', str(Path(__file__).resolve().with_name('check_typescript_postgres.mjs')),
+                '--config', str(runtime_path), '--fixture', str(fixture_path), '--allow-runtime-checks',
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL, limit=8192)
+            assert node_process.stdout is not None and node_process.stdin is not None
+            result = None
+            lock_transaction = None
+            lock_mode = None
+            try:
+                while line := await node_process.stdout.readline():
+                    message = json.loads(line)
+                    kind = message.get('type')
+                    response = None
+                    if (kind == 'lock_request' and lock_transaction is None
+                            and message.get('mode') in ('deadline', 'abort')):
+                        lock_mode = message['mode']
+                        lock_transaction = admin.transaction()
+                        await lock_transaction.__aenter__()
+                        await command('LOCK TABLE cragkit.documents IN ACCESS EXCLUSIVE MODE')
+                        response = {'type': 'locked'}
+                    elif kind == 'query_started' and lock_transaction is not None:
+                        until = asyncio.get_running_loop().time() + 3
+                        while True:
+                            if await rows("SELECT count(*) FROM pg_stat_activity WHERE usename=%s AND wait_event_type='Lock'", (role,)) == [(1,)]:
+                                break
+                            if asyncio.get_running_loop().time() >= until:
+                                raise RuntimeCheckError('typescript_lock_not_observed')
+                            await asyncio.sleep(0.02)
+                        response = {'type': 'abort' if lock_mode == 'abort' else 'observed'}
+                    elif kind == 'lock_done' and lock_transaction is not None:
+                        await lock_transaction.__aexit__(None, None, None)
+                        lock_transaction = None
+                        response = {'type': 'unlocked'}
+                    elif kind == 'schema_hide' and not renamed:
+                        await command('ALTER TABLE cragkit.documents RENAME COLUMN authorization_revision TO probe_hidden_authorization_revision')
+                        renamed = True
+                        response = {'type': 'schema_hidden'}
+                    elif kind == 'schema_restore' and renamed:
+                        await command('ALTER TABLE cragkit.documents RENAME COLUMN probe_hidden_authorization_revision TO authorization_revision')
+                        renamed = False
+                        response = {'type': 'schema_restored'}
+                    elif kind == 'result' and message.get('state') == 'passed':
+                        checks = message.get('checks')
+                        if (not isinstance(checks, list) or len(checks) > 32
+                                or any(not isinstance(item, str) or not re.fullmatch(r'[a-z_]+', item)
+                                       for item in checks)):
+                            raise RuntimeCheckError('typescript_result_shape')
+                        result = message
+                    elif ((kind == 'error' or (kind == 'result' and message.get('state') == 'failed'))
+                          and isinstance(message.get('code'), str)
+                          and re.fullmatch(r'[a-z_]+', message['code'])):
+                        raise RuntimeCheckError('typescript_' + message['code'])
+                    else:
+                        raise RuntimeCheckError('typescript_protocol_failed')
+                    if response is not None:
+                        node_process.stdin.write((json.dumps(response) + '\n').encode())
+                        await node_process.stdin.drain()
+                if await node_process.wait() != 0 or result is None:
+                    raise RuntimeCheckError('typescript_runtime_failed')
+                return {'state': 'passed', 'runtime': 'typescript', 'cleanup_verified': True,
+                        'maximum_connections': 2, 'checks': result.get('checks', [])}
+            finally:
+                if node_process.returncode is None:
+                    node_process.kill()
+                    await node_process.wait()
+                if lock_transaction is not None:
+                    await lock_transaction.__aexit__(None, None, None)
         CURRENT_STAGE = 'runtime_login'
         runtime = PoolResource(runtime_config)
         await runtime.open()
@@ -316,6 +401,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--allow-test-writes', action='store_true')
+    parser.add_argument('--typescript', action='store_true')
     args = parser.parse_args()
     if not args.allow_test_writes:
         print('Runtime checks require explicit test-write authorization.')
@@ -323,7 +409,7 @@ def main() -> int:
     try:
         async def bounded():
             async with asyncio.timeout(90):
-                return await check(args.config)
+                return await check(args.config, typescript=args.typescript)
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:
         code = str(error) if re.fullmatch(r'[a-z_]+', str(error)) else 'runtime_check_failed'
