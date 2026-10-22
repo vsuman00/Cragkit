@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -16,6 +17,16 @@ LOCK = 'pg_advisory_xact_lock(1129464148, 1)'
 
 class PostgresCheckError(RuntimeError):
     pass
+
+
+class VectorCompatibilityError(PostgresCheckError):
+    """The explicit vector capability is absent or incompatible."""
+
+
+def vector_compatibility_error(sqlstate: str | None) -> VectorCompatibilityError | None:
+    code = {'CV001': 'vector_capability_missing', 'CV002': 'vector_capability_unsupported',
+            'CV003': 'vector_version_unavailable'}.get(sqlstate or '')
+    return VectorCompatibilityError(code) if code else None
 
 
 @dataclass(frozen=True)
@@ -125,11 +136,190 @@ END $cragkit_runner$;''')
     return '\n'.join(chunks)
 
 
-def execute(script: str, environment: Mapping[str, str], *, executable: str = 'psql') -> None:
+VECTOR_SETUP_DIRECTORY = ROOT / 'storage/postgres/setup'
+VECTOR_INSPECTION_PREFIX = 'cragkit_vector_inspection:'
+
+
+def vector_inspection_script() -> str:
+    """Inspect catalogs without requiring or changing vector capability."""
+    return """BEGIN READ ONLY;
+SET LOCAL search_path = pg_catalog;
+SET LOCAL statement_timeout = '30s';
+SET LOCAL lock_timeout = '5s';
+SELECT 'cragkit_vector_inspection:' || json_build_object(
+ 'database', current_database(), 'user', current_user,
+ 'server_version', current_setting('server_version'),
+ 'available_version', (SELECT default_version FROM pg_available_extensions WHERE name='vector'),
+ 'installed_version', (SELECT extversion FROM pg_extension WHERE extname='vector'),
+ 'installed_schema', (SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='vector')
+)::text;
+COMMIT;
+SELECT 'cragkit_vector_inspection_ok';"""
+
+
+def parse_vector_inspection(lines: list[str], *, database: str, user: str) -> dict[str, str | None]:
+    observations = [line[len(VECTOR_INSPECTION_PREFIX):] for line in lines if line.startswith(VECTOR_INSPECTION_PREFIX)]
+    try:
+        if len(observations) != 1:
+            raise ValueError
+        value = json.loads(observations[0])
+        keys = {'database', 'user', 'server_version', 'available_version', 'installed_version', 'installed_schema'}
+        if not isinstance(value, dict) or set(value) != keys:
+            raise ValueError
+        if any(not isinstance(value[key], str) for key in ('database', 'user', 'server_version')):
+            raise ValueError
+        if any(value[key] is not None and not isinstance(value[key], str) for key in keys):
+            raise ValueError
+        if value['database'] != database or value['user'] != user:
+            raise PostgresCheckError('database_target_identity_mismatch')
+        return value
+    except (ValueError, TypeError):
+        raise PostgresCheckError('vector_inspection_invalid') from None
+
+
+def vector_setup_script(item: Migration, *, apply: bool,
+                        allow_managed_primitives: bool = False) -> str:
+    """Use a separate checksummed ledger; lexical migration history is immutable."""
+    if not re.fullmatch(r'0001_[a-z0-9_]+', item.version) or not re.fullmatch(r'[0-9a-f]{64}', item.checksum):
+        raise PostgresCheckError('invalid_vector_setup_identity')
+    if re.search(r'(?m)^\s*\\', item.sql) or '$cragkit_runner$' in item.sql:
+        raise PostgresCheckError('unsafe_migration_script')
+    capability = """IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector') THEN
+ RAISE EXCEPTION USING ERRCODE='CV001', MESSAGE='vector_capability_missing';
+END IF;
+IF NOT EXISTS (SELECT 1 FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace
+ WHERE e.extname='vector' AND e.extversion='0.8.0' AND n.nspname='cragkit_vector')
+ OR EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ WHERE n.nspname='cragkit_vector' AND p.prosecdef) THEN
+ RAISE EXCEPTION USING ERRCODE='CV002', MESSAGE='vector_capability_unsupported';
+END IF;
+IF NOT EXISTS (
+ SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+ JOIN pg_depend td ON td.classid='pg_type'::regclass AND td.objid=t.oid AND td.deptype='e'
+ JOIN pg_extension e ON e.oid=td.refobjid AND td.refclassid='pg_extension'::regclass
+ WHERE n.nspname='cragkit_vector' AND t.typname='vector' AND t.typtype='b' AND e.extname='vector'
+ AND EXISTS (
+  SELECT 1 FROM pg_proc p JOIN pg_depend pd ON pd.classid='pg_proc'::regclass AND pd.objid=p.oid AND pd.deptype='e'
+  WHERE p.pronamespace=n.oid AND p.proname='vector_dims' AND p.pronargs=1 AND p.proargtypes[0]=t.oid
+  AND p.prorettype='int4'::regtype AND pd.refclassid='pg_extension'::regclass AND pd.refobjid=e.oid)
+) THEN RAISE EXCEPTION USING ERRCODE='CV002', MESSAGE='vector_capability_unsupported'; END IF;"""
+    primitive_checks = """IF EXISTS (
+ SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f',p.proowner))) a
+ WHERE n.nspname='cragkit_vector' AND a.grantee=0
+ UNION ALL
+ SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+ CROSS JOIN LATERAL aclexplode(coalesce(t.typacl, acldefault('T',t.typowner))) a
+ WHERE n.nspname='cragkit_vector' AND t.typname IN ('vector','halfvec','sparsevec') AND a.grantee=0
+) THEN RAISE EXCEPTION USING ERRCODE='CV002', MESSAGE='vector_capability_unsupported'; END IF;"""
+    if allow_managed_primitives:
+        # Explicit Neon profile: platform-owned primitives remain a computational surface.
+        primitive_checks = """IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector' AND extowner=current_user::regrole)
+ OR (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+  WHERE n.nspname='cragkit_vector' AND t.typname IN ('vector','halfvec','sparsevec') AND t.typtype='b')<>3
+ OR EXISTS (
+  SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='cragkit_vector' AND (p.prosecdef OR
+   NOT EXISTS (SELECT 1 FROM pg_roles r WHERE r.oid=p.proowner AND r.rolname='cloud_admin') OR
+   NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid
+    WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.refclassid='pg_extension'::regclass
+    AND d.deptype='e' AND e.extname='vector')))
+ OR EXISTS (
+  SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+  WHERE n.nspname='cragkit_vector' AND t.typelem=0
+  AND NOT (t.typtype='c' AND t.typrelid='cragkit_vector.setup_history'::regclass)
+  AND (t.typname NOT IN ('vector','halfvec','sparsevec') OR t.typtype<>'b' OR
+   NOT EXISTS (SELECT 1 FROM pg_roles r WHERE r.oid=t.typowner AND r.rolname='cloud_admin') OR
+   NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid
+    WHERE d.classid='pg_type'::regclass AND d.objid=t.oid AND d.refclassid='pg_extension'::regclass
+    AND d.deptype='e' AND e.extname='vector')))
+ OR EXISTS (
+  SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f',p.proowner))) a
+  WHERE n.nspname='cragkit_vector' AND a.grantee NOT IN (0,p.proowner)
+  UNION ALL
+  SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+  CROSS JOIN LATERAL aclexplode(coalesce(t.typacl, acldefault('T',t.typowner))) a
+  WHERE n.nspname='cragkit_vector' AND t.typname IN ('vector','halfvec','sparsevec') AND a.grantee NOT IN (0,t.typowner))
+ THEN RAISE EXCEPTION USING ERRCODE='CV002', MESSAGE='vector_capability_unsupported'; END IF;"""
+    chunks = ['BEGIN;', "SET LOCAL search_path = pg_catalog;", "SET LOCAL statement_timeout = '30s';",
+              "SET LOCAL lock_timeout = '5s';", "SET LOCAL idle_in_transaction_session_timeout = '30s';", f'SELECT {LOCK};']
+    if not apply:
+        chunks.insert(1, 'SET TRANSACTION READ ONLY;')
+    chunks.append("""DO $cragkit_runner$ BEGIN
+IF to_regclass('cragkit.migration_history') IS NULL THEN RAISE EXCEPTION 'missing_history'; END IF;
+END $cragkit_runner$;
+CREATE TEMP TABLE cragkit_lexical_history_before ON COMMIT DROP AS
+ SELECT version, checksum, applied_at FROM cragkit.migration_history;""" if apply else
+                  "DO $cragkit_runner$ BEGIN IF to_regclass('cragkit.migration_history') IS NULL THEN RAISE EXCEPTION 'missing_history'; END IF; END $cragkit_runner$;")
+    if apply:
+        chunks.append(f"""DO $cragkit_runner$ BEGIN
+IF EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector') THEN
+ {capability}
+ IF to_regclass('cragkit_vector.setup_history') IS NULL THEN RAISE EXCEPTION 'unmanaged_vector_schema'; END IF;
+ELSIF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname='cragkit_vector') THEN
+ RAISE EXCEPTION 'unmanaged_vector_schema';
+ELSE
+ IF NOT EXISTS (SELECT 1 FROM pg_available_extension_versions WHERE name='vector' AND version='0.8.0') THEN
+  RAISE EXCEPTION USING ERRCODE='CV003', MESSAGE='vector_version_unavailable';
+ END IF;
+ {item.sql}
+ CREATE TABLE cragkit_vector.setup_history (
+  version text PRIMARY KEY, checksum text NOT NULL CHECK (checksum ~ '^[0-9a-f]{{64}}$'),
+  applied_at timestamptz NOT NULL DEFAULT clock_timestamp());
+ REVOKE ALL ON TABLE cragkit_vector.setup_history FROM PUBLIC;
+ ALTER TABLE cragkit_vector.setup_history ENABLE ROW LEVEL SECURITY;
+ INSERT INTO cragkit_vector.setup_history(version, checksum) VALUES ('{item.version}', '{item.checksum}');
+END IF;
+END $cragkit_runner$;""")
+    chunks.append(f"""DO $cragkit_runner$ BEGIN
+{capability}
+IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+ WHERE n.nspname='cragkit_vector' AND c.relname='setup_history' AND c.relkind='r' AND c.relrowsecurity) THEN
+ RAISE EXCEPTION USING ERRCODE='CV002', MESSAGE='vector_capability_unsupported'; END IF;
+IF NOT EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspname='cragkit_vector' AND n.nspowner=current_user::regrole)
+ OR EXISTS (SELECT 1 FROM pg_class c WHERE c.oid='cragkit_vector.setup_history'::regclass AND c.relowner<>current_user::regrole)
+ OR EXISTS (SELECT 1 FROM pg_policy WHERE polrelid='cragkit_vector.setup_history'::regclass)
+ OR EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='cragkit_vector' AND c.oid<>'cragkit_vector.setup_history'::regclass
+  AND NOT (c.relkind='i' AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid=c.oid AND i.indrelid='cragkit_vector.setup_history'::regclass)))
+ THEN RAISE EXCEPTION USING ERRCODE='CV002', MESSAGE='vector_capability_unsupported'; END IF;
+IF (SELECT count(*) FROM pg_default_acl d
+ WHERE d.defaclnamespace=0 AND d.defaclrole=current_user::regrole AND d.defaclobjtype IN ('f','T'))<>2
+ OR EXISTS (
+ SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(coalesce(n.nspacl, acldefault('n',n.nspowner))) a
+ WHERE n.nspname='cragkit_vector' AND a.grantee<>n.nspowner
+ UNION ALL
+ SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+ CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r',c.relowner))) a
+ WHERE n.nspname='cragkit_vector' AND c.relname='setup_history' AND a.grantee<>c.relowner
+ UNION ALL
+ SELECT 1 FROM pg_default_acl d
+ CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+ WHERE (d.defaclnamespace=0 OR d.defaclnamespace=to_regnamespace('cragkit_vector')) AND d.defaclrole=current_user::regrole AND a.grantee<>d.defaclrole
+) THEN RAISE EXCEPTION USING ERRCODE='CV002', MESSAGE='vector_capability_unsupported'; END IF;
+{primitive_checks}
+IF (SELECT count(*) FROM cragkit_vector.setup_history) <> 1 OR NOT EXISTS (
+ SELECT 1 FROM cragkit_vector.setup_history WHERE version='{item.version}' AND checksum='{item.checksum}') THEN
+ RAISE EXCEPTION 'vector_setup_history_drift';
+END IF;
+END $cragkit_runner$;""")
+    if apply:
+        chunks.append("""DO $cragkit_runner$ BEGIN
+IF EXISTS ((SELECT version,checksum,applied_at FROM cragkit.migration_history EXCEPT SELECT * FROM pg_temp.cragkit_lexical_history_before)
+ UNION ALL (SELECT * FROM pg_temp.cragkit_lexical_history_before EXCEPT SELECT version,checksum,applied_at FROM cragkit.migration_history)) THEN
+ RAISE EXCEPTION 'lexical_history_changed'; END IF;
+END $cragkit_runner$;""")
+    chunks.extend(['COMMIT;', "SELECT 'cragkit_vector_ok';"])
+    return '\n'.join(chunks)
+
+
+def execute(script: str, environment: Mapping[str, str], *, executable: str = 'psql',
+            marker: str = 'cragkit_migration_ok') -> list[str]:
     if environment.get('PGSSLMODE') == 'verify-full':
         script = "DO $cragkit_transport$ BEGIN IF inet_server_addr() IS NULL OR NOT coalesce((SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()), false) THEN RAISE EXCEPTION 'verified_remote_transport_required'; END IF; END $cragkit_transport$;\n" + script
     command = [executable, '-X', '--no-password', '--quiet', '--tuples-only', '--no-align',
-               '--set', 'ON_ERROR_STOP=1', '--file', '-']
+               '--set', 'ON_ERROR_STOP=1', '--set', 'VERBOSITY=sqlstate', '--file', '-']
     try:
         result = subprocess.run(command, input=script, env=dict(environment), capture_output=True,
                                 text=True, timeout=120, check=False)
@@ -138,9 +328,15 @@ def execute(script: str, environment: Mapping[str, str], *, executable: str = 'p
     except OSError:
         raise PostgresCheckError('psql_unavailable') from None
     if result.returncode != 0:
+        states = re.findall(r'(?m)^(?:psql:[^\n]*?)?ERROR:\s+(CV00[123])\s*$', result.stderr)
+        compatibility = vector_compatibility_error(states[0] if len(states) == 1 else None)
+        if compatibility is not None:
+            raise compatibility
         raise PostgresCheckError('database_check_failed')
-    if 'cragkit_migration_ok' not in result.stdout.splitlines():
+    lines = result.stdout.splitlines()
+    if marker not in lines:
         raise PostgresCheckError('database_check_incomplete')
+    return lines
 
 
 def main() -> int:
@@ -151,11 +347,27 @@ def main() -> int:
     parser.add_argument('--confirm-dedicated-target', action='store_true')
     parser.add_argument('--local-socket', type=Path)
     parser.add_argument('--integration', action='store_true')
+    parser.add_argument('--vector', action='store_true')
+    parser.add_argument('--install-vector', action='store_true')
+    parser.add_argument('--allow-managed-vector-primitives', action='store_true')
     args = parser.parse_args()
+    if args.allow_managed_vector_primitives and not (args.vector or args.install_vector):
+        print('Managed vector primitives require --vector or --install-vector.')
+        return 2
+    if args.install_vector and not args.apply:
+        print('PostgreSQL vector installation requires --apply.')
+        return 2
     try:
         environment = connection_environment(os.environ, confirmed=args.confirm_dedicated_target, local_socket=args.local_socket)
         items = migrations(ROOT / 'storage/postgres/migrations')
+        if args.vector or args.install_vector:
+            lines = execute(vector_inspection_script(), environment, marker='cragkit_vector_inspection_ok')
+            observation = parse_vector_inspection(lines, database=environment['PGDATABASE'], user=environment['PGUSER'])
+            print(json.dumps(observation, sort_keys=True))
         execute(migration_script(items, apply=args.apply), environment)
+        if args.vector or args.install_vector:
+            setup = migrations(VECTOR_SETUP_DIRECTORY)[0]
+            execute(vector_setup_script(setup, apply=args.install_vector, allow_managed_primitives=args.allow_managed_vector_primitives), environment, marker='cragkit_vector_ok')
         if args.integration:
             probe = (ROOT / 'storage/postgres/tests/invariants.sql').read_text(encoding='utf-8')
             execute(probe, environment)

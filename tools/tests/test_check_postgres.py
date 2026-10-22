@@ -113,3 +113,145 @@ def test_local_socket_rejects_database_conninfo(tmp_path):
     with pytest.raises(PG.PostgresCheckError):
         PG.connection_environment({'PGHOST': str(tmp_path), 'PGDATABASE': 'host=elsewhere', 'PGUSER': 'admin'},
                                   confirmed=True, local_socket=tmp_path)
+
+
+def test_vector_setup_is_separate_locked_transaction_and_checksum_guard():
+    item = PG.Migration('0001_pgvector', 'b' * 64, 'SELECT 918273;')
+    script = PG.vector_setup_script(item, apply=True)
+    assert script.index('BEGIN;') < script.index(PG.LOCK) < script.index(item.sql) < script.index('COMMIT;')
+    assert item.checksum in script and item.version in script
+    assert 'cragkit_vector.setup_history' in script
+    assert 'INSERT INTO cragkit.migration_history' not in script
+    assert 'UPDATE cragkit.migration_history' not in script
+    assert 'DELETE FROM cragkit.migration_history' not in script
+    assert 'lexical_history_changed' in script
+    assert 'IF NOT EXISTS' in script
+    assert 'statement_timeout' in script and 'lock_timeout' in script
+    assert 'idle_in_transaction_session_timeout' in script
+    assert 'ENABLE ROW LEVEL SECURITY' in script
+    assert 'REVOKE ALL' in script
+    assert 'UPDATE cragkit_vector.setup_history' not in script
+    assert 'DROP EXTENSION' not in script and 'ALTER EXTENSION' not in script
+
+
+def test_vector_check_is_read_only_and_never_executes_setup_artifact():
+    item = PG.Migration('0001_pgvector', 'c' * 64, 'SELECT 918273;')
+    script = PG.vector_setup_script(item, apply=False)
+    assert 'SET TRANSACTION READ ONLY' in script
+    assert item.sql not in script
+    assert 'CREATE ' not in script
+    assert 'cragkit_vector.setup_history' in script
+    assert item.checksum in script
+    assert '0.8.0' in script and 'cragkit_vector' in script
+    assert 'CV001' in script and 'CV002' in script
+
+
+def test_vector_install_requires_apply_before_any_connection(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['check_postgres', '--check', '--install-vector', '--confirm-dedicated-target'])
+    connect = lambda *args, **kwargs: pytest.fail('invalid vector flags reached connection setup')
+    monkeypatch.setattr(PG, 'connection_environment', connect)
+    assert PG.main() == 2
+
+
+@pytest.mark.parametrize('state,code', [('CV001', 'vector_capability_missing'),
+                                      ('CV002', 'vector_capability_unsupported'),
+                                      ('CV003', 'vector_version_unavailable')])
+def test_vector_compatibility_failures_are_typed_and_redacted(monkeypatch, state, code):
+    error = PG.vector_compatibility_error(state)
+    assert isinstance(error, PG.VectorCompatibilityError)
+    assert str(error) == code
+    monkeypatch.setattr(PG.subprocess, 'run', lambda *args, **kwargs:
+                        subprocess.CompletedProcess(args[0], 1, stdout='private source',
+                                                    stderr=f'psql:<stdin>:12: ERROR:  {state}\nprivate password'))
+    with pytest.raises(PG.VectorCompatibilityError, match=code) as caught:
+        PG.execute('SELECT 1;', {})
+    assert 'private' not in str(caught.value)
+    assert PG.vector_compatibility_error('42501') is None
+
+
+def test_vector_inspection_distinguishes_available_from_installed_and_checks_identity():
+    import json
+    observed = dict(database='cragkit', user='admin', server_version='17.11',
+                    available_version='0.8.0', installed_version=None, installed_schema=None)
+    line = 'cragkit_vector_inspection:' + json.dumps(observed)
+    assert PG.parse_vector_inspection([line], database='cragkit', user='admin') == observed
+    with pytest.raises(PG.PostgresCheckError):
+        PG.parse_vector_inspection([line], database='other', user='admin')
+    with pytest.raises(PG.PostgresCheckError):
+        PG.parse_vector_inspection([line], database='cragkit', user='other')
+    for value in ([line, line], ['cragkit_vector_inspection:{}'],
+                  ['cragkit_vector_inspection:' + json.dumps({**observed, 'password': 'secret'})],
+                  ['cragkit_vector_inspection:' + json.dumps({**observed, 'available_version': 800})]):
+        with pytest.raises(PG.PostgresCheckError):
+            PG.parse_vector_inspection(value, database='cragkit', user='admin')
+    script = PG.vector_inspection_script()
+    assert 'pg_available_extension_versions' in script or 'pg_available_extensions' in script
+    assert 'pg_extension' in script
+    assert 'current_database()' in script and 'current_user' in script
+    assert 'CREATE ' not in script and 'DROP ' not in script
+
+
+def test_managed_vector_primitive_exception_requires_vector_operation(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['check_postgres', '--check', '--confirm-dedicated-target',
+                                    '--allow-managed-vector-primitives'])
+    monkeypatch.setattr(PG, 'connection_environment', lambda *args, **kwargs:
+                        pytest.fail('unbound managed exception reached connection setup'))
+    assert PG.main() == 2
+
+
+def test_managed_vector_profile_preserves_strict_default_and_security_guards():
+    item = PG.Migration('0001_pgvector', 'd' * 64, 'SELECT 918273;')
+    strict = PG.vector_setup_script(item, apply=False)
+    assert strict == PG.vector_setup_script(item, apply=False, allow_managed_primitives=False)
+    managed = PG.vector_setup_script(item, apply=False, allow_managed_primitives=True)
+    assert managed != strict
+    assert 'cloud_admin' in managed and 'cloud_admin' not in strict
+    assert 'a.grantee=0' in strict and 'a.grantee=0' not in managed
+    assert 'a.grantee NOT IN (0,p.proowner)' in managed
+    assert 'extowner=current_user::regrole' in managed
+    for script in (strict, managed):
+        assert 'SET TRANSACTION READ ONLY' in script
+        assert 'pg_depend' in script and 'vector_dims' in script
+        assert 'prosecdef' in script
+        assert 'nspowner' in script and 'relowner' in script
+        assert 'relrowsecurity' in script and 'pg_policy' in script
+        assert 'aclexplode' in script
+        assert 'CV002' in script
+        assert item.sql not in script
+
+
+@pytest.mark.parametrize('managed', [False, True])
+def test_postgres_cli_forwards_managed_exception_only_when_explicit(monkeypatch, managed):
+    argv = ['check_postgres', '--check', '--confirm-dedicated-target', '--vector']
+    if managed:
+        argv.append('--allow-managed-vector-primitives')
+    monkeypatch.setattr(sys, 'argv', argv)
+    monkeypatch.setattr(PG, 'connection_environment', lambda *args, **kwargs:
+                        {'PGDATABASE': 'cragkit', 'PGUSER': 'admin'})
+    item = PG.Migration('0001_pgvector', 'e' * 64, 'SELECT 918273;')
+    monkeypatch.setattr(PG, 'migrations', lambda path: [item])
+    monkeypatch.setattr(PG, 'execute', lambda *args, **kwargs: [])
+    monkeypatch.setattr(PG, 'parse_vector_inspection', lambda *args, **kwargs: {})
+    observed = []
+    def setup(item, *, apply, allow_managed_primitives=False):
+        observed.append((apply, allow_managed_primitives))
+        return 'synthetic SQL'
+    monkeypatch.setattr(PG, 'vector_setup_script', setup)
+    assert PG.main() == 0
+    assert observed == [(False, managed)]
+
+
+def test_vector_artifact_uses_effective_owner_revokes_and_global_defaults():
+    # Per-schema REVOKE cannot subtract PostgreSQL's global PUBLIC defaults.
+    item = PG.migrations(PG.VECTOR_SETUP_DIRECTORY)[0]
+    assert item.version == '0001_pgvector'
+    assert "VERSION '0.8.0'" in item.sql
+    assert "pg_has_role(current_user,p.proowner,'USAGE')" in item.sql
+    assert "pg_has_role(current_user,t.typowner,'USAGE')" in item.sql
+    for kind in ('TABLES', 'SEQUENCES', 'FUNCTIONS', 'TYPES'):
+        assert f'ALTER DEFAULT PRIVILEGES REVOKE ALL ON {kind} FROM PUBLIC;' in item.sql
+    assert 'ALTER DEFAULT PRIVILEGES IN SCHEMA' not in item.sql
+    for managed in (False, True):
+        script = PG.vector_setup_script(item, apply=False, allow_managed_primitives=managed)
+        assert 'd.defaclnamespace=0' in script
+        assert "to_regnamespace('cragkit_vector')" in script

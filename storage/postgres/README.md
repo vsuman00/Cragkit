@@ -1,4 +1,4 @@
-# PostgreSQL lexical storage
+# PostgreSQL storage
 
 V1-01-r1 turns [architecture section 7](../../docs/architecture/ARCHITECTURE.md#7-storage-model-and-database-connection) into an explicit administrative migration. The native packages do not import this tooling or apply migrations. The schema stores canonical sources and lexical generations; it does not implement ingestion, retrieval, publication orchestration or a vector backend.
 
@@ -58,3 +58,22 @@ The migration creates objects in the private `cragkit` schema, revokes PUBLIC sc
 A failure case is using another tenant's revision ID while keeping the current tenant/document key: the composite constraint must reject it. Exercise: compare that full key with the active-generation pointer and explain why an ID alone cannot authorize a reference.
 
 SQL API references: [PostgreSQL constraints](https://www.postgresql.org/docs/17/ddl-constraints.html), [privilege revocation](https://www.postgresql.org/docs/17/sql-revoke.html), [byte functions and SHA-256](https://www.postgresql.org/docs/current/functions-binarystring.html), and [text search types](https://www.postgresql.org/docs/17/datatype-textsearch.html). These references explain the APIs; actual compatibility and acceptance depend on recorded database runs.
+
+
+## Optional vector capability: V2-04A
+
+For example, `--check --vector` rejects a missing extension while a lexical-only session continues to use the existing two-entry migration history. Installing pgvector is an explicit administrative action; imports and runtime initialization do not install it.
+
+[0001_pgvector.sql](setup/0001_pgvector.sql) is a separate numbered, exact-byte checksummed setup artifact. The runner uses the same advisory transaction lock as lexical migrations, bounded statements/locks and `cragkit_vector.setup_history(version, checksum, applied_at)`. It validates extension version `0.8.0`, private namespace, actual extension-owned base type and `vector_dims(vector)` signature, ledger identity and security. Failed setup rolls back the extension, schema, ledger and default-privilege changes. Reruns validate existing objects and preserve both ledgers' timestamps. Unmanaged or incompatible installations fail without dropping, relocating, upgrading or reinstalling them.
+
+`--vector` inspects target identity and checks installed capability; `--install-vector` additionally requires `--apply`. Missing, unsupported and unavailable capabilities map to the administrative `VectorCompatibilityError` with redacted codes. Existing lexical APIs remain unchanged. Native vector initialization and reindex entry points do not exist yet: V2-04C/E must implement equivalent read-only capability checks and native typed errors before accepting vector work. The administrative runner must never be imported into either library.
+
+### Explicit Neon managed primitive profile
+
+Strict mode rejects PUBLIC function/type privileges. On the accepted Neon development target, the extension and namespace belong to `cragkit_admin`, but Neon creates scalar primitive functions/types owned by `cloud_admin`. The installer cannot revoke those platform-owned privileges. `--allow-managed-vector-primitives` is a separate explicit option, valid only with vector check/setup. It accepts only the pinned extension's expected platform-owned members, prohibits SECURITY DEFINER functions and unexpected namespace objects, and preserves owner-only schema/ledger privileges, ledger RLS without policies, and checksummed history. It does not make platform administrators untrusted runtime users.
+
+The setup revokes primitive privileges where the installer has effective ownership. For future installer-created objects, it removes PUBLIC defaults for tables, sequences, functions and types across this dedicated database. PostgreSQL cannot subtract global PUBLIC defaults using per-schema revocation. This changes future defaults for the installer across schemas; it does not modify existing application grants. The checker validates those defaults.
+
+Managed scalar primitives retain PUBLIC execution/type privileges. Schema USAGE controls ordinary name lookup, not every possible primitive invocation or previously resolved plan. Future runtime schema grants expose those scalar functions and require an explicit review in V2-04B/C/E; do not promise a per-function allowlist. Application table permissions, trusted scope and RLS remain the data boundary. No vector data table or runtime grant is created by A.
+
+[Acceptance report](../../evaluation/reports/V2/V2-04A.md). PostgreSQL references: [extension ownership](https://www.postgresql.org/docs/17/sql-createextension.html), [privilege semantics](https://www.postgresql.org/docs/17/ddl-priv.html), [global versus per-schema defaults](https://www.postgresql.org/docs/17/sql-alterdefaultprivileges.html).

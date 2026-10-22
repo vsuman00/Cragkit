@@ -95,3 +95,10 @@ Record commands actually run, native/direct endpoint and role configuration with
 Switch development configuration only after DB-NEON-01-B through E pass and any data-transfer decision is resolved. Preserve Supabase until cutover is verified; retirement needs separate authorization. Never recover by restoring stale permissions or automatically falling back to the old host. Record outstanding work in the tracker rather than advancing V2 product acceptance.
 
 Failure case: a Console-created retrieval role may have administrative membership even if a connection succeeds. Reject that runtime configuration and test a SQL-created restricted role. Exercise: explain why certificate validation, authenticated LOGIN and tenant-policy denial require separate evidence.
+
+
+## V2-04A installed vector capability
+
+The dedicated direct development target now has pgvector 0.8.0 in private `cragkit_vector`, installed through the explicit setup command in [development.md](development.md#v2-04a-explicit-vector-setup). The earlier DB-NEON-01 availability-only observation remains historical. A separate checksummed setup ledger preserves the existing lexical migration history.
+
+Use `--allow-managed-vector-primitives` only with the documented managed profile: Neon owns the scalar functions/types and retains their PUBLIC privileges. Schema/ledger access remains owner-only with ledger RLS; future runtime schema grants require a separate exposure review. Future defaults are restricted for this installer across the dedicated database. See the [storage contract](../storage/postgres/README.md#explicit-neon-managed-primitive-profile) and [acceptance report](../evaluation/reports/V2/V2-04A.md). This establishes development setup, not profile storage, vector ingestion, dense search, pooling or production acceptance.

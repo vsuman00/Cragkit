@@ -68,7 +68,7 @@ After tasks through V2-03, run focused regression tests and the shared fixtures 
 
 ### V2-04: Vector generations and reindex
 
-Dependency: V2-03 and V2-C1 local acceptance; [DB-NEON-01](../../evaluation/reports/V2/DB-NEON-01.md) supplies the accepted direct Neon development/native lexical baseline. All child slices below are PLANNED, with verification still to run. Completing this planning pass does not complete V2-04. Supabase retirement, pooled-endpoint acceptance and production acceptance are separate work, not prerequisites for the next development slice.
+Dependency: V2-03 and V2-C1 local acceptance; [DB-NEON-01](../../evaluation/reports/V2/DB-NEON-01.md) supplies the accepted direct Neon development/native lexical baseline. V2-04A is COMPLETE on the dedicated direct development target; [its report](../../evaluation/reports/V2/V2-04A.md) records the explicit managed security profile and limits. V2-04B-G remain PLANNED. This does not complete V2-04. Supabase retirement, pooled-endpoint acceptance and production acceptance are separate work, not prerequisites for the next development slice.
 
 Build: Explicitly install/check pgvector, add profile-specific vector storage, then implement bounded staging and safe shadow-generation publication in both native runtimes. Follow [architecture sections 6-7](../../docs/architecture/ARCHITECTURE.md#6-ingestion-and-document-lifecycle), the [storage contract](../../storage/postgres/README.md) and the [Neon runbook](../../docs/neon.md). Existing applied migrations stay byte-for-byte unchanged; new DDL uses new numbered migrations and the checksummed administrative runner. Core import, initialization and retrieval never install extensions or apply migrations.
 
@@ -78,13 +78,15 @@ Run one ingestion job and one test process, with small batches bounded by items 
 
 #### V2-04A: Explicit pgvector setup
 
-Dependency: V2-03, V2-C1 and the accepted direct development baseline above. This is the next smallest implementation slice.
+Dependency: V2-03, V2-C1 and the accepted direct development baseline above. Administrative setup and verification are complete; profile storage in B is the next smallest implementation slice.
 
 Build: Extend explicit administrative tooling to inspect available/installed extension versions and target identity, then install pgvector only through a deliberate dedicated-target operation. Record the supported extension/schema capability contract; vector-enabled initialization/reindex checks it and fails with a typed compatibility error when absent or unsupported. Existing lexical-only paths remain usable without vector capability.
 
 Acceptance and planned verification: Exercise fresh setup, unchanged rerun, unsupported/missing capability, lock/deadline failure and interrupted application. Check the migration ledger/checksums and original timestamps; inject a failed transactional application and verify no partial migration or ledger entry persists. Recheck default-deny privileges, RLS and restricted native-role behavior after new objects are created. Never drop/reinstall an existing extension or weaken security to recover. DB-NEON-01 advertised pgvector but did not install it; availability is not installation evidence (E06/E22).
 
 Expected areas: `tools/check_postgres.py`, `tools/check_neon_postgres.py`, their focused tests and a new administrative migration/setup artifact. Keep extension setup distinct from application runtime APIs.
+
+Accepted A-r2: separate numbered setup artifact/ledger preserves lexical migration history. Strict checks remain default; Neon requires explicit managed primitive acceptance, with platform-owned PUBLIC computational privileges disclosed and private schema/ledger denial verified. Future installer-created objects use restrictive database-wide defaults because per-schema revocation cannot subtract global defaults. Native vector initialization/reindex APIs are not implemented by A: C/E must enforce the recorded capability contract through native read-only checks before vector work. B must review runtime schema USAGE exposure before any grant. [Evidence](../../evaluation/reports/V2/V2-04A.md).
 
 #### V2-04B: Profile-specific vector storage
 
@@ -102,7 +104,7 @@ Dependency: V2-04B and its frozen profile/fixture contract; existing V2-02 embed
 
 Build: Extend native Python ingestion with profile-bound shadow-generation staging and idempotent bounded vector batches. Bind trusted scope before any database/provider branch. Model work runs outside the short publication transaction. No staging operation changes the active pointer.
 
-Acceptance and planned verification: Use fake-provider fixtures for same-intent replay, changed-payload rejection, missing/duplicate vectors, wrong model at the same dimension, dimension change, provider failure, deadline and cancellation between batches. Verify staged content stays invisible and previous authorized lexical retrieval still works. Bound attempts, batches and resource release; return typed operational failure rather than missing evidence (E06/E12/E15/E23/E24).
+Acceptance and planned verification: Use fake-provider fixtures for same-intent replay, changed-payload rejection, missing/duplicate vectors, wrong model at the same dimension, dimension change, provider failure, deadline and cancellation between batches. Verify staged content stays invisible and previous authorized lexical retrieval still works. Validate the A-r2 extension/schema capability through native read-only checks before vector work. Bound attempts, batches and resource release; return typed operational failure rather than missing evidence (E06/E12/E15/E23/E24).
 
 Expected areas: `packages/python/src/cragkit/ingestion.py`, a focused internal vector-staging module if needed, Python ingestion/staging tests and the Python native fixture path. Keep this slice separate from publication.
 

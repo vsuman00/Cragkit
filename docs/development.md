@@ -469,3 +469,16 @@ python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-C1-final
 ```
 
 The full profile now includes embedding parity and clean artifacts with both optional embedding entry points. It runs serially and may access registries for frozen dependency setup. [V2-03/V2-C1 evidence](../evaluation/reports/V2/V2-03-C1.md) records 41 shared synthetic cases and final local results. These checks do not call OpenAI or establish semantic quality/billing. Both runtimes explicitly reject excessive response depth/numeric-token length, duplicate keys, floating-point index/usage tokens and malformed vectors. Vector storage and reindex are next under V2-04.
+
+
+## V2-04A: Explicit vector setup
+
+The administrative setup is independent of lexical migration history. On the accepted dedicated Neon development target, use the explicit managed primitive profile described in the [storage contract](../storage/postgres/README.md#explicit-neon-managed-primitive-profile). Credentials remain in the private configuration outside Git.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra postgres pytest tools/tests/test_check_postgres.py tools/tests/test_check_neon_postgres.py -q
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_neon_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --confirm-dedicated-target --apply --install-vector --allow-managed-vector-primitives --harden --integration --security --allow-test-writes
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_neon_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --confirm-dedicated-target --check --vector --allow-managed-vector-primitives --security --allow-test-writes
+```
+
+The install command and its unchanged rerun passed. The check command is read-only for vector setup; the separately requested security probe performs rolled-back synthetic writes. Optional drivers were already installed, so these invocations used `--no-sync`. The native wrapper has a 120-second overall bound; generic psql tooling retains its 120-second bound per subprocess, with SQL statement/lock bounds. No installation happens without `--install-vector`; `--apply` alone stays lexical-only. [Results and limitations](../evaluation/reports/V2/V2-04A.md).
