@@ -16,6 +16,7 @@ The runner installs frozen dependencies, checks both native packages and shared 
 
 ## Project guide
 
+- [Business requirements](docs/product/BRD.md): developer problem, intended users, product requirements, success measures and unvalidated assumptions.
 - [Architecture](docs/architecture/ARCHITECTURE.md): governing boundaries and planned retrieval behavior.
 - [Master plan](tasks/plan.md) and [task tracker](tasks/todo.md): dependency order, acceptance evidence and current state.
 - [Wire contracts](contracts/README.md) and [evidence/result contracts](contracts/RESULTS.md): current validation behavior.
