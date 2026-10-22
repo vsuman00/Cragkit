@@ -1,6 +1,6 @@
 # V2: Hybrid retrieval
 
-Status: V2-01 design decision complete: hosted opt-in OpenAI text-embedding-3-small, 1536 dimensions, with routine fake providers and live access disabled until separately configured. Metadata/synthetic interface evidence is distinct from unrun live verification. V2-02 is next; no embedding adapter or hybrid retrieval is implemented. Progress is tracked only in [todo.md](../todo.md).
+Status: V2-01 design decision complete: hosted opt-in OpenAI text-embedding-3-small, 1536 dimensions, with routine fake providers and live access disabled until separately configured. Metadata/synthetic interface evidence is distinct from unrun live verification. V2-02 Python embedding boundary has passed its local deterministic checks. V2-03 TypeScript parity is next; hybrid retrieval and live-provider validation remain unimplemented/unrun. Progress is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 

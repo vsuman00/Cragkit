@@ -398,3 +398,37 @@ python3 tools/check_artifacts.py --output-dir artifacts/V1/V1-12-installed --pos
 ```
 
 Omit both hosted flags for driver-free artifact/import acceptance alone. The hosted option creates temporary runtime roles, scoped policies and synthetic rows, then checks cleanup. Never target application data. It limits native clients to two including the administrator and closes one runtime pool before starting the other. Installed examples are copied outside the source checkout and compared with expected authorized and denied results. Raw observations remain under ignored artifacts. [Final V1 evidence](../evaluation/reports/V1/V1-10-12.md) records commands, measurements, complete checkpoint results and their limits.
+
+
+## V2-02 Python embedding boundary
+
+`cragkit.embeddings` supplies `EmbeddingAdapter`, immutable `EmbeddingProfile`, `EmbeddingLimits`, `EmbeddingPolicy` and result/usage models. [E-r1](../contracts/EMBEDDINGS_V2.md) specifies the two supported profiles, callback signatures, bounds and errors. [ADR 0001](decisions/0001-embedding-profile.md) selects hosted OpenAI as opt-in; routine development uses the distinct fake identity. Core imports are unchanged.
+
+The application injects a caller-owned async `EmbeddingTransport` and matching `TokenCounter`. No HTTP client, SDK, token assets, credentials or network connection is created automatically. For a configured live transport, the application owns TLS, endpoint/redirect policy, bounded streaming reads, timeouts, disabled internal retries and cooperative cancellation. Blocking/noncooperative callbacks cannot be sandboxed by the adapter. The standalone adapter does not authorize source release or perform retrieval; the application must authorize text before disclosure.
+
+For example, after constructing those callbacks, a fake-profile call is:
+
+```python
+import asyncio
+from cragkit.embeddings import EmbeddingAdapter, FAKE_PROFILE
+
+adapter = EmbeddingAdapter(application_transport, token_counter, profile=FAKE_PROFILE)
+batch = await adapter.embed_query(
+    "restart the service", deadline=asyncio.get_running_loop().time() + 5,
+)
+vector = batch.vectors[0]
+```
+
+This is an application integration sketch: `application_transport` and `token_counter` are injected values. The fake counter must identify itself as `fake-byte-v1`; a real-profile counter must declare `cl100k_base` and count accurately. Query and batch calls share one path. Batches over an item, UTF-8 byte or token bound fail before dispatch; the adapter does not split or truncate them. One operation may be in flight per instance, with no waiting queue and no retries. Injected resources stay caller-owned.
+
+Default live policy is disabled with zero allowance. Selecting `OPENAI_PROFILE` alone cannot enable dispatch: explicit live policy, known positive configured price and sufficient per-operation allowance are also required. Per-operation cost gating is estimated from trusted counts/configured price, not a provider-wide billing guarantee. Missing live usage/cost remains unknown. A failed or cancelled dispatched call can still be charged. Mocked OpenAI response checks do not establish real compatibility or actual billing.
+
+Verified root commands:
+
+```sh
+uv run --project packages/python --frozen pytest packages/python/tests/test_embeddings.py -q
+uv run --project packages/python --frozen mypy --config-file packages/python/pyproject.toml packages/python/src
+uv run --project packages/python --frozen pytest packages/python/tests tools/tests -q
+```
+
+The final [V2-02 report](../evaluation/reports/V2/V2-02.md) records actual results, privacy/accounting regressions and limits. No live API/model check ran. TypeScript parity is the next task.
