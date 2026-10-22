@@ -70,7 +70,7 @@ def archive_files(path: Path) -> dict[str, bytes]:
 
 def inspect_wheel(path: Path) -> dict[str, bytes]:
     files = archive_files(path)
-    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py'} <= files.keys(), 'wheel_missing_core')
+    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py', 'cragkit/embeddings.py'} <= files.keys(), 'wheel_missing_core')
     names = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(names) == 1, 'wheel_metadata')
     metadata = email.parser.BytesParser().parsebytes(files[names[0]])
@@ -89,7 +89,7 @@ def inspect_npm(path: Path) -> dict[str, bytes]:
     package = json.loads(files['package/package.json'])
     require(package['name'] == 'cragkit' and package['version'] == '0.0.0' and package.get('private') is True, 'npm_identity')
     require(package.get('dependencies') == {'zod': '4.6.7'}, 'npm_core_dependencies')
-    for name in ('.', './contracts', './errors', './postgres'):
+    for name in ('.', './contracts', './errors', './postgres', './embeddings'):
         target = package.get('exports', {}).get(name, {})
         for kind, suffix in (('import', '.js'), ('types', '.d.ts')):
             value = target.get(kind)
@@ -125,7 +125,7 @@ def audit(event, args):
         raise RuntimeError('Import attempted external I/O')
 sys.addaudithook(audit)
 start = time.perf_counter()
-modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres')]
+modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres', 'cragkit.embeddings')]
 elapsed = time.perf_counter() - start
 assert modules[0].__version__ == '0.0.0'
 assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve()) for module in modules)
@@ -133,6 +133,7 @@ assert modules[1].parse_request({'query': 'smoke', 'collection': 'smoke'}).query
 assert modules[1].parse_result({'request_id': 'smoke', 'status': 'insufficient'}).usage.cost_usd is None
 assert modules[2].InvalidRequest().to_dict()['code'] == 'invalid_request'
 assert callable(modules[3].PostgresRetriever)
+assert callable(modules[4].EmbeddingAdapter)
 rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 print(json.dumps({'import_seconds': elapsed, 'peak_rss_bytes': rss if sys.platform == 'darwin' else rss * 1024,
  'platform': sys.platform, 'python': sys.version.split()[0],
@@ -157,13 +158,14 @@ for (const [object, names] of [[http,['request','get','createServer']],[https,['
 }
 syncBuiltinESMExports();
 const start = performance.now();
-const [core, contracts, errors, postgres] = await Promise.all([import('cragkit'), import('cragkit/contracts'), import('cragkit/errors'), import('cragkit/postgres')]);
+const [core, contracts, errors, postgres, embeddings] = await Promise.all([import('cragkit'), import('cragkit/contracts'), import('cragkit/errors'), import('cragkit/postgres'), import('cragkit/embeddings')]);
 const importSeconds = (performance.now()-start)/1000;
 assert.equal(core.version,'0.0.0');
 assert.equal(contracts.parse_result({request_id:'smoke',status:'insufficient'}).usage.cost_usd,null);
 assert.equal(contracts.parse_request({query:'smoke',collection:'smoke'}).query,'smoke');
 assert.equal(new errors.InvalidRequest().code,'invalid_request');
 assert.equal(typeof postgres.PostgresRetriever,'function');
+assert.equal(typeof embeddings.EmbeddingAdapter,'function');
 console.log(JSON.stringify({import_seconds:importSeconds,peak_rss_bytes:process.resourceUsage().maxRSS*1024,node:process.version}));
 '''
 
@@ -176,7 +178,7 @@ def artifact_record(path: Path, files: dict[str, bytes]) -> dict[str, Any]:
 def accept_artifacts(root: Path, output: Path, postgres_config: Path | None = None) -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {'state': 'in_progress', 'commands': [], 'artifacts': {}, 'imports': {},
-        'method': 'One fresh child process per installed artifact; filesystem caches are uncontrolled. Duration covers core, contracts, errors and the optional PostgreSQL entry point together. Peak RSS covers the whole child lifetime, not an import-only increment. macOS Python RSS is bytes; other supported Unix Python and Node RSS are KiB converted to bytes. Samples are separate and never summed.',
+        'method': 'One fresh child process per installed artifact; filesystem caches are uncontrolled. Duration covers core, contracts, errors and the optional PostgreSQL/embedding entry points together. Peak RSS covers the whole child lifetime, not an import-only increment. macOS Python RSS is bytes; other supported Unix Python and Node RSS are KiB converted to bytes. Samples are separate and never summed.',
         'limitations': ['Local current-platform single fresh-process samples with uncontrolled filesystem caches; no OS-cold-cache, latency-distribution or performance claim.',
                          'Build and clean dependency setup may access registries; guarded imports do not.',
                          'Import guards are focused regression checks, not a network security sandbox.',

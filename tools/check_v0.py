@@ -37,6 +37,7 @@ def pipeline(root: Path, artifacts_dir: Path) -> tuple[Step, ...]:
         Step("schema-drift", uv + ("python", "tools/export_schemas.py", "--check"), root, 60),
         Step("request-parity", uv + ("python", "tools/check_contracts.py", "--fixtures", "requests"), root, 60),
         Step("result-parity", uv + ("python", "tools/check_contracts.py", "--fixtures", "results"), root, 60),
+        Step("embedding-parity", uv + ("python", "tools/check_embeddings.py"), root, 60),
         Step("development-corpus", (sys.executable, "tools/check_corpus.py", "--require-human-review"), root, 60),
         Step("sealed-input-integrity", (sys.executable, "tools/check_seal.py"), root, 60),
         Step("clean-package-artifacts", (sys.executable, "tools/check_artifacts.py", "--output-dir", str(artifacts_dir)), root, 600),

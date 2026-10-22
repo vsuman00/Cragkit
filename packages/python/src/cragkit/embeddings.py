@@ -111,6 +111,12 @@ def _invalid_constant(value: str) -> Any:
     raise ValueError("Invalid JSON constant")
 
 
+def _json_number(value: str) -> int | float:
+    if len(value) > 128:
+        raise ValueError("JSON numeric token exceeds limit")
+    return float(value) if any(char in value for char in ".eE") else int(value)
+
+
 class EmbeddingAdapter:
     def __init__(
         self, transport: EmbeddingTransport, token_counter: TokenCounter, *,
@@ -175,11 +181,21 @@ class EmbeddingAdapter:
         parsed: Any = None
         try:
             if type(raw) is bytes and len(raw) <= self.limits.max_response_bytes:
-                parsed = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object, parse_constant=_invalid_constant)
+                parsed = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object, parse_constant=_invalid_constant,
+                                    parse_int=_json_number, parse_float=_json_number)
         except Exception:
             pass
         if type(parsed) is not dict:
             raise ProviderUnavailable()
+        pending = [(parsed, 0)]
+        while pending:
+            item, depth = pending.pop()
+            if depth > 32:
+                raise ProviderUnavailable()
+            if isinstance(item, dict):
+                pending.extend((child, depth + 1) for child in item.values())
+            elif isinstance(item, list):
+                pending.extend((child, depth + 1) for child in item)
         if parsed.get("model") != self.profile.model:
             raise EmbeddingProfileMismatch()
         data = parsed.get("data")

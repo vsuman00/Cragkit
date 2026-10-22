@@ -432,3 +432,32 @@ uv run --project packages/python --frozen pytest packages/python/tests tools/tes
 ```
 
 The final [V2-02 report](../evaluation/reports/V2/V2-02.md) records actual results, privacy/accounting regressions and limits. No live API/model check ran. TypeScript parity is the next task.
+
+
+## V2-03 native embedding parity and V2-C1
+
+Node applications can import `EmbeddingAdapter`, `FAKE_PROFILE`, `OPENAI_PROFILE`, strict Zod schemas and corresponding types from `cragkit/embeddings`. Python uses `cragkit.embeddings`. [E-r1](../contracts/EMBEDDINGS_V2.md) includes the Node callback and abort/deadline mapping. Both adapters inject caller-owned asynchronous transport and token counting; neither bundles a concrete HTTP client or model runtime. The caller binds provider, endpoint, input permissions and cost policy outside agent-editable input.
+
+After supplying the callbacks, a Node fake query is:
+
+```typescript
+import { EmbeddingAdapter, FAKE_PROFILE } from 'cragkit/embeddings';
+const adapter = new EmbeddingAdapter(applicationTransport, tokenCounter, {profile: FAKE_PROFILE});
+const batch = await adapter.embed_query('restart the service', {
+  deadline: performance.now() / 1000 + 5,
+  signal: abortController.signal,
+});
+```
+
+This sketch uses application-owned callbacks and an optional caller abort controller. Transport receives a task-owned signal; it must settle promptly on cancellation. Inputs and result vectors are copied, results/configuration are frozen, and overlapping calls fail without an unbounded queue. Core imports remain independent of provider/model packages.
+
+Run the focused Node checks after building, then the shared checker from the root:
+
+```sh
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/embeddings.test.mjs
+uv run --project packages/python --frozen python tools/check_embeddings.py
+python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-C1-final
+```
+
+The full profile now includes embedding parity and clean artifacts with both optional embedding entry points. It runs serially and may access registries for frozen dependency setup. [V2-03/V2-C1 evidence](../evaluation/reports/V2/V2-03-C1.md) records 41 shared synthetic cases and final local results. These checks do not call OpenAI or establish semantic quality/billing. Both runtimes explicitly reject excessive response depth/numeric-token length, duplicate keys, floating-point index/usage tokens and malformed vectors. Vector storage and reindex are next under V2-04.
