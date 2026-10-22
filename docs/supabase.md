@@ -1,5 +1,7 @@
 # Dedicated Supabase development target
 
+Historical host guidance: the user selected Neon on 22 October 2026. Follow the [Neon migration plan](neon-migration-plan.md), [Neon runbook](neon.md) and tracker for the new target. Preserve the Supabase evidence below for its original configuration. This host decision neither deletes the Supabase project nor transfers its acceptance to Neon.
+
 For example, a successful administrative SQL query through the plugin does not show that a Python/libpq client verified the database hostname. Record those as separate checks.
 
 Cragkit uses Supabase as hosted PostgreSQL. Native Python and TypeScript libraries retain their standard PostgreSQL adapter boundary; Supabase Auth, Data API, Storage and a required Python server are outside this setup. See [the architecture](architecture/ARCHITECTURE.md), [the migration contract](../storage/postgres/README.md) and [the tracker](../tasks/todo.md).

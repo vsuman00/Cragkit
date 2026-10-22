@@ -6,7 +6,7 @@ Status: V1 acceptance is complete for the native lexical library milestone, incl
 
 Both native libraries can ingest, retrieve, update and delete small documents with exact citations and access isolation.
 
-Entry: V0 complete; use a dedicated hosted Supabase development PostgreSQL target with isolated test data. Verify connection mode, TLS, runtime-role permissions and extension/schema compatibility before integration tests. Use disposable PostgreSQL in CI when configured; local Docker remains optional.
+Entry: V0 complete; use a dedicated hosted PostgreSQL development target with isolated test data. V1 acceptance was recorded on Supabase. The selected successor host is Neon under [DB-NEON-01](../../docs/neon-migration-plan.md), with new target/security/native acceptance required. Verify connection mode, TLS, runtime-role permissions and extension/schema compatibility before integration tests. Use disposable PostgreSQL in CI when configured; local Docker remains optional.
 
 Architecture mapping: Architecture phase 1; sections 3-7, 9, 11-12.
 

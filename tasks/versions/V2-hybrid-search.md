@@ -4,6 +4,8 @@ Status: V2-01 design decision complete: hosted opt-in OpenAI text-embedding-3-sm
 
 ## Outcome and boundaries
 
+Development hosting is moving to Neon under [DB-NEON-01](../../docs/neon-migration-plan.md). Complete its target/security/native acceptance before using Neon for hosted V2 checks; prior Supabase results are separate evidence. This host change does not implement V2-04: pgvector installation, profile tables, generation publication and vector acceptance retain their existing dependencies. Use the [Neon runbook](../../docs/neon.md) and tracker for actual host state.
+
 Both runtimes combine dense and lexical evidence under the same constraints and return reproducible rank-fusion fixtures.
 
 Entry: V1 complete, including authorization and lifecycle tests.

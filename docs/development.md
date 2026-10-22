@@ -1,5 +1,13 @@
 # Cragkit development
 
+## Current development database: Neon
+
+On 22 October 2026 the user selected a new dedicated Neon development project in VAIBHAV's Free organization, Singapore, PostgreSQL 17, and authorized the [migration plan](neon-migration-plan.md). Follow the [Neon setup and security runbook](neon.md) for current target preparation. Neon native Python/TypeScript security and integration acceptance is pending; provider selection alone does not verify a connection, restricted role or cutover.
+
+The verified commands below remain portable PostgreSQL commands. Use the direct Neon endpoint first with verified TLS and separate administrative, ingestion and retrieval roles; validate pooled behavior separately. Preserve the existing migrations and optional native drivers. Neon hosting does not enable Auth, a Data API or other Neon services.
+
+The dated sections below retain their original local and Supabase observations. Their successful checks establish behavior only for their recorded target and configuration; they are not Neon results. Supabase remains available until the migration acceptance gate passes, and its retirement is a separate action.
+
 ## V0-01 baseline
 
 Observed locally on 19 October 2026 before package setup. This is a workspace and tool inventory; supported runtime ranges and dependency compatibility remain pending V0-03. The [V0-01 resource report](../evaluation/reports/V0/V0-01.md) records hardware, disk, memory, existing services and database preconditions. Completion state lives in [the tracker](../tasks/todo.md).
@@ -42,7 +50,7 @@ The resource report observed an Apple M4 with 16 GiB RAM and 10 logical CPUs, ma
 
 Use one local test process and one language integration suite at a time. Routine checks use fake providers, small fixtures and no database. Independent agent writers must own separate files under [the coordination protocol](agents/WORKFLOW.md); shared contracts, manifests, lockfiles and tracker updates keep one owner. Stop and reduce concurrency or batch size if memory pressure or responsiveness deteriorates. Recheck headroom before installs or larger evaluations.
 
-Hosted Supabase PostgreSQL is the selected development database. Provisioning, credentials and connectivity remain pending. No dedicated target or schema has been verified, and no database connection was attempted for this baseline. Before any hosted test, verify a dedicated nonproduction target, connection mode, privileges, isolated schema/test data and required extension versions. Keep credentials and credential-bearing URLs out of reports and fixtures. Local PostgreSQL or Docker installation is optional and was not needed for V0-01. See the resource report for the full isolation checklist.
+At the V0-01 baseline, hosted Supabase PostgreSQL was the selected development database. Provisioning, credentials and connectivity were pending. No dedicated target or schema has been verified, and no database connection was attempted for this baseline. Before any hosted test, verify a dedicated nonproduction target, connection mode, privileges, isolated schema/test data and required extension versions. Keep credentials and credential-bearing URLs out of reports and fixtures. Local PostgreSQL or Docker installation is optional and was not needed for V0-01. See the resource report for the full isolation checklist.
 
 For example, a 500 MB model file uses disk even when no model process is running; process memory changes while that process runs. A hosted database's storage belongs to the remote database, so it is measured separately from laptop memory and disk. This baseline avoids starting services to make an inventory look complete. A failure case is treating an installed `node` executable as proof that the future TypeScript package passes its typecheck: no such package or typecheck exists yet.
 
@@ -208,14 +216,14 @@ python3 tools/check_postgres.py --check --confirm-dedicated-target --local-socke
 
 The disposable cluster was created with the installed PostgreSQL 17 binaries, UTF-8 encoding and a private socket, with TCP listening disabled, 16 MB shared buffers and 10 maximum connections. The local harness also verified unchanged reruns, checksum/unknown-history rejection, failed-migration DDL and ledger rollback, and rejection of nonempty integration targets. Its generated script/result are in ignored `artifacts/V1/`; the committed SQL probes are `storage/postgres/tests/invariants.sql`. The harness stopped the server and removed the temporary cluster after each run, including failed runs. Do not point integration probes at a shared application database. They require all eight application tables to be empty, take exclusive locks, and roll back their synthetic rows.
 
-For hosted Supabase, first identify a dedicated development project and confirm a direct or session connection suitable for administrative work. Configure scalar `PGHOST`, `PGDATABASE`, `PGUSER`, a protected password source, `PGSSLMODE=verify-full` and the downloaded certificate path in `PGSSLROOTCERT`. Service files, connection-string database values and host redirection are rejected by this initial developer runner. The dedicated-target flag is an operator acknowledgment; it does not detect a production database. The hosted invocation omits `--local-socket`:
+For the original hosted Supabase preparation, the procedure was to identify a dedicated development project and confirm a direct or session connection suitable for administrative work. Current Neon setup follows the [Neon runbook](neon.md). Configure scalar `PGHOST`, `PGDATABASE`, `PGUSER`, a protected password source, `PGSSLMODE=verify-full` and the downloaded certificate path in `PGSSLROOTCERT`. Service files, connection-string database values and host redirection are rejected by this initial developer runner. The dedicated-target flag is an operator acknowledgment; it does not detect a production database. The hosted invocation omits `--local-socket`:
 
 ```sh
 python3 tools/check_postgres.py --apply --confirm-dedicated-target --integration
 python3 tools/check_postgres.py --check --confirm-dedicated-target --integration
 ```
 
-Hosted commands are prepared, not verified. No Cragkit project or connection configuration was available during this session. Project provisioning/cost selection, certificate verification, actual role privileges and Supabase advisors remain pending. Existing unrelated projects were not modified. Administrative local tests use a privileged role; they do not prove least-privilege runtime access, pool behavior or RLS policy isolation. See [Supabase connections](https://supabase.com/docs/guides/database/connecting-to-postgres) and [PostgreSQL TLS verification](https://www.postgresql.org/docs/current/libpq-ssl.html).
+At this historical preparation checkpoint, hosted commands were prepared, not verified. No Cragkit project or connection configuration was available during that session. Project provisioning/cost selection, certificate verification, actual role privileges and Supabase advisors remain pending. Existing unrelated projects were not modified. Administrative local tests use a privileged role; they do not prove least-privilege runtime access, pool behavior or RLS policy isolation. See [Supabase connections](https://supabase.com/docs/guides/database/connecting-to-postgres) and [PostgreSQL TLS verification](https://www.postgresql.org/docs/current/libpq-ssl.html).
 
 
 ### V1-01-H: Supabase security preparation

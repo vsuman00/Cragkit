@@ -22,7 +22,7 @@ Dependency: None; read governing architecture first. Target: one focused slice; 
 
 Build: Inspect governing files, existing work, runtime availability, disk headroom and services without changing services automatically.
 
-Acceptance: Record actual observations and a one-process test policy; record hosted Supabase as the selected development database and identify an isolated test target before using it. Provisioning and credential validation belong to subsequent database acceptance; consult the tracker and development guide for their current evidence. No local database installation is required.
+Acceptance: Record actual observations and a one-process test policy; record the selected hosted PostgreSQL development database and identify an isolated test target before using it. The V0 baseline recorded Supabase; the 22 October Neon host decision is tracked separately in [DB-NEON-01](../../docs/neon-migration-plan.md). Provisioning and credential validation belong to subsequent database acceptance; consult the tracker and development guide for their current evidence. No local database installation is required.
 
 Verification: Review the baseline with actual command outputs; ensure no credentials were captured.
 

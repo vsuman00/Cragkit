@@ -2,7 +2,7 @@
 
 Decision date: 22 October 2026. Task: DB-NEON-01. Completion state is recorded in [the tracker](../tasks/todo.md#db-neon-01-neon-migration).
 
-The user selected Neon as the intended development host for PostgreSQL with `pgvector` and native full-text search. The current authorization covers saving this plan and updating the tracker. Database setup, implementation changes and cutover are deferred until the user requests execution.
+The user selected Neon as the intended development host for PostgreSQL with `pgvector` and native full-text search. The plan was initially saved without execution. On 22 October 2026, the user authorized implementation with the Neon skill/plugin and security tests, and selected a new dedicated Cragkit development project in VAIBHAV's Free organization, Singapore, PostgreSQL 17. Execute the ordered slices below; the tracker records actual acceptance, and cutover remains gated on verification.
 
 For example, a successful administrative connection to Neon would establish connectivity for that role. It would not demonstrate that a restricted retrieval role can read authorized documents while rejecting another tenant's documents.
 
@@ -16,7 +16,7 @@ V2-03 and V2-C1 have recorded local acceptance. [V2-04](../tasks/versions/V2-hyb
 
 ## Ordered execution slices
 
-The slices below are proposed work for a later execution instruction. The tracker owns their completion state. Keep each slice focused; split cross-runtime implementation if it exceeds the project's reviewable scope.
+The user has authorized the slices below; the tracker owns their completion state. Keep each slice focused; split cross-runtime implementation if it exceeds the project's reviewable scope. Do not proceed past an unmet dependency or substitute administrator success for runtime security evidence.
 
 ### DB-NEON-01-A: Align governing documents
 

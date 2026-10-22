@@ -16,6 +16,7 @@ The runner installs frozen dependencies, checks both native packages and shared 
 
 ## Project guide
 
+- [Neon migration plan](docs/neon-migration-plan.md) and [secure setup runbook](docs/neon.md): selected development PostgreSQL host, security requirements and acceptance gates. Historical Supabase results do not establish Neon acceptance; see the tracker before hosted use.
 - [Business requirements](docs/product/BRD.md): developer problem, intended users, product requirements, success measures and unvalidated assumptions.
 - [Architecture](docs/architecture/ARCHITECTURE.md): governing boundaries and planned retrieval behavior.
 - [Master plan](tasks/plan.md) and [task tracker](tasks/todo.md): dependency order, acceptance evidence and current state.
