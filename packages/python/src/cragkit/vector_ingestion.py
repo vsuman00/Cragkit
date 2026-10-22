@@ -225,6 +225,8 @@ class PostgresVectorIndexer:
                 if not batches[-1]:
                     raise
                 self._embedder._inputs([chunks[chunk_id]])
+                if len(batches) >= self._max_batches:
+                    raise InvalidRequest()
                 batches.append([])
             batches[-1].append(chunk_id)
         if len(batches) > self._max_batches:
@@ -239,53 +241,62 @@ class PostgresVectorIndexer:
             raise IndexNotReady()
         self._inflight = True
         try:
-            prepared = await self._prepare(source, collection=collection, document_id=document_id, intent_id=intent_id,
-                source_locator=source_locator, scope=scope, deadline=deadline, expected_generation_id=expected_generation_id,
-                metadata=metadata, format=format, canonical_options=canonical_options)
-            self._batches(prepared, [chunk.chunk_id for chunk in prepared.document.chunks])
-            missing: list[str] = []
-            async def initial(connection: SessionConnection) -> VectorIngestionReceipt:
-                nonlocal missing
-                result = await self._stage_initial(connection, prepared, deadline)
-                if not result.replayed:
-                    rows = await _query(connection, _MISSING_SQL, (*prepared.key, result.generation_id), deadline)
-                    if any(len(row) != 1 or type(row[0]) is not str for row in rows):
-                        raise IntegrityViolation()
-                    missing = [cast(str, row[0]) for row in rows]
-                return result
-            result = await self._transaction(prepared, deadline, initial)
-            chunks = {chunk.chunk_id: chunk.text for chunk in prepared.document.chunks}
-            usage: list[EmbeddingUsage] = []
-            for batch_ids in self._batches(prepared, missing):
-                # Recheck the persisted source and current grants immediately before disclosure.
-                async def check(connection: SessionConnection) -> VectorIngestionReceipt:
-                    await self._authorized(connection, prepared, deadline, require_expected=True)
-                    await self._manifest(connection, prepared, deadline)
-                    return prepared.receipt
-                await self._transaction(prepared, deadline, check)
-                response = await self._embedder.embed_batch([chunks[key] for key in batch_ids], deadline=deadline)
-                self._validate_batch(response, len(batch_ids))
-                usage.append(response.usage)
-                async def store(connection: SessionConnection) -> VectorIngestionReceipt:
-                    await self._authorized(connection, prepared, deadline, require_expected=True)
-                    await self._manifest(connection, prepared, deadline)
-                    rows = [dict(chunk_id=key, embedding=lexical._json(list(vector)))
-                            for key, vector in zip(batch_ids, response.vectors, strict=True)]
-                    await _query(connection, _VECTOR_INSERT_SQL, (*prepared.key, prepared.receipt.revision_id,
-                        prepared.receipt.generation_id, FAKE_PROFILE.profile_id, lexical._json(rows)), deadline)
-                    return prepared.receipt
-                await self._transaction(prepared, deadline, store)
-            if not result.replayed:
-                async def finish(connection: SessionConnection) -> VectorIngestionReceipt:
-                    await self._authorized(connection, prepared, deadline, require_expected=True)
-                    await self._manifest(connection, prepared, deadline)
-                    if await _query(connection, _VECTOR_COUNTS_SQL, (*prepared.key, prepared.receipt.generation_id, FAKE_PROFILE.profile_id), deadline) != [(prepared.receipt.chunk_count,)]:
-                        raise IntegrityViolation()
-                    return prepared.receipt
-                await self._transaction(prepared, deadline, finish)
-            return result.model_copy(update={'provider_calls': len(usage), 'usage': tuple(usage)})
+            return await self._stage_operation(source, collection=collection, document_id=document_id,
+                intent_id=intent_id, source_locator=source_locator, scope=scope, deadline=deadline,
+                expected_generation_id=expected_generation_id, metadata=metadata, format=format,
+                canonical_options=canonical_options)
         finally:
             self._inflight = False
+
+    async def _stage_operation(self, source: str | bytes, *, collection: str, document_id: str, intent_id: str,
+                    source_locator: str, scope: TrustedScope, deadline: float,
+                    expected_generation_id: str | None = None, metadata: dict[str, object] | None = None,
+                    format: str = 'text/plain', canonical_options: dict[str, Any] | None = None) -> VectorIngestionReceipt:
+        prepared = await self._prepare(source, collection=collection, document_id=document_id, intent_id=intent_id,
+            source_locator=source_locator, scope=scope, deadline=deadline, expected_generation_id=expected_generation_id,
+            metadata=metadata, format=format, canonical_options=canonical_options)
+        self._batches(prepared, [chunk.chunk_id for chunk in prepared.document.chunks])
+        missing: list[str] = []
+        async def initial(connection: SessionConnection) -> VectorIngestionReceipt:
+            nonlocal missing
+            result = await self._stage_initial(connection, prepared, deadline)
+            if not result.replayed:
+                rows = await _query(connection, _MISSING_SQL, (*prepared.key, result.generation_id), deadline)
+                if any(len(row) != 1 or type(row[0]) is not str for row in rows):
+                    raise IntegrityViolation()
+                missing = [cast(str, row[0]) for row in rows]
+            return result
+        result = await self._transaction(prepared, deadline, initial)
+        chunks = {chunk.chunk_id: chunk.text for chunk in prepared.document.chunks}
+        usage: list[EmbeddingUsage] = []
+        for batch_ids in self._batches(prepared, missing):
+            # Recheck the persisted source and current grants immediately before disclosure.
+            async def check(connection: SessionConnection) -> VectorIngestionReceipt:
+                await self._authorized(connection, prepared, deadline, require_expected=True)
+                await self._manifest(connection, prepared, deadline)
+                return prepared.receipt
+            await self._transaction(prepared, deadline, check)
+            response = await self._embedder.embed_batch([chunks[key] for key in batch_ids], deadline=deadline)
+            self._validate_batch(response, len(batch_ids))
+            usage.append(response.usage)
+            async def store(connection: SessionConnection) -> VectorIngestionReceipt:
+                await self._authorized(connection, prepared, deadline, require_expected=True)
+                await self._manifest(connection, prepared, deadline)
+                rows = [dict(chunk_id=key, embedding=lexical._json(list(vector)))
+                        for key, vector in zip(batch_ids, response.vectors, strict=True)]
+                await _query(connection, _VECTOR_INSERT_SQL, (*prepared.key, prepared.receipt.revision_id,
+                    prepared.receipt.generation_id, FAKE_PROFILE.profile_id, lexical._json(rows)), deadline)
+                return prepared.receipt
+            await self._transaction(prepared, deadline, store)
+        if not result.replayed:
+            async def finish(connection: SessionConnection) -> VectorIngestionReceipt:
+                await self._authorized(connection, prepared, deadline, require_expected=True)
+                await self._manifest(connection, prepared, deadline)
+                if await _query(connection, _VECTOR_COUNTS_SQL, (*prepared.key, prepared.receipt.generation_id, FAKE_PROFILE.profile_id), deadline) != [(prepared.receipt.chunk_count,)]:
+                    raise IntegrityViolation()
+                return prepared.receipt
+            await self._transaction(prepared, deadline, finish)
+        return result.model_copy(update={'provider_calls': len(usage), 'usage': tuple(usage)})
 
     @staticmethod
     def _validate_batch(response: EmbeddingBatch, count: int) -> None:
@@ -345,3 +356,88 @@ class PostgresVectorIndexer:
         await query(lexical._LEXICAL_SQL, (*key, r.generation_id))
         await self._manifest(connection, prepared, deadline)
         return r
+
+    async def publish(self, source: str | bytes, *, collection: str, document_id: str, intent_id: str,
+                      source_locator: str, scope: TrustedScope, deadline: float,
+                      expected_generation_id: str | None = None, metadata: dict[str, object] | None = None,
+                      format: str = 'text/plain', canonical_options: dict[str, Any] | None = None,
+                      before_publish: Callable[[], Awaitable[None]] | None = None) -> VectorIngestionReceipt:
+        if self._inflight:
+            raise IndexNotReady()
+        self._inflight = True
+        try:
+            return await self._publish_operation(source, collection=collection, document_id=document_id,
+                intent_id=intent_id, source_locator=source_locator, scope=scope, deadline=deadline,
+                expected_generation_id=expected_generation_id, metadata=metadata, format=format,
+                canonical_options=canonical_options, before_publish=before_publish)
+        finally:
+            self._inflight = False
+
+    async def _publish_operation(self, source: str | bytes, *, collection: str, document_id: str, intent_id: str,
+                                 source_locator: str, scope: TrustedScope, deadline: float,
+                                 expected_generation_id: str | None, metadata: dict[str, object] | None,
+                                 format: str, canonical_options: dict[str, Any] | None,
+                                 before_publish: Callable[[], Awaitable[None]] | None) -> VectorIngestionReceipt:
+        if before_publish is not None and not callable(before_publish):
+            raise InvalidRequest()
+        prepared = await self._prepare(source, collection=collection, document_id=document_id, intent_id=intent_id,
+            source_locator=source_locator, scope=scope, deadline=deadline, expected_generation_id=expected_generation_id,
+            metadata=metadata, format=format, canonical_options=canonical_options)
+        async def publish(connection: SessionConnection) -> VectorIngestionReceipt:
+            r, key = prepared.receipt, prepared.key
+            async def query(sql: str, values: tuple[object, ...] | None = None) -> list[tuple[object, ...]]:
+                return await _query(connection, sql, values, deadline)
+            jobs = await query(_VECTOR_JOB_SQL, (*key[:2], r.intent_id))
+            if not jobs:
+                raise IndexNotReady()
+            if len(jobs) != 1 or jobs[0][0] != r.payload_sha256 or jobs[0][3] != r.document_id:
+                raise InvalidRequest()
+            if jobs[0][1] != r.generation_id or jobs[0][2] not in ('running', 'succeeded'):
+                raise IndexNotReady()
+            succeeded = jobs[0][2] == 'succeeded'
+            async def barrier() -> None:
+                await self._authorized(connection, prepared, deadline, require_expected=not succeeded)
+                await self._manifest(connection, prepared, deadline, ready=succeeded)
+                if await query(_VECTOR_COUNTS_SQL, (*key, r.generation_id, FAKE_PROFILE.profile_id)) != [(r.chunk_count,)]:
+                    raise IntegrityViolation()
+            await barrier()
+            if succeeded:
+                return r.model_copy(update={'replayed': True})
+            if before_publish is not None:
+                await before_publish()
+            _check_deadline(deadline)
+            # Hooks may await application work; authorization is checked again before mutation.
+            await self._authorize_application(prepared.scope, r.collection, r.document_id, deadline)
+            await barrier()
+            if await query("UPDATE cragkit.index_generations SET status='ready' WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s AND status='staging' AND embedding_profile=%s RETURNING 1", (*key, r.generation_id, FAKE_PROFILE.profile_id)) != [(1,)]:
+                raise IntegrityViolation()
+            changed = await query('UPDATE cragkit.documents SET active_generation_id=%s,metadata=%s::jsonb WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND active_generation_id IS NOT DISTINCT FROM %s AND NOT tombstoned AND authorization_revision=%s RETURNING 1', (r.generation_id, prepared.metadata_json, *key, prepared.expected, prepared.scope.authorization_revision))
+            if changed != [(1,)]:
+                raise IndexNotReady()
+            if await query("UPDATE cragkit.ingestion_jobs SET state='succeeded' WHERE tenant_id=%s AND collection_id=%s AND intent_id=%s AND payload_sha256=%s AND generation_id=%s AND state='running' RETURNING 1", (*key[:2], r.intent_id, r.payload_sha256, r.generation_id)) != [(1,)]:
+                raise IntegrityViolation()
+            return r
+        return await self._transaction(prepared, deadline, publish)
+
+    async def ingest(self, source: str | bytes, *, collection: str, document_id: str, intent_id: str,
+                     source_locator: str, scope: TrustedScope, deadline: float,
+                     expected_generation_id: str | None = None, metadata: dict[str, object] | None = None,
+                     format: str = 'text/plain', canonical_options: dict[str, Any] | None = None,
+                     before_publish: Callable[[], Awaitable[None]] | None = None) -> VectorIngestionReceipt:
+        if self._inflight:
+            raise IndexNotReady()
+        if before_publish is not None and not callable(before_publish):
+            raise InvalidRequest()
+        self._inflight = True
+        try:
+            staged = await self._stage_operation(source, collection=collection, document_id=document_id,
+                intent_id=intent_id, source_locator=source_locator, scope=scope, deadline=deadline,
+                expected_generation_id=expected_generation_id, metadata=metadata, format=format,
+                canonical_options=canonical_options)
+            published = await self._publish_operation(source, collection=collection, document_id=document_id,
+                intent_id=intent_id, source_locator=source_locator, scope=scope, deadline=deadline,
+                expected_generation_id=expected_generation_id, metadata=metadata, format=format,
+                canonical_options=canonical_options, before_publish=before_publish)
+            return published.model_copy(update={'provider_calls': staged.provider_calls, 'usage': staged.usage})
+        finally:
+            self._inflight = False

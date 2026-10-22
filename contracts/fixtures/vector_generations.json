@@ -1,0 +1,22 @@
+{
+  "revision": "VG-r1",
+  "profile": {"profile_id":"fake_embedding_1536_v1","provider":"fake","model":"fake_embedding_model_v1","dimensions":1536,"tokenizer":"fake-byte-v1","normalization":"l2"},
+  "canonical_options": {"target_bytes":12,"max_chunk_bytes":32},
+  "metadata": {"unicode":"Café🙂","nested":[null,true,1.25]},
+  "baseline_source": "alpha retained baseline\n\nsecond paragraph",
+  "replacement_source": "alpha shadow replacement\n\nthird paragraph",
+  "cases": [
+    {"id":"interrupted-stage","expected":"provider_unavailable","preserve_pointer":true},
+    {"id":"missing-only-resume","expected":"staged","preserve_pointer":true},
+    {"id":"changed-payload","expected":"invalid_request","preserve_pointer":true},
+    {"id":"wrong-model-same-dimension","expected":"embedding_profile_mismatch","preserve_pointer":true},
+    {"id":"hook-interruption","expected":"interrupted","preserve_pointer":true},
+    {"id":"incomplete-vectors","expected":"integrity_violation","preserve_pointer":true},
+    {"id":"mixed-manifest","expected":"integrity_violation","preserve_pointer":true},
+    {"id":"failed-publication","expected":"unauthorized_scope","preserve_pointer":true},
+    {"id":"stale-cas","expected":"index_not_ready","preserve_pointer":true},
+    {"id":"revoked-grant","expected":"unauthorized_scope","preserve_pointer":true},
+    {"id":"tombstoned","expected":"unauthorized_scope","preserve_pointer":true},
+    {"id":"success-replay","expected":"published"}
+  ]
+}
