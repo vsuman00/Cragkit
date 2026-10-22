@@ -178,12 +178,19 @@ def parse_vector_inspection(lines: list[str], *, database: str, user: str) -> di
 
 
 def vector_setup_script(item: Migration, *, apply: bool,
-                        allow_managed_primitives: bool = False) -> str:
+                        allow_managed_primitives: bool = False,
+                        storage: Migration | None = None) -> str:
     """Use a separate checksummed ledger; lexical migration history is immutable."""
     if not re.fullmatch(r'0001_[a-z0-9_]+', item.version) or not re.fullmatch(r'[0-9a-f]{64}', item.checksum):
         raise PostgresCheckError('invalid_vector_setup_identity')
     if re.search(r'(?m)^\s*\\', item.sql) or '$cragkit_runner$' in item.sql:
         raise PostgresCheckError('unsafe_migration_script')
+    expected = [(item.version, item.checksum)]
+    if storage is not None:
+        if storage.version != '0002_vector_profiles' or not re.fullmatch(r'[0-9a-f]{64}', storage.checksum):
+            raise PostgresCheckError('invalid_vector_storage_identity')
+        expected.append((storage.version, storage.checksum))
+    expected_sql = ','.join(f"('{version}','{checksum}')" for version, checksum in expected)
     capability = """IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector') THEN
  RAISE EXCEPTION USING ERRCODE='CV001', MESSAGE='vector_capability_missing';
 END IF;
@@ -299,7 +306,10 @@ IF (SELECT count(*) FROM pg_default_acl d
  WHERE (d.defaclnamespace=0 OR d.defaclnamespace=to_regnamespace('cragkit_vector')) AND d.defaclrole=current_user::regrole AND a.grantee<>d.defaclrole
 ) THEN RAISE EXCEPTION USING ERRCODE='CV002', MESSAGE='vector_capability_unsupported'; END IF;
 {primitive_checks}
-IF (SELECT count(*) FROM cragkit_vector.setup_history) <> 1 OR NOT EXISTS (
+IF (SELECT count(*) FROM cragkit_vector.setup_history) NOT BETWEEN 1 AND {len(expected)} OR EXISTS (
+ WITH expected(version,checksum) AS (VALUES {expected_sql})
+ SELECT 1 FROM cragkit_vector.setup_history h LEFT JOIN expected e USING(version)
+ WHERE e.version IS NULL OR e.checksum<>h.checksum) OR NOT EXISTS (
  SELECT 1 FROM cragkit_vector.setup_history WHERE version='{item.version}' AND checksum='{item.checksum}') THEN
  RAISE EXCEPTION 'vector_setup_history_drift';
 END IF;
@@ -311,6 +321,35 @@ IF EXISTS ((SELECT version,checksum,applied_at FROM cragkit.migration_history EX
  RAISE EXCEPTION 'lexical_history_changed'; END IF;
 END $cragkit_runner$;""")
     chunks.extend(['COMMIT;', "SELECT 'cragkit_vector_ok';"])
+    return '\n'.join(chunks)
+
+
+def vector_storage_script(item: Migration, *, apply: bool) -> str:
+    """Apply the optional second setup artifact under the existing ledger and lock."""
+    if item.version != '0002_vector_profiles' or not re.fullmatch(r'[0-9a-f]{64}', item.checksum):
+        raise PostgresCheckError('invalid_vector_storage_identity')
+    if re.search(r'(?m)^\s*\\', item.sql) or '$cragkit_runner$' in item.sql:
+        raise PostgresCheckError('unsafe_migration_script')
+    chunks = ['BEGIN;', "SET LOCAL search_path = pg_catalog;", "SET LOCAL statement_timeout = '30s';",
+              "SET LOCAL lock_timeout = '5s';", "SET LOCAL idle_in_transaction_session_timeout = '30s';",
+              f'SELECT {LOCK};']
+    if not apply:
+        chunks.insert(1, 'SET TRANSACTION READ ONLY;')
+    chunks.append("DO $cragkit_runner$ BEGIN IF to_regclass('cragkit_vector.setup_history') IS NULL THEN RAISE EXCEPTION 'missing_vector_setup_history'; END IF; END $cragkit_runner$;")
+    if apply:
+        chunks.append(f"""DO $cragkit_runner$ BEGIN
+IF NOT EXISTS (SELECT 1 FROM cragkit_vector.setup_history WHERE version='{item.version}') THEN
+ {item.sql}
+ INSERT INTO cragkit_vector.setup_history(version,checksum) VALUES ('{item.version}','{item.checksum}');
+END IF;
+END $cragkit_runner$;""")
+    chunks.append(f"""DO $cragkit_runner$ BEGIN
+IF NOT EXISTS (SELECT 1 FROM cragkit_vector.setup_history WHERE version='{item.version}' AND checksum='{item.checksum}') THEN
+ RAISE EXCEPTION USING ERRCODE='CV002', MESSAGE='vector_storage_history_missing_or_drift'; END IF;
+IF to_regclass('cragkit.embedding_profiles') IS NULL OR to_regclass('cragkit.chunk_vectors_fake_1536') IS NULL THEN
+ RAISE EXCEPTION USING ERRCODE='CV001', MESSAGE='vector_storage_missing'; END IF;
+END $cragkit_runner$;""")
+    chunks.extend(['COMMIT;', "SELECT 'cragkit_vector_storage_ok';"])
     return '\n'.join(chunks)
 
 
@@ -348,10 +387,11 @@ def main() -> int:
     parser.add_argument('--local-socket', type=Path)
     parser.add_argument('--integration', action='store_true')
     parser.add_argument('--vector', action='store_true')
+    parser.add_argument('--vector-storage', action='store_true')
     parser.add_argument('--install-vector', action='store_true')
     parser.add_argument('--allow-managed-vector-primitives', action='store_true')
     args = parser.parse_args()
-    if args.allow_managed_vector_primitives and not (args.vector or args.install_vector):
+    if args.allow_managed_vector_primitives and not (args.vector or args.install_vector or args.vector_storage):
         print('Managed vector primitives require --vector or --install-vector.')
         return 2
     if args.install_vector and not args.apply:
@@ -360,17 +400,22 @@ def main() -> int:
     try:
         environment = connection_environment(os.environ, confirmed=args.confirm_dedicated_target, local_socket=args.local_socket)
         items = migrations(ROOT / 'storage/postgres/migrations')
-        if args.vector or args.install_vector:
+        if args.vector or args.install_vector or args.vector_storage:
             lines = execute(vector_inspection_script(), environment, marker='cragkit_vector_inspection_ok')
             observation = parse_vector_inspection(lines, database=environment['PGDATABASE'], user=environment['PGUSER'])
             print(json.dumps(observation, sort_keys=True))
         execute(migration_script(items, apply=args.apply), environment)
-        if args.vector or args.install_vector:
-            setup = migrations(VECTOR_SETUP_DIRECTORY)[0]
-            execute(vector_setup_script(setup, apply=args.install_vector, allow_managed_primitives=args.allow_managed_vector_primitives), environment, marker='cragkit_vector_ok')
+        if args.vector or args.install_vector or args.vector_storage:
+            setup_items = migrations(VECTOR_SETUP_DIRECTORY)
+            execute(vector_setup_script(setup_items[0], apply=args.install_vector,
+                allow_managed_primitives=args.allow_managed_vector_primitives, storage=setup_items[1]), environment, marker='cragkit_vector_ok')
+            if args.vector_storage:
+                execute(vector_storage_script(setup_items[1], apply=args.apply), environment, marker='cragkit_vector_storage_ok')
         if args.integration:
             probe = (ROOT / 'storage/postgres/tests/invariants.sql').read_text(encoding='utf-8')
             execute(probe, environment)
+            if args.vector_storage:
+                execute((ROOT / 'storage/postgres/tests/vectors.sql').read_text(), environment, marker='cragkit_vector_storage_ok')
         print(f'PostgreSQL checks passed: migrations={len(items)}, integration={int(args.integration)}.')
     except (PostgresCheckError, OSError, UnicodeError) as error:
         code = str(error) if isinstance(error, PostgresCheckError) else 'local_input_unavailable'

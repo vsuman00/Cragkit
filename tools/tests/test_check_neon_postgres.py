@@ -79,7 +79,7 @@ def test_safe_errors_and_explicit_options(monkeypatch, capsys):
     assert NEON.main() == 1
     output = capsys.readouterr().out
     assert 'private' not in output and 'password' not in output and 'dsn' not in output
-    assert check.call_args.kwargs == dict(apply=True, harden=True, integration=True, security=True, vector=False, install_vector=False, allow_managed_primitives=False)
+    assert check.call_args.kwargs == dict(apply=True, harden=True, integration=True, security=True, vector=False, install_vector=False, allow_managed_primitives=False, vector_storage=False)
 
 
 def test_native_wrapper_pins_tls_and_orders_explicit_scripts(monkeypatch, tmp_path):
@@ -189,7 +189,8 @@ def test_vector_inspection_precedes_mutation_and_setup_precedes_security(monkeyp
     assert [call.args[2] for call in execute.call_args_list] == [
         'cragkit_vector_inspection_ok', 'cragkit_migration_ok', 'cragkit_vector_ok', 'cragkit_security_probe_ok']
     assert execute.call_args_list[2].args[1] == NEON.vector_setup_script(
-        NEON.migrations(NEON.VECTOR_SETUP_DIRECTORY)[0], apply=True)
+        NEON.migrations(NEON.VECTOR_SETUP_DIRECTORY)[0], apply=True,
+        storage=NEON.migrations(NEON.VECTOR_SETUP_DIRECTORY)[1])
     connection.close.assert_awaited_once()
 
 

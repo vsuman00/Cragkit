@@ -12,11 +12,16 @@ DECLARE
     item record;
     schema_id oid;
     table_count integer;
+    vector_table_count integer;
 BEGIN
     SELECT oid INTO STRICT schema_id FROM pg_namespace WHERE nspname = 'cragkit';
     SELECT count(*) INTO table_count FROM pg_class
         WHERE relnamespace = schema_id AND relkind = 'r';
-    IF table_count <> 9 THEN
+    SELECT count(*) INTO vector_table_count FROM pg_class
+        WHERE relnamespace = schema_id AND relkind = 'r'
+            AND relname IN ('embedding_profiles', 'chunk_vectors_fake_1536');
+    IF vector_table_count NOT IN (0, 2)
+        OR table_count <> 9 + vector_table_count THEN
         RAISE EXCEPTION 'unexpected cragkit table inventory';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_class WHERE relnamespace = schema_id
@@ -106,6 +111,14 @@ GRANT SELECT ON cragkit.collections, cragkit.documents, cragkit.document_revisio
     cragkit.index_generations, cragkit.chunks, cragkit.chunk_lexical,
     cragkit.document_grants, cragkit.ingestion_jobs, cragkit.migration_history TO cragkit_security_probe;
 GRANT INSERT ON cragkit.collections TO cragkit_security_probe;
+DO $vector_grants$
+BEGIN
+    IF to_regclass('cragkit.embedding_profiles') IS NOT NULL THEN
+        GRANT SELECT ON cragkit.embedding_profiles, cragkit.chunk_vectors_fake_1536
+            TO cragkit_security_probe;
+    END IF;
+END
+$vector_grants$;
 SET LOCAL ROLE cragkit_security_probe;
 
 DO $probe$
@@ -125,6 +138,16 @@ BEGIN
             RAISE EXCEPTION 'default deny exposed rows';
         END IF;
     END LOOP;
+    IF to_regclass('cragkit.embedding_profiles') IS NOT NULL THEN
+        EXECUTE 'SELECT count(*) FROM cragkit.embedding_profiles' INTO visible_rows;
+        IF visible_rows <> 0 THEN
+            RAISE EXCEPTION 'default deny exposed embedding profile rows';
+        END IF;
+        EXECUTE 'SELECT count(*) FROM cragkit.chunk_vectors_fake_1536' INTO visible_rows;
+        IF visible_rows <> 0 THEN
+            RAISE EXCEPTION 'default deny exposed vector rows';
+        END IF;
+    END IF;
     BEGIN
         INSERT INTO cragkit.collections (tenant_id, collection_id)
             VALUES ('cragkit-security-probe', 'denied-insert');

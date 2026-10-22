@@ -9,7 +9,7 @@ import re
 
 from check_postgres import (migrations, migration_script, VECTOR_SETUP_DIRECTORY,
                             VectorCompatibilityError, vector_compatibility_error,
-                            vector_inspection_script, parse_vector_inspection, vector_setup_script)
+                            vector_inspection_script, parse_vector_inspection, vector_setup_script, vector_storage_script)
 from check_python_postgres import load_config, require_client_tls, require_neon_host
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,9 +49,9 @@ async def execute_script(connection, script: str, marker: str) -> list[str]:
 async def check(config_path: Path, *, apply: bool, harden: bool = False,
                 integration: bool = False, security: bool = False,
                 vector: bool = False, install_vector: bool = False,
-                allow_managed_primitives: bool = False) -> None:
+                allow_managed_primitives: bool = False, vector_storage: bool = False) -> None:
     global CURRENT_STAGE
-    if allow_managed_primitives and not (vector or install_vector):
+    if allow_managed_primitives and not (vector or install_vector or vector_storage):
         raise NeonCheckError('managed_primitives_require_vector')
     if install_vector and not apply:
         raise NeonCheckError('vector_install_requires_apply')
@@ -64,13 +64,18 @@ async def check(config_path: Path, *, apply: bool, harden: bool = False,
     require_neon_host(config.host)
     PoolResource(config)._check_owned_configuration()
     scripts = [('migrations', migration_script(migrations(ROOT / 'storage/postgres/migrations'), apply=apply), 'cragkit_migration_ok')]
-    if vector or install_vector:
+    if vector or install_vector or vector_storage:
         scripts.insert(0, ('vector-inspection', vector_inspection_script(), 'cragkit_vector_inspection_ok'))
-        scripts.append(('vector-setup', vector_setup_script(migrations(VECTOR_SETUP_DIRECTORY)[0], apply=install_vector, allow_managed_primitives=allow_managed_primitives), 'cragkit_vector_ok'))
+        setup_items = migrations(VECTOR_SETUP_DIRECTORY)
+        scripts.append(('vector-setup', vector_setup_script(setup_items[0], apply=install_vector, allow_managed_primitives=allow_managed_primitives, storage=setup_items[1]), 'cragkit_vector_ok'))
+        if vector_storage:
+            scripts.append(('vector-storage', vector_storage_script(setup_items[1], apply=apply), 'cragkit_vector_storage_ok'))
     if harden:
         scripts.append(('hardening', (ROOT / 'storage/postgres/deployment/neon.sql').read_text(), 'cragkit_neon_hardening_ok'))
     if integration:
         scripts.append(('integration', (ROOT / 'storage/postgres/tests/invariants.sql').read_text(), 'cragkit_migration_ok'))
+        if vector_storage:
+            scripts.append(('vector-integration', (ROOT / 'storage/postgres/tests/vectors.sql').read_text(), 'cragkit_vector_storage_ok'))
     if security:
         scripts.append(('security', (ROOT / 'storage/postgres/tests/security.sql').read_text(), 'cragkit_security_probe_ok'))
     connection = None
@@ -105,10 +110,11 @@ def main() -> int:
     parser.add_argument('--security', action='store_true')
     parser.add_argument('--allow-test-writes', action='store_true')
     parser.add_argument('--vector', action='store_true')
+    parser.add_argument('--vector-storage', action='store_true')
     parser.add_argument('--install-vector', action='store_true')
     parser.add_argument('--allow-managed-vector-primitives', action='store_true')
     args = parser.parse_args()
-    if args.allow_managed_vector_primitives and not (args.vector or args.install_vector):
+    if args.allow_managed_vector_primitives and not (args.vector or args.install_vector or args.vector_storage):
         print('Managed vector primitives require --vector or --install-vector.')
         return 2
     if args.install_vector and not args.apply:
@@ -122,8 +128,8 @@ def main() -> int:
             async with asyncio.timeout(120):
                 await check(args.config, apply=args.apply, harden=args.harden,
                             integration=args.integration, security=args.security,
-                            vector=args.vector or args.install_vector, install_vector=args.install_vector,
-                            allow_managed_primitives=args.allow_managed_vector_primitives)
+                            vector=args.vector or args.install_vector or args.vector_storage, install_vector=args.install_vector,
+                            allow_managed_primitives=args.allow_managed_vector_primitives, vector_storage=args.vector_storage)
         asyncio.run(bounded())
     except Exception as error:
         kind = type(error).__name__

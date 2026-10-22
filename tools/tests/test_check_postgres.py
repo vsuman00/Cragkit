@@ -229,11 +229,12 @@ def test_postgres_cli_forwards_managed_exception_only_when_explicit(monkeypatch,
     monkeypatch.setattr(PG, 'connection_environment', lambda *args, **kwargs:
                         {'PGDATABASE': 'cragkit', 'PGUSER': 'admin'})
     item = PG.Migration('0001_pgvector', 'e' * 64, 'SELECT 918273;')
-    monkeypatch.setattr(PG, 'migrations', lambda path: [item])
+    storage = PG.Migration('0002_vector_profiles', 'f' * 64, 'SELECT 2;')
+    monkeypatch.setattr(PG, 'migrations', lambda path: [item, storage])
     monkeypatch.setattr(PG, 'execute', lambda *args, **kwargs: [])
     monkeypatch.setattr(PG, 'parse_vector_inspection', lambda *args, **kwargs: {})
     observed = []
-    def setup(item, *, apply, allow_managed_primitives=False):
+    def setup(item, *, apply, allow_managed_primitives=False, storage=None):
         observed.append((apply, allow_managed_primitives))
         return 'synthetic SQL'
     monkeypatch.setattr(PG, 'vector_setup_script', setup)
@@ -255,3 +256,20 @@ def test_vector_artifact_uses_effective_owner_revokes_and_global_defaults():
         script = PG.vector_setup_script(item, apply=False, allow_managed_primitives=managed)
         assert 'd.defaclnamespace=0' in script
         assert "to_regnamespace('cragkit_vector')" in script
+
+
+def test_optional_storage_uses_existing_ledger_and_never_runs_on_check():
+    item = PG.migrations(PG.VECTOR_SETUP_DIRECTORY)[1]
+    apply = PG.vector_storage_script(item, apply=True)
+    check = PG.vector_storage_script(item, apply=False)
+    assert apply.index(PG.LOCK) < apply.index(item.sql) < apply.index('INSERT INTO cragkit_vector.setup_history') < apply.index('COMMIT;')
+    assert 'SET TRANSACTION READ ONLY' in check and item.sql not in check
+    assert item.checksum in check and 'CV002' in check
+    assert 'INSERT INTO cragkit.migration_history' not in apply
+
+
+def test_vector_capability_accepts_only_known_optional_history_prefix():
+    items = PG.migrations(PG.VECTOR_SETUP_DIRECTORY)
+    script = PG.vector_setup_script(items[0], apply=False, storage=items[1])
+    assert 'NOT BETWEEN 1 AND 2' in script
+    assert items[1].checksum in script and 'e.version IS NULL OR e.checksum<>h.checksum' in script

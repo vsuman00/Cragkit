@@ -482,3 +482,14 @@ uv run --project packages/python --frozen --no-sync --extra postgres python tool
 ```
 
 The install command and its unchanged rerun passed. The check command is read-only for vector setup; the separately requested security probe performs rolled-back synthetic writes. Optional drivers were already installed, so these invocations used `--no-sync`. The native wrapper has a 120-second overall bound; generic psql tooling retains its 120-second bound per subprocess, with SQL statement/lock bounds. No installation happens without `--install-vector`; `--apply` alone stays lexical-only. [Results and limitations](../evaluation/reports/V2/V2-04A.md).
+
+
+## V2-04B: Optional vector profile storage
+
+After explicit A setup, --vector-storage applies/checks the next numbered setup artifact without changing lexical migration history. Verified install/rerun with existing optional drivers:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_neon_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --confirm-dedicated-target --apply --vector-storage --allow-managed-vector-primitives --harden --integration --security --allow-test-writes
+```
+
+The vector SQL probes roll back all synthetic rows. [B/B1 results](../evaluation/reports/V2/V2-04B.md). The new profile table is synthetic-only; hosted profile provisioning and dense ranking are not implied.
