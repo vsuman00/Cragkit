@@ -24,7 +24,7 @@ Build: Record the supported runtime/backend/provider matrix and quality/resource
 
 Acceptance: Every promised feature has a test/evidence owner; unresolved required choices block readiness rather than becoming assumed facts.
 
-Verification: Audit architecture-to-task and edge-case coverage; review threshold definitions and corpus split integrity.
+Verification: Audit BRD-to-architecture-to-task and edge-case coverage using the [BRD crosswalk](../../docs/product/BRD.md#requirement-crosswalk); review threshold definitions and corpus split integrity. Record the developer-trial comparison, measures and success criteria before running V6-05; unresolved numeric targets remain explicit until supported by baseline observations.
 
 Learning exercise: Explain why targets must be fixed before seeing final evaluation results.
 
@@ -80,9 +80,9 @@ Expected areas: `Boundary tests`, `artifact audit`, `V6 report`.
 
 Dependency: V6-04. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.
 
-Build: Have a developer unfamiliar with the code complete installation, ingestion, retrieval and partial-result handling from docs; if unavailable, record the limitation.
+Build: Have a developer unfamiliar with the code complete installation, ingestion, retrieval and partial-result handling from docs; if unavailable, record the limitation. Use the BRD measures within this trial: compare an explicit baseline on the same corpus and required behavior, distinguish missing evidence from provider failure, and include one bounded update/configuration task.
 
-Acceptance: Record actual time, errors and confusing steps; fix documentation/API problems without inventing adoption evidence.
+Acceptance: Record actual time, errors, help required, failed attempts and confusing steps against the predeclared criteria. Record reasons to continue or abandon the integration as exploratory feedback. Fix documentation/API problems without inventing adoption evidence; a missing participant or baseline leaves comparative effort claims unvalidated.
 
 Verification: Repeat failed steps from a fresh environment and capture a short task report.
 

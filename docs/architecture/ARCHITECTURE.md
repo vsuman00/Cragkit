@@ -1,6 +1,8 @@
 # Cragkit: complete library architecture
 
-Design baseline v0.1 | 19 October 2026 | Status: proposed architecture, not implemented or benchmarked
+Design baseline v0.1 | 19 October 2026 | Status: governing target architecture; implementation and verification evidence are tracked in [todo.md](../../tasks/todo.md). This document is not a claim that the full design is implemented or benchmarked.
+
+The [BRD](../product/BRD.md) records intended users, business requirements and outcome measures. The [master plan](../../tasks/plan.md) assigns delivery milestones; neither product intent nor a design diagram establishes runtime acceptance.
 
 ## 1. The problem and the product
 
@@ -237,7 +239,7 @@ There are four different checks: source extraction fidelity, retrieval relevance
 | Rewrite invents the intended incident or removes constraints | Preserve original query, fixed constraints, logged assumptions | A planner may still choose poor subqueries. |
 | Compression invents text | Return verified source slices; generated summaries excluded from evidence | An authentic quote may still be misleading without context. |
 | Citation points to a stale or changed document | Immutable revision/digest and availability status | Sources may themselves be outdated or false. |
-| Parent LLM ignores evidence or fills missing facts | Explicit partial/insufficient signals and optional answer-support adapter | The consuming application must enforce its response policy. |
+| Parent LLM ignores evidence or fills missing facts | Explicit partial/insufficient signals; answer-support adapter is later research outside V0-V6 | The consuming application must enforce its response policy. |
 
 RAGTruth documents unsupported and contradictory output even with retrieved context. Citation quality is also distinct from answer quality, as studied by ALCE. These support separate evaluation of retrieval and generation; they do not establish that Cragkit prevents hallucination. [RAGTruth](https://aclanthology.org/2024.acl-long.585/), [ALCE](https://arxiv.org/abs/2305.14627).
 
@@ -353,4 +355,4 @@ Only this documentation directory and its diagrams are created by this architect
 | Performance and false-sufficient targets | Set targets from the first baseline and target application needs, then freeze before held-out evaluation. |
 | Hosted telemetry or monetization | Validate developer demand separately; no cloud dependency in the library design. |
 
-The architecture is complete enough to begin the contract and corpus phase. Model-specific thresholds, public performance claims, and release readiness must come from implementation and evaluation rather than this design document.
+Use the tracker to select the next dependency-ready task rather than restarting the contract and corpus phase. Model-specific thresholds, public performance claims, and release readiness must come from implementation and evaluation rather than this design document.

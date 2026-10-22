@@ -45,26 +45,43 @@ These are build milestones, not promised delivery dates or public release versio
 
 Python and TypeScript execute natively; the npm library does not require a Python server. Python/Pydantic/asyncio and TypeScript/Zod remain the baseline. PostgreSQL with pgvector and native FTS is the first backend; FTS is not BM25. Hosted Supabase is the development database choice to reduce laptop load, not a mandatory service for library consumers.
 
-Keep database drivers, model runtimes, frameworks and transports optional. Core import must not initiate network calls, connect to a database, apply migrations or download models. Development follows the existing M4/16 GB resource policy: small fixtures, fake providers for routine tests and one integration suite at a time. This is not a universal hardware guarantee.
+Keep database drivers, model runtimes, frameworks and transports optional. Core import must not initiate network calls, connect to a database, apply migrations or download models. Request-local budgets do not establish a global quota across application instances; that infrastructure remains application-owned. Development follows the existing M4/16 GB resource policy: small fixtures, fake providers for routine tests and one integration suite at a time. This is not a universal hardware guarantee.
 
 Outside this baseline are a hosted product/dashboard, application authentication, final-answer generation or verification, arbitrary agent actions, enterprise crawling, OCR/multimodal ingestion and dependent multi-hop research. Rust replacement and commercial hosting require separate decisions. Optional integrations already assigned to later versions remain in their planned phases.
 
 ## 5. Business requirements and traceability
 
-“Required” below describes the agreed product target within the named milestone. Completion evidence remains in the tracker. Edge-case IDs refer to the existing [validation inventory](../../tasks/EDGE_CASES.md); these references highlight relevant cases rather than replace the full inventory.
+"Required" below describes the agreed product target within the named milestone. Completion evidence remains in the tracker. Edge-case IDs refer to the existing [validation inventory](../../tasks/EDGE_CASES.md); these references highlight relevant cases rather than replace the full inventory.
 
 | ID | Required outcome and reason | Existing delivery and acceptance path |
 | --- | --- | --- |
-| BR-01 | Developers can use small typed native Python and TypeScript APIs with consistent documented semantics and useful errors. This reduces repeated integration decisions. | V0-V1 contracts and native artifacts; shared fixtures and installation checks; V6 developer trial. |
+| BR-01 | Developers can use small typed native Python and TypeScript APIs with consistent documented semantics and useful errors. This is intended to reduce repeated integration decisions. | V0-V1 contracts and native artifacts; shared fixtures and installation checks; V6 developer trial. |
 | BR-02 | Returned excerpts identify immutable source revisions and exact canonical spans, with integrity checks. Developers can inspect where evidence came from. | V1 source assembly and lifecycle; V3 packing; E07-E16. |
 | BR-03 | Evidence release respects caller-bound trusted scope and required filters throughout retrieval, recovery and final authorization. A useful result cannot justify broader access. | V1 authorization, V2 branches, V4 recovery, V5 adapters; E17-E25, E44, E53-E55. |
-| BR-04 | Results distinguish sufficient, partial and insufficient evidence estimates from complete or degraded execution. Unknown support cannot be declared sufficient; operational errors cannot become “no evidence.” | V0/V1 contracts, V3 assessment and post-packing checks, V4 orchestration; E29, E35-E38, E47. |
+| BR-04 | Results distinguish sufficient, partial and insufficient evidence estimates from complete or degraded execution. Unknown support cannot be declared sufficient; operational errors cannot become "no evidence." | V0/V1 contracts, V3 assessment and post-packing checks, V4 orchestration; E29, E35-E38, E47. |
 | BR-05 | Hybrid retrieval, reranking and bounded correction are evaluated against simpler baselines. Added work must justify its quality and cost. | V2-V4 evaluations and V6 held-out comparison; E26-E33, E44-E45. |
 | BR-06 | Requests obey shared deadlines, cancellation and declared candidate, call and attempt limits; usage accounting reports unknowns honestly. Applications can bound work and handle failures. | V1 lifecycle, V4 shared budgets and recovery; E23-E24, E46-E50. |
 | BR-07 | Evidence packing respects the declared representation and tokenizer for hard token ceilings, then reassesses support using only emitted evidence. | V3 packing and V4 wrappers; E38-E42. |
 | BR-08 | Ingestion, updates and deletion preserve consistent published revisions. Unsupported input and incompatible profiles fail explicitly rather than creating misleading searchable content. | V1 lifecycle, V2 profiles, V5 publication/repair; E08-E16, E25, E30, E52-E54. |
-| BR-09 | Diagnostics explain retrieval limitations and failures while keeping credentials and raw query/source text out of default telemetry. Retrieved content remains data, not authority to change policy. | V4 events/planner boundaries and V6 security evaluation; E34, E50-E51. |
+| BR-09 | Diagnostics explain retrieval limitations and failures while keeping credentials and raw query/source text out of default telemetry. Applications explicitly choose allowed providers and disclosure policies before query or source text is sent externally. Retrieved content remains data, not authority to change policy. | V2/V3 provider selection, V4 events/planner boundaries, V5 source authorization and V6 security evaluation; E34, E50-E51, E53. |
 | BR-10 | Consumers can adopt optional integrations without mandatory heavy services or dependencies, with documented compatibility and migration limitations. | V0 import isolation, V5 integrations, V6 packaging and release checks. |
+
+### Requirement crosswalk
+
+This maps existing requirements to design sections and task owners, not completion state. Task definitions are linked from the [master plan](../../tasks/plan.md#3-versions-and-phase-mapping); acceptance evidence stays in the tracker.
+
+| Requirement | Architecture sections | Existing task owners |
+| --- | --- | --- |
+| BR-01 | 4-5, 12-13 | V0-02 through V0-05; V1-12; V6-05, V6-06 |
+| BR-02 | 6, 9-10 | V1-04, V1-08, V1-09; V3-04 |
+| BR-03 | 5, 7-8, 11 | V1-07, V1-10; V2-05, V2-07; V4-02, V4-03; V5-03, V5-06 |
+| BR-04 | 5, 8-9, 11 | V0-05; V1-08; V2-07; V3-05 through V3-07; V4-04 |
+| BR-05 | 8, 13 | V2-08; V3-07; V4-08; V6-02 |
+| BR-06 | 5, 7-8, 11 | V1-02, V1-03, V1-11; V4-01, V4-04; V6-03 |
+| BR-07 | 10 | V3-03, V3-04, V3-06; V4-06, V4-07 |
+| BR-08 | 6-7 | V1-04 through V1-06, V1-09; V2-02 through V2-04; V5-01, V5-04, V5-05 |
+| BR-09 | 7, 11 | V2-01; V3-01, V3-05; V4-02, V4-05; V5-03; V6-04 |
+| BR-10 | 3-4, 12-14 | V0-02, V0-03; V5-05 through V5-08; V6-06 through V6-09 |
 
 ## 6. Success measures and evidence
 
@@ -79,6 +96,8 @@ Business success means developers can integrate and maintain useful retrieval wi
 | Access and source fidelity | Exercise negative authorization, revision, digest and exact-span cases under the defined runtime roles and backend profiles. | Zero observed invariant violations in the specified acceptance suite; this does not prove universal security or source truth. |
 | Resource and operational behavior | Record p50/p95 latency, peak process memory, package/dependency size, database work, provider calls/tokens/cost and cancellation behavior. | Set release budgets from measured baselines. Disclose corpus, hardware, concurrency, warm/cold state and hosted network effects; missing usage is unknown. |
 | Adoption and ongoing usefulness | In the planned developer trial, record whether participants complete a real integration and their reasons for continuing or abandoning it. | Exploratory evidence, not an adoption target or market-size estimate. Do not infer demand from package downloads alone. |
+
+V6-01 owns the predeclared measures and criteria; V6-02 owns retrieval/coverage evaluation, V6-03 resource measurements, V6-04 the security audit, and V6-05 the developer comparison and exploratory adoption feedback. If an independent participant or comparable baseline is unavailable, record the missing evidence rather than claim reduced effort. These measurements refine existing tasks and do not create a separate market-research program.
 
 Use the existing [evaluation protocol](../../evaluation/protocol.md) and [architecture validation requirements](../architecture/ARCHITECTURE.md#13-validation-and-release-evidence). Preserve held-out separation and human review. Deterministic fake-provider tests establish contract behavior; live model quality needs separate evaluation. Any downstream answer demonstration must measure unsupported claims and citation support separately.
 

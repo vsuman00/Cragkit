@@ -6,7 +6,7 @@ Plan baseline 1 | 19 October 2026 | Implementation and verification state tracke
 
 Cragkit will reduce repeated retrieval integration work through installable Python and TypeScript libraries. It will retrieve source-linked evidence, enforce resource and access constraints, and report incomplete evidence clearly. Final answers remain the consuming application's responsibility. Reduced integration effort and improved retrieval quality must be measured; neither a line-count saving nor zero hallucinations is an established result.
 
-The governing design is [ARCHITECTURE.md](../docs/architecture/ARCHITECTURE.md), with its [diagram catalog](../docs/architecture/DIAGRAMS.md). This plan decomposes that design. Later user decisions add a small-machine development constraint and retain Python/TypeScript with Pydantic/Zod. Rust is not part of this baseline. The original Gemini document and early review are historical inputs where they disagree with the later architecture.
+The [BRD](../docs/product/BRD.md) defines the intended users, business outcomes and requirement IDs. It does not replace version acceptance criteria or the tracker. The governing design is [ARCHITECTURE.md](../docs/architecture/ARCHITECTURE.md), with its [diagram catalog](../docs/architecture/DIAGRAMS.md). This plan decomposes that design. Later user decisions add a small-machine development constraint and retain Python/TypeScript with Pydantic/Zod. Rust is not part of this baseline. The original Gemini document and early review are historical inputs where they disagree with the later architecture.
 
 Keep these boundaries throughout implementation:
 
@@ -156,6 +156,6 @@ After release: reproduce bugs with minimal cases, add regressions, release fixes
 
 PDF/OCR, dependent multi-hop retrieval, answer verification, and a hosted telemetry UI remain later research from the architecture. Before starting one, create a scoped proposal with a user need, resource estimate, contract impact, and evaluation gate. They are not prerequisites for completing this project.
 
-## 12. First action
+## 12. Selecting the next action
 
-Start at V0-01. Inventory the workspace and hardware, identify governing files, and write the development resource baseline. Then create the minimal package skeletons and contract fixtures. The first session should end with a small, understandable artifact and a clear next task, not a large infrastructure setup.
+Read the current handoff in [todo.md](todo.md), then select the smallest task whose dependencies are satisfied. V0-01 is the starting point for a new implementation, not an instruction to repeat completed work. Each session should end with a small verified artifact, recorded limitations and a clear next task.
