@@ -1,6 +1,6 @@
 # V2: Hybrid retrieval
 
-Status: planned, not implemented. Progress is tracked only in [todo.md](../todo.md).
+Status: V2-01 design decision complete: hosted opt-in OpenAI text-embedding-3-small, 1536 dimensions, with routine fake providers and live access disabled until separately configured. Metadata/synthetic interface evidence is distinct from unrun live verification. V2-02 is next; no embedding adapter or hybrid retrieval is implemented. Progress is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
@@ -29,6 +29,8 @@ Verification: Embed a tiny allowed sample only when configured; validate respons
 Learning exercise: Explain why vectors from different models cannot be mixed.
 
 Expected areas: `docs/decisions/`, `embedding fixtures`, `adapter config`.
+
+Decision record: [ADR 0001](../../docs/decisions/0001-embedding-profile.md) records the owner-selected profile, local comparison, resource limits, disclosure/cost gates and outstanding live compatibility evidence. Acceptance of the profile is not adapter implementation or authorization to send data.
 
 ### V2-02: Python embedding adapter
 
