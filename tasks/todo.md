@@ -2,7 +2,7 @@
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. V1-01: COMPLETE, including authenticated native hosted checks. V1-02 Python connection lifecycle: COMPLETE, including actual runtime-login hosted acceptance. Next smallest task: V1-10 (permission changes and final authorization); V1-03/V1-C1 and V1-04 are complete. Complete each task's acceptance before starting its dependents.
+V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). Next smallest task: V2-01, the embedding profile decision. Registry publication and hosted CI evidence remain pending.
 
 Use status notes when needed: READY, IN_PROGRESS, BLOCKED, IMPLEMENTED_UNVALIDATED, COMPLETE. Check a box only for COMPLETE and attach evidence. Public publication remains pending until actually authorized and verified.
 
@@ -70,15 +70,15 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V1-C3: COMPLETE; controlled update ordering, immutable retained source, tombstone/purge and reinsertion rollback demonstrated in both runtimes; regressions/typechecks, 66 wire cases/four schemas/16 sealed hashes passed. Learning exercise offered; learning remains pending. [Evidence](../evaluation/reports/V1/V1-09.md).
 
-- [ ] V1-10: [Permission changes and final authorization](versions/V1-first-library.md#v1-10-permission-changes-and-final-authorization) — evidence: pending.
+- [x] V1-10: [Permission changes and final authorization](versions/V1-first-library.md#v1-10-permission-changes-and-final-authorization) — COMPLETE. [Acceptance evidence](../evaluation/reports/V1/V1-10-12.md).
 
-- [ ] V1-11: [Deadlines and cancellation](versions/V1-first-library.md#v1-11-deadlines-and-cancellation) — evidence: pending.
+- [x] V1-11: [Deadlines and cancellation](versions/V1-first-library.md#v1-11-deadlines-and-cancellation) — COMPLETE. [Acceptance evidence](../evaluation/reports/V1/V1-10-12.md).
 
-- [ ] V1-12: [First library demo and artifacts](versions/V1-first-library.md#v1-12-first-library-demo-and-artifacts) — evidence: pending.
+- [x] V1-12: [First library demo and artifacts](versions/V1-first-library.md#v1-12-first-library-demo-and-artifacts) — COMPLETE. [Acceptance evidence](../evaluation/reports/V1/V1-10-12.md).
 
-- [ ] V1-C4: Demonstration, relevant regression checks, learning review and resource note through V1-12.
+- [x] V1-C4: COMPLETE. Full local profile and 32 hosted lifecycle groups passed; examples, failure case, learning explanation and resource observations recorded. User learning practice remains pending. [Evidence](../evaluation/reports/V1/V1-10-12.md).
 
-- [ ] V1-EXIT: Version acceptance complete; evidence and limitations recorded.
+- [x] V1-EXIT: COMPLETE for the scoped native lexical library milestone. Installed artifacts, access isolation and lifecycle acceptance passed. Publication, hosted CI and later model capabilities remain outside this acceptance. [Evidence](../evaluation/reports/V1/V1-10-12.md).
 
 ## V2: Hybrid retrieval
 
@@ -454,3 +454,7 @@ Initial assignment: RUNNING. Shared outcome L-r1 in contracts/LIFECYCLE_V1.md: p
 
 
 V1-09 handoff: COMPLETE, including V1-C3. Both Sol peers delivered their owned native lifecycle/test files and generic ingestion transaction helper, coordinated directly and transferred ownership; Python assembled and root verified. Root owns L-r1/shared 11-case fixture, native helpers/CLI, docs/tracker/Git. Actual final checks: 72 Python/108 Node focused cases, 435 Python/tool/408 Node regressions, strict mypy 14 files and Node typecheck/build, 66 wire cases/four schemas/16 sealed hashes, exact catalog SQL parity and 30 hosted groups passed. Two initial native failures were localized to missing column UPDATE privilege for FOR UPDATE; root added minimum UPDATE(created_at) with explicit revoke, fixed Node query-config use and required actual marker-statement observation. Final real-login probes cover late CAS rejection, interrupted publication rollback, immutable stale historical source, tombstone exclusion, rejected reinsertion restoring the graph, hidden-child cascade purge, minimal marker timestamps, unavailable citations and blocked resurrection. Cleanup verified independently: zero fixture roles/policies/connections/documents/collections, enabled span trigger; nine INFO default-deny advisor findings, no WARN/ERROR. Caller-controlled retention has no automatic expiry; external backup/log/cache erasure remains caller-owned. Default Python is driver-absent; all task-owned pools/children ended. Migrations/manifests/locks/wire schemas/approved corpus unchanged; external security report preserved untracked. Resource start: 21 GiB disk / 70% memory free; one test process, max two native clients, no model/service/publication. Learning pending. Next: V1-10 final authorization races. V1 remains in progress.
+
+## V1 final handoff: 22 October 2026
+
+V1-10, V1-11, V1-12, V1-C4 and V1-EXIT: COMPLETE. Primary owns final integration, public PostgreSQL entry points, direct examples, hosted/checker extensions, evidence, development instructions, tracker and Git. Required Sol/Astra models were unavailable; no substitute peer models were spawned. Existing runtime implementations met the new real-database probes without changing shared schemas, migrations or lockfiles. Acceptance: 435 Python/tool and 408 Node tests, strict mypy 15 files, TypeScript typecheck/build, 66 wire cases, four schemas, 16 sealed hashes, 15 artifact-checker cases, both actual retriever cancellation suites, 28 installed result/example groups and 32 full hosted lifecycle groups passed. Independent cleanup query found zero probe roles/policies/connections/documents/collections and an enabled span trigger; advisor findings were nine INFO default-deny notices with no WARN/ERROR. Changed paths: native public postgres modules, TypeScript package export, examples/postgres.py and postgres.mjs, tools/check_artifacts.py, tools/check_python_postgres.py, tools/check_retrieval.py, both native Node helpers, artifact checker tests and linked documentation. One test process and at most two database clients at a time; no model calls or persistent services. Final resource snapshot: 27 GiB disk available, 61 percent memory free. User learning practice pending. Unrelated SECURITY-EVALUATION.md preserved untracked. Next smallest task: V2-01 embedding profile decision; no V2 provider/cost choice has been inferred. [Final evidence and commands](../evaluation/reports/V1/V1-10-12.md).

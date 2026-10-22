@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { parse_pool_config, PoolResource, now } from '../packages/typescript/dist/postgres-pool.js';
+import { PostgresRetriever } from '../packages/typescript/dist/retrieval.js';
 import { PostgresSession } from '../packages/typescript/dist/postgres-session.js';
 import { parse_request, parse_scope } from '../packages/typescript/dist/contracts.js';
 import { DeadlineExceeded, UnauthorizedScope, UnsupportedCapability } from '../packages/typescript/dist/errors.js';
@@ -116,6 +117,14 @@ export async function run(runtimeInput, fixture, channel) {
     await reset(true);
     checks.push('borrowed_pool_stays_usable');
 
+    const retriever = new PostgresRetriever(resource);
+    async function reuseRetriever() {
+      for (const scope of [scopes[1], scopes[0]]) {
+        const result = await retriever.retrieve(request, { scope, deadline: now() + 8 });
+        requireCheck(result.status === 'insufficient' && result.evidence.length === 0, 'retriever_fresh_scope_reuse');
+      }
+      await reset(false);
+    }
     // Abort while admission is queued, without opening a second runtime connection.
     let releaseHolder;
     let entered;
@@ -126,34 +135,33 @@ export async function run(runtimeInput, fixture, channel) {
     });
     await entry;
     const controller = new AbortController();
-    const queued = resource.withLease({ deadline: now() + 8, signal: controller.signal }, async () => { throw new CheckError('aborted_waiter_entered'); });
+    const queued = retriever.retrieve(request, { scope: scopes[0], deadline: now() + 8, signal: controller.signal });
     controller.abort('private reason must never escape');
     try { await queued; throw new CheckError('wait_abort_accepted'); }
     catch (error) { requireCheck(error?.name === 'AbortError' && !String(error).includes('private reason'), 'wait_abort_kind'); }
     finally { releaseHolder(); await holder; }
     await reset(false);
-    checks.push('abort_queued_acquisition');
+    await reuseRetriever();
+    checks.push('retriever_abort_queued_acquisition_and_fresh_scope_reuse');
 
     for (const mode of ['deadline', 'abort']) {
       const abort = new AbortController();
-      await session.transaction(request, { scope: scopes[0], deadline: now() + 8, signal: abort.signal }, async handle => {
-        send('lock_request', { mode });
-        await channel.expect('locked');
-        const query = handle.visible_documents().then(value => ({ value }), error => ({ error }));
-        send('query_started');
-        if (mode === 'abort') { await channel.expect('abort'); abort.abort('private abort detail'); }
-        else await channel.expect('observed');
-        const outcome = await query;
-        requireCheck('error' in outcome, 'blocked_query_completed');
-        requireCheck(mode === 'abort' ? outcome.error?.name === 'AbortError' : outcome.error instanceof DeadlineExceeded, 'blocked_query_error');
-      }).catch(error => {
-        requireCheck(mode === 'abort' ? error?.name === 'AbortError' : error instanceof DeadlineExceeded, 'transaction_stop_error');
-      });
+      send('lock_request', { mode });
+      await channel.expect('locked');
+      const query = retriever.retrieve(request, {
+        scope: scopes[0], deadline: now() + 5, signal: abort.signal,
+      }).then(value => ({ value }), error => ({ error }));
+      send('query_started');
+      if (mode === 'abort') { await channel.expect('abort'); abort.abort('private abort detail'); }
+      else await channel.expect('observed');
+      const outcome = await query;
+      requireCheck('error' in outcome, 'blocked_query_completed');
+      requireCheck(mode === 'abort' ? outcome.error?.name === 'AbortError' : outcome.error instanceof DeadlineExceeded, 'blocked_query_error');
       send('lock_done');
       await channel.expect('unlocked');
-      await reset(false);
+      await reuseRetriever();
     }
-    checks.push('observed_query_deadline_abort_reset');
+    checks.push('retriever_observed_query_deadline_abort_and_fresh_scope_reuse');
     send('schema_hide');
     await channel.expect('schema_hidden');
     try {
@@ -200,7 +208,8 @@ export async function main(argv = process.argv.slice(2)) {
     process.stdout.write(JSON.stringify(result) + '\n');
     return 0;
   } catch (error) {
-    const code = error instanceof CheckError && /^[a-z_]+$/.test(error.message) ? error.message : 'runtime_check_failed';
+    const kinds = {IntegrityViolation:'integrity_violation',DeadlineExceeded:'deadline_exceeded',UnauthorizedScope:'unauthorized_scope',UnsupportedCapability:'unsupported_capability'};
+    const code = error instanceof CheckError && /^[a-z_]+$/.test(error.message) ? error.message : (kinds[error?.constructor?.name] ?? 'runtime_check_failed');
     send('error', { code });
     return 1;
   } finally { channel?.close(); }

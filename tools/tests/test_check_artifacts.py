@@ -53,7 +53,7 @@ def test_npm_export_must_exist_in_archive(tmp_path):
     path = tmp_path / 'test.tgz'
     package = {'name': 'cragkit', 'version': '0.0.0', 'private': True, 'dependencies': {'zod': '4.6.7'},
                'exports': {name: {'import': f'./dist/{stem}.js', 'types': f'./dist/{stem}.d.ts'}
-                           for name, stem in [('.', 'index'), ('./contracts', 'contracts'), ('./errors', 'errors')]}}
+                           for name, stem in [('.', 'index'), ('./contracts', 'contracts'), ('./errors', 'errors'), ('./postgres', 'postgres')]}}
     tar(path, {'package/package.json': json.dumps(package).encode(), 'package/dist/index.js': b''})
     with pytest.raises(ART.ArtifactError, match='npm_missing_export'):
         ART.inspect_npm(path)

@@ -5,13 +5,14 @@ from __future__ import annotations
 async def run(config, fixture, admin):
     import asyncio
     import hashlib
+    from contextlib import asynccontextmanager
     import json
     import os
     from pathlib import Path
     import tempfile
 
     from cragkit._postgres_pool import PoolResource
-    from cragkit._postgres_session import PostgresSession
+    from cragkit._postgres_session import PostgresSession, _ROLE_SQL
     from cragkit.canonical import canonicalize
     from cragkit.contracts import parse_request, parse_scope
     from cragkit.errors import IntegrityViolation
@@ -42,7 +43,7 @@ async def run(config, fixture, admin):
             parse_request(request), scope=scope, deadline=loop.time() + 20)
         return result.model_dump(mode='json')
 
-    async def node_check(value):
+    async def node_check(value, boundary=None):
         with tempfile.TemporaryDirectory(prefix='cragkit-results-') as directory:
             runtime_path = Path(directory) / 'runtime.json'
             fixture_path = Path(directory) / 'fixture.json'
@@ -53,9 +54,16 @@ async def run(config, fixture, admin):
             process = await asyncio.create_subprocess_exec(
                 'node', str(Path(__file__).with_name('check_typescript_retrieval.mjs').resolve()),
                 '--allow-result-checks', str(runtime_path), str(fixture_path),
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=8192)
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL, limit=8192)
             try:
                 async with asyncio.timeout(60):
+                    if boundary is not None:
+                        ready = await process.stdout.readline()
+                        require(ready == b'{"state":"boundary"}\n', 'source_node_boundary')
+                        await boundary()
+                        process.stdin.write(b'continue\n')
+                        await process.stdin.drain()
                     output, _ = await process.communicate()
                 require(len(output) <= 8192, 'source_node_result_size')
                 result = json.loads(output)
@@ -118,9 +126,86 @@ async def run(config, fixture, admin):
                     'source_direct_denial_failed')
         checks.append('python_verified_sources_unknown_coverage_and_empty_authorized_results')
         checks.append('python_source_fetch_reauthorizes_bound_principal')
+        # Force committed permission changes after candidate selection, before the
+        # fresh source transaction starts. The same retriever/pool must recover.
+        require(await rows(_ROLE_SQL) == [(False,)], 'source_admin_role_accepted')
+        key = (scopes[0].tenant_id, collection, 'node-document')
+        mutations = {
+            'document_revision': ('UPDATE cragkit.documents SET authorization_revision=%s WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
+                                  ('revoked-native', *key), (scopes[0].authorization_revision, *key)),
+            'grant_revision': ('UPDATE cragkit.document_grants SET authorization_revision=%s WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
+                               ('revoked-native', *key), (scopes[0].authorization_revision, *key)),
+            'tombstone': ('UPDATE cragkit.documents SET tombstoned=%s WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
+                          (True, *key), (False, *key)),
+        }
+        for name, (statement, changed, original) in mutations.items():
+            retriever = PostgresRetriever(resource)
+            session = PostgresSession(resource)
+            transactions = 0
+
+            class BoundarySession:
+                @asynccontextmanager
+                async def transaction(self, *args, **kwargs):
+                    nonlocal transactions
+                    transactions += 1
+                    if transactions == 2:
+                        await command(statement, changed)
+                    async with session.transaction(*args, **kwargs) as handle:
+                        yield handle
+
+            retriever._session = BoundarySession()
+            try:
+                result = await retriever.retrieve(parse_request(request), scope=scopes[0], deadline=loop.time() + 20)
+                require([item.document_id for item in result.evidence] == ['tie-document']
+                        and any(item.code == 'stale_evidence' for item in result.limitations), 'source_python_revocation_' + name)
+            finally:
+                await command(statement, original)
+            require(await query(request, scopes[0]) == cases[0]['expected'], 'source_python_reuse_' + name)
+            await resource.close()
+            try:
+                await node_check({'mode': 'revocation', 'request': request,
+                                  'scope': scopes[0].model_dump(mode='json')},
+                                 lambda: command(statement, changed))
+            finally:
+                await command(statement, original)
+            resource = PoolResource(config.model_copy(update={'max_size': 1}))
+            await resource.open()
+        checks.append('both_native_committed_revision_grant_tombstone_revocation_between_candidate_and_source')
+        require(await query(request, scopes[1]) == cases[1]['expected'], 'source_cross_tenant_pool_reuse')
+        checks.append('native_owner_bypass_role_rejection_and_cross_tenant_pool_reuse')
         await resource.close()
         await node_check({'mode': 'baseline', 'cases': cases, 'source_candidate': candidates[0].model_dump(mode='json'), 'source_request': request, 'source_scope': denied_scope.model_dump(mode='json')})
         checks.append('node_python_typed_result_context_usage_and_source_parity')
+
+        installed = [os.environ.get(name) for name in (
+            'CRAGKIT_INSTALLED_PYTHON', 'CRAGKIT_INSTALLED_PYTHON_EXAMPLE', 'CRAGKIT_INSTALLED_NODE_EXAMPLE')]
+        if any(installed):
+            require(all(installed), 'installed_example_configuration_incomplete')
+            with tempfile.TemporaryDirectory(prefix='cragkit-installed-results-') as directory:
+                runtime_path = Path(directory) / 'runtime.json'
+                input_path = Path(directory) / 'request.json'
+                descriptor = os.open(runtime_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as destination:
+                    json.dump(config.model_dump(mode='json'), destination)
+                for executable, arguments, label in (
+                        (installed[0], ['-I', '-B', installed[1]], 'wheel'),
+                        ('node', [installed[2]], 'npm')):
+                    for case in (cases[0], cases[3]):
+                        input_path.write_text(json.dumps({'request': case['request'], 'scope': case['scope']}), encoding='utf-8')
+                        process = await asyncio.create_subprocess_exec(
+                            executable, *arguments, str(runtime_path), str(input_path),
+                            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=16384)
+                        try:
+                            async with asyncio.timeout(60):
+                                output, _ = await process.communicate()
+                            require(process.returncode == 0 and len(output) <= 16384,
+                                    'installed_' + label + '_example_failed')
+                            require(json.loads(output) == case['expected'], 'installed_' + label + '_result_mismatch')
+                        finally:
+                            if process.returncode is None:
+                                process.kill()
+                                await process.wait()
+                    checks.append('installed_' + label + '_authorized_query_and_denied_scope_example')
 
         # Corrupt only the owned synthetic chunk while retaining DB length/hash checks.
         # The named span trigger is restored before this transaction becomes visible.

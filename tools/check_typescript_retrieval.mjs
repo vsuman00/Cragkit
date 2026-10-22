@@ -1,5 +1,6 @@
 /** Explicit read-only native result acceptance; no admin access or schema changes. */
 import assert from 'node:assert/strict';
+import { createInterface } from 'node:readline';
 import { lstatSync, readFileSync } from 'node:fs';
 import { PoolResource, parse_pool_config, now } from '../packages/typescript/dist/postgres-pool.js';
 import { PostgresSession } from '../packages/typescript/dist/postgres-session.js';
@@ -21,7 +22,33 @@ async function run(config, fixture) {
   const retriever = new PostgresRetriever(resource);
   try {
     await resource.open();
-    if (fixture.mode === 'corrupt') {
+    if (fixture.mode === 'revocation') {
+      const original = PostgresSession.prototype.transaction;
+      let transactions = 0;
+      PostgresSession.prototype.transaction = async function (...args) {
+        transactions += 1;
+        if (transactions === 2) {
+          const input = createInterface({ input: process.stdin });
+          const continued = new Promise(resolve => input.once('line', resolve));
+          process.stdout.write(JSON.stringify({ state: 'boundary' }) + '\n');
+          requireCheck(await continued === 'continue', 'source_node_boundary_ack');
+          input.close();
+        }
+        return original.apply(this, args);
+      };
+      try {
+        const result = await retriever.retrieve(parse_request(fixture.request), {
+          scope: parse_scope(fixture.scope), deadline: now() + 20,
+        });
+        assert.deepEqual(result.evidence.map(item => item.document_id), ['tie-document']);
+        requireCheck(result.limitations.some(item => item.code === 'stale_evidence'), 'source_node_revocation');
+        // A subsequent call uses the same resource, with no cached candidates.
+        const again = await retriever.retrieve(parse_request(fixture.request), {
+          scope: parse_scope(fixture.scope), deadline: now() + 20,
+        });
+        assert.deepEqual(again.evidence.map(item => item.document_id), ['tie-document']);
+      } finally { PostgresSession.prototype.transaction = original; }
+    } else if (fixture.mode === 'corrupt') {
       let rejected = false;
       try {
         await retriever.retrieve(parse_request(fixture.request), {

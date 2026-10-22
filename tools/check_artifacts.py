@@ -6,6 +6,7 @@ import email.parser
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path, PurePosixPath
 import subprocess
 import sys
@@ -69,7 +70,7 @@ def archive_files(path: Path) -> dict[str, bytes]:
 
 def inspect_wheel(path: Path) -> dict[str, bytes]:
     files = archive_files(path)
-    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py'} <= files.keys(), 'wheel_missing_core')
+    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py'} <= files.keys(), 'wheel_missing_core')
     names = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(names) == 1, 'wheel_metadata')
     metadata = email.parser.BytesParser().parsebytes(files[names[0]])
@@ -88,7 +89,7 @@ def inspect_npm(path: Path) -> dict[str, bytes]:
     package = json.loads(files['package/package.json'])
     require(package['name'] == 'cragkit' and package['version'] == '0.0.0' and package.get('private') is True, 'npm_identity')
     require(package.get('dependencies') == {'zod': '4.6.7'}, 'npm_core_dependencies')
-    for name in ('.', './contracts', './errors'):
+    for name in ('.', './contracts', './errors', './postgres'):
         target = package.get('exports', {}).get(name, {})
         for kind, suffix in (('import', '.js'), ('types', '.d.ts')):
             value = target.get(kind)
@@ -101,12 +102,12 @@ def size_tree(path: Path) -> int:
     return sum(item.stat().st_size for item in path.rglob('*') if item.is_file() and not item.is_symlink())
 
 
-def run(command: list[str], cwd: Path, commands: list[dict[str, Any]], timeout: int = 120) -> str:
+def run(command: list[str], cwd: Path, commands: list[dict[str, Any]], timeout: int = 120, *, environment: dict[str, str] | None = None) -> str:
     record: dict[str, Any] = {'argv': command, 'cwd': str(cwd), 'timeout_seconds': timeout}
     commands.append(record)
     try:
         result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False,
-                                env={**os.environ, 'UV_PYTHON_DOWNLOADS': 'never', 'PIP_DISABLE_PIP_VERSION_CHECK': '1'})
+                                env={**os.environ, 'UV_PYTHON_DOWNLOADS': 'never', 'PIP_DISABLE_PIP_VERSION_CHECK': '1', **(environment or {})})
     except (OSError, subprocess.TimeoutExpired):
         record['result'] = 'launch_or_timeout_failure'
         raise ArtifactError('command_launch_or_timeout') from None
@@ -124,13 +125,14 @@ def audit(event, args):
         raise RuntimeError('Import attempted external I/O')
 sys.addaudithook(audit)
 start = time.perf_counter()
-modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors')]
+modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres')]
 elapsed = time.perf_counter() - start
 assert modules[0].__version__ == '0.0.0'
 assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve()) for module in modules)
 assert modules[1].parse_request({'query': 'smoke', 'collection': 'smoke'}).query == 'smoke'
 assert modules[1].parse_result({'request_id': 'smoke', 'status': 'insufficient'}).usage.cost_usd is None
 assert modules[2].InvalidRequest().to_dict()['code'] == 'invalid_request'
+assert callable(modules[3].PostgresRetriever)
 rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 print(json.dumps({'import_seconds': elapsed, 'peak_rss_bytes': rss if sys.platform == 'darwin' else rss * 1024,
  'platform': sys.platform, 'python': sys.version.split()[0],
@@ -155,12 +157,13 @@ for (const [object, names] of [[http,['request','get','createServer']],[https,['
 }
 syncBuiltinESMExports();
 const start = performance.now();
-const [core, contracts, errors] = await Promise.all([import('cragkit'), import('cragkit/contracts'), import('cragkit/errors')]);
+const [core, contracts, errors, postgres] = await Promise.all([import('cragkit'), import('cragkit/contracts'), import('cragkit/errors'), import('cragkit/postgres')]);
 const importSeconds = (performance.now()-start)/1000;
 assert.equal(core.version,'0.0.0');
 assert.equal(contracts.parse_result({request_id:'smoke',status:'insufficient'}).usage.cost_usd,null);
 assert.equal(contracts.parse_request({query:'smoke',collection:'smoke'}).query,'smoke');
 assert.equal(new errors.InvalidRequest().code,'invalid_request');
+assert.equal(typeof postgres.PostgresRetriever,'function');
 console.log(JSON.stringify({import_seconds:importSeconds,peak_rss_bytes:process.resourceUsage().maxRSS*1024,node:process.version}));
 '''
 
@@ -170,10 +173,10 @@ def artifact_record(path: Path, files: dict[str, bytes]) -> dict[str, Any]:
             'file_count': len(files), 'unpacked_bytes': sum(map(len, files.values()))}
 
 
-def accept_artifacts(root: Path, output: Path) -> dict[str, Any]:
+def accept_artifacts(root: Path, output: Path, postgres_config: Path | None = None) -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {'state': 'in_progress', 'commands': [], 'artifacts': {}, 'imports': {},
-        'method': 'One fresh child process per installed artifact; filesystem caches are uncontrolled. Duration covers core, contracts and errors together. Peak RSS covers the whole child lifetime, not an import-only increment. macOS Python RSS is bytes; other supported Unix Python and Node RSS are KiB converted to bytes. Samples are separate and never summed.',
+        'method': 'One fresh child process per installed artifact; filesystem caches are uncontrolled. Duration covers core, contracts, errors and the optional PostgreSQL entry point together. Peak RSS covers the whole child lifetime, not an import-only increment. macOS Python RSS is bytes; other supported Unix Python and Node RSS are KiB converted to bytes. Samples are separate and never summed.',
         'limitations': ['Local current-platform single fresh-process samples with uncontrolled filesystem caches; no OS-cold-cache, latency-distribution or performance claim.',
                          'Build and clean dependency setup may access registries; guarded imports do not.',
                          'Import guards are focused regression checks, not a network security sandbox.',
@@ -225,6 +228,24 @@ def accept_artifacts(root: Path, output: Path) -> dict[str, Any]:
             sample['installed'] = json.loads(run(['npm', 'ls', '--omit=dev', '--json'], node_env, commands))
             sample['clean_environment_bytes'] = size_tree(node_env / 'node_modules')
             report['imports']['npm'] = sample
+            if postgres_config is not None:
+                # Install optional drivers only after the driver-free import probes.
+                installed_python = work / 'wheel' / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')
+                run(['uv', 'pip', 'install', '--python', str(installed_python), str(wheel) + '[postgres]'], work, commands)
+                run(['npm', 'install', '--ignore-scripts', '--no-audit', '--no-fund', 'pg@8.23.1'], node_env, commands)
+                python_example = work / 'postgres.py'
+                node_example = node_env / 'postgres.mjs'
+                shutil.copyfile(root / 'examples/postgres.py', python_example)
+                shutil.copyfile(root / 'examples/postgres.mjs', node_example)
+                hosted = json.loads(run(['uv', 'run', '--project', str(root / 'packages/python'), '--frozen', '--extra', 'postgres',
+                    'python', str(root / 'tools/check_python_postgres.py'), '--config', str(postgres_config),
+                    '--allow-test-writes', '--results'], root, commands, timeout=600, environment={
+                        'CRAGKIT_INSTALLED_PYTHON': str(installed_python),
+                        'CRAGKIT_INSTALLED_PYTHON_EXAMPLE': str(python_example),
+                        'CRAGKIT_INSTALLED_NODE_EXAMPLE': str(node_example)}))
+                require(hosted.get('state') == 'passed' and hosted.get('cleanup_verified') is True,
+                        'installed_postgres_examples_failed')
+                report['hosted_examples'] = hosted
         report['state'] = 'passed'
         report['temporary_environments_cleaned'] = not work.exists()
         return report
@@ -238,9 +259,13 @@ def accept_artifacts(root: Path, output: Path) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', type=Path, default=ROOT / 'artifacts/V0')
+    parser.add_argument('--postgres-config', type=Path, help='Private hosted test configuration; requires explicit write consent')
+    parser.add_argument('--allow-test-writes', action='store_true')
     args = parser.parse_args()
+    if args.postgres_config is not None and not args.allow_test_writes:
+        parser.error('--postgres-config requires --allow-test-writes')
     try:
-        report = accept_artifacts(ROOT, args.output_dir.resolve())
+        report = accept_artifacts(ROOT, args.output_dir.resolve(), args.postgres_config)
     except (ArtifactError, OSError, ValueError, KeyError, tarfile.TarError, zipfile.BadZipFile):
         print('Artifact acceptance failed; inspect acceptance.json command statuses.')
         return 1

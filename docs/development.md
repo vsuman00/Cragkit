@@ -377,3 +377,24 @@ Verified commands and limitations are in [V1-08 evidence](../evaluation/reports/
 Internal Python/Node `PostgresLifecycle` binds an application lifecycle authorizer for tombstone and purge operations. The expected active generation is required, including an explicit null for a purged marker. Tombstone blocks fresh retrieval snapshots while retaining source content until the owner explicitly purges it. Purge uses a separate restricted role with DELETE/INSERT and column-level UPDATE(created_at) on documents, no direct child DELETE, and compatible RLS. The collection, document identity, authorization revision and original creation time remain as a minimal tombstone; external backup/cache/log erasure remains the caller's responsibility. [L-r1](../contracts/LIFECYCLE_V1.md) defines retention, receipt semantics, compatibility checks and uncertain-commit limitations.
 
 The opt-in native fixture adds `--lifecycle --allow-test-writes` to the existing private-config command. It includes the previous source/result checks, then serial Python/Node controlled update ordering, interrupted publication, tombstone visibility, failed marker reinsertion and hidden-child cascade probes. The fixture owns an otherwise empty dedicated development target, temporary role/policies and synthetic rows. Runtime pools close before switching language or permissions. The outer lifecycle budget is 600 seconds, each Node lifecycle child is limited to 90 seconds, and the existing separate cleanup bound is 25 seconds. It permits at most two native client connections including the administrator. No administrator credential reaches Node. See [V1-09 evidence](../evaluation/reports/V1/V1-09.md) for actual results and limitations.
+
+## V1 public PostgreSQL entry points and installed demos
+
+Python applications can import `PoolResource`, `PostgresIndexer`, `PostgresLifecycle` and `PostgresRetriever` from `cragkit.postgres`; Node applications use `cragkit/postgres`. Importing these modules does not open a connection. Install the Python `postgres` extra or the optional Node `pg` driver before opening a resource. Existing ingestion, lifecycle and retrieval contracts still apply.
+
+The [Python example](../examples/postgres.py) and [Node example](../examples/postgres.mjs) accept an owner-only regular JSON runtime configuration file and a JSON input containing `request` and `scope`. The application must derive scope from its own authorization before invoking the example; an agent or untrusted client must not choose it. Use an absolute private configuration path outside the repo, with mode 0600 and the verified CA/password-file configuration described above. Run from an environment where the candidate package and its optional driver are installed:
+
+```sh
+python examples/postgres.py "$PRIVATE_CONFIG" "$AUTHORIZED_INPUT"
+node examples/postgres.mjs "$PRIVATE_CONFIG" "$AUTHORIZED_INPUT"
+```
+
+Run the commands sequentially against already provisioned application data and policies. Each example emits a typed result, enforces a 20-second deadline and closes its pool. A denied scope yields no evidence. Lexical evidence retains unknown coverage and estimated context accounting. These examples perform queries; the installed acceptance runner supplies synthetic ingestion and lifecycle fixtures.
+
+To rebuild and check the local wheel, source distribution, rebuilt wheel and npm tarball, including installed examples against an isolated empty development database:
+
+```sh
+python3 tools/check_artifacts.py --output-dir artifacts/V1/V1-12-installed --postgres-config "$PRIVATE_CONFIG" --allow-test-writes
+```
+
+Omit both hosted flags for driver-free artifact/import acceptance alone. The hosted option creates temporary runtime roles, scoped policies and synthetic rows, then checks cleanup. Never target application data. It limits native clients to two including the administrator and closes one runtime pool before starting the other. Installed examples are copied outside the source checkout and compared with expected authorized and denied results. Raw observations remain under ignored artifacts. [Final V1 evidence](../evaluation/reports/V1/V1-10-12.md) records commands, measurements, complete checkpoint results and their limits.

@@ -51,6 +51,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
     from psycopg import sql
     from cragkit._postgres_pool import PoolResource, parse_pool_config
     from cragkit._postgres_session import PostgresSession
+    from cragkit.retrieval import PostgresRetriever
+    from contextlib import asynccontextmanager
     from cragkit.contracts import parse_request, parse_scope
     from cragkit.errors import DeadlineExceeded, IndexNotReady, UnauthorizedScope, UnsupportedCapability
 
@@ -65,8 +67,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
     principals = ['principal_a_' + token, 'principal_b_' + token]
     tables = ('collections', 'documents', 'document_revisions', 'index_generations',
               'chunks', 'chunk_lexical', 'document_grants', 'ingestion_jobs')
-    selected = (tables + ('migration_history',) if ingestion else
-                ('collections', 'documents', 'index_generations', 'document_grants', 'migration_history'))
+    # Retrieval probes need read access to every joined table, even with no chunks.
+    selected = tables + ('migration_history',)
     policy = role + '_select'
     admin = runtime = node_process = None
     locked = created_role = renamed = False
@@ -309,14 +311,42 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
         completed.append('unsafe_administrator_rejected')
 
         CURRENT_STAGE = 'deadline_cancellation'
+        retriever = PostgresRetriever(runtime)
+        async def reuse_retriever():
+            for scope in (scopes[1], scopes[0]):
+                result = await retriever.retrieve(request, scope=scope, deadline=loop.time() + 8)
+                if result.evidence or result.status != 'insufficient':
+                    raise RuntimeCheckError('retriever_fresh_scope_reuse')
+            await assert_reset()
+
+        # Occupy the sole lease so cancellation must remove an admitted waiter.
+        async with runtime.lease(deadline=loop.time() + 8):
+            waiting = asyncio.create_task(retriever.retrieve(
+                request, scope=scopes[0], deadline=loop.time() + 5))
+            await asyncio.sleep(0.05)
+            if waiting.done():
+                raise RuntimeCheckError('retriever_wait_not_observed')
+            waiting.cancel()
+            try:
+                await waiting
+            except asyncio.CancelledError:
+                pass
+            else:
+                raise RuntimeCheckError('retriever_wait_cancel_accepted')
+        await reuse_retriever()
+        completed.append('retriever_wait_cancel_and_fresh_scope_reuse')
         for cancel in (False, True):
             started, query_gate = asyncio.Event(), asyncio.Event()
-            async def blocked():
-                async with session.transaction(request, scope=scopes[0], deadline=loop.time() + 5) as handle:
-                    started.set()
-                    await query_gate.wait()
-                    await handle.visible_documents()
-            task = asyncio.create_task(blocked())
+            class GatedSession:
+                @asynccontextmanager
+                async def transaction(self, *args, **kwargs):
+                    async with session.transaction(*args, **kwargs) as handle:
+                        started.set()
+                        await query_gate.wait()
+                        yield handle
+            retriever._session = GatedSession()
+            task = asyncio.create_task(retriever.retrieve(
+                request, scope=scopes[0], deadline=loop.time() + 5))
             try:
                 await asyncio.wait_for(started.wait(), 3)
                 async with admin.transaction():
@@ -347,8 +377,9 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 if not task.done():
                     task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
-            await assert_reset()
-        completed.append('deadline_cancel_and_reset')
+            retriever._session = session
+            await reuse_retriever()
+        completed.append('retriever_query_deadline_cancel_and_fresh_scope_reuse')
         CURRENT_STAGE = 'schema_rejection'
         await command('ALTER TABLE cragkit.documents RENAME COLUMN authorization_revision TO probe_hidden_authorization_revision')
         renamed = True
