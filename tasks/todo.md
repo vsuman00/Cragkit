@@ -6,6 +6,27 @@ V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, inc
 
 Use status notes when needed: READY, IN_PROGRESS, BLOCKED, IMPLEMENTED_UNVALIDATED, COMPLETE. Check a box only for COMPLETE and attach evidence. Public publication remains pending until actually authorized and verified.
 
+## DB-NEON-01: Neon migration
+
+The user selected Neon as the intended PostgreSQL host with `pgvector` and native FTS on 22 October 2026. Current authorization is documentation only: save [the migration plan](../docs/neon-migration-plan.md) and update this tracker. Execution is deferred until requested. Existing Supabase acceptance remains evidence for its original target; Neon setup, migration, security and native integration acceptance are pending. V2-04 remains the next product implementation task.
+
+- [ ] DB-NEON-01: Migrate the development database to Neon; execution deferred. Dependencies and acceptance are in the saved plan.
+- [x] DB-NEON-01-PLAN: COMPLETE, documentation only. Saved the agreed plan; 13 local links/anchors, status/dependency consistency, whitespace, sensitive-data pattern review and self-contained prose checks passed. No Neon acceptance is claimed.
+- [ ] DB-NEON-01-A: Align governing documents and prepare the Neon runbook; depends on PLAN and an execution instruction.
+- [ ] DB-NEON-01-B: Confirm a dedicated development target, permitted data and current free-plan limits; depends on A.
+- [ ] DB-NEON-01-C: Configure verified TLS and restricted administrative/ingestion/retrieval roles; depends on B.
+- [ ] DB-NEON-01-D: Apply checksummed migrations and deployment hardening explicitly; depends on C. Extension installation follows the V2 dependency gate.
+- [ ] DB-NEON-01-E: Verify both native runtimes, isolation, lifecycle and cleanup; depends on D. Validate pooling separately before adoption.
+- [ ] DB-NEON-01-F: Record acceptance and switch configuration; depends on E and any required verified data transfer. Supabase retirement is separate.
+
+### Planning handoff
+
+22 October 2026: COMPLETE for saving the plan and tracker only. Root used one writer for the dependent two-document change; no delegated lane was needed. Changed files: `docs/neon-migration-plan.md` and `tasks/todo.md`. The plan records the Neon host decision, six ordered future slices, security invariants, verification gates, data-transfer decision and separate Supabase retirement. Existing governing setup instructions and historical acceptance reports remain unchanged pending DB-NEON-01-A.
+
+Validation: an inline local Python review checked all 13 local links/anchors in the plan and new tracker section, deferred-execution/V2 consistency, whitespace and credential patterns. `git diff --check` passed. The installed clean-user-facing-text `inspect_text.py --stylometry --json` and `clean_text.py --stats --no-normalize-spaces` checks found zero suspicious characters and byte-identical output for both documents; both density tiers were low. Final staged scope and Git synchronization are checked separately at publication. Product tests, database/native integration, hosted CI and live-provider checks were not run for this documentation task.
+
+Resources: lightweight local file checks only; no task-owned installations, model downloads, services or background processes. The existing untracked security evaluation is excluded. No credentials, environment configuration, database resources, migration SQL, implementation, manifests, locks or sealed corpus inputs were changed by this task. Learning remains pending; the plan offers a TLS-versus-authorization exercise. Next smallest action: await an execution instruction, then begin DB-NEON-01-A; hosted work must satisfy B-D first. V2-04 remains the next product implementation task.
+
 ## GIT-01: GitHub repository and version control
 
 State: COMPLETE. User explicitly authorized creating the GitHub repository, committing the project and pushing changes. The private [vsuman00/Cragkit repository](https://github.com/vsuman00/Cragkit) has the reviewed 119-file baseline on `main`, initial commit `feb2bdd374041d0f5bf6990c81b5b3d71fa4f229`. Matching local/remote commits, zero ahead/behind and a clean working tree were verified after the initial push. [Evidence](../evaluation/reports/V0/GIT-01.md). Package registry publication and hosted CI activation remain separate.
