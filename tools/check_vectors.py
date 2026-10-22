@@ -15,7 +15,7 @@ def require(condition: bool, code: str) -> None:
         raise VectorCheckError(code)
 
 
-async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: bool = False) -> dict:
+async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: bool = False, stage_only: bool = False) -> dict:
     from psycopg import sql
     from cragkit._postgres_pool import PoolResource
     from cragkit._postgres_session import PostgresSession
@@ -220,8 +220,73 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
         finally:
             await admin.execute('UPDATE cragkit.documents SET tombstoned=false WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',key[:3])
         checks.append('revocation_and_tombstone_never_restore_older_authorization')
-        # F appends Node publication checks against the same live fixture and profile.
+        if typescript:
+            await resource.close()
+            node = await run_node(config, {**fixture,'shared':shared,'neon':neon,
+                'python_receipt':published.model_dump(mode='json'),'python_expected':baseline.generation_id,
+                'stage_only':stage_only}, admin)
+            checks.extend(node['checks'])
+            require(node['phase']==('stage' if stage_only else 'full'),'node_phase_mismatch')
 
-        return {'state':'passed','runtime':'python','checks':checks,'maximum_connections':2,'cleanup_verified':True}
+        return {'state':'passed','runtime':'python_and_node' if typescript else 'python','checks':checks,'maximum_connections':2,'cleanup_verified':True}
     finally:
         await resource.close()
+
+
+async def run_node(config, fixture, admin):
+    """Give the child restricted credentials; handle only fixed owner operations."""
+    import os
+    import tempfile
+    from psycopg import sql
+    write_tables=('collections','documents','document_revisions','index_generations','chunks','chunk_lexical','document_grants','ingestion_jobs','chunk_vectors_fake_1536')
+    process=None
+    block=config.user+'_block_ready'
+    try:
+        with tempfile.TemporaryDirectory(prefix='cragkit-vector-node-') as directory:
+            paths=[Path(directory)/'runtime.json',Path(directory)/'fixture.json']
+            for path,value in zip(paths,(config.model_dump(mode='json'),fixture),strict=True):
+                descriptor=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+                with os.fdopen(descriptor,'w') as destination:
+                    json.dump(value,destination)
+            process=await asyncio.create_subprocess_exec('node',str(Path(__file__).with_name('check_typescript_vectors.mjs')),
+                '--allow-vector-checks',str(paths[0]),str(paths[1]),stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL,limit=65536)
+            result=None
+            async with asyncio.timeout(300):
+                while True:
+                    line=await process.stdout.readline()
+                    if not line:
+                        break
+                    value=json.loads(line)
+                    if value.get('type')=='owner':
+                        action=value.get('action')
+                        if action in ('read','write'):
+                            verb='REVOKE INSERT,UPDATE ON' if action=='read' else 'GRANT INSERT,UPDATE ON'
+                            recipient='FROM' if action=='read' else 'TO'
+                            for table in write_tables:
+                                await admin.execute(sql.SQL(verb+' cragkit.{} '+recipient+' {}').format(sql.Identifier(table),sql.Identifier(config.user)))
+                        elif action=='deny_ready' and type(value.get('enabled')) is bool:
+                            if value['enabled']:
+                                await admin.execute(sql.SQL("CREATE POLICY {} ON cragkit.index_generations AS RESTRICTIVE FOR UPDATE TO {} USING(true) WITH CHECK(status<>'ready' OR document_id<>'vector-node' OR embedding_profile IS NULL)").format(sql.Identifier(block),sql.Identifier(config.user)))
+                            else:
+                                await admin.execute(sql.SQL('DROP POLICY {} ON cragkit.index_generations').format(sql.Identifier(block)))
+                        else:
+                            raise VectorCheckError('node_owner_action_invalid')
+                        process.stdin.write(b'{"ok":true}\n')
+                        await process.stdin.drain()
+                    elif value.get('type')=='result':
+                        require(result is None,'node_duplicate_result')
+                        result=value
+                    elif value.get('type')=='error':
+                        code=value.get('code')
+                        import re
+                        raise VectorCheckError('node_'+code if isinstance(code,str) and re.fullmatch('[a-z_]+',code) else 'node_check_failed')
+                    else:
+                        raise VectorCheckError('node_message_invalid')
+                require(await process.wait()==0 and result is not None,'node_result_missing')
+                return result
+    finally:
+        if process is not None and process.returncode is None:
+            process.kill()
+            await asyncio.wait_for(process.wait(),5)
+        await admin.execute(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.index_generations').format(sql.Identifier(block)))

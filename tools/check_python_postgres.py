@@ -67,7 +67,7 @@ def pgpass_field(value: str) -> str:
 
 
 async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False,
-                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False) -> dict:
+                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -187,7 +187,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 'scopes': [dict(tenant_id=tenant, principal_id=principal,
                     authorization_revision='scope-rev', grant_ids=[])
                     for tenant,principal in zip(tenants,principals)],
-                }, admin, typescript=typescript, neon=neon)
+                }, admin, typescript=typescript, neon=neon, stage_only=vector_stage_only)
             except Exception as error:
                 from check_vectors import VectorCheckError
                 if isinstance(error,VectorCheckError) and re.fullmatch(r'[a-z_]+',str(error)):
@@ -545,8 +545,12 @@ def main() -> int:
     parser.add_argument('--results', action='store_true')
     parser.add_argument('--lifecycle', action='store_true')
     parser.add_argument('--vectors', action='store_true')
+    parser.add_argument('--vector-stage-only', action='store_true')
     parser.add_argument('--neon', action='store_true', help='Explicit direct Neon fixture mode with client TLS proof')
     args = parser.parse_args()
+    if args.vector_stage_only and not (args.vectors and args.typescript):
+        print('Vector stage-only mode requires --vectors and --typescript.')
+        return 2
     if not args.allow_test_writes:
         print('Runtime checks require explicit test-write authorization.')
         return 2
@@ -560,7 +564,7 @@ def main() -> int:
                     typescript=args.typescript or args.lexical or args.results or args.lifecycle,
                     ingestion=args.ingestion or args.lexical or args.results or args.lifecycle,
                     lexical=args.lexical or args.results or args.lifecycle,
-                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors,
+                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors, vector_stage_only=args.vector_stage_only,
                 )
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:

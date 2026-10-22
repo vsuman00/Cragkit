@@ -505,3 +505,6 @@ uv run --project packages/python --frozen --no-sync --extra postgres python tool
 ```
 
 [Staging evidence](../evaluation/reports/V2/V2-04C.md); publication and Node acceptance are recorded separately as their slices complete.
+
+
+Node staging checkpoint (V2-04E) uses the same fixture with explicit --typescript --vector-stage-only. This excludes F publication probes until F is implemented; the final --vectors --typescript command requires full publication. The owner/child pipe is local and restricted to fixture permission/readiness operations; it sends no administrative credentials to Node. [E evidence](../evaluation/reports/V2/V2-04E.md).
