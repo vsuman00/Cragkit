@@ -1,0 +1,157 @@
+{
+  "revision": "L-r1",
+  "cases": [
+    {
+      "name": "tombstone-live",
+      "operation": "tombstone",
+      "row": [
+        "generation",
+        false,
+        "auth"
+      ],
+      "expected_generation_id": "generation",
+      "expected": {
+        "tenant_id": "tenant",
+        "collection": "collection",
+        "document_id": "document",
+        "state": "tombstoned",
+        "active_generation_id": "generation",
+        "changed": true
+      }
+    },
+    {
+      "name": "tombstone-repeat",
+      "operation": "tombstone",
+      "row": [
+        "generation",
+        true,
+        "auth"
+      ],
+      "expected_generation_id": "generation",
+      "expected": {
+        "tenant_id": "tenant",
+        "collection": "collection",
+        "document_id": "document",
+        "state": "tombstoned",
+        "active_generation_id": "generation",
+        "changed": false
+      }
+    },
+    {
+      "name": "tombstone-null-marker",
+      "operation": "tombstone",
+      "row": [
+        null,
+        true,
+        "auth"
+      ],
+      "expected_generation_id": null,
+      "expected": {
+        "tenant_id": "tenant",
+        "collection": "collection",
+        "document_id": "document",
+        "state": "tombstoned",
+        "active_generation_id": null,
+        "changed": false
+      }
+    },
+    {
+      "name": "purge-tombstone",
+      "operation": "purge",
+      "row": [
+        "generation",
+        true,
+        "auth"
+      ],
+      "expected_generation_id": "generation",
+      "expected": {
+        "tenant_id": "tenant",
+        "collection": "collection",
+        "document_id": "document",
+        "state": "purged",
+        "active_generation_id": null,
+        "changed": true
+      }
+    },
+    {
+      "name": "purge-repeat-null",
+      "operation": "purge",
+      "row": [
+        null,
+        true,
+        "auth"
+      ],
+      "expected_generation_id": null,
+      "expected": {
+        "tenant_id": "tenant",
+        "collection": "collection",
+        "document_id": "document",
+        "state": "purged",
+        "active_generation_id": null,
+        "changed": true
+      }
+    },
+    {
+      "name": "missing-document",
+      "operation": "tombstone",
+      "row": null,
+      "expected_generation_id": "generation",
+      "error": "unauthorized_scope"
+    },
+    {
+      "name": "stale-cas",
+      "operation": "tombstone",
+      "row": [
+        "newer",
+        false,
+        "auth"
+      ],
+      "expected_generation_id": "generation",
+      "error": "index_not_ready"
+    },
+    {
+      "name": "revoked-auth",
+      "operation": "purge",
+      "row": [
+        "generation",
+        true,
+        "new-auth"
+      ],
+      "expected_generation_id": "generation",
+      "error": "unauthorized_scope"
+    },
+    {
+      "name": "purge-live",
+      "operation": "purge",
+      "row": [
+        "generation",
+        false,
+        "auth"
+      ],
+      "expected_generation_id": "generation",
+      "error": "invalid_request"
+    },
+    {
+      "name": "malformed-tombstone",
+      "operation": "tombstone",
+      "row": [
+        "generation",
+        0,
+        "auth"
+      ],
+      "expected_generation_id": "generation",
+      "error": "integrity_violation"
+    },
+    {
+      "name": "purge-old-expectation",
+      "operation": "purge",
+      "row": [
+        null,
+        true,
+        "auth"
+      ],
+      "expected_generation_id": "generation",
+      "error": "index_not_ready"
+    }
+  ]
+}

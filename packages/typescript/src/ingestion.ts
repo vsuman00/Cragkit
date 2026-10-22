@@ -101,7 +101,7 @@ export function identifiers(document: CanonicalDocument, scope: TrustedScope, co
     document.canonical_sha256, document.parser_id, locator]);
   return Object.freeze([payload, revision, hash(['cragkit.generation.v1', payload])]);
 }
-function safe_error(error: unknown): Error {
+export function safe_error(error: unknown): Error {
   if (error instanceof CragkitError || (error instanceof DOMException && error.name === 'AbortError')) return error;
   const code = error !== null && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
   if (code === '57014') return new DeadlineExceeded();
@@ -111,7 +111,7 @@ function safe_error(error: unknown): Error {
   return new ProviderUnavailable();
 }
 const equal = (actual: unknown, expected: unknown): boolean => JSON.stringify(actual) === JSON.stringify(expected);
-async function query(client: PgClient, text: string, values: readonly unknown[] | undefined,
+export async function query(client: PgClient, text: string, values: readonly unknown[] | undefined,
                      options: LeaseOptions): Promise<unknown[][]> {
   check_options(options);
   try {
@@ -122,6 +122,46 @@ async function query(client: PgClient, text: string, values: readonly unknown[] 
     if (!result || !Array.isArray(result.rows) || result.rows.some(row => !Array.isArray(row))) throw new UnsupportedCapability();
     return result.rows;
   } catch (error) { throw safe_error(error); }
+}
+
+export async function write_transaction<T>(resource: PoolResource, options: LeaseOptions,
+  operation: (client: PgClient, options: LeaseOptions) => Promise<T>): Promise<T> {
+  return resource.withLease(options, async (client, signal) => {
+    const boundedOptions = { deadline: options.deadline, signal };
+    let status: string | null;
+    try { status = client.getTransactionStatus(); } catch (error) { throw safe_error(error); }
+    if (status !== 'I') throw new InvalidRequest();
+    let begun = false;
+    let commitAttempted = false;
+    let succeeded = false;
+    try {
+      try {
+        await bounded(client.query({ text: 'BEGIN', rowMode: 'array' }), boundedOptions);
+        begun = true;
+        await bounded(client.query({ text: 'SET LOCAL search_path = pg_catalog', rowMode: 'array' }), boundedOptions);
+      } catch (error) { throw safe_error(error); }
+      const result = await operation(client, boundedOptions);
+      check_options(boundedOptions);
+      commitAttempted = true;
+      try { await bounded(client.query({ text: 'COMMIT', rowMode: 'array' }), boundedOptions); }
+      catch (error) { throw safe_error(error); }
+      if (client.getTransactionStatus() !== 'I') throw new ProviderUnavailable();
+      check_options(boundedOptions);
+      succeeded = true;
+      return result;
+    } finally {
+      if (!succeeded) {
+        let clean = false;
+        if (begun && !commitAttempted && !signal.aborted) {
+          try {
+            await bounded(client.query({ text: 'ROLLBACK', rowMode: 'array' }), { deadline: now() + resource.config.release_timeout });
+            clean = client.getTransactionStatus() === 'I';
+          } catch {}
+        }
+        if (!clean) { try { client.release(true); } catch {} }
+      }
+    }
+  });
 }
 
 export class PostgresIndexer {
@@ -159,44 +199,11 @@ export class PostgresIndexer {
       document_id: parsed.document_id, intent_id: parsed.intent_id, revision_id: revision, generation_id: generation,
       payload_sha256: payload, canonical_sha256: document.canonical_sha256, chunk_count: document.chunks.length, replayed: false });
     check_options(options);
-    return this.resource.withLease(options, async (client, signal) => {
-      const boundedOptions = { deadline: options.deadline, signal };
-      let status: string | null;
-      try { status = client.getTransactionStatus(); } catch (error) { throw safe_error(error); }
-      if (status !== 'I') throw new InvalidRequest();
-      let begun = false;
-      let commitAttempted = false;
-      let succeeded = false;
-      try {
-        try {
-          await bounded(client.query({ text: 'BEGIN', rowMode: 'array' }), boundedOptions);
-          begun = true;
-          await bounded(client.query({ text: 'SET LOCAL search_path = pg_catalog', rowMode: 'array' }), boundedOptions);
-        } catch (error) { throw safe_error(error); }
-        const result = await this.stage(client, document, receipt, scope, parsed.source_locator,
-          metadata_json, expected, boundedOptions, parsed.before_publish);
-        check_options(boundedOptions);
-        commitAttempted = true;
-        try { await bounded(client.query({ text: 'COMMIT', rowMode: 'array' }), boundedOptions); }
-        catch (error) { throw safe_error(error); }
-        if (client.getTransactionStatus() !== 'I') throw new ProviderUnavailable();
-        check_options(boundedOptions);
-        succeeded = true;
-        return result;
-      } finally {
-        if (!succeeded) {
-          let clean = false;
-          if (begun && !commitAttempted && !signal.aborted) {
-            try {
-              await bounded(client.query({ text: 'ROLLBACK', rowMode: 'array' }), { deadline: now() + this.resource.config.release_timeout });
-              clean = client.getTransactionStatus() === 'I';
-            } catch {}
-          }
-          if (!clean) { try { client.release(true); } catch {} }
-        }
-      }
-    });
+    return write_transaction(this.resource, options, (client, boundedOptions) =>
+      this.stage(client, document, receipt, scope, parsed.source_locator,
+        metadata_json, expected, boundedOptions, parsed.before_publish));
   }
+
   private authorize_document(rows: unknown[][], scope: TrustedScope): void {
     if (rows.length !== 1 || rows[0].length !== 3 || rows[0][1] !== false || rows[0][2] !== scope.authorization_revision) throw new UnauthorizedScope();
   }

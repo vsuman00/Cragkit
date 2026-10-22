@@ -11,7 +11,8 @@ def require(condition: bool, code: str) -> None:
         raise IngestionCheckError(code)
 
 
-async def run(config, fixture: dict, admin, *, typescript: bool = False, lexical: bool = False, results: bool = False) -> dict:
+async def run(config, fixture: dict, admin, *, typescript: bool = False,
+              lexical: bool = False, results: bool = False, lifecycle: bool = False) -> dict:
     import asyncio
     import hashlib
     from cragkit._postgres_pool import PoolResource
@@ -243,6 +244,10 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, lexical
             await resource.close()
             from check_retrieval import run as run_retrieval
             checks.extend(await run_retrieval(config, fixture, admin))
+        if lifecycle:
+            await resource.close()
+            from check_lifecycle import run as run_lifecycle
+            checks.extend(await run_lifecycle(config, fixture, admin))
         return {'state': 'passed', 'checks': checks}
     finally:
         await resource.close()

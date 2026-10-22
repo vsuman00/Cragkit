@@ -124,6 +124,8 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 
 | E77 | Original source bytes differ from normalized canonical bytes, or a source budget changes during an awaited fetch | Verify/return the canonical digest and exact immutable bytes; snapshot the requested byte allowance before SQL and preserve opaque source labels. | V1-08 | U/I |
 
+| E78 | Purge reinsertion fails, child rows are hidden by RLS, or inbound FK/trigger catalog differs | Roll back the entire parent cascade on failure; validate the supported cascade graph before mutation; never report a successful purge from filtered child counts. | V1-09 | U/I |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.

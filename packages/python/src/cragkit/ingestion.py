@@ -6,7 +6,7 @@ from hashlib import sha256
 import json
 import math
 import struct
-from typing import Any, Awaitable, Callable, cast
+from typing import Any, Awaitable, Callable, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -181,6 +181,84 @@ def _identifiers(document: CanonicalDocument, scope: TrustedScope, collection: s
     return payload, revision, _hash(['cragkit.generation.v1', payload])
 
 
+_Receipt = TypeVar('_Receipt', bound=BaseModel)
+
+
+async def _write_transaction(connection: SessionConnection, deadline: float, release_timeout: float,
+                             stage: Callable[[], Awaitable[_Receipt]]) -> _Receipt:
+    setup_error: CragkitError | None = None
+    transaction = None
+    try:
+        if connection.info.transaction_status != 0:
+            raise InvalidRequest()
+        transaction = connection.transaction()
+    except InvalidRequest:
+        raise
+    except Exception as error:
+        setup_error = _safe_error(error)
+    if setup_error is not None:
+        raise setup_error from None
+    assert transaction is not None
+    dispatched = False
+    entered = False
+    failure: BaseException | None = None
+    result: _Receipt | None = None
+    timer = asyncio.timeout_at(deadline)
+    try:
+        async with timer:
+            dispatched = True
+            begin_error: CragkitError | None = None
+            try:
+                await transaction.__aenter__()
+                entered = True
+                await connection.execute('SET LOCAL search_path = pg_catalog')
+            except Exception as error:
+                begin_error = _safe_error(error)
+            if begin_error is not None:
+                raise begin_error from None
+            result = await stage()
+            _check_deadline(deadline)
+            await transaction.__aexit__(None, None, None)
+            entered = False
+            if connection.info.transaction_status != 0:
+                raise ProviderUnavailable()
+            _check_deadline(deadline)
+    except TimeoutError as error:
+        failure = DeadlineExceeded() if timer.expired() else error
+    except BaseException as error:
+        failure = error
+        if not isinstance(error, (CragkitError, asyncio.CancelledError)) and result is not None:
+            failure = _safe_error(cast(Exception, error))
+    finally:
+        if dispatched and (entered or result is None or connection.info.transaction_status != 0):
+            async def cleanup() -> None:
+                end = asyncio.get_running_loop().time() + release_timeout
+                try:
+                    async with asyncio.timeout(release_timeout / 2):
+                        if entered and result is None:
+                            await transaction.__aexit__(Exception, Exception(), None)
+                            if connection.info.transaction_status != 0:
+                                raise ProviderUnavailable()
+                        else:
+                            await connection.close()
+                except Exception:
+                    try:
+                        async with asyncio.timeout(max(0.0, end - asyncio.get_running_loop().time())):
+                            await connection.close()
+                    except Exception:
+                        pass
+            task = asyncio.create_task(cleanup())
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                await asyncio.shield(task)
+                raise
+    if failure is not None:
+        raise failure
+    assert result is not None
+    return result
+
+
 class PostgresIndexer:
     """Bind an application-owned write authorizer outside editable ingestion input."""
 
@@ -241,77 +319,7 @@ class PostgresIndexer:
 
     async def _transaction(self, connection: SessionConnection, deadline: float,
                            stage: Callable[[], Awaitable[IngestionReceipt]]) -> IngestionReceipt:
-        setup_error: CragkitError | None = None
-        transaction = None
-        try:
-            if connection.info.transaction_status != 0:
-                raise InvalidRequest()
-            transaction = connection.transaction()
-        except InvalidRequest:
-            raise
-        except Exception as error:
-            setup_error = _safe_error(error)
-        if setup_error is not None:
-            raise setup_error from None
-        assert transaction is not None
-        dispatched = False
-        entered = False
-        failure: BaseException | None = None
-        result: IngestionReceipt | None = None
-        timer = asyncio.timeout_at(deadline)
-        try:
-            async with timer:
-                dispatched = True
-                begin_error: CragkitError | None = None
-                try:
-                    await transaction.__aenter__()
-                    entered = True
-                    await connection.execute('SET LOCAL search_path = pg_catalog')
-                except Exception as error:
-                    begin_error = _safe_error(error)
-                if begin_error is not None:
-                    raise begin_error from None
-                result = await stage()
-                _check_deadline(deadline)
-                await transaction.__aexit__(None, None, None)
-                entered = False
-                if connection.info.transaction_status != 0:
-                    raise ProviderUnavailable()
-                _check_deadline(deadline)
-        except TimeoutError as error:
-            failure = DeadlineExceeded() if timer.expired() else error
-        except BaseException as error:
-            failure = error
-            if not isinstance(error, (CragkitError, asyncio.CancelledError)) and result is not None:
-                failure = _safe_error(cast(Exception, error))
-        finally:
-            if dispatched and (entered or result is None or connection.info.transaction_status != 0):
-                async def cleanup() -> None:
-                    end = asyncio.get_running_loop().time() + self._resource.config.release_timeout
-                    try:
-                        async with asyncio.timeout(self._resource.config.release_timeout / 2):
-                            if entered and result is None:
-                                await transaction.__aexit__(Exception, Exception(), None)
-                                if connection.info.transaction_status != 0:
-                                    raise ProviderUnavailable()
-                            else:
-                                await connection.close()
-                    except Exception:
-                        try:
-                            async with asyncio.timeout(max(0.0, end - asyncio.get_running_loop().time())):
-                                await connection.close()
-                        except Exception:
-                            pass
-                task = asyncio.create_task(cleanup())
-                try:
-                    await asyncio.shield(task)
-                except asyncio.CancelledError:
-                    await asyncio.shield(task)
-                    raise
-        if failure is not None:
-            raise failure
-        assert result is not None
-        return result
+        return await _write_transaction(connection, deadline, self._resource.config.release_timeout, stage)
 
     async def _stage(self, connection: SessionConnection, document: CanonicalDocument,
                      receipt: IngestionReceipt, scope: TrustedScope, locator: str, metadata_json: str,

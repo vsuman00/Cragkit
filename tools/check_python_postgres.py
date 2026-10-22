@@ -42,7 +42,8 @@ def pgpass_field(value: str) -> str:
     return value.replace('\\', '\\\\').replace(':', '\\:')
 
 
-async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False, lexical: bool = False, results: bool = False) -> dict:
+async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False,
+                lexical: bool = False, results: bool = False, lifecycle: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -143,7 +144,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                                    authorization_revision='scope-rev', grant_ids=[])
                                for tenant, principal in zip(tenants, principals)],
                     'document_ids': ['document-0', 'document-1'],
-                }, admin, typescript=typescript, lexical=lexical, results=results)
+                }, admin, typescript=typescript, lexical=lexical, results=results, lifecycle=lifecycle)
             except IngestionCheckError as error:
                 code = str(error) if re.fullmatch(r'[a-z_]{1,80}', str(error)) else 'check_failed'
                 raise RuntimeCheckError('ingestion_' + code) from None
@@ -383,6 +384,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                         raise RuntimeCheckError('schema_restore_failed')
                     if created_role:
                         async with admin.transaction():
+                            if lifecycle:
+                                await command(sql.SQL('REVOKE UPDATE(created_at),DELETE ON cragkit.documents FROM {}').format(sql.Identifier(role)))
                             if ingestion:
                                 await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.index_generations').format(sql.Identifier(role + '_block_ready')))
                             for table in selected:
@@ -428,14 +431,23 @@ def main() -> int:
     parser.add_argument('--ingestion', action='store_true')
     parser.add_argument('--lexical', action='store_true')
     parser.add_argument('--results', action='store_true')
+    parser.add_argument('--lifecycle', action='store_true')
     args = parser.parse_args()
     if not args.allow_test_writes:
         print('Runtime checks require explicit test-write authorization.')
         return 2
     try:
         async def bounded():
-            async with asyncio.timeout(420 if args.results else 300 if args.lexical else 180 if args.ingestion and args.typescript else 90):
-                return await check(args.config, typescript=args.typescript or args.lexical or args.results, ingestion=args.ingestion or args.lexical or args.results, lexical=args.lexical or args.results, results=args.results)
+            timeout = (600 if args.lifecycle else 420 if args.results else 300 if args.lexical
+                       else 180 if args.ingestion and args.typescript else 90)
+            async with asyncio.timeout(timeout):
+                return await check(
+                    args.config,
+                    typescript=args.typescript or args.lexical or args.results or args.lifecycle,
+                    ingestion=args.ingestion or args.lexical or args.results or args.lifecycle,
+                    lexical=args.lexical or args.results or args.lifecycle,
+                    results=args.results or args.lifecycle, lifecycle=args.lifecycle,
+                )
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:
         code = str(error) if re.fullmatch(r'[a-z_]+', str(error)) else 'runtime_check_failed'
