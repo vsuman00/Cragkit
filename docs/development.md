@@ -493,3 +493,15 @@ uv run --project packages/python --frozen --no-sync --extra postgres python tool
 ```
 
 The vector SQL probes roll back all synthetic rows. [B/B1 results](../evaluation/reports/V2/V2-04B.md). The new profile table is synthetic-only; hosted profile provisioning and dense ranking are not implied.
+
+
+## V2-04 native generation checks
+
+The --vectors fixture uses a temporary restricted LOGIN, explicit managed-primitive schema USAGE and scoped table policies, and cleans up after the run. Use only the accepted empty dedicated development target.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra postgres pytest packages/python/tests/test_vector_ingestion.py -q
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --vectors
+```
+
+[Staging evidence](../evaluation/reports/V2/V2-04C.md); publication and Node acceptance are recorded separately as their slices complete.

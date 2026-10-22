@@ -67,7 +67,7 @@ def pgpass_field(value: str) -> str:
 
 
 async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False,
-                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False) -> dict:
+                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -80,6 +80,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
     from cragkit.contracts import parse_request, parse_scope
     from cragkit.errors import DeadlineExceeded, IndexNotReady, UnauthorizedScope, UnsupportedCapability
 
+    if vectors:
+        ingestion = True
     config = parse_pool_config(load_config(config_path))
     if neon:
         require_neon_host(config.host)
@@ -93,8 +95,10 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
     principals = ['principal_a_' + token, 'principal_b_' + token]
     tables = ('collections', 'documents', 'document_revisions', 'index_generations',
               'chunks', 'chunk_lexical', 'document_grants', 'ingestion_jobs')
+    if vectors:
+        tables += ('chunk_vectors_fake_1536',)
     # Retrieval probes need read access to every joined table, even with no chunks.
-    selected = tables + ('migration_history',)
+    selected = tables + ('migration_history',) + (('embedding_profiles',) if vectors else ())
     policy = role + '_select'
     admin = runtime = node_process = None
     locked = created_role = renamed = False
@@ -126,7 +130,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
         if await rows('SELECT pg_try_advisory_lock(1129464148,1)') != [(True,)]:
             raise RuntimeCheckError('migration_lock_busy')
         locked = True
-        if await rows("SELECT count(*) FROM pg_policies WHERE schemaname='cragkit'") != [(0,)]:
+        if await rows("SELECT count(*) FROM pg_policies WHERE schemaname IN ('cragkit','cragkit_vector')") != [(0,)]:
             raise RuntimeCheckError('existing_policies')
         if await rows('SELECT 1 FROM pg_roles WHERE rolname=%s', (role,)):
             raise RuntimeCheckError('existing_probe_role')
@@ -142,16 +146,21 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
             await command(sql.SQL('GRANT USAGE ON SCHEMA cragkit TO {}').format(sql.Identifier(role)))
             await command(sql.SQL('GRANT USAGE ON DOMAIN cragkit.identity_text,cragkit.collection_text,cragkit.sha256_hex,cragkit.safe_count TO {}').format(sql.Identifier(role)))
             for table in selected:
-                permissions = 'SELECT,INSERT,UPDATE' if ingestion and table != 'migration_history' else 'SELECT'
+                permissions = 'SELECT,INSERT,UPDATE' if ingestion and table not in ('migration_history','embedding_profiles') else 'SELECT'
                 await command(sql.SQL('GRANT ' + permissions + ' ON cragkit.{} TO {}').format(sql.Identifier(table), sql.Identifier(role)))
-                if table == 'migration_history':
+                if table in ('migration_history','embedding_profiles'):
                     predicate = sql.SQL('true')
                 else:
                     predicate = sql.SQL("tenant_id=current_setting('cragkit.tenant_id',true) AND tenant_id IN ({},{}) AND collection_id={}").format(sql.Literal(tenants[0]), sql.Literal(tenants[1]), sql.Literal(collection))
-                if ingestion and table != 'migration_history':
+                if ingestion and table not in ('migration_history','embedding_profiles'):
                     await command(sql.SQL('CREATE POLICY {} ON cragkit.{} FOR ALL TO {} USING ({}) WITH CHECK ({})').format(sql.Identifier(policy), sql.Identifier(table), sql.Identifier(role), predicate, predicate))
                 else:
                     await command(sql.SQL('CREATE POLICY {} ON cragkit.{} FOR SELECT TO {} USING ({})').format(sql.Identifier(policy), sql.Identifier(table), sql.Identifier(role), predicate))
+            if vectors:
+                # Explicit accepted managed-primitive exposure; no permanent grants.
+                await command(sql.SQL('GRANT USAGE ON SCHEMA cragkit_vector TO {}').format(sql.Identifier(role)))
+                await command(sql.SQL('GRANT SELECT ON cragkit_vector.setup_history TO {}').format(sql.Identifier(role)))
+                await command(sql.SQL('CREATE POLICY {} ON cragkit_vector.setup_history FOR SELECT TO {} USING(true)').format(sql.Identifier(policy),sql.Identifier(role)))
             digest = hashlib.sha256(b'synthetic runtime fixture').hexdigest()
             for index, (tenant, principal) in enumerate([] if ingestion else zip(tenants, principals)):
                 document, revision = f'document-{index}', f'revision-{index}'
@@ -169,6 +178,21 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
         with os.fdopen(descriptor, 'w', encoding='utf-8') as destination:
             destination.write(':'.join(pgpass_field(value) for value in (config.host, str(config.port), config.dbname, role, password)) + '\n')
         runtime_config = config.model_copy(update={'user': role, 'passfile': passfile})
+        if vectors:
+            from check_vectors import run as run_vectors
+            CURRENT_STAGE = 'vector_generations'
+            try:
+                return await run_vectors(runtime_config, {
+                'collection': collection,
+                'scopes': [dict(tenant_id=tenant, principal_id=principal,
+                    authorization_revision='scope-rev', grant_ids=[])
+                    for tenant,principal in zip(tenants,principals)],
+                }, admin, typescript=typescript, neon=neon)
+            except Exception as error:
+                from check_vectors import VectorCheckError
+                if isinstance(error,VectorCheckError) and re.fullmatch(r'[a-z_]+',str(error)):
+                    raise RuntimeCheckError('vector_'+str(error)) from None
+                raise
         if ingestion:
             from check_ingestion import IngestionCheckError, run
             CURRENT_STAGE = 'python_ingestion'
@@ -474,8 +498,12 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                                 await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.index_generations').format(sql.Identifier(role + '_block_ready')))
                             for table in selected:
                                 await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.{}').format(sql.Identifier(policy), sql.Identifier(table)))
-                                permissions = 'SELECT,INSERT,UPDATE' if ingestion and table != 'migration_history' else 'SELECT'
+                                permissions = 'SELECT,INSERT,UPDATE' if ingestion and table not in ('migration_history','embedding_profiles') else 'SELECT'
                                 await command(sql.SQL('REVOKE ' + permissions + ' ON cragkit.{} FROM {}').format(sql.Identifier(table), sql.Identifier(role)))
+                            if vectors:
+                                await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit_vector.setup_history').format(sql.Identifier(policy)))
+                                await command(sql.SQL('REVOKE SELECT ON cragkit_vector.setup_history FROM {}').format(sql.Identifier(role)))
+                                await command(sql.SQL('REVOKE USAGE ON SCHEMA cragkit_vector FROM {}').format(sql.Identifier(role)))
                             await command('DELETE FROM cragkit.documents WHERE tenant_id=ANY(%s) AND collection_id=%s', (tenants, collection))
                             await command('DELETE FROM cragkit.collections WHERE tenant_id=ANY(%s) AND collection_id=%s', (tenants, collection))
                             # CREATEROLE does not grant permission to DROP OWNED BY
@@ -485,7 +513,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                             await command(sql.SQL('DROP ROLE {}').format(sql.Identifier(role)))
                         if await rows('SELECT 1 FROM pg_roles WHERE rolname=%s', (role,)):
                             raise RuntimeCheckError('role_cleanup_failed')
-                        if await rows("SELECT count(*) FROM pg_policies WHERE schemaname='cragkit'") != [(0,)]:
+                        if await rows("SELECT count(*) FROM pg_policies WHERE schemaname IN ('cragkit','cragkit_vector')") != [(0,)]:
                             raise RuntimeCheckError('policy_cleanup_failed')
                         for table in tables:
                             if await rows(sql.SQL('SELECT count(*) FROM cragkit.{}').format(sql.Identifier(table))) != [(0,)]:
@@ -516,6 +544,7 @@ def main() -> int:
     parser.add_argument('--lexical', action='store_true')
     parser.add_argument('--results', action='store_true')
     parser.add_argument('--lifecycle', action='store_true')
+    parser.add_argument('--vectors', action='store_true')
     parser.add_argument('--neon', action='store_true', help='Explicit direct Neon fixture mode with client TLS proof')
     args = parser.parse_args()
     if not args.allow_test_writes:
@@ -523,7 +552,7 @@ def main() -> int:
         return 2
     try:
         async def bounded():
-            timeout = (600 if args.lifecycle else 420 if args.results else 300 if args.lexical
+            timeout = (600 if args.vectors else 600 if args.lifecycle else 420 if args.results else 300 if args.lexical
                        else 180 if args.ingestion and args.typescript else 90)
             async with asyncio.timeout(timeout):
                 return await check(
@@ -531,7 +560,7 @@ def main() -> int:
                     typescript=args.typescript or args.lexical or args.results or args.lifecycle,
                     ingestion=args.ingestion or args.lexical or args.results or args.lifecycle,
                     lexical=args.lexical or args.results or args.lifecycle,
-                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon,
+                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors,
                 )
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:
