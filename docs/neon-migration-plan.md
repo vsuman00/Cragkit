@@ -2,13 +2,13 @@
 
 Decision date: 22 October 2026. Task: DB-NEON-01. Completion state is recorded in [the tracker](../tasks/todo.md#db-neon-01-neon-migration).
 
-The user selected Neon as the intended development host for PostgreSQL with `pgvector` and native full-text search. The plan was initially saved without execution. On 22 October 2026, the user authorized implementation with the Neon skill/plugin and security tests, and selected a new dedicated Cragkit development project in VAIBHAV's Free organization, Singapore, PostgreSQL 17. Execute the ordered slices below; the tracker records actual acceptance, and cutover remains gated on verification.
+The user selected Neon as the intended development host for PostgreSQL with `pgvector` and native full-text search. The plan was initially saved without execution. On 22 October 2026, the user authorized implementation with the Neon skill/plugin and security tests, and selected a new dedicated Cragkit development project in VAIBHAV's Free organization, Singapore, PostgreSQL 17. The ordered slices below passed for direct-endpoint development/native lexical use; [the evidence](../evaluation/reports/V2/DB-NEON-01.md) records actual execution and verified private development configuration. Vector storage remains V2-04; pooling and production remain separate.
 
 For example, a successful administrative connection to Neon would establish connectivity for that role. It would not demonstrate that a restricted retrieval role can read authorized documents while rejecting another tenant's documents.
 
 ## Baseline and boundaries
 
-The [architecture](architecture/ARCHITECTURE.md), [master plan](../tasks/plan.md), [development guide](development.md) and [Supabase runbook](supabase.md) describe the existing PostgreSQL design and recorded Supabase acceptance. Those results remain historical evidence for their tested target. No Neon project, native connection, security configuration or database behavior has been verified by this planning task.
+The [architecture](architecture/ARCHITECTURE.md), [master plan](../tasks/plan.md), [development guide](development.md) and [Supabase runbook](supabase.md) describe the existing PostgreSQL design and recorded Supabase acceptance. Those results remain historical evidence for their tested target. The initial planning task verified no Neon resources or behavior. Subsequent authorized execution is recorded separately in DB-NEON-01 evidence.
 
 Keep native Python and TypeScript execution, optional `psycopg` and Node `pg` drivers, explicit migrations, immutable source revisions, canonical UTF-8 byte spans, tenant isolation and bounded request handling. Native PostgreSQL full-text search remains the lexical method; it is not BM25. Hosting selection does not add Neon Auth, a Data API, Functions, an AI Gateway or a new model provider.
 

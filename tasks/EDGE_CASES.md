@@ -126,6 +126,10 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 
 | E78 | Purge reinsertion fails, child rows are hidden by RLS, or inbound FK/trigger catalog differs | Roll back the entire parent cascade on failure; validate the supported cascade graph before mutation; never report a successful purge from filtered child counts. | V1-09 | U/I |
 
+| E79 | A hosted proxy terminates TLS before PostgreSQL, so backend SSL flags are false | Preserve certificate/hostname validation and require actual client TLS proof before SQL/source access; do not disable verification or expose raw sockets through guarded library handles. | DB-NEON-01-C, DB-NEON-01-E | U/I |
+| E80 | A managed host rejects pre-hashed SQL-role passwords | Use an explicit host-specific fixture mode, prove native TLS before the in-memory password statement, redact errors and remove temporary roles; keep existing host behavior unchanged. | DB-NEON-01-C, DB-NEON-01-E | U/I |
+| E81 | A credential import supplies a pooled/wrong target, unsafe URI options or an existing/symlink output | Pin the selected direct target, reject unsupported security options and control bytes, preserve existing files and write owner-only credentials outside Git through hidden input. | DB-NEON-01-C | U/I |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.

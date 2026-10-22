@@ -2,11 +2,11 @@
 
 ## Current development database: Neon
 
-On 22 October 2026 the user selected a new dedicated Neon development project in VAIBHAV's Free organization, Singapore, PostgreSQL 17, and authorized the [migration plan](neon-migration-plan.md). Follow the [Neon setup and security runbook](neon.md) for current target preparation. Neon native Python/TypeScript security and integration acceptance is pending; provider selection alone does not verify a connection, restricted role or cutover.
+On 22 October 2026 the user selected a new dedicated Neon development project in VAIBHAV's Free organization, Singapore, PostgreSQL 17, and authorized the [migration plan](neon-migration-plan.md). Follow the [Neon setup and security runbook](neon.md) for current target preparation. Direct Neon native Python/TypeScript security and integration acceptance passed on the dedicated synthetic target. [DB-NEON-01 evidence](../evaluation/reports/V2/DB-NEON-01.md) records 47 native groups, final local regressions and cleanup. Private development fixture configuration uses that endpoint; applications still supply restricted roles and scoped policies.
 
 The verified commands below remain portable PostgreSQL commands. Use the direct Neon endpoint first with verified TLS and separate administrative, ingestion and retrieval roles; validate pooled behavior separately. Preserve the existing migrations and optional native drivers. Neon hosting does not enable Auth, a Data API or other Neon services.
 
-The dated sections below retain their original local and Supabase observations. Their successful checks establish behavior only for their recorded target and configuration; they are not Neon results. Supabase remains available until the migration acceptance gate passes, and its retirement is a separate action.
+The dated sections below retain their original local and Supabase observations. Their successful checks establish behavior only for their recorded target and configuration; they are not Neon results. Supabase resources were preserved after development cutover; retirement is a separate action.
 
 ## V0-01 baseline
 
