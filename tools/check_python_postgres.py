@@ -17,6 +17,30 @@ import tempfile
 CURRENT_STAGE = 'not_started'
 
 
+def require_neon_host(host: str) -> None:
+    if not re.fullmatch(r'ep-[a-z0-9]+(?:-[a-z0-9]+)*\.c-[0-9]+\.[a-z0-9-]+\.aws\.neon\.tech', host) or '-pooler.' in host:
+        raise RuntimeCheckError('direct_neon_host_required')
+
+
+def require_client_tls(connection) -> None:
+    if getattr(getattr(connection, 'pgconn', None), 'ssl_in_use', None) is not True:
+        raise RuntimeCheckError('client_tls_required')
+
+
+def fixture_password(connection, password: str, role: str, *, neon: bool = False) -> str:
+    if neon:
+        require_client_tls(connection)
+        return password
+    return connection.pgconn.encrypt_password(password.encode(), role.encode(), b'scram-sha-256').decode()
+
+
+async def await_fixture_completion(task, *, deadline: float, release_timeout: float):
+    # Session rollback and pool return each have their declared release budget.
+    # This bounds the observation; it does not extend the request's SQL deadline.
+    remaining = max(0.0, deadline + 2 * release_timeout - asyncio.get_running_loop().time())
+    return await asyncio.wait_for(task, remaining)
+
+
 class RuntimeCheckError(RuntimeError):
     pass
 
@@ -43,7 +67,7 @@ def pgpass_field(value: str) -> str:
 
 
 async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False,
-                lexical: bool = False, results: bool = False, lifecycle: bool = False) -> dict:
+                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -57,6 +81,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
     from cragkit.errors import DeadlineExceeded, IndexNotReady, UnauthorizedScope, UnsupportedCapability
 
     config = parse_pool_config(load_config(config_path))
+    if neon:
+        require_neon_host(config.host)
     resource_check = PoolResource(config)
     resource_check._check_owned_configuration()
     token = secrets.token_hex(8)
@@ -90,6 +116,13 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
             sslmode='verify-full', sslrootcert=str(config.sslrootcert), passfile=str(config.passfile),
             connect_timeout=5, autocommit=True, application_name='cragkit-runtime-check-admin',
             options='-c statement_timeout=5000 -c lock_timeout=2000 -c idle_in_transaction_session_timeout=10000')
+        if neon:
+            try:
+                require_client_tls(admin)
+            except RuntimeCheckError:
+                rejected_admin, admin = admin, None
+                await rejected_admin.close()
+                raise
         if await rows('SELECT pg_try_advisory_lock(1129464148,1)') != [(True,)]:
             raise RuntimeCheckError('migration_lock_busy')
         locked = True
@@ -102,7 +135,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 raise RuntimeCheckError('nonempty_target')
 
         CURRENT_STAGE = 'fixture_setup'
-        encrypted = admin.pgconn.encrypt_password(password.encode(), role.encode(), b'scram-sha-256').decode()
+        encrypted = fixture_password(admin, password, role, neon=neon)
         expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
         async with admin.transaction():
             await command(sql.SQL('CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS CONNECTION LIMIT 1 PASSWORD {} VALID UNTIL {}').format(sql.Identifier(role), sql.Literal(encrypted), sql.Literal(expires)))
@@ -146,7 +179,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                                    authorization_revision='scope-rev', grant_ids=[])
                                for tenant, principal in zip(tenants, principals)],
                     'document_ids': ['document-0', 'document-1'],
-                }, admin, typescript=typescript, lexical=lexical, results=results, lifecycle=lifecycle)
+                }, admin, typescript=typescript, lexical=lexical, results=results, lifecycle=lifecycle, neon=neon)
             except IngestionCheckError as error:
                 code = str(error) if re.fullmatch(r'[a-z_]{1,80}', str(error)) else 'check_failed'
                 raise RuntimeCheckError('ingestion_' + code) from None
@@ -162,6 +195,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                            for tenant, principal in zip(tenants, principals)],
                 'expected_documents': [[f'document-{index}', f'revision-{index}'] for index in range(2)],
                 'admin_config': str(config_path.resolve()),
+                'neon': neon,
             }
             for path, value in ((fixture_path, fixture),
                                 (runtime_path, runtime_config.model_dump(mode='json'))):
@@ -241,10 +275,15 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
         await runtime.open()
         session = PostgresSession(runtime)
         loop = asyncio.get_running_loop()
-        await session.validate(deadline=loop.time() + 5)
+        if not neon:
+            await session.validate(deadline=loop.time() + 5)
         async with runtime.lease(deadline=loop.time() + 5) as connection:
+            if neon:
+                require_client_tls(connection)
             async with connection.transaction(force_rollback=True):
-                cursor = await connection.execute('SELECT current_user=session_user,current_user=%s,ssl,pg_backend_pid() FROM pg_stat_ssl WHERE pid=pg_backend_pid()', (role,))
+                identity_sql = ('SELECT current_user=session_user,current_user=%s,true,pg_backend_pid()' if neon else
+                                'SELECT current_user=session_user,current_user=%s,ssl,pg_backend_pid() FROM pg_stat_ssl WHERE pid=pg_backend_pid()')
+                cursor = await connection.execute(identity_sql, (role,))
                 identity = await cursor.fetchall()
                 if len(identity) != 1 or identity[0][:3] != (True, True, True):
                     raise RuntimeCheckError('runtime_login_identity_or_tls')
@@ -252,6 +291,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 cursor = await connection.execute('SELECT count(*) FROM cragkit.documents')
                 if await cursor.fetchall() != [(0,)]:
                     raise RuntimeCheckError('unscoped_rls_read')
+        if neon:
+            await session.validate(deadline=loop.time() + 5)
         completed.append('authenticated_runtime_login')
         CURRENT_STAGE = 'scope_filters'
         request = parse_request({'query': 'synthetic', 'collection': collection})
@@ -285,14 +326,19 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
         except Sentinel:
             pass
         # A raw checkout checks transaction-local state after normal and exceptional reuse.
-        async def assert_reset():
+        async def assert_reset(*, require_same_pid: bool = True):
+            nonlocal physical_pid
             async with runtime.lease(deadline=loop.time() + 5) as connection:
                 async with connection.transaction(force_rollback=True):
                     cursor = await connection.execute("SELECT current_setting('cragkit.tenant_id',true),current_setting('cragkit.principal_id',true),current_setting('cragkit.authorization_revision',true),current_setting('cragkit.grant_ids',true)")
                     values = await cursor.fetchall()
                     pid_cursor = await connection.execute('SELECT pg_backend_pid()')
-                    if await pid_cursor.fetchall() != [(physical_pid,)]:
+                    pids = await pid_cursor.fetchall()
+                    if len(pids) != 1 or len(pids[0]) != 1:
+                        raise RuntimeCheckError('physical_connection_identity_missing')
+                    if require_same_pid and pids != [(physical_pid,)]:
                         raise RuntimeCheckError('physical_connection_not_reused')
+                    physical_pid = pids[0][0]
                     if len(values) != 1 or any(value not in (None, '') for value in values[0]):
                         raise RuntimeCheckError('scope_not_reset')
         await assert_reset()
@@ -312,12 +358,12 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
 
         CURRENT_STAGE = 'deadline_cancellation'
         retriever = PostgresRetriever(runtime)
-        async def reuse_retriever():
+        async def reuse_retriever(*, require_same_pid: bool = True):
             for scope in (scopes[1], scopes[0]):
                 result = await retriever.retrieve(request, scope=scope, deadline=loop.time() + 8)
                 if result.evidence or result.status != 'insufficient':
                     raise RuntimeCheckError('retriever_fresh_scope_reuse')
-            await assert_reset()
+            await assert_reset(require_same_pid=require_same_pid)
 
         # Occupy the sole lease so cancellation must remove an admitted waiter.
         async with runtime.lease(deadline=loop.time() + 8):
@@ -336,6 +382,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
         await reuse_retriever()
         completed.append('retriever_wait_cancel_and_fresh_scope_reuse')
         for cancel in (False, True):
+            phase = 'cancel' if cancel else 'deadline'
+            CURRENT_STAGE = phase + '_query_starting'
             started, query_gate = asyncio.Event(), asyncio.Event()
             class GatedSession:
                 @asynccontextmanager
@@ -345,15 +393,17 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                         await query_gate.wait()
                         yield handle
             retriever._session = GatedSession()
+            query_deadline = loop.time() + 5
             task = asyncio.create_task(retriever.retrieve(
-                request, scope=scopes[0], deadline=loop.time() + 5))
+                request, scope=scopes[0], deadline=query_deadline))
             try:
-                await asyncio.wait_for(started.wait(), 3)
+                await asyncio.wait_for(started.wait(), max(0.0, query_deadline - loop.time()))
                 async with admin.transaction():
                     await command('LOCK TABLE cragkit.documents IN ACCESS EXCLUSIVE MODE')
+                    CURRENT_STAGE = phase + '_query_observation'
                     query_gate.set()
                     observed = False
-                    until = loop.time() + 2
+                    until = min(loop.time() + 2, query_deadline)
                     while loop.time() < until:
                         waits = await rows("SELECT count(*) FROM pg_stat_activity WHERE usename=%s AND wait_event_type='Lock'", (role,))
                         if waits == [(1,)]:
@@ -364,8 +414,10 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                         raise RuntimeCheckError('runtime_query_lock_not_observed')
                     if cancel:
                         task.cancel()
+                    CURRENT_STAGE = phase + '_query_completion'
                     try:
-                        await asyncio.wait_for(task, 6)
+                        await await_fixture_completion(task, deadline=query_deadline,
+                                                       release_timeout=config.release_timeout)
                     except asyncio.CancelledError:
                         if not cancel: raise
                     except DeadlineExceeded:
@@ -378,7 +430,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                     task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
             retriever._session = session
-            await reuse_retriever()
+            CURRENT_STAGE = phase + '_query_fresh_scope_reuse'
+            await reuse_retriever(require_same_pid=False)
         completed.append('retriever_query_deadline_cancel_and_fresh_scope_reuse')
         CURRENT_STAGE = 'schema_rejection'
         await command('ALTER TABLE cragkit.documents RENAME COLUMN authorization_revision TO probe_hidden_authorization_revision')
@@ -463,6 +516,7 @@ def main() -> int:
     parser.add_argument('--lexical', action='store_true')
     parser.add_argument('--results', action='store_true')
     parser.add_argument('--lifecycle', action='store_true')
+    parser.add_argument('--neon', action='store_true', help='Explicit direct Neon fixture mode with client TLS proof')
     args = parser.parse_args()
     if not args.allow_test_writes:
         print('Runtime checks require explicit test-write authorization.')
@@ -477,7 +531,7 @@ def main() -> int:
                     typescript=args.typescript or args.lexical or args.results or args.lifecycle,
                     ingestion=args.ingestion or args.lexical or args.results or args.lifecycle,
                     lexical=args.lexical or args.results or args.lifecycle,
-                    results=args.results or args.lifecycle, lifecycle=args.lifecycle,
+                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon,
                 )
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:

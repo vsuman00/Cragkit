@@ -12,8 +12,11 @@ def require(condition: bool, code: str) -> None:
 
 
 async def run(config, fixture: dict, admin, *, typescript: bool = False,
-              lexical: bool = False, results: bool = False, lifecycle: bool = False) -> dict:
+              lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False) -> dict:
     import asyncio
+    if neon:
+        from check_python_postgres import require_neon_host
+        require_neon_host(config.host)
     import hashlib
     from cragkit._postgres_pool import PoolResource
     from cragkit.canonical import canonicalize
@@ -57,7 +60,11 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False,
     try:
         await resource.open()
         async with resource.lease(deadline=loop.time() + 8) as connection:
-            cursor = await connection.execute('SELECT current_user=session_user,current_user=%s,ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()', (config.user,))
+            if neon:
+                require(getattr(connection.pgconn, 'ssl_in_use', None) is True, 'client_tls_required')
+            identity_sql = ('SELECT current_user=session_user,current_user=%s,true' if neon else
+                            'SELECT current_user=session_user,current_user=%s,ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()')
+            cursor = await connection.execute(identity_sql, (config.user,))
             identity = await cursor.fetchall()
             require(identity == [(True, True, True)], 'actual_writer_login_tls')
             cursor = await connection.execute('SELECT count(*) FROM cragkit.documents')
@@ -192,7 +199,7 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False,
             with tempfile.TemporaryDirectory(prefix='cragkit-ingestion-') as directory:
                 config_path = Path(directory) / 'runtime.json'
                 fixture_path = Path(directory) / 'fixture.json'
-                node_fixture = {**fixture, 'python_source': source, 'python_receipt': first.model_dump(mode='json')}
+                node_fixture = {**fixture, 'neon': neon, 'python_source': source, 'python_receipt': first.model_dump(mode='json')}
                 for path, value in ((config_path, config.model_dump(mode='json')), (fixture_path, node_fixture)):
                     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                     with os.fdopen(descriptor, 'w', encoding='utf-8') as destination:
