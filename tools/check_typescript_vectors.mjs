@@ -8,7 +8,7 @@ import { PostgresIndexer, write_transaction, query } from '../packages/typescrip
 import { PostgresSession, _SCOPE_SQL } from '../packages/typescript/dist/postgres-session.js';
 import { EmbeddingAdapter } from '../packages/typescript/dist/embeddings.js';
 import { parse_scope, parse_request } from '../packages/typescript/dist/contracts.js';
-import { ProviderUnavailable, EmbeddingProfileMismatch, InvalidRequest, IntegrityViolation, IndexNotReady, UnauthorizedScope } from '../packages/typescript/dist/errors.js';
+import { ProviderUnavailable, EmbeddingProfileMismatch, InvalidRequest, IntegrityViolation, IndexNotReady, UnauthorizedScope, UnsupportedCapability } from '../packages/typescript/dist/errors.js';
 import { verifyNeonResource } from './check_typescript_postgres.mjs';
 
 class CheckError extends Error {}
@@ -20,8 +20,8 @@ function privateJSON(path) {
 }
 const input=createInterface({input:process.stdin,crlfDelay:Infinity});
 const replies=input[Symbol.asyncIterator]();
-async function owner(action, enabled) {
-  process.stdout.write(JSON.stringify({type:'owner',action,enabled})+'\n');
+async function owner(action, enabled, privilege) {
+  process.stdout.write(JSON.stringify({type:'owner',action,enabled,privilege})+'\n');
   const reply=await replies.next();
   requireCheck(!reply.done&&JSON.parse(reply.value).ok===true,'owner_reply');
 }
@@ -69,12 +69,34 @@ async function run(config, fixture) {
   async function unchanged(expected,prior){requireCheck(await pointer()===expected,'failed_rebuild_pointer');requireCheck(JSON.stringify(normalized(await read()))===JSON.stringify(prior),'failed_rebuild_lexical');}
   try {
     await resource.open();
+    for(const privilege of ['CREATE','UPDATE']) {
+      const beforeCalls=state.calls;
+      await owner('unsafe_vector',true,privilege);
+      try {
+        try {await vector.stage('alpha unsafe role',options('node-unsafe-'+privilege.toLowerCase()));throw new CheckError('unsafe_vector_role_accepted');}
+        catch(error){requireCheck(error instanceof UnsupportedCapability,'unsafe_vector_role_error');}
+        requireCheck(state.calls===beforeCalls,'unsafe_vector_role_called_provider');
+        requireCheck(await pointer()===null,'unsafe_vector_role_changed_pointer');
+        const documents=await scoped('SELECT count(*)::int FROM cragkit.documents WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3',key);
+        requireCheck(documents[0]?.[0]===0,'unsafe_vector_role_created_document');
+      } finally {await owner('unsafe_vector',false,privilege);}
+    }
+    checks.push('vector_schema_create_and_ledger_update_roles_rejected_before_provider_or_writes');
     const python=await vector.stage(shared.replacement_source,options('vector-build',{document_id:'vector-shared',expected_generation_id:fixture.python_expected}));
     requireCheck(python.replayed&&python.provider_calls===0&&JSON.stringify(identity(python))===JSON.stringify(identity(fixture.python_receipt)),'python_node_intent_identity_parity');
     checks.push('python_write_node_replay_profile_and_identity_parity');
     const baseline=await lexical.ingest(shared.baseline_source,options('node-baseline'));
     const original=normalized(await read());
     requireCheck(original.length>0,'baseline_lexical');
+    const beforeProfileCalls=state.calls;
+    await owner('hide_profile',true);
+    try {
+      try {await vector.stage('alpha unavailable profile',options('node-missing-profile',{expected_generation_id:baseline.generation_id}));throw new CheckError('missing_profile_accepted');}
+      catch(error){requireCheck(error instanceof UnsupportedCapability,'missing_profile_error');}
+      requireCheck(state.calls===beforeProfileCalls,'missing_profile_called_provider');
+      await unchanged(baseline.generation_id,original);
+    } finally {await owner('hide_profile',false);}
+    checks.push('unavailable_profile_rejected_before_provider_preserves_prior_result');
     state.fail_at=state.calls+2;
     let caught=false;
     try {await vector.stage(shared.replacement_source,options('node-build',{expected_generation_id:baseline.generation_id}));}
@@ -96,6 +118,7 @@ async function run(config, fixture) {
     requireCheck(replay.provider_calls===0&&replay.generation_id===staged.generation_id,'staged_replay');
     try {await vector.stage(shared.replacement_source+'changed',options('node-build',{expected_generation_id:baseline.generation_id}));throw new CheckError('changed_accepted');}
     catch(error){requireCheck(error instanceof InvalidRequest,'changed_error');}
+    await unchanged(baseline.generation_id,original);
     checks.push('bounded_missing_only_resume_staging_invisible_and_payload_conflict');
     state.wrong_model=true;
     try {await vector.stage('alpha wrong model',options('node-model',{expected_generation_id:baseline.generation_id}));throw new CheckError('model_accepted');}
@@ -118,10 +141,14 @@ async function run(config, fixture) {
       catch(error){requireCheck(error instanceof IntegrityViolation,'mixed_error');}
       await unchanged(baseline.generation_id,original);
     } finally {await scoped("UPDATE cragkit.index_generations SET lexical_profile='native_fts.v1' WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4",[...key,staged.generation_id]);}
+    const priorJob=await scoped('SELECT state,attempt_count FROM cragkit.ingestion_jobs WHERE tenant_id=$1 AND collection_id=$2 AND intent_id=$3',[...key.slice(0,2),'node-build']);
     await owner('deny_ready',true);
     try {
       try {await vector.publish(shared.replacement_source,pub());throw new CheckError('denied_ready_accepted');}
       catch(error){requireCheck(error instanceof UnauthorizedScope,'ready_failure_error');}
+      requireCheck(JSON.stringify(await scoped('SELECT state,attempt_count FROM cragkit.ingestion_jobs WHERE tenant_id=$1 AND collection_id=$2 AND intent_id=$3',[...key.slice(0,2),'node-build']))===JSON.stringify(priorJob),'failed_ready_changed_job');
+      const generationState=await scoped('SELECT status FROM cragkit.index_generations WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4',[...key,staged.generation_id]);
+      requireCheck(generationState[0]?.[0]==='staging','failed_ready_changed_generation');
       await unchanged(baseline.generation_id,original);
     } finally {await owner('deny_ready',false);}
     checks.push('mixed_generation_and_failed_ready_write_preserve_prior_result');
@@ -158,9 +185,10 @@ async function run(config, fixture) {
       try {await vector.publish(deniedSource,deniedOptions());throw new CheckError('tombstone_accepted');}
       catch(error){requireCheck(error instanceof UnauthorizedScope,'tombstone_error');}
       await unchanged(fast.generation_id,[]);
+      requireCheck((await read(scopes[0],retained)).state==='unavailable','tombstoned_source_release');
     } finally {await scoped('UPDATE cragkit.documents SET tombstoned=false WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3',key);}
     checks.push('revocation_tombstones_and_final_source_release_remain_denied');
-    return {checks,phase:'full',receipt:first};
+    return {checks,phase:'full',receipt:first,active_receipt:fast,active_source:fastSource};
   } finally {await resource.close();}
 }
 if(process.argv[2]!=='--allow-vector-checks')throw new Error('Explicit fixture authorization required.');

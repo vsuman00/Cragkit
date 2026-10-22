@@ -23,7 +23,7 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
     from cragkit.embeddings import EmbeddingAdapter, EmbeddingLimits
     from cragkit.ingestion import PostgresIndexer
     from cragkit.vector_ingestion import PostgresVectorIndexer
-    from cragkit.errors import InvalidRequest, ProviderUnavailable, EmbeddingProfileMismatch, IntegrityViolation, UnauthorizedScope, IndexNotReady
+    from cragkit.errors import InvalidRequest, ProviderUnavailable, EmbeddingProfileMismatch, IntegrityViolation, UnauthorizedScope, IndexNotReady, UnsupportedCapability
 
     scopes = [parse_scope(value) for value in fixture['scopes']]
     collection = fixture['collection']
@@ -73,7 +73,7 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
 
     write_tables = ('collections','documents','document_revisions','index_generations','chunks','chunk_lexical','document_grants','ingestion_jobs','chunk_vectors_fake_1536')
 
-    async def lexical_ids(scope=scopes[0]):
+    async def lexical_read(scope=scopes[0], candidate=None):
         # Same restricted LOGIN and pooled client, with write permissions temporarily removed.
         for table in write_tables:
             await admin.execute(sql.SQL('REVOKE INSERT,UPDATE ON cragkit.{} FROM {}').format(sql.Identifier(table),sql.Identifier(config.user)))
@@ -81,17 +81,57 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
             request = parse_request({'query': 'alpha', 'collection': collection})
             session = PostgresSession(resource)
             async with session.transaction(request, scope=scope, deadline=loop.time()+10) as handle:
-                candidates = await handle.lexical_candidates(limit=8)
-            return [(item.document_id,item.generation_id,item.start_byte,item.end_byte) for item in candidates]
+                if candidate is not None:
+                    return await handle.fetch_evidence(candidate, max_source_bytes=1048576)
+                return await handle.lexical_candidates(limit=8)
         finally:
             for table in write_tables:
                 await admin.execute(sql.SQL('GRANT INSERT,UPDATE ON cragkit.{} TO {}').format(sql.Identifier(table),sql.Identifier(config.user)))
 
+    async def lexical_ids(scope=scopes[0]):
+        return [(item.document_id,item.generation_id,item.start_byte,item.end_byte)
+                for item in await lexical_read(scope)]
+
+    async def unsafe_runtime_probe(privilege):
+        target = 'SCHEMA cragkit_vector' if privilege == 'CREATE' else 'cragkit_vector.setup_history'
+        before_calls = state['calls']
+        await admin.execute(sql.SQL('GRANT '+privilege+' ON '+target+' TO {}').format(sql.Identifier(config.user)))
+        try:
+            try:
+                await indexer.stage('alpha unsafe role', **arguments('unsafe-vector-'+privilege.lower()))
+            except UnsupportedCapability:
+                pass
+            else:
+                raise VectorCheckError('unsafe_vector_role_accepted')
+            require(state['calls'] == before_calls, 'unsafe_vector_role_called_provider')
+            require(await rows('SELECT count(*) FROM cragkit.documents WHERE tenant_id=%s AND collection_id=%s',
+                               (scopes[0].tenant_id,collection)) == [(0,)], 'unsafe_vector_role_created_document')
+        finally:
+            await admin.execute(sql.SQL('REVOKE '+privilege+' ON '+target+' FROM {}').format(sql.Identifier(config.user)))
+
     try:
         await resource.open()
+        await unsafe_runtime_probe('CREATE')
+        await unsafe_runtime_probe('UPDATE')
+        checks.append('vector_schema_create_and_ledger_update_roles_rejected_before_provider_or_writes')
         baseline = await lexical.ingest(source, **arguments('vector-baseline'))
         original = await lexical_ids()
         require(original and all(row[1] == baseline.generation_id for row in original), 'baseline_lexical_result')
+        profile_block = config.user+'_hide_profile'
+        before_calls = state['calls']
+        await admin.execute(sql.SQL('CREATE POLICY {} ON cragkit.embedding_profiles AS RESTRICTIVE FOR SELECT TO {} USING(false)').format(sql.Identifier(profile_block),sql.Identifier(config.user)))
+        try:
+            try:
+                await indexer.stage('alpha unavailable profile', **arguments('missing-profile', expected_generation_id=baseline.generation_id))
+            except UnsupportedCapability:
+                pass
+            else:
+                raise VectorCheckError('missing_profile_accepted')
+            require(state['calls'] == before_calls and await pointer() == baseline.generation_id
+                    and await lexical_ids() == original, 'missing_profile_changed_prior_result')
+        finally:
+            await admin.execute(sql.SQL('DROP POLICY {} ON cragkit.embedding_profiles').format(sql.Identifier(profile_block)))
+        checks.append('unavailable_profile_rejected_before_provider_preserves_prior_result')
         replacement = shared['replacement_source']
         state['fail_at'] = 2
         caught = False
@@ -117,6 +157,7 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
             pass
         else:
             raise VectorCheckError('changed_payload_accepted')
+        require(await pointer() == baseline.generation_id and await lexical_ids() == original, 'changed_payload_prior_pointer_lexical')
         checks.append('same_intent_changed_payload_rejected')
         state['wrong_model'] = True
         try:
@@ -145,7 +186,12 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
         sentinel = RuntimeError('synthetic publication interruption')
         async def interrupt():
             raise sentinel
-        await rejected_publish(RuntimeError,before_publish=interrupt)
+        try:
+            await indexer.publish(replacement, **arguments('vector-build', **publication_args, before_publish=interrupt))
+        except RuntimeError as error:
+            require(error is sentinel, 'publication_hook_exception_identity')
+        else:
+            raise VectorCheckError('publication_hook_accepted')
         await unchanged(baseline.generation_id)
         checks.append('hook_interruption_preserves_pointer_and_prior_lexical')
         key=(scopes[0].tenant_id,collection,'vector-shared',first.generation_id)
@@ -164,22 +210,32 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
         finally:
             await admin.execute("UPDATE cragkit.index_generations SET lexical_profile='native_fts.v1' WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s",key)
         checks.append('mixed_manifest_preserves_pointer_and_prior_lexical')
+        prior_job = await rows('SELECT state,attempt_count FROM cragkit.ingestion_jobs WHERE tenant_id=%s AND collection_id=%s AND intent_id=%s', (scopes[0].tenant_id,collection,'vector-build'))
         block = config.user+'_block_ready'
         await admin.execute(sql.SQL("CREATE POLICY {} ON cragkit.index_generations AS RESTRICTIVE FOR UPDATE TO {} USING(true) WITH CHECK(status<>'ready')").format(sql.Identifier(block),sql.Identifier(config.user)))
         try:
             await rejected_publish(UnauthorizedScope)
             await unchanged(baseline.generation_id)
+            require(await rows('SELECT state,attempt_count FROM cragkit.ingestion_jobs WHERE tenant_id=%s AND collection_id=%s AND intent_id=%s', (scopes[0].tenant_id,collection,'vector-build')) == prior_job, 'failed_ready_update_changed_job')
             require(await rows('SELECT status FROM cragkit.index_generations WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s',key)==[('staging',)], 'failed_ready_update_persisted')
         finally:
             await admin.execute(sql.SQL('DROP POLICY {} ON cragkit.index_generations').format(sql.Identifier(block)))
         checks.append('ready_write_failure_rolls_back_generation_and_job')
+        retained = (await lexical_read())[0]
         published = await indexer.publish(replacement, **arguments('vector-build',**publication_args))
         require(await pointer()==first.generation_id and published.provider_calls==0, 'published_pointer')
         replay = await indexer.publish(replacement, **arguments('vector-build',**publication_args))
         require(replay.replayed and replay.provider_calls==0, 'published_replay')
         current_lexical=await lexical_ids()
         require(current_lexical and all(row[1]==first.generation_id for row in current_lexical), 'published_lexical_result')
-        checks.append('complete_generation_atomic_publish_and_replay')
+        from cragkit.canonical import canonicalize
+        canonical = canonicalize(source, **shared['canonical_options'])
+        historical = await lexical_read(candidate=retained)
+        expected_text = canonical.canonical_text.encode('utf-8')[retained.start_byte:retained.end_byte].decode('utf-8')
+        require(historical.state == 'verified' and historical.stale
+                and historical.evidence.text == expected_text
+                and historical.evidence.source_sha256 == canonical.canonical_sha256, 'retained_source_snapshot')
+        checks.append('complete_generation_atomic_publish_replay_and_retained_source')
         slow_source='alpha slower competing shadow'
         fast_source='alpha newer competing shadow'
         slow=await indexer.stage(slow_source, **arguments('vector-slow',expected_generation_id=first.generation_id))
@@ -205,6 +261,7 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
             else:
                 raise VectorCheckError('revoked_grant_published')
             await unchanged(fast.generation_id,[])
+            require((await lexical_read(candidate=retained)).state == 'unavailable', 'unauthorized_source_release')
         finally:
             for grant in grants:
                 await admin.execute('INSERT INTO cragkit.document_grants(tenant_id,collection_id,document_id,grant_id,principal_id,authorization_revision) VALUES(%s,%s,%s,%s,%s,%s)',(*key[:3],*grant))
@@ -217,6 +274,7 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
             else:
                 raise VectorCheckError('tombstone_published')
             await unchanged(fast.generation_id,[])
+            require((await lexical_read(candidate=retained)).state == 'unavailable', 'unauthorized_source_release')
         finally:
             await admin.execute('UPDATE cragkit.documents SET tombstoned=false WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',key[:3])
         checks.append('revocation_and_tombstone_never_restore_older_authorization')
@@ -227,6 +285,24 @@ async def run(config, fixture: dict, admin, *, typescript: bool = False, neon: b
                 'stage_only':stage_only}, admin)
             checks.extend(node['checks'])
             require(node['phase']==('stage' if stage_only else 'full'),'node_phase_mismatch')
+            if not stage_only:
+                # The Node pool is closed before Python opens its single runtime client.
+                resource = PoolResource(config.model_copy(update={'max_size': 1}))
+                await resource.open()
+                node_receipt = node['active_receipt']
+                candidates = [item for item in await lexical_read() if item.document_id == 'vector-node']
+                require(candidates and all(item.generation_id == node_receipt['generation_id']
+                        and item.revision_id == node_receipt['revision_id'] for item in candidates),
+                        'node_write_python_candidate_identity')
+                evidence = await lexical_read(candidate=candidates[0])
+                document = canonicalize(node['active_source'], **shared['canonical_options'])
+                candidate = candidates[0]
+                excerpt = document.canonical_text.encode('utf-8')[candidate.start_byte:candidate.end_byte].decode('utf-8')
+                require(evidence.state == 'verified' and not evidence.stale
+                        and evidence.evidence.text == excerpt
+                        and evidence.evidence.source_sha256 == node_receipt['canonical_sha256'],
+                        'node_write_python_source_identity')
+                checks.append('node_write_python_native_read_and_source_fidelity')
 
         return {'state':'passed','runtime':'python_and_node' if typescript else 'python','checks':checks,'maximum_connections':2,'cleanup_verified':True}
     finally:
@@ -241,6 +317,7 @@ async def run_node(config, fixture, admin):
     write_tables=('collections','documents','document_revisions','index_generations','chunks','chunk_lexical','document_grants','ingestion_jobs','chunk_vectors_fake_1536')
     process=None
     block=config.user+'_block_ready'
+    profile_block=config.user+'_hide_profile'
     try:
         with tempfile.TemporaryDirectory(prefix='cragkit-vector-node-') as directory:
             paths=[Path(directory)/'runtime.json',Path(directory)/'fixture.json']
@@ -265,6 +342,17 @@ async def run_node(config, fixture, admin):
                             recipient='FROM' if action=='read' else 'TO'
                             for table in write_tables:
                                 await admin.execute(sql.SQL(verb+' cragkit.{} '+recipient+' {}').format(sql.Identifier(table),sql.Identifier(config.user)))
+                        elif action=='unsafe_vector' and type(value.get('enabled')) is bool and value.get('privilege') in ('CREATE','UPDATE'):
+                            privilege=value['privilege']
+                            target='SCHEMA cragkit_vector' if privilege=='CREATE' else 'cragkit_vector.setup_history'
+                            verb='GRANT' if value['enabled'] else 'REVOKE'
+                            recipient='TO' if value['enabled'] else 'FROM'
+                            await admin.execute(sql.SQL(verb+' '+privilege+' ON '+target+' '+recipient+' {}').format(sql.Identifier(config.user)))
+                        elif action=='hide_profile' and type(value.get('enabled')) is bool:
+                            if value['enabled']:
+                                await admin.execute(sql.SQL('CREATE POLICY {} ON cragkit.embedding_profiles AS RESTRICTIVE FOR SELECT TO {} USING(false)').format(sql.Identifier(profile_block),sql.Identifier(config.user)))
+                            else:
+                                await admin.execute(sql.SQL('DROP POLICY {} ON cragkit.embedding_profiles').format(sql.Identifier(profile_block)))
                         elif action=='deny_ready' and type(value.get('enabled')) is bool:
                             if value['enabled']:
                                 await admin.execute(sql.SQL("CREATE POLICY {} ON cragkit.index_generations AS RESTRICTIVE FOR UPDATE TO {} USING(true) WITH CHECK(status<>'ready' OR document_id<>'vector-node' OR embedding_profile IS NULL)").format(sql.Identifier(block),sql.Identifier(config.user)))
@@ -290,3 +378,6 @@ async def run_node(config, fixture, admin):
             process.kill()
             await asyncio.wait_for(process.wait(),5)
         await admin.execute(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.index_generations').format(sql.Identifier(block)))
+        await admin.execute(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.embedding_profiles').format(sql.Identifier(profile_block)))
+        await admin.execute(sql.SQL('REVOKE CREATE ON SCHEMA cragkit_vector FROM {}').format(sql.Identifier(config.user)))
+        await admin.execute(sql.SQL('REVOKE UPDATE ON cragkit_vector.setup_history FROM {}').format(sql.Identifier(config.user)))

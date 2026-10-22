@@ -151,3 +151,21 @@ test('purge rejects an unsafe FK or disabled-trigger catalog before parent delet
   assert.equal(client.children,3);
   assert.ok(!client.calls.some(query=>query.text===_PURGE_SQL));
 });
+
+test('optional vector purge catalog retains exact scoped cascade guards',()=>{
+  // Structural coverage; native acceptance probes catalog behavior and cascades.
+  const query=_PURGE_CATALOG_SQL.replace(/\s+/g,' ');
+  for(const expected of [
+    'SELECT * FROM base_expected UNION ALL',
+    'WHERE EXISTS (SELECT 1 FROM known_vector_storage)',
+    "('chunk_vectors_fake_1536','chunks',ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','chunk_id']",
+    "('chunk_vectors_fake_1536','index_generations',ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','embedding_profile']",
+    '(SELECT count(*) FROM actual)=(SELECT count(*) FROM expected)',
+    "a.child_schema='cragkit'",
+    'a.child_columns=e.child_columns AND a.parent_columns=e.parent_columns',
+    'a.delete_action=e.delete_action AND a.convalidated',
+    "WHERE relkind<>'r' OR NOT relrowsecurity",
+    "'chunks','chunk_vectors_fake_1536','document_grants','ingestion_jobs','chunk_lexical')",
+    "t.tgenabled NOT IN ('O','A')",
+  ])assert.ok(query.includes(expected),expected);
+});

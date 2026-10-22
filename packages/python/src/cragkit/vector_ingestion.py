@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, cast
 
@@ -42,7 +43,21 @@ _VECTOR_CAPABILITY_SQL = """SELECT current_setting('server_encoding')='UTF8'
   WHERE n.nspname='cragkit' AND c.relname='chunk_vectors_fake_1536'
    AND a.atttypid=to_regtype('cragkit_vector.vector') AND a.atttypmod=1536)
  AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-  WHERE n.nspname IN ('cragkit','cragkit_vector') AND p.prosecdef)"""
+  WHERE n.nspname IN ('cragkit','cragkit_vector') AND p.prosecdef)
+ AND NOT EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspname='cragkit_vector'
+  AND (pg_has_role(current_user,n.nspowner,'MEMBER')
+   OR has_schema_privilege(current_user,n.oid,'CREATE')))
+ AND NOT EXISTS (SELECT 1 FROM pg_extension e WHERE e.extname='vector'
+  AND pg_has_role(current_user,e.extowner,'MEMBER'))
+ AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='cragkit_vector' AND pg_has_role(current_user,p.proowner,'MEMBER'))
+ AND NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+  WHERE n.nspname='cragkit_vector' AND pg_has_role(current_user,t.typowner,'MEMBER'))
+ AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='cragkit_vector' AND c.relname='setup_history'
+   AND (pg_has_role(current_user,c.relowner,'MEMBER') OR NOT row_security_active(c.oid)
+    OR has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+    OR has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE,REFERENCES')))"""
 EXPECTED_VECTOR_HISTORY = (
     ('0001_pgvector', 'b98de4a67f46ab7cc7187447757b30844ceee01901a88186746ae322cf1a7e2c'),
     ('0002_vector_profiles', '33fda8141215cbdb961165822a13bc74639c97c41985529ce1b1b3ae585140fb'),
@@ -333,7 +348,7 @@ class PostgresVectorIndexer:
                 if await query(_VECTOR_COUNTS_SQL, (*key, r.generation_id, FAKE_PROFILE.profile_id)) != [(r.chunk_count,)]:
                     raise IntegrityViolation()
                 return r.model_copy(update={'replayed': True})
-            if type(jobs[0][4]) is not int or jobs[0][4] >= self._max_attempts:
+            if type(jobs[0][4]) is not int or jobs[0][4] < 1 or jobs[0][4] >= self._max_attempts:
                 raise IndexNotReady()
             await query("UPDATE cragkit.ingestion_jobs SET attempt_count=attempt_count+1 WHERE tenant_id=%s AND collection_id=%s AND intent_id=%s RETURNING 1", (*key[:2], r.intent_id))
             return r
@@ -430,6 +445,9 @@ class PostgresVectorIndexer:
             raise InvalidRequest()
         self._inflight = True
         try:
+            # One operation owns one input snapshot, including the convenience path.
+            metadata = json.loads(lexical._metadata({} if metadata is None else metadata)[0])
+            canonical_options = canonical_options.copy() if type(canonical_options) is dict else canonical_options
             staged = await self._stage_operation(source, collection=collection, document_id=document_id,
                 intent_id=intent_id, source_locator=source_locator, scope=scope, deadline=deadline,
                 expected_generation_id=expected_generation_id, metadata=metadata, format=format,

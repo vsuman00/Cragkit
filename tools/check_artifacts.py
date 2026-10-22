@@ -70,7 +70,7 @@ def archive_files(path: Path) -> dict[str, bytes]:
 
 def inspect_wheel(path: Path) -> dict[str, bytes]:
     files = archive_files(path)
-    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py', 'cragkit/embeddings.py'} <= files.keys(), 'wheel_missing_core')
+    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py', 'cragkit/embeddings.py', 'cragkit/vector_ingestion.py'} <= files.keys(), 'wheel_missing_core')
     names = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(names) == 1, 'wheel_metadata')
     metadata = email.parser.BytesParser().parsebytes(files[names[0]])
@@ -133,6 +133,8 @@ assert modules[1].parse_request({'query': 'smoke', 'collection': 'smoke'}).query
 assert modules[1].parse_result({'request_id': 'smoke', 'status': 'insufficient'}).usage.cost_usd is None
 assert modules[2].InvalidRequest().to_dict()['code'] == 'invalid_request'
 assert callable(modules[3].PostgresRetriever)
+assert callable(modules[3].PostgresVectorIndexer)
+assert callable(modules[3].VectorIngestionReceipt)
 assert callable(modules[4].EmbeddingAdapter)
 rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 print(json.dumps({'import_seconds': elapsed, 'peak_rss_bytes': rss if sys.platform == 'darwin' else rss * 1024,
@@ -165,6 +167,7 @@ assert.equal(contracts.parse_result({request_id:'smoke',status:'insufficient'}).
 assert.equal(contracts.parse_request({query:'smoke',collection:'smoke'}).query,'smoke');
 assert.equal(new errors.InvalidRequest().code,'invalid_request');
 assert.equal(typeof postgres.PostgresRetriever,'function');
+assert.equal(typeof postgres.PostgresVectorIndexer,'function');
 assert.equal(typeof embeddings.EmbeddingAdapter,'function');
 console.log(JSON.stringify({import_seconds:importSeconds,peak_rss_bytes:process.resourceUsage().maxRSS*1024,node:process.version}));
 '''

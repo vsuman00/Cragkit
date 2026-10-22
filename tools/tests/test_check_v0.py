@@ -33,8 +33,8 @@ def test_pipeline_runs_each_command_serially_with_owned_cwd_and_timeout(workspac
         running = False
         return SimpleNamespace(returncode=0)
     output = workspace / "artifacts with spaces"
-    assert CHECK.run_checks(workspace, output, runner) == 13
-    assert len(calls) == 13
+    assert CHECK.run_checks(workspace, output, runner) == 14
+    assert len(calls) == 14
     assert calls[0][0] == ["uv", "sync", "--project", "packages/python", "--frozen"]
     assert calls[1] == (["npm", "ci", "--ignore-scripts"], workspace / "packages/typescript")
     assert calls[-1][0][-2:] == ["--output-dir", str(output)]
@@ -43,6 +43,7 @@ def test_pipeline_runs_each_command_serially_with_owned_cwd_and_timeout(workspac
     assert "--include-held-out" not in corpus
     assert sum("--fixtures" in command for command, _ in calls) == 2
     assert any("tools/check_seal.py" in command for command, _ in calls)
+    assert any("tools/check_vector_contract.py" in command for command, _ in calls)
 
 
 @pytest.mark.parametrize("failure", ["exit", "timeout", "missing-command"])

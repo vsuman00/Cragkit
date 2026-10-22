@@ -4,7 +4,7 @@ Status: V2-01 design decision complete: hosted opt-in OpenAI text-embedding-3-sm
 
 ## Outcome and boundaries
 
-Direct Neon development target/security/native acceptance is complete under [DB-NEON-01](../../docs/neon-migration-plan.md); see [the evidence](../../evaluation/reports/V2/DB-NEON-01.md). Prior Supabase results are separate evidence; pooling and production remain unvalidated. This host change does not implement V2-04: pgvector installation, profile tables, generation publication and vector acceptance retain their existing dependencies. Use the [Neon runbook](../../docs/neon.md) and tracker for actual host state.
+Direct Neon development target/security/native acceptance is complete under [DB-NEON-01](../../docs/neon-migration-plan.md); see [the evidence](../../evaluation/reports/V2/DB-NEON-01.md). Prior Supabase results are separate evidence; pooling and production remain unvalidated. V2-04 now records explicit pgvector setup, synthetic profile storage and native generation acceptance in the [final report](../../evaluation/reports/V2/V2-04G.md). Dense retrieval remains V2-05. Use the [Neon runbook](../../docs/neon.md) and tracker for actual host state.
 
 Both runtimes combine dense and lexical evidence under the same constraints and return reproducible rank-fusion fixtures.
 
@@ -68,9 +68,9 @@ After tasks through V2-03, run focused regression tests and the shared fixtures 
 
 ### V2-04: Vector generations and reindex
 
-Dependency: V2-03 and V2-C1 local acceptance; [DB-NEON-01](../../evaluation/reports/V2/DB-NEON-01.md) supplies the accepted direct Neon development/native lexical baseline. V2-04A is COMPLETE on the dedicated direct development target; [its report](../../evaluation/reports/V2/V2-04A.md) records the explicit managed security profile and limits. V2-04B-G remain PLANNED. This does not complete V2-04. Supabase retirement, pooled-endpoint acceptance and production acceptance are separate work, not prerequisites for the next development slice.
+Dependency: V2-03 and V2-C1 local acceptance; [DB-NEON-01](../../evaluation/reports/V2/DB-NEON-01.md) supplies the accepted direct Neon development/native lexical baseline. V2-04A is COMPLETE on the dedicated direct development target; [its report](../../evaluation/reports/V2/V2-04A.md) records the explicit managed security profile and limits. V2-04B-G are COMPLETE with the [integrated native/local evidence](../../evaluation/reports/V2/V2-04G.md). The tracker records completion; dense retrieval remains V2-05. Supabase retirement, pooled-endpoint acceptance and production acceptance are separate work, not prerequisites for the next development slice.
 
-Build: Explicitly install/check pgvector, add profile-specific vector storage, then implement bounded staging and safe shadow-generation publication in both native runtimes. Follow [architecture sections 6-7](../../docs/architecture/ARCHITECTURE.md#6-ingestion-and-document-lifecycle), the [storage contract](../../storage/postgres/README.md) and the [Neon runbook](../../docs/neon.md). Existing applied migrations stay byte-for-byte unchanged; new DDL uses new numbered migrations and the checksummed administrative runner. Core import, initialization and retrieval never install extensions or apply migrations.
+Build: Explicitly install/check pgvector, add profile-specific vector storage, then implement bounded staging and safe shadow-generation publication in both native runtimes. Follow [architecture sections 6-7](../../docs/architecture/ARCHITECTURE.md#6-ingestion-and-document-lifecycle), the [storage contract](../../storage/postgres/README.md) and the [Neon runbook](../../docs/neon.md). Existing applied migrations stay byte-for-byte unchanged; new optional vector DDL uses numbered setup artifacts and the checksummed administrative runner. Core import, initialization and retrieval never install extensions or apply migrations.
 
 Use shared deterministic synthetic vectors and fake embedding providers for routine verification. Give the fake profile its own identity, distinct from the approved hosted `text-embedding-3-small` profile at 1536 dimensions; equal dimensions alone never establish compatibility. No paid provider calls, model downloads or model-quality claims are required. Dense ranking belongs to V2-05; hybrid orchestration, HNSW, new SDKs and deployment expansion are outside this task.
 
@@ -78,7 +78,7 @@ Run one ingestion job and one test process, with small batches bounded by items 
 
 #### V2-04A: Explicit pgvector setup
 
-Dependency: V2-03, V2-C1 and the accepted direct development baseline above. Administrative setup and verification are complete; profile storage in B is the next smallest implementation slice.
+Dependency: V2-03, V2-C1 and the accepted direct development baseline above. Administrative setup and verification are complete; B defines the optional profile storage that follows this setup.
 
 Build: Extend explicit administrative tooling to inspect available/installed extension versions and target identity, then install pgvector only through a deliberate dedicated-target operation. Record the supported extension/schema capability contract; vector-enabled initialization/reindex checks it and fails with a typed compatibility error when absent or unsupported. Existing lexical-only paths remain usable without vector capability.
 
@@ -96,7 +96,7 @@ Build: Add new numbered migration(s) for explicit profile-keyed `vector(d)` stor
 
 Acceptance and planned verification: Prove new tables preserve composite foreign keys, uniqueness, default-deny grants and RLS. Reject a cross-tenant chunk/generation reference even when document/chunk IDs collide. Reject wrong dimensions and a different model with the same dimension; never relabel synthetic vectors as the approved hosted profile. Check migration reruns and failure rollback without editing historical migrations (E06/E15/E18/E22).
 
-Expected areas: new `storage/postgres/migrations/` artifact, `storage/postgres/tests/invariants.sql`, `storage/postgres/tests/security.sql`, shared profile/vector fixtures and storage guidance. Serialize migration/fixture ownership.
+Expected areas: new `storage/postgres/setup/` artifact, `storage/postgres/tests/invariants.sql`, `storage/postgres/tests/security.sql`, shared profile/vector fixtures and storage guidance. Serialize migration/fixture ownership.
 
 #### V2-04C: Python bounded vector staging
 

@@ -14,9 +14,9 @@ async def run(config, fixture, admin):
     from cragkit._postgres_pool import PoolResource
     from cragkit._postgres_session import LexicalCandidate, PostgresSession, _SCOPE_SQL
     from cragkit.contracts import parse_request, parse_scope
-    from cragkit.errors import CragkitError, IndexNotReady, UnauthorizedScope
+    from cragkit.errors import CragkitError, IndexNotReady, UnauthorizedScope, UnsupportedCapability
     from cragkit.ingestion import PostgresIndexer
-    from cragkit.lifecycle import PostgresLifecycle, _PURGE_INSERT_SQL
+    from cragkit.lifecycle import PostgresLifecycle, _PURGE_INSERT_SQL, _PURGE_CATALOG_SQL
     from cragkit.retrieval import PostgresRetriever
     from check_ingestion import IngestionCheckError, require
 
@@ -33,6 +33,15 @@ async def run(config, fixture, admin):
     candidates = {}
     blocked_policy = role + '_lifecycle_insert'
     hidden_policy = role + '_lifecycle_hidden'
+    has_vectors = False
+    unknown_child = role + '_unknown_purge'
+    unknown_created = False
+
+    async def vector_count(document):
+        if not has_vectors:
+            return 0
+        return (await rows('SELECT count(*) FROM cragkit.chunk_vectors_fake_1536 WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
+                           (scope.tenant_id,collection,document)))[0][0]
 
     async def command(statement, parameters=None):
         async with asyncio.timeout(10):
@@ -195,6 +204,16 @@ async def run(config, fixture, admin):
             candidates[language] = dict(tenant_id=scope.tenant_id, collection=collection, document_id=document,
                 revision_id=first['revision_id'], generation_id=first['generation_id'], chunk_id=chunk[0][0],
                 start_byte=chunk[0][1], end_byte=chunk[0][2], text_sha256=chunk[0][3], score=1.0)
+        has_vectors = (await rows("SELECT to_regclass('cragkit.chunk_vectors_fake_1536') IS NOT NULL")) == [(True,)]
+        if has_vectors:
+            # Administrative synthetic rows exercise the optional purge graph;
+            # runtime lifecycle clients receive no vector table privileges.
+            for language, document in documents.items():
+                key = (scope.tenant_id,collection,document)
+                generation = results[language]['winner']['generation_id']
+                await command("UPDATE cragkit.index_generations SET embedding_profile='fake_embedding_1536_v1' WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s", (*key,generation))
+                await command("INSERT INTO cragkit.chunk_vectors_fake_1536(tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,embedding_profile,embedding) SELECT tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,'fake_embedding_1536_v1',%s::cragkit_vector.vector(1536) FROM cragkit.chunks WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s", ('[1,'+'0,'*1534+'0]',*key,generation))
+                require(await vector_count(document) == 1, 'lifecycle_optional_vector_fixture_shape')
         checks.append('python_node_controlled_late_update_cas_and_interrupted_publication_rollback')
         await permissions('read')
         stage = 'retained_read'
@@ -225,6 +244,38 @@ async def run(config, fixture, admin):
         await command(sql.SQL('CREATE POLICY {} ON cragkit.documents AS RESTRICTIVE FOR INSERT TO {} WITH CHECK (NOT tombstoned)').format(sql.Identifier(blocked_policy), sql.Identifier(role)))
         async def purge(resource, expected):
             return await PostgresLifecycle(resource, authorize_lifecycle=authorize).purge_tombstoned(**options(documents['python'], expected))
+        stage = 'unknown_cascade_rejection'
+        scoped_key = ['tenant_id', 'collection_id']
+        document_key = scoped_key + ['document_id']
+        chunk_key = document_key + ['revision_id', 'generation_id', 'chunk_id']
+        unknown_parents = [
+            ('chunk_vectors_fake_1536', chunk_key) if has_vectors else ('documents', document_key),
+            ('document_grants', document_key + ['grant_id']),
+            ('ingestion_jobs', scoped_key + ['intent_id']),
+            ('chunk_lexical', chunk_key),
+        ]
+        for parent, keys in unknown_parents:
+            require(await rows(_PURGE_CATALOG_SQL) == [(True,)], 'lifecycle_valid_catalog_rejected')
+            definitions = ','.join(name + (' cragkit.collection_text' if name == 'collection_id' else ' cragkit.identity_text') for name in keys)
+            key_sql = sql.SQL(',').join(map(sql.Identifier, keys))
+            # Temporary/permanent foreign keys are unsupported by PostgreSQL.
+            # This unique empty fixture relation gets no runtime grants.
+            await command(sql.SQL('CREATE TABLE cragkit.{} ({}, FOREIGN KEY({}) REFERENCES cragkit.{} ({}) ON DELETE CASCADE)').format(
+                sql.Identifier(unknown_child), sql.SQL(definitions), key_sql, sql.Identifier(parent), key_sql))
+            unknown_created = True
+            await command(sql.SQL('ALTER TABLE cragkit.{} ENABLE ROW LEVEL SECURITY').format(sql.Identifier(unknown_child)))
+            try:
+                await python(lambda resource: rejected(lambda: purge(resource, results['python']['winner']['generation_id']),
+                    UnsupportedCapability, 'lifecycle_unknown_cascade_accepted'))
+                for language, document in documents.items():
+                    require(await snapshot(document) == before[language], 'lifecycle_unknown_cascade_changed_graph')
+                    if has_vectors:
+                        require(await vector_count(document) == 1, 'lifecycle_unknown_cascade_changed_vectors')
+            finally:
+                await command(sql.SQL('DROP TABLE cragkit.{}').format(sql.Identifier(unknown_child)))
+                unknown_created = False
+            require(await rows(_PURGE_CATALOG_SQL) == [(True,)], 'lifecycle_catalog_not_restored')
+        checks.append('unknown_additional_foreign_key_rejected_before_parent_delete')
         stage = 'purge_rollback'
         async def rejected_reinsertion(resource):
             observed = []
@@ -249,6 +300,8 @@ async def run(config, fixture, admin):
         await node('purge_denied', expected_generation_id=results['node']['winner']['generation_id'])
         for language, document in documents.items():
             require(await snapshot(document) == before[language], 'lifecycle_purge_rollback_lost_graph')
+            if has_vectors:
+                require(await vector_count(document) == 1, 'lifecycle_purge_rollback_lost_vectors')
         checks.append('python_node_failed_stub_reinsertion_rolls_back_entire_cascade')
         await command(sql.SQL('DROP POLICY {} ON cragkit.documents').format(sql.Identifier(blocked_policy)))
         await command(sql.SQL('CREATE POLICY {} ON cragkit.document_revisions AS RESTRICTIVE FOR SELECT TO {} USING (false)').format(sql.Identifier(hidden_policy), sql.Identifier(role)))
@@ -267,10 +320,14 @@ async def run(config, fixture, admin):
         for language, document in documents.items():
             after = await snapshot(document)
             require(after[:7] == [[(1,)], *[[(0,)]] * 6], 'lifecycle_purge_hidden_child_survived')
+            if has_vectors:
+                require(await vector_count(document) == 0, 'lifecycle_purge_vector_survived')
             marker = after[-1]
             require(len(marker) == 1 and marker[0][:4] == (None, True, {}, scope.authorization_revision)
                     and marker[0][4] == before[language][-1][0][4], 'lifecycle_purge_marker_changed')
         checks.append('python_node_restricted_parent_cascade_purges_hidden_source_and_preserves_minimal_marker')
+        if has_vectors:
+            checks.append('python_node_optional_vector_cascade_rollback_and_complete_purge')
         await command(sql.SQL('DROP POLICY {} ON cragkit.document_revisions').format(sql.Identifier(hidden_policy)))
         await permissions('write')
         async def resurrection(resource):
@@ -290,6 +347,8 @@ async def run(config, fixture, admin):
     except CragkitError as error:
         raise IngestionCheckError('lifecycle_' + stage + '_' + error.code) from None
     finally:
+        if unknown_created:
+            await command(sql.SQL('DROP TABLE cragkit.{}').format(sql.Identifier(unknown_child)))
         await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.documents').format(sql.Identifier(blocked_policy)))
         await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.document_revisions').format(sql.Identifier(hidden_policy)))
         await permissions('read')

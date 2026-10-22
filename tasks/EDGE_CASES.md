@@ -39,7 +39,7 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 | E19 | Pool connection is reused by another principal | Transaction-local context and cleanup prevent permission carryover. | V1-02, V1-03 | I |
 | E20 | Grant revoked or document tombstoned after search | Final authorized source fetch excludes it; already delivered bytes cannot be retroactively revoked. | V1-10 | I |
 | E21 | No matches under current authorization | Return insufficient without revealing whether inaccessible matches exist. | V1-08 | I |
-| E22 | Runtime role is owner, bypasses RLS, or lacks intended privileges | Detect/document configuration; tests run under the real least-privilege runtime role. | V1-10 | I/M |
+| E22 | Runtime role is owner, bypasses RLS, or lacks intended privileges | Detect/document configuration; tests run under the real least-privilege runtime role. Vector writers reject vector-schema CREATE/ownership and setup-ledger writes before provider dispatch. | V1-10, V2-04 | I/M |
 | E23 | Pool saturated, connection lost, statement hangs | Bound queue/wait/timeouts, return typed failure and release acquired resources. | V1-02, V1-03, V1-11 | I |
 | E24 | close called twice or with in-flight work and borrowed pools | Idempotent close, bounded drain/cancel; caller-owned pools are not closed. | V1-02, V1-03, V1-11 | U/I |
 | E25 | Active generation changes between candidates and source fetch | Return an allowed immutable revision under documented policy, or retry within limits; never mix revision text. | V1-09, V1-10 | I |
@@ -124,7 +124,7 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 
 | E77 | Original source bytes differ from normalized canonical bytes, or a source budget changes during an awaited fetch | Verify/return the canonical digest and exact immutable bytes; snapshot the requested byte allowance before SQL and preserve opaque source labels. | V1-08 | U/I |
 
-| E78 | Purge reinsertion fails, child rows are hidden by RLS, or inbound FK/trigger catalog differs | Roll back the entire parent cascade on failure; validate the supported cascade graph before mutation; never report a successful purge from filtered child counts. | V1-09 | U/I |
+| E78 | Purge reinsertion fails, child rows are hidden by RLS, or inbound FK/trigger catalog differs | Roll back the entire parent cascade on failure; validate the supported cascade graph, including optional vectors and incoming references to every deleted leaf, before mutation; never report a successful purge from filtered child counts. | V1-09, V2-04 | U/I |
 
 | E79 | A hosted proxy terminates TLS before PostgreSQL, so backend SSL flags are false | Preserve certificate/hostname validation and require actual client TLS proof before SQL/source access; do not disable verification or expose raw sockets through guarded library handles. | DB-NEON-01-C, DB-NEON-01-E | U/I |
 | E80 | A managed host rejects pre-hashed SQL-role passwords | Use an explicit host-specific fixture mode, prove native TLS before the in-memory password statement, redact errors and remove temporary roles; keep existing host behavior unchanged. | DB-NEON-01-C, DB-NEON-01-E | U/I |

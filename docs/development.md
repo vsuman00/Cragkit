@@ -508,3 +508,27 @@ uv run --project packages/python --frozen --no-sync --extra postgres python tool
 
 
 Node staging checkpoint (V2-04E) uses the same fixture with explicit --typescript --vector-stage-only. This excludes F publication probes until F is implemented; the final --vectors --typescript command requires full publication. The owner/child pipe is local and restricted to fixture permission/readiness operations; it sends no administrative credentials to Node. [E evidence](../evaluation/reports/V2/V2-04E.md).
+
+
+## V2-04 vector publication and integrated acceptance
+
+Both optional PostgreSQL entry points now export `PostgresVectorIndexer`: Python uses `cragkit.postgres`, Node uses `cragkit/postgres`. Applications inject the restricted pool, trusted write authorizer and E-r1 adapter. [VG-r1](../contracts/VECTOR_GENERATIONS_V2.md) defines stage/publish/ingest, profile identity, bounded resume and receipts. Only the distinct synthetic fake profile is provisioned; OpenAI storage requires a later explicit provisioning decision. No API call is needed for routine verification.
+
+For example, stage G2 while G1 stays active, then publish with G1 as the expected pointer. Publication checks the full immutable manifest, exact profile, counts and current authorization before an atomic pointer update. A missing vector or stale expected pointer leaves the active generation unchanged. Replaying an older succeeded job cannot restore its pointer or revoked access.
+
+Run from the root, one command at a time:
+
+```sh
+npm --prefix packages/typescript run build
+uv run --project packages/python --frozen --no-sync --extra postgres pytest packages/python/tests/test_vector_ingestion.py packages/python/tests/test_vector_publication.py -q
+node --test --test-concurrency=1 packages/typescript/tests/vector-ingestion.test.mjs packages/typescript/tests/vector-publication.test.mjs
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_vector_contract.py
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --vectors --typescript
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --lifecycle
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_neon_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --confirm-dedicated-target --check --vector-storage --allow-managed-vector-primitives --integration --security --allow-test-writes
+python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-04-final
+```
+
+Run native checks before the final checkpoint: its frozen default Python installation removes optional drivers. Restore only the locked postgres extra when needed. Native fixtures require the accepted empty dedicated development target, verified TLS and private owner-only configuration outside Git. They use synthetic documents, temporary restricted roles/policies and at most two clients including the owner. Owner RPC actions are fixed fixture operations; no administrative credentials reach Node.
+
+The serial checkpoint adds vector SQL/setup/identity parity and guarded installed vector imports to the existing checks. Its fixture-definition count is a manifest check; executable unit and native tests establish the listed failure behavior. [Final V2-04 evidence](../evaluation/reports/V2/V2-04G.md) separates those results. Fake vectors validate mechanics, not semantic model quality. Dense search remains V2-05. Exercise: explain which pointer survives an incomplete G2 build and a delayed G2 publication after G3 wins.

@@ -6,3 +6,6 @@ export type { IngestionReceipt, IngestOptions, WriteAuthorizer } from './ingesti
 export { PostgresLifecycle } from './lifecycle.js';
 export type { LifecycleReceipt, LifecycleOptions, LifecycleAuthorizer } from './lifecycle.js';
 export { PostgresRetriever } from './retrieval.js';
+
+export { PostgresVectorIndexer } from './vector-ingestion.js';
+export type { VectorIngestionReceipt } from './vector-ingestion.js';

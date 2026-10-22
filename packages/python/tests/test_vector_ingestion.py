@@ -372,3 +372,73 @@ def test_newer_active_pointer_blocks_running_resume_before_provider():
         assert len(transport.calls) == 1 and not connection.vectors
         assert resource.leased == resource.returned
     asyncio.run(run())
+
+
+def test_running_resume_with_zero_attempt_count_fails_before_provider():
+    async def run():
+        connection, resource, transport, indexer = fixture()
+        await stage(indexer)
+        job = connection.vector_job[0]
+        connection.vector_job = [(*job[:4],0)]
+        connection.vectors.clear()
+        with pytest.raises(IndexNotReady): await stage(indexer)
+        assert len(transport.calls) == 1 and not connection.vectors
+        assert resource.leased == resource.returned
+    asyncio.run(run())
+
+
+def test_newly_unsafe_vector_role_rejects_resume_before_provider_or_writes():
+    async def run():
+        connection, resource, transport, indexer = fixture()
+        await stage(indexer)
+        connection.vectors = {}
+        before = copy.deepcopy((connection.vector_job, connection.vector_generation,
+                                connection.vector_revision, connection.manifest))
+        calls = len(transport.calls)
+        # The native harness separately proves schema CREATE and ledger UPDATE
+        # make this catalog capability false for a real restricted LOGIN.
+        connection.capability = [(False,)]
+        with pytest.raises(UnsupportedCapability):
+            await stage(indexer)
+        assert len(transport.calls) == calls
+        assert not connection.vectors and not connection.published
+        assert (connection.vector_job, connection.vector_generation,
+                connection.vector_revision, connection.manifest) == before
+        assert resource.leased == resource.returned
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('mode', ['cancel', 'deadline'])
+def test_interruption_after_committed_batch_preserves_old_pointer_and_resumes_missing(mode):
+    async def run():
+        connection, resource, transport, indexer = fixture(limits=EmbeddingLimits(max_items=1))
+        connection.document = [('old-generation', False, 'auth')]
+        connection.created_document = False
+        source = 'first\n\nsecond'
+        options = dict(canonical_options={'target_bytes': 6}, expected_generation_id='old-generation')
+
+        def block_next(response):
+            if len(transport.calls) == 1:
+                transport.block = True
+
+        transport.change = block_next
+        task = asyncio.create_task(stage(
+            indexer, source, **options,
+            deadline=asyncio.get_running_loop().time() + (.05 if mode == 'deadline' else 2),
+        ))
+        async with asyncio.timeout(1):
+            await transport.entered.wait()
+        assert len(connection.vectors) == 1
+        if mode == 'cancel':
+            task.cancel()
+        with pytest.raises(asyncio.CancelledError if mode == 'cancel' else DeadlineExceeded):
+            await task
+        assert connection.document == [('old-generation', False, 'auth')]
+        assert connection.vector_generation[0][1] == 'staging'
+        assert resource.leased == resource.returned and not connection.published
+        transport.block = False
+        transport.change = None
+        result = await stage(indexer, source, **options)
+        assert result.provider_calls == 1 and len(connection.vectors) == 2
+        assert connection.document == [('old-generation', False, 'auth')]
+    asyncio.run(run())

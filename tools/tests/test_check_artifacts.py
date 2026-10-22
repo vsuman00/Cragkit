@@ -92,3 +92,9 @@ def test_failed_build_cleans_temporary_workspace_and_records_failure(tmp_path, m
     assert report['state'] == 'failed'
     assert report['temporary_environments_cleaned'] is True
     assert report['imports'] == {}
+
+
+def test_installed_import_guards_require_optional_vector_api():
+    assert 'PostgresVectorIndexer' in ART.PYTHON_PROBE
+    assert 'VectorIngestionReceipt' in ART.PYTHON_PROBE
+    assert 'postgres.PostgresVectorIndexer' in ART.NODE_PROBE

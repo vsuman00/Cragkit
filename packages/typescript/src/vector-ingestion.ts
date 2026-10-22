@@ -13,7 +13,7 @@ import { EmbeddingProfileMismatch, IndexNotReady, IntegrityViolation, InvalidReq
 export type VectorIngestionReceipt = lexical.IngestionReceipt & Readonly<{
   embedding_profile: string; provider_calls: number; usage: readonly EmbeddingUsage[];
 }>;
-export const _VECTOR_CAPABILITY_SQL = "SELECT current_setting('server_encoding')='UTF8'\n AND EXISTS (SELECT 1 FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace\n  WHERE e.extname='vector' AND e.extversion='0.8.0' AND n.nspname='cragkit_vector')\n AND EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace\n  JOIN pg_depend d ON d.classid='pg_type'::regclass AND d.objid=t.oid AND d.deptype='e'\n  JOIN pg_extension e ON e.oid=d.refobjid AND d.refclassid='pg_extension'::regclass\n  WHERE n.nspname='cragkit_vector' AND t.typname='vector' AND t.typtype='b' AND e.extname='vector'\n  AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_depend pd ON pd.classid='pg_proc'::regclass AND pd.objid=p.oid AND pd.deptype='e'\n   WHERE p.pronamespace=n.oid AND p.proname='vector_dims' AND p.pronargs=1 AND p.proargtypes[0]=t.oid\n   AND p.prorettype='int4'::regtype AND NOT p.prosecdef AND pd.refclassid='pg_extension'::regclass AND pd.refobjid=e.oid))\n AND NOT EXISTS (SELECT 1 FROM (VALUES ('embedding_profiles'),('chunk_vectors_fake_1536')) expected(name)\n  LEFT JOIN pg_namespace n ON n.nspname='cragkit' LEFT JOIN pg_class c ON c.relnamespace=n.oid AND c.relname=expected.name\n  WHERE c.relkind IS DISTINCT FROM 'r' OR NOT coalesce(c.relrowsecurity,false))\n AND EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace\n  JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='embedding' AND NOT a.attisdropped\n  WHERE n.nspname='cragkit' AND c.relname='chunk_vectors_fake_1536'\n   AND a.atttypid=to_regtype('cragkit_vector.vector') AND a.atttypmod=1536)\n AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace\n  WHERE n.nspname IN ('cragkit','cragkit_vector') AND p.prosecdef)" as const;
+export const _VECTOR_CAPABILITY_SQL = "SELECT current_setting('server_encoding')='UTF8'\n AND EXISTS (SELECT 1 FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace\n  WHERE e.extname='vector' AND e.extversion='0.8.0' AND n.nspname='cragkit_vector')\n AND EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace\n  JOIN pg_depend d ON d.classid='pg_type'::regclass AND d.objid=t.oid AND d.deptype='e'\n  JOIN pg_extension e ON e.oid=d.refobjid AND d.refclassid='pg_extension'::regclass\n  WHERE n.nspname='cragkit_vector' AND t.typname='vector' AND t.typtype='b' AND e.extname='vector'\n  AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_depend pd ON pd.classid='pg_proc'::regclass AND pd.objid=p.oid AND pd.deptype='e'\n   WHERE p.pronamespace=n.oid AND p.proname='vector_dims' AND p.pronargs=1 AND p.proargtypes[0]=t.oid\n   AND p.prorettype='int4'::regtype AND NOT p.prosecdef AND pd.refclassid='pg_extension'::regclass AND pd.refobjid=e.oid))\n AND NOT EXISTS (SELECT 1 FROM (VALUES ('embedding_profiles'),('chunk_vectors_fake_1536')) expected(name)\n  LEFT JOIN pg_namespace n ON n.nspname='cragkit' LEFT JOIN pg_class c ON c.relnamespace=n.oid AND c.relname=expected.name\n  WHERE c.relkind IS DISTINCT FROM 'r' OR NOT coalesce(c.relrowsecurity,false))\n AND EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace\n  JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='embedding' AND NOT a.attisdropped\n  WHERE n.nspname='cragkit' AND c.relname='chunk_vectors_fake_1536'\n   AND a.atttypid=to_regtype('cragkit_vector.vector') AND a.atttypmod=1536)\n AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace\n  WHERE n.nspname IN ('cragkit','cragkit_vector') AND p.prosecdef)\n AND NOT EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspname='cragkit_vector'\n  AND (pg_has_role(current_user,n.nspowner,'MEMBER')\n   OR has_schema_privilege(current_user,n.oid,'CREATE')))\n AND NOT EXISTS (SELECT 1 FROM pg_extension e WHERE e.extname='vector'\n  AND pg_has_role(current_user,e.extowner,'MEMBER'))\n AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace\n  WHERE n.nspname='cragkit_vector' AND pg_has_role(current_user,p.proowner,'MEMBER'))\n AND NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace\n  WHERE n.nspname='cragkit_vector' AND pg_has_role(current_user,t.typowner,'MEMBER'))\n AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace\n  WHERE n.nspname='cragkit_vector' AND c.relname='setup_history'\n   AND (pg_has_role(current_user,c.relowner,'MEMBER') OR NOT row_security_active(c.oid)\n    OR has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')\n    OR has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE,REFERENCES')))" as const;
 export const EXPECTED_VECTOR_HISTORY = [["0001_pgvector", "b98de4a67f46ab7cc7187447757b30844ceee01901a88186746ae322cf1a7e2c"], ["0002_vector_profiles", "33fda8141215cbdb961165822a13bc74639c97c41985529ce1b1b3ae585140fb"]] as const;
 export const _SETUP_HISTORY_SQL = "SELECT version,checksum FROM cragkit_vector.setup_history ORDER BY version" as const;
 export const _PROFILE_SQL = "SELECT profile_id,provider,model,dimensions,tokenizer,normalization,storage_table FROM cragkit.embedding_profiles ORDER BY profile_id" as const;
@@ -47,7 +47,7 @@ function plain_data(value: unknown): value is Record<string, unknown> {
 function equal(actual: unknown, expected: unknown): boolean { return isDeepStrictEqual(actual, expected); }
 type Prepared = Readonly<{
   document: CanonicalDocument; receipt: VectorIngestionReceipt; scope: TrustedScope;
-  locator: string; metadata_json: string; expected: string | null; options: LeaseOptions;
+  locator: string; metadata_json: string; expected: string | null; options: LeaseOptions; hook?: () => Promise<void>;
 }>;
 const key = (p: Prepared): string[] => [p.scope.tenant_id, p.receipt.collection, p.receipt.document_id];
 const chunk_rows = (d: CanonicalDocument) => d.chunks.map(c => ({ chunk_id: c.chunk_id, ordinal: c.ordinal,
@@ -105,7 +105,7 @@ export class PostgresVectorIndexer {
       generation_id: hash(['cragkit.vector-generation.v1', payload]), payload_sha256: payload,
       canonical_sha256: document.canonical_sha256, chunk_count: document.chunks.length, replayed: false,
       embedding_profile: FAKE_PROFILE.profile_id, provider_calls: 0, usage: Object.freeze([]) });
-    return { document, receipt, scope, locator: parsed.source_locator, metadata_json, expected, options };
+    return { document, receipt, scope, locator: parsed.source_locator, metadata_json, expected, options, hook: parsed.before_publish };
   }
   private async transaction(p: Prepared, work: (client: PgClient, options: LeaseOptions) => Promise<VectorIngestionReceipt>): Promise<VectorIngestionReceipt> {
     await this.authorize(p);
@@ -178,8 +178,8 @@ export class PostgresVectorIndexer {
     try { return await this.stage_operation(source, input); }
     finally { this.inflight = false; }
   }
-  private async stage_operation(source: string | Uint8Array, input: lexical.IngestOptions): Promise<VectorIngestionReceipt> {
-    const p = await this.prepare(source, input);
+  private async stage_operation(source: string | Uint8Array, input: lexical.IngestOptions, prepared?: Prepared): Promise<VectorIngestionReceipt> {
+    const p = prepared ?? await this.prepare(source, input);
     this.batches(p, p.document.chunks.map(c => c.chunk_id));
     let missing: string[] = [];
     const result = await this.transaction(p, async (client, options) => {
@@ -258,5 +258,50 @@ export class PostgresVectorIndexer {
     await q(lexical._LEXICAL_SQL, [...k, r.generation_id]);
     await this.manifest(client, p, options);
     return r;
+  }
+  async publish(source: string | Uint8Array, input: lexical.IngestOptions): Promise<VectorIngestionReceipt> {
+    if (this.inflight) throw new IndexNotReady();
+    this.inflight = true;
+    try { return await this.publish_operation(source, input); }
+    finally { this.inflight = false; }
+  }
+  private async publish_operation(source: string | Uint8Array, input: lexical.IngestOptions, prepared?: Prepared): Promise<VectorIngestionReceipt> {
+    const p = prepared ?? await this.prepare(source, input);
+    const hook = p.hook;
+    return this.transaction(p, async (client, options) => {
+      const q = (sql: string, values?: readonly unknown[]) => lexical.query(client, sql, values, options);
+      const r = p.receipt, k = key(p);
+      const jobs = await q(_VECTOR_JOB_SQL, [...k.slice(0, 2), r.intent_id]);
+      if (!jobs.length) throw new IndexNotReady();
+      if (jobs.length !== 1 || jobs[0][0] !== r.payload_sha256 || jobs[0][3] !== r.document_id) throw new InvalidRequest();
+      if (jobs[0][1] !== r.generation_id || !['running', 'succeeded'].includes(jobs[0][2] as string)) throw new IndexNotReady();
+      const succeeded = jobs[0][2] === 'succeeded';
+      const barrier = async (): Promise<void> => {
+        await this.authorized(client, p, options, !succeeded);
+        await this.manifest(client, p, options, succeeded);
+        if (!equal(await q(_VECTOR_COUNTS_SQL, [...k, r.generation_id, FAKE_PROFILE.profile_id]), [[r.chunk_count]])) throw new IntegrityViolation();
+      };
+      await barrier();
+      if (succeeded) return Object.freeze({ ...r, replayed: true });
+      if (hook) await bounded(Promise.resolve().then(hook), options);
+      check_options(options);
+      await this.authorize(p);
+      await barrier();
+      if (!equal(await q("UPDATE cragkit.index_generations SET status='ready' WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4 AND status='staging' AND embedding_profile=$5 RETURNING 1", [...k, r.generation_id, FAKE_PROFILE.profile_id]), [[1]])) throw new IntegrityViolation();
+      if (!equal(await q('UPDATE cragkit.documents SET active_generation_id=$1,metadata=$2::jsonb WHERE tenant_id=$3 AND collection_id=$4 AND document_id=$5 AND active_generation_id IS NOT DISTINCT FROM $6 AND NOT tombstoned AND authorization_revision=$7 RETURNING 1', [r.generation_id, p.metadata_json, ...k, p.expected, p.scope.authorization_revision]), [[1]])) throw new IndexNotReady();
+      if (!equal(await q("UPDATE cragkit.ingestion_jobs SET state='succeeded' WHERE tenant_id=$1 AND collection_id=$2 AND intent_id=$3 AND payload_sha256=$4 AND generation_id=$5 AND state='running' RETURNING 1", [...k.slice(0, 2), r.intent_id, r.payload_sha256, r.generation_id]), [[1]])) throw new IntegrityViolation();
+      return r;
+    });
+  }
+  async ingest(source: string | Uint8Array, input: lexical.IngestOptions): Promise<VectorIngestionReceipt> {
+    if (this.inflight) throw new IndexNotReady();
+    this.inflight = true;
+    try {
+      // Share the validated immutable snapshot across both halves of this invocation.
+      const prepared = await this.prepare(source, input);
+      const staged = await this.stage_operation(source, input, prepared);
+      const published = await this.publish_operation(source, input, prepared);
+      return Object.freeze({ ...published, provider_calls: staged.provider_calls, usage: staged.usage });
+    } finally { this.inflight = false; }
   }
 }

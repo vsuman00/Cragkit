@@ -311,3 +311,20 @@ import cragkit.lifecycle
     process = subprocess.run([sys.executable, '-B', '-c', script], capture_output=True, text=True, timeout=5)
     assert process.returncode == 0, process.stderr
     assert process.stdout == ''
+
+
+def test_optional_vector_purge_catalog_keeps_exact_scoped_cascade_guards():
+    # Structural regression only; the native lifecycle fixture checks actual
+    # optional vector cascades and an unexpected incoming foreign key.
+    query = ' '.join(implementation._PURGE_CATALOG_SQL.split())
+    assert 'SELECT * FROM base_expected UNION ALL' in query
+    assert 'WHERE EXISTS (SELECT 1 FROM known_vector_storage)' in query
+    assert "('chunk_vectors_fake_1536','chunks',ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','chunk_id']" in query
+    assert "('chunk_vectors_fake_1536','index_generations',ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','embedding_profile']" in query
+    assert '(SELECT count(*) FROM actual)=(SELECT count(*) FROM expected)' in query
+    assert "a.child_schema='cragkit'" in query
+    assert 'a.child_columns=e.child_columns AND a.parent_columns=e.parent_columns' in query
+    assert 'a.delete_action=e.delete_action AND a.convalidated' in query
+    assert "WHERE relkind<>'r' OR NOT relrowsecurity" in query
+    assert "'chunks','chunk_vectors_fake_1536','document_grants','ingestion_jobs','chunk_lexical')" in query
+    assert "t.tgenabled NOT IN ('O','A')" in query

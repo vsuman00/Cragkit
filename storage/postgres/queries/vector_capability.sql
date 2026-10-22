@@ -17,3 +17,17 @@ SELECT current_setting('server_encoding')='UTF8'
    AND a.atttypid=to_regtype('cragkit_vector.vector') AND a.atttypmod=1536)
  AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname IN ('cragkit','cragkit_vector') AND p.prosecdef)
+ AND NOT EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspname='cragkit_vector'
+  AND (pg_has_role(current_user,n.nspowner,'MEMBER')
+   OR has_schema_privilege(current_user,n.oid,'CREATE')))
+ AND NOT EXISTS (SELECT 1 FROM pg_extension e WHERE e.extname='vector'
+  AND pg_has_role(current_user,e.extowner,'MEMBER'))
+ AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='cragkit_vector' AND pg_has_role(current_user,p.proowner,'MEMBER'))
+ AND NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+  WHERE n.nspname='cragkit_vector' AND pg_has_role(current_user,t.typowner,'MEMBER'))
+ AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='cragkit_vector' AND c.relname='setup_history'
+   AND (pg_has_role(current_user,c.relowner,'MEMBER') OR NOT row_security_active(c.oid)
+    OR has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+    OR has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE,REFERENCES')))

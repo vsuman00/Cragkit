@@ -213,3 +213,26 @@ def test_succeeded_retained_generation_replay_never_reverts_newer_pointer():
         with pytest.raises(UnauthorizedScope): await publish(indexer)
         assert connection.document[0][0] == 'newer-ready-generation'
     asyncio.run(run())
+
+
+def test_ingest_snapshots_metadata_and_options_across_both_halves():
+    async def run():
+        import json
+        from test_vector_ingestion import scope
+        from cragkit.canonical import canonicalize
+        connection,resource,transport,indexer=publication_fixture()
+        metadata={'label':'original'}
+        options={'target_bytes':6}
+        async def authorize(*args):
+            metadata['label']='changed'
+            options['target_bytes']=20
+            return True
+        indexer._authorize_write=authorize
+        source='first\n\nsecond'
+        result=await indexer.ingest(source,collection='collection',document_id='document',intent_id='intent',
+            source_locator='synthetic:source',scope=scope(),deadline=asyncio.get_running_loop().time()+2,
+            metadata=metadata,canonical_options=options)
+        assert result.chunk_count==len(canonicalize(source,target_bytes=6).chunks)
+        assert json.loads(connection.published[0][1])=={'label':'original'}
+        assert resource.leased==resource.returned
+    asyncio.run(run())
