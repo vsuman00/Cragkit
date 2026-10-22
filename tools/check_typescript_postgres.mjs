@@ -11,6 +11,32 @@ import { DeadlineExceeded, UnauthorizedScope, UnsupportedCapability } from '../p
 
 class CheckError extends Error {}
 function requireCheck(condition, code) { if (!condition) throw new CheckError(code); }
+export function requireNeonTLS(client, host) {
+  requireCheck(typeof host === 'string'
+    && /^ep-[a-z0-9]+(?:-[a-z0-9]+)*\.c-[0-9]+\.[a-z0-9-]+\.aws\.neon\.tech$/.test(host)
+    && !host.includes('-pooler.'), 'direct_neon_host_required');
+  const stream = client?.connection?.stream;
+  requireCheck(stream?.encrypted === true && stream?.authorized === true
+    && client?.ssl?.rejectUnauthorized === true && client?.ssl?.servername === host,
+  'native_client_tls_required');
+}
+export function verifyNeonResource(resource, host) {
+  // Test tooling instruments the existing owned factory before guarded leases
+  // hide the raw driver socket. No raw socket is added to the library interface.
+  const factory = resource.factory;
+  requireCheck(typeof factory === 'function', 'native_factory_unavailable');
+  resource.factory = async config => {
+    const pool = await factory(config);
+    const connect = pool.connect.bind(pool);
+    pool.connect = async () => {
+      const client = await connect();
+      try { requireNeonTLS(client, host); }
+      catch (error) { client.release(true); throw error; }
+      return client;
+    };
+    return pool;
+  };
+}
 function privateJSON(path) {
   const info = lstatSync(path);
   requireCheck(info.isFile() && info.uid === process.getuid() && (info.mode & 0o077) === 0, 'private_file_permissions');
@@ -41,12 +67,14 @@ function control() {
 }
 
 export async function run(runtimeInput, fixture, channel) {
+  requireCheck(fixture.neon === undefined || typeof fixture.neon === 'boolean', 'fixture_transport_mode');
   requireCheck(Array.isArray(fixture.scopes) && fixture.scopes.length === 2
     && Array.isArray(fixture.expected_documents) && fixture.expected_documents.length === 2, 'fixture_shape');
   const config = parse_pool_config({ ...runtimeInput, max_size: 1 });
   const scopes = fixture.scopes.map(parse_scope);
   const request = parse_request({ query: 'synthetic scope check', collection: fixture.collection });
   const resource = new PoolResource(config);
+  if (fixture.neon) verifyNeonResource(resource, config.host);
   const checks = [];
   let adminResource;
   let physicalPID;
@@ -70,9 +98,12 @@ export async function run(runtimeInput, fixture, channel) {
     const session = new PostgresSession(resource);
     await session.validate({ deadline: now() + 8 });
     await raw(async client => {
-      const identity = await client.query({ text: 'SELECT current_user=session_user,current_user=$1,ssl,pg_backend_pid() FROM pg_stat_ssl WHERE pid=pg_backend_pid()', values: [config.user], rowMode: 'array' });
-      requireCheck(identity.rows.length === 1 && identity.rows[0].slice(0, 3).every(value => value === true), 'runtime_login_tls');
-      physicalPID = identity.rows[0][3];
+      const identity = await client.query({ text: fixture.neon
+        ? 'SELECT current_user=session_user,current_user=$1,pg_backend_pid()'
+        : 'SELECT current_user=session_user,current_user=$1,ssl,pg_backend_pid() FROM pg_stat_ssl WHERE pid=pg_backend_pid()', values: [config.user], rowMode: 'array' });
+      requireCheck(identity.rows.length === 1
+        && identity.rows[0].slice(0, fixture.neon ? 2 : 3).every(value => value === true), 'runtime_login_tls');
+      physicalPID = identity.rows[0].at(-1);
       const unscoped = await client.query({ text: 'SELECT count(*)::int FROM cragkit.documents', rowMode: 'array' });
       requireCheck(unscoped.rows[0][0] === 0, 'unscoped_rls');
     });

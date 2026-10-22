@@ -5,6 +5,7 @@ import { PostgresIndexer } from '../packages/typescript/dist/ingestion.js';
 import { canonicalize } from '../packages/typescript/dist/canonical.js';
 import { parse_scope } from '../packages/typescript/dist/contracts.js';
 import { InvalidRequest, UnauthorizedScope, IndexNotReady } from '../packages/typescript/dist/errors.js';
+import { verifyNeonResource } from './check_typescript_postgres.mjs';
 
 class CheckError extends Error {}
 const requireCheck=(condition,code)=>{if(!condition)throw new CheckError(code);};
@@ -14,7 +15,9 @@ function privateJSON(path) {
   return JSON.parse(readFileSync(path,'utf8'));
 }
 async function run(config, fixture) {
+  requireCheck(fixture.neon === undefined || typeof fixture.neon === 'boolean','fixture_transport_mode');
   const resource=new PoolResource(parse_pool_config({...config,max_size:1}));
+  if(fixture.neon)verifyNeonResource(resource,config.host);
   const scopes=fixture.scopes.map(parse_scope);
   const checks=[];
   const authorize=async(scope,collection,document)=>scopes.some(value=>JSON.stringify(value)===JSON.stringify(scope))
