@@ -9,7 +9,7 @@ import asyncio
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 import json
 import math
-from typing import AsyncIterator, Protocol, cast
+from typing import AsyncIterator, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -18,7 +18,7 @@ from ._postgres_pool import PoolResource
 from ._postgres_source import SourceFetch, _SOURCE_SQL, verify_source
 from .contracts import RetrievalRequest, TrustedScope, parse_request, parse_scope
 from .errors import (
-    CragkitError, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable,
+    CragkitError, DeadlineExceeded, EmbeddingProfileMismatch, IntegrityViolation, InvalidRequest, ProviderUnavailable,
     UnauthorizedScope, UnsupportedCapability,
 )
 
@@ -155,6 +155,37 @@ LIMIT %s
 """
 
 
+_DENSE_SQL = """
+WITH query_vector AS (SELECT %s::cragkit_vector.vector(1536) AS embedding),
+eligible AS MATERIALIZED (
+ SELECT d.tenant_id,d.collection_id,d.document_id,g.revision_id,g.generation_id,c.chunk_id,
+  c.start_byte,c.end_byte,c.text_sha256,c.ordinal,v.embedding,g.embedding_profile,g.lexical_profile
+ FROM cragkit.documents d
+ JOIN cragkit.index_generations g ON g.tenant_id=d.tenant_id AND g.collection_id=d.collection_id
+  AND g.document_id=d.document_id AND g.generation_id=d.active_generation_id
+ JOIN cragkit.chunks c ON c.tenant_id=g.tenant_id AND c.collection_id=g.collection_id
+  AND c.document_id=g.document_id AND c.revision_id=g.revision_id AND c.generation_id=g.generation_id
+ JOIN cragkit.chunk_vectors_fake_1536 v ON v.tenant_id=c.tenant_id AND v.collection_id=c.collection_id
+  AND v.document_id=c.document_id AND v.revision_id=c.revision_id AND v.generation_id=c.generation_id
+  AND v.chunk_id=c.chunk_id AND v.embedding_profile=g.embedding_profile
+ WHERE v.embedding_profile=%s AND d.tenant_id=%s AND d.collection_id=%s AND NOT d.tombstoned
+  AND d.authorization_revision=%s AND g.status='ready'
+  AND EXISTS(SELECT 1 FROM cragkit.document_grants x WHERE x.tenant_id=d.tenant_id AND x.collection_id=d.collection_id
+   AND x.document_id=d.document_id AND x.authorization_revision=%s
+   AND (x.principal_id=%s OR (x.principal_id IS NULL AND x.grant_id=ANY(%s::text[]))))
+  AND ({predicate})
+)
+SELECT e.tenant_id,e.collection_id,e.document_id,e.revision_id,e.generation_id,e.chunk_id,
+ e.start_byte,e.end_byte,e.text_sha256,
+ (e.embedding OPERATOR(cragkit_vector.<=>) q.embedding)::double precision AS distance,
+ e.embedding_profile,e.lexical_profile
+FROM eligible e CROSS JOIN query_vector q
+ORDER BY distance ASC,e.document_id COLLATE pg_catalog."C",e.revision_id COLLATE pg_catalog."C",
+ e.ordinal,e.chunk_id COLLATE pg_catalog."C"
+LIMIT %s
+"""
+
+
 def _remaining(deadline: float) -> float:
     remaining = deadline - asyncio.get_running_loop().time()
     if remaining <= 0:
@@ -235,6 +266,15 @@ class LexicalCandidate(BaseModel):
     score: float = Field(ge=0, allow_inf_nan=False)
 
 
+class DenseCandidate(LexicalCandidate):
+    """Exact cosine distance under the provisioned synthetic embedding profile."""
+
+    score: float = Field(ge=0, le=2, allow_inf_nan=False)
+    embedding_profile: Literal['fake_embedding_1536_v1'] = 'fake_embedding_1536_v1'
+    score_direction: Literal['lower_is_better'] = 'lower_is_better'
+    score_kind: Literal['cosine_distance'] = 'cosine_distance'
+
+
 class ScopedSession:
     """A task-bound read handle that expires when its transaction exits."""
 
@@ -294,6 +334,88 @@ class ScopedSession:
         return tuple(candidates)
 
 
+    async def dense_candidates(self, query_embedding: object, *, limit: int = 100) -> tuple[DenseCandidate, ...]:
+        # Local imports avoid the vector-ingestion/session dependency cycle.
+        from .embeddings import EmbeddingBatch, FAKE_PROFILE
+        from .vector_ingestion import (
+            EXPECTED_VECTOR_HISTORY, _PROFILE_SQL, _SETUP_HISTORY_SQL, _VECTOR_CAPABILITY_SQL,
+        )
+
+        if not self._active or asyncio.current_task() is not self._task:
+            raise InvalidRequest()
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise InvalidRequest()
+        batch = None
+        try:
+            if type(query_embedding) is EmbeddingBatch:
+                if isinstance(query_embedding.provider_calls, bool):
+                    raise InvalidRequest()
+                batch = EmbeddingBatch.model_validate(query_embedding.model_dump(warnings=False))
+        except (ValidationError, ValueError, TypeError, AttributeError):
+            pass
+        if batch is None or len(batch.vectors) != 1:
+            raise InvalidRequest()
+        if batch.usage.cost_usd is not None and not math.isfinite(batch.usage.cost_usd):
+            raise InvalidRequest()
+        if any(value is not None and abs(value) > 9_007_199_254_740_991
+               for value in (batch.usage.prompt_tokens, batch.usage.total_tokens)):
+            raise InvalidRequest()
+        if batch.synthetic != (batch.profile.provider == 'fake'):
+            raise InvalidRequest()
+        if batch.profile != FAKE_PROFILE or len(batch.vectors[0]) != FAKE_PROFILE.dimensions:
+            raise EmbeddingProfileMismatch()
+        vector = batch.vectors[0]
+        if any(not math.isfinite(value) for value in vector):
+            raise InvalidRequest()
+        norm = math.sqrt(sum(value * value for value in vector))
+        if not math.isfinite(norm) or abs(norm - 1) > 0.001:
+            raise InvalidRequest()
+        # Snapshot all caller-owned data before the first await.
+        encoded = json.dumps(vector, separators=(',', ':'), allow_nan=False)
+        effective_limit = min(limit, self._request.limits.max_candidates)
+        _remaining(self._deadline)
+        if await _query(self._connection, _VECTOR_CAPABILITY_SQL, None, self._deadline) != [(True,)]:
+            raise UnsupportedCapability()
+        if tuple(await _query(self._connection, _SETUP_HISTORY_SQL, None, self._deadline)) != EXPECTED_VECTOR_HISTORY:
+            raise UnsupportedCapability()
+        profile = FAKE_PROFILE
+        if await _query(self._connection, _PROFILE_SQL, None, self._deadline) != [(
+            profile.profile_id, profile.provider, profile.model, profile.dimensions,
+            profile.tokenizer, profile.normalization, 'chunk_vectors_fake_1536',
+        )]:
+            raise UnsupportedCapability()
+        rows = await _query(self._connection, _DENSE_SQL.format(predicate=self._predicate), (
+            encoded, profile.profile_id, self._scope.tenant_id, self._request.collection,
+            self._scope.authorization_revision, self._scope.authorization_revision,
+            self._scope.principal_id, list(self._scope.grant_ids), *self._parameters, effective_limit,
+        ), self._deadline)
+        if len(rows) > effective_limit:
+            raise IntegrityViolation()
+        candidates = []
+        seen = set()
+        fields = tuple(LexicalCandidate.model_fields)
+        for row in rows:
+            if len(row) != 12:
+                raise IntegrityViolation()
+            if row[-2:] != (profile.profile_id, 'native_fts.v1'):
+                raise UnsupportedCapability()
+            try:
+                candidate = DenseCandidate.model_validate(dict(zip(fields, row[:-2], strict=True)))
+                identities = (candidate.tenant_id, candidate.collection, candidate.document_id,
+                              candidate.revision_id, candidate.generation_id, candidate.chunk_id)
+                if (candidate.tenant_id != self._scope.tenant_id or candidate.collection != self._request.collection
+                        or candidate.end_byte <= candidate.start_byte or identities in seen
+                        or any(not value.strip(' \t\r\n\f\v') or '\0' in value
+                               or len(value.encode('utf-8')) > (128 if index == 1 else 256)
+                               for index, value in enumerate(identities))):
+                    raise IntegrityViolation()
+                seen.add(identities)
+            except (ValidationError, ValueError, TypeError, UnicodeError):
+                raise IntegrityViolation() from None
+            candidates.append(candidate)
+        return tuple(candidates)
+
+
     async def fetch_evidence(self, candidate: LexicalCandidate, *, max_source_bytes: int) -> SourceFetch:
         if not self._active or asyncio.current_task() is not self._task:
             raise InvalidRequest()
@@ -303,7 +425,13 @@ class ScopedSession:
             raise InvalidRequest()
         validated = None
         try:
-            validated = LexicalCandidate.model_validate(candidate.model_dump(mode='json'))
+            if isinstance(candidate, DenseCandidate):
+                dense = DenseCandidate.model_validate(candidate.model_dump(mode='json'))
+                validated = LexicalCandidate.model_validate({
+                    field: getattr(dense, field) for field in LexicalCandidate.model_fields
+                })
+            else:
+                validated = LexicalCandidate.model_validate(candidate.model_dump(mode='json'))
         except (ValidationError, ValueError, TypeError):
             pass
         if validated is None:

@@ -96,3 +96,8 @@ Failure case: reusing a known chunk ID under another tenant fails the full forei
 ## Native generation APIs: V2-04C-G
 
 Both optional PostgreSQL entry points export PostgresVectorIndexer. [VG-r1](../../contracts/VECTOR_GENERATIONS_V2.md) specifies exact identity, bounded staging/resume, manifest readiness, atomic expected-pointer publication, current authorization and source-release behavior. [Development commands](../../docs/development.md#v2-04-vector-publication-and-integrated-acceptance) run the two native suites and serial package checkpoint. No application policy or runtime grant is installed permanently; applications own those permissions. Vector writers must lack vector namespace/extension/type/function ownership and setup-ledger administrative authority. Only the synthetic profile is provisioned. Dense ranking is a separate task.
+
+
+## Exact dense candidates: V2-05
+
+The existing scoped read handle can select exact cosine-distance candidates from the provisioned synthetic profile table. [DN-r1](../../contracts/DENSE_V2.md) and the [canonical dense query](queries/dense_candidates.sql) define profile validation, lower-is-better distance, full scoped joins and required filters before ranking/limit. Active ready generations only; lexical-only reads need no vector capability. Source fetching keeps current authorization and exact immutable byte-span verification. No migration, new physical table, approximate index or permanent runtime grant is added. This internal adapter supports later fusion/orchestration; [acceptance evidence](../../evaluation/reports/V2/V2-05.md) separates fake geometry from native execution.

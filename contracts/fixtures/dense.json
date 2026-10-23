@@ -1,0 +1,201 @@
+{
+  "revision": "DN-r1",
+  "dimension": 1536,
+  "tolerance": 1e-06,
+  "documents": [
+    {
+      "document_id": "dense-a",
+      "source": "alpha dense A🙂",
+      "coordinates": [
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "document_id": "dense-b",
+      "source": "alpha dense B",
+      "coordinates": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "document_id": "dense-c",
+      "source": "alpha dense C",
+      "coordinates": [
+        -1.0,
+        0.0
+      ]
+    },
+    {
+      "document_id": "dense-d",
+      "source": "alpha dense D",
+      "coordinates": [
+        1.0,
+        0.0
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "same-orthogonal-opposite-and-tie",
+      "coordinates": [
+        1.0,
+        0.0
+      ],
+      "filters": [],
+      "limit": 10,
+      "expected": [
+        [
+          "dense-a",
+          0.0
+        ],
+        [
+          "dense-d",
+          0.0
+        ],
+        [
+          "dense-b",
+          1.0
+        ],
+        [
+          "dense-c",
+          2.0
+        ]
+      ]
+    },
+    {
+      "id": "orthogonal-ties-use-document-id",
+      "coordinates": [
+        0.0,
+        1.0
+      ],
+      "filters": [],
+      "limit": 10,
+      "expected": [
+        [
+          "dense-b",
+          0.0
+        ],
+        [
+          "dense-a",
+          1.0
+        ],
+        [
+          "dense-c",
+          1.0
+        ],
+        [
+          "dense-d",
+          1.0
+        ]
+      ]
+    },
+    {
+      "id": "negative-query",
+      "coordinates": [
+        -1.0,
+        0.0
+      ],
+      "filters": [],
+      "limit": 10,
+      "expected": [
+        [
+          "dense-c",
+          0.0
+        ],
+        [
+          "dense-b",
+          1.0
+        ],
+        [
+          "dense-a",
+          2.0
+        ],
+        [
+          "dense-d",
+          2.0
+        ]
+      ]
+    },
+    {
+      "id": "filtered-far-match-before-limit",
+      "coordinates": [
+        1.0,
+        0.0
+      ],
+      "filters": [
+        {
+          "field": "document_id",
+          "op": "eq",
+          "value": "dense-c"
+        }
+      ],
+      "limit": 1,
+      "expected": [
+        [
+          "dense-c",
+          2.0
+        ]
+      ]
+    },
+    {
+      "id": "bounded-nearest",
+      "coordinates": [
+        1.0,
+        0.0
+      ],
+      "filters": [],
+      "limit": 1,
+      "expected": [
+        [
+          "dense-a",
+          0.0
+        ]
+      ]
+    },
+    {
+      "id": "non-axis-query",
+      "coordinates": [
+        0.6,
+        0.8
+      ],
+      "filters": [],
+      "limit": 10,
+      "expected": [
+        [
+          "dense-b",
+          0.2
+        ],
+        [
+          "dense-a",
+          0.4
+        ],
+        [
+          "dense-d",
+          0.4
+        ],
+        [
+          "dense-c",
+          1.6
+        ]
+      ]
+    },
+    {
+      "id": "filtered-empty",
+      "coordinates": [
+        1.0,
+        0.0
+      ],
+      "filters": [
+        {
+          "field": "document_id",
+          "op": "eq",
+          "value": "missing"
+        }
+      ],
+      "limit": 1,
+      "expected": []
+    }
+  ]
+}

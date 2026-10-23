@@ -1,11 +1,13 @@
 /** Internal read-only scoped lifecycle and native lexical candidates. */
 import { z } from 'zod';
+import { isDeepStrictEqual } from 'node:util';
+import { EmbeddingBatchSchema, FAKE_PROFILE, type EmbeddingBatch } from './embeddings.js';
 import { valid_native_json } from './shared.js';
 import { verify_source, type SourceFetch } from './postgres-source.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { PoolResource, bounded, check_options, now, type LeaseOptions, type PgClient } from './postgres-pool.js';
 import { parse_request, parse_scope, type RetrievalRequest, type TrustedScope } from './contracts.js';
-import { CragkitError, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from './errors.js';
+import { CragkitError, EmbeddingProfileMismatch, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from './errors.js';
 
 export const EXPECTED_HISTORY: readonly (readonly string[])[] = Object.freeze([["0001_initial", "5a7259e6375f8578c8775fe91994bd28b85ff76734744dc2c2b4ee63f623d92f"], ["0002_portable_lexical_config", "a7380a57690791bc5766d969decba36b5a5ec4591d7481601eb0fd5ce096c875"]].map(row => Object.freeze(row)));
 export const _CATALOG_SQL = `
@@ -173,6 +175,35 @@ ORDER BY ts_rank_cd(l.search_vector,search.query) DESC,d.document_id COLLATE pg_
  g.revision_id COLLATE pg_catalog."C",c.ordinal,c.chunk_id COLLATE pg_catalog."C"
 LIMIT {limit}
 `;
+export const _DENSE_SQL = `
+WITH query_vector AS (SELECT $1::cragkit_vector.vector(1536) AS embedding),
+eligible AS MATERIALIZED (
+ SELECT d.tenant_id,d.collection_id,d.document_id,g.revision_id,g.generation_id,c.chunk_id,
+  c.start_byte,c.end_byte,c.text_sha256,c.ordinal,v.embedding,g.embedding_profile,g.lexical_profile
+ FROM cragkit.documents d
+ JOIN cragkit.index_generations g ON g.tenant_id=d.tenant_id AND g.collection_id=d.collection_id
+  AND g.document_id=d.document_id AND g.generation_id=d.active_generation_id
+ JOIN cragkit.chunks c ON c.tenant_id=g.tenant_id AND c.collection_id=g.collection_id
+  AND c.document_id=g.document_id AND c.revision_id=g.revision_id AND c.generation_id=g.generation_id
+ JOIN cragkit.chunk_vectors_fake_1536 v ON v.tenant_id=c.tenant_id AND v.collection_id=c.collection_id
+  AND v.document_id=c.document_id AND v.revision_id=c.revision_id AND v.generation_id=c.generation_id
+  AND v.chunk_id=c.chunk_id AND v.embedding_profile=g.embedding_profile
+ WHERE v.embedding_profile=$2 AND d.tenant_id=$3 AND d.collection_id=$4 AND NOT d.tombstoned
+  AND d.authorization_revision=$5 AND g.status='ready'
+  AND EXISTS(SELECT 1 FROM cragkit.document_grants x WHERE x.tenant_id=d.tenant_id AND x.collection_id=d.collection_id
+   AND x.document_id=d.document_id AND x.authorization_revision=$6
+   AND (x.principal_id=$7 OR (x.principal_id IS NULL AND x.grant_id=ANY($8::text[]))))
+  AND ({predicate})
+)
+SELECT e.tenant_id,e.collection_id,e.document_id,e.revision_id,e.generation_id,e.chunk_id,
+ e.start_byte,e.end_byte,e.text_sha256,
+ (e.embedding OPERATOR(cragkit_vector.<=>) q.embedding)::double precision AS distance,
+ e.embedding_profile,e.lexical_profile
+FROM eligible e CROSS JOIN query_vector q
+ORDER BY distance ASC,e.document_id COLLATE pg_catalog."C",e.revision_id COLLATE pg_catalog."C",
+ e.ordinal,e.chunk_id COLLATE pg_catalog."C"
+LIMIT {limit}
+`;
 export const _SOURCE_SQL = `
 SELECT c.tenant_id,c.collection_id,c.document_id,c.revision_id,c.generation_id,c.chunk_id,
  r.canonical_sha256,octet_length(r.canonical_text),
@@ -204,6 +235,38 @@ const CandidateSchema = z.strictObject({
   end_byte: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), text_sha256: z.string().regex(/^[0-9a-f]{64}$/),
   score: z.number().finite().min(0),
 });
+export const DenseCandidateSchema = CandidateSchema.extend({
+  score: z.number().finite().min(0).max(2),
+  embedding_profile: z.literal('fake_embedding_1536_v1'),
+  score_direction: z.literal('lower_is_better'), score_kind: z.literal('cosine_distance'),
+});
+export type DenseCandidate = Readonly<z.infer<typeof DenseCandidateSchema>>;
+const candidate_identity = (candidate: LexicalCandidate): boolean =>
+  [candidate.tenant_id, candidate.collection, candidate.document_id, candidate.revision_id,
+    candidate.generation_id, candidate.chunk_id].every(value => Buffer.byteLength(value) <= 256
+      && /[^ \t\r\n\f\v]/.test(value) && !/[\0\uD800-\uDFFF]/u.test(value))
+  && Buffer.byteLength(candidate.collection) <= 128 && candidate.end_byte > candidate.start_byte;
+function dense_batch(input: unknown): EmbeddingBatch {
+  try {
+    if (!valid_native_json(input)) throw new InvalidRequest();
+    const batch = z.strictObject({ profile: z.strictObject({ profile_id: z.string(), provider: z.string(),
+      model: z.string(), dimensions: z.number().int().positive(), tokenizer: z.string(), normalization: z.string() }),
+      vectors: z.array(z.array(z.number().finite())), usage: z.unknown(), provider_calls: z.literal(1), synthetic: z.boolean(),
+    }).safeParse(input);
+    if (!batch.success) throw new InvalidRequest();
+    const parsed = EmbeddingBatchSchema.safeParse(batch.data);
+    if (!parsed.success) throw new InvalidRequest();
+    if (parsed.data.vectors.length !== 1 || parsed.data.synthetic !== (parsed.data.profile.provider === 'fake')) throw new InvalidRequest();
+    if (!isDeepStrictEqual(parsed.data.profile, FAKE_PROFILE)) throw new EmbeddingProfileMismatch();
+    if (parsed.data.vectors[0].length !== FAKE_PROFILE.dimensions) throw new EmbeddingProfileMismatch();
+    const norm = Math.sqrt(parsed.data.vectors[0].reduce((sum, value) => sum + value * value, 0));
+    if (!Number.isFinite(norm) || Math.abs(norm - 1) > 0.001) throw new InvalidRequest();
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof EmbeddingProfileMismatch) throw error;
+    throw new InvalidRequest();
+  }
+}
 export type LexicalCandidate = Readonly<z.infer<typeof CandidateSchema>>;
 export function compile_filters(filters: RetrievalRequest['required_filters'], start = 1): readonly [string, readonly unknown[]] {
   const values: unknown[] = [];
@@ -283,13 +346,16 @@ export class ScopedSession {
       return Object.freeze(rows.map(row => Object.freeze([row[0] as string, row[1] as string] as const)));
     } finally { this.busy = false; }
   }
-  async fetch_evidence(input: LexicalCandidate, options: { max_source_bytes: number }): Promise<SourceFetch> {
+  async fetch_evidence(input: LexicalCandidate | DenseCandidate, options: { max_source_bytes: number }): Promise<SourceFetch> {
     if (!this.active || this.busy || context.getStore() !== this.token) throw new InvalidRequest();
     if (!valid_native_json(input) || !valid_native_json(options)) throw new InvalidRequest();
     const budget = z.strictObject({ max_source_bytes: z.number().int().min(0).max(16777216) }).safeParse(options);
     if (!budget.success) throw new InvalidRequest();
     const maxSourceBytes = budget.data.max_source_bytes;
-    const parsed = CandidateSchema.safeParse(input);
+    const dense = input !== null && typeof input === 'object' && (Object.hasOwn(input, 'embedding_profile') || Object.hasOwn(input, 'score_direction') || Object.hasOwn(input, 'score_kind'));
+    const validated = (dense ? DenseCandidateSchema : CandidateSchema).safeParse(input);
+    const parsed = validated.success ? CandidateSchema.safeParse(Object.fromEntries(
+      Object.keys(CandidateSchema.shape).map(key => [key, validated.data[key as keyof typeof validated.data]]))) : validated;
     const identityValues = parsed.success ? [parsed.data.tenant_id, parsed.data.collection, parsed.data.document_id, parsed.data.revision_id, parsed.data.generation_id, parsed.data.chunk_id] : [];
     if (!parsed.success || parsed.data.end_byte <= parsed.data.start_byte || identityValues.some(value => value.length > 256 || !/[^ \t\r\n\f\v]/.test(value) || value.includes('\0') || /[\uD800-\uDFFF]/u.test(value) || Buffer.byteLength(value) > 256)
       || (parsed.success && Buffer.byteLength(parsed.data.collection) > 128)
@@ -305,6 +371,53 @@ export class ScopedSession {
       const result = verify_source(candidate, rows, maxSourceBytes);
       check_options(this.options);
       return result;
+    } finally { this.busy = false; }
+  }
+  async dense_candidates(input: EmbeddingBatch, options: { limit?: number } = {}): Promise<readonly DenseCandidate[]> {
+    if (!this.active || this.busy || context.getStore() !== this.token) throw new InvalidRequest();
+    const batch = dense_batch(input);
+    if (!valid_native_json(options)) throw new InvalidRequest();
+    const parsedOptions = z.strictObject({ limit: z.number().int().min(1).max(1000).default(100) }).safeParse(options);
+    if (!parsedOptions.success) throw new InvalidRequest();
+    const limit = Math.min(parsedOptions.data.limit, this.request.limits.max_candidates);
+    const vector = JSON.stringify(batch.vectors[0]);
+    check_options(this.options);
+    this.busy = true;
+    try {
+      // This module imports session constants; defer it until after module initialization.
+      const capability = await import('./vector-ingestion.js');
+      check_options(this.options);
+      if (!isDeepStrictEqual(await query(this.client, capability._VECTOR_CAPABILITY_SQL, undefined, this.options), [[true]])
+        || !isDeepStrictEqual(await query(this.client, capability._SETUP_HISTORY_SQL, undefined, this.options), capability.EXPECTED_VECTOR_HISTORY)
+        || !isDeepStrictEqual(await query(this.client, capability._PROFILE_SQL, undefined, this.options),
+          [[...Object.values(FAKE_PROFILE), 'chunk_vectors_fake_1536']])) throw new UnsupportedCapability();
+      const [predicate, parameters] = compile_filters(this.request.required_filters, 9);
+      const text = _DENSE_SQL.replace('{predicate}', predicate).replace('{limit}', `$${9 + parameters.length}`);
+      const rows = await query(this.client, text, [vector, FAKE_PROFILE.profile_id, this.scope.tenant_id,
+        this.request.collection, this.scope.authorization_revision, this.scope.authorization_revision,
+        this.scope.principal_id, [...this.scope.grant_ids], ...parameters, limit], this.options);
+      if (rows.length > limit) throw new IntegrityViolation();
+      const seen = new Set<string>();
+      const fields = Object.keys(CandidateSchema.shape);
+      const result = rows.map(row => {
+        if (row.length !== 12) throw new IntegrityViolation();
+        if (row[10] !== FAKE_PROFILE.profile_id || row[11] !== 'native_fts.v1') throw new UnsupportedCapability();
+        const values = row.slice(0, 10);
+        for (const index of [6, 7]) {
+          const value = values[index];
+          if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value) && Number.isSafeInteger(Number(value))) values[index] = Number(value);
+        }
+        const parsed = DenseCandidateSchema.safeParse({ ...Object.fromEntries(fields.map((field, index) => [field, values[index]])),
+          embedding_profile: row[10], score_direction: 'lower_is_better', score_kind: 'cosine_distance' });
+        if (!parsed.success || !candidate_identity(parsed.data) || parsed.data.tenant_id !== this.scope.tenant_id
+          || parsed.data.collection !== this.request.collection) throw new IntegrityViolation();
+        const identity = JSON.stringify(values.slice(0, 6));
+        if (seen.has(identity)) throw new IntegrityViolation();
+        seen.add(identity);
+        return Object.freeze(parsed.data);
+      });
+      check_options(this.options);
+      return Object.freeze(result);
     } finally { this.busy = false; }
   }
   async lexical_candidates(options: { limit?: number } = {}): Promise<readonly LexicalCandidate[]> {

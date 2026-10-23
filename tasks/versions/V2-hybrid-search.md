@@ -152,7 +152,7 @@ Learning example: if generation G2 has only two of three required vectors, G1 re
 
 ### V2-05: Scoped dense retrieval
 
-Dependency: V2-04. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.
+Dependency: V2-04. V2-05A-D acceptance is complete; [the report](../../evaluation/reports/V2/V2-05.md) records native, local and package evidence. The next task is V2-06.
 
 Build: Implement exact vector search first with the same authorization, active-generation and required-filter rules as lexical search.
 
@@ -163,6 +163,8 @@ Verification: Compare hand-built vectors against expected order and verify filte
 Learning exercise: Calculate a simple similarity ordering by hand.
 
 Expected areas: `Both dense adapters`, `vector fixtures`.
+
+Implementation slices: V2-05A Python scoped dense candidates; V2-05B native Node parity; V2-05C shared DN-r1 SQL/vector fixtures and serial checkpoint; V2-05D restricted native ranking/scope/source acceptance and final documentation. A/B consume the frozen [DN-r1 contract](../../contracts/DENSE_V2.md) and canonical query. Each slice keeps at most roughly five implementation/test paths; root serializes shared files and final acceptance. The parent stays incomplete until all children pass. V1 PostgresRetriever remains lexical until V2-07 orchestration; this task supplies internal dense adapters within the same read snapshot.
 
 ### V2-06: Identifier search and rank fusion
 

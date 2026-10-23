@@ -532,3 +532,26 @@ python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-04-final
 Run native checks before the final checkpoint: its frozen default Python installation removes optional drivers. Restore only the locked postgres extra when needed. Native fixtures require the accepted empty dedicated development target, verified TLS and private owner-only configuration outside Git. They use synthetic documents, temporary restricted roles/policies and at most two clients including the owner. Owner RPC actions are fixed fixture operations; no administrative credentials reach Node.
 
 The serial checkpoint adds vector SQL/setup/identity parity and guarded installed vector imports to the existing checks. Its fixture-definition count is a manifest check; executable unit and native tests establish the listed failure behavior. [Final V2-04 evidence](../evaluation/reports/V2/V2-04G.md) separates those results. Fake vectors validate mechanics, not semantic model quality. Dense search remains V2-05. Exercise: explain which pointer survives an incomplete G2 build and a delayed G2 publication after G3 wins.
+
+
+## V2-05 scoped exact dense adapter
+
+For example, a query vector along the first axis ranks the same direction before an orthogonal or opposite vector. The native scoped handle now adds dense_candidates with an E-r1 single-vector batch, returning cosine distance (smaller is better), exact profile identity and source keys. [DN-r1](../contracts/DENSE_V2.md) describes the input, scope and score contract. This is the internal candidate adapter for later fusion/orchestration; the public V1 PostgresRetriever remains lexical.
+
+Obtain and authorize the query embedding before opening the read transaction. The dense method calls no provider. It validates batch/profile/catalog, searches only the authorized active ready generations and applies required filters before distance ranking and LIMIT. Lexical and dense reads share the current repeatable-read snapshot. Fetch source in a fresh scoped transaction to enforce current grants/tombstones; authorized retained immutable source may be stale after publication. An invalid profile fails explicitly, and a missing vector capability cannot disable lexical-only reads.
+
+From the root, run one command at a time:
+
+```sh
+uv sync --project packages/python --frozen --extra postgres
+uv run --project packages/python --frozen --no-sync --extra postgres pytest packages/python/tests/test_dense.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/dense.test.mjs
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_dense_contract.py
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --dense --typescript
+python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-05-final
+```
+
+The explicit dense native fixture provisions only temporary restricted roles/policies and synthetic records on the accepted empty dedicated target. It reuses the optional profile/setup grants, holds at most two native clients including the owner, closes Python before Node and accepts only fixed local owner actions. No administrator credential reaches the child. Do native checks before the final frozen default checkpoint removes optional Python drivers; restore only the locked postgres extra if needed.
+
+The 15-stage serial checkpoint adds canonical SQL and seven shared mathematical reference cases. Those reference cases validate geometry and SQL parity; the native fixture executes the real ranking in both runtimes. Exact search scans the authorized filtered set and has no HNSW/IVFFlat index or measured large-corpus performance guarantee. Fake-vector ordering is not model-quality evidence. [V2-05 report](../evaluation/reports/V2/V2-05.md) records actual results and limitations. Exercise: with limit one, explain why a required document filter must run before choosing the closest vector.

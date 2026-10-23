@@ -67,7 +67,7 @@ def pgpass_field(value: str) -> str:
 
 
 async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False,
-                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False) -> dict:
+                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False, dense: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -80,6 +80,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
     from cragkit.contracts import parse_request, parse_scope
     from cragkit.errors import DeadlineExceeded, IndexNotReady, UnauthorizedScope, UnsupportedCapability
 
+    if dense:
+        vectors = True
     if vectors:
         ingestion = True
     config = parse_pool_config(load_config(config_path))
@@ -179,19 +181,23 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
             destination.write(':'.join(pgpass_field(value) for value in (config.host, str(config.port), config.dbname, role, password)) + '\n')
         runtime_config = config.model_copy(update={'user': role, 'passfile': passfile})
         if vectors:
-            from check_vectors import run as run_vectors
-            CURRENT_STAGE = 'vector_generations'
+            if dense:
+                from check_dense import run as run_vectors
+            else:
+                from check_vectors import run as run_vectors
+            CURRENT_STAGE = 'dense_retrieval' if dense else 'vector_generations'
             try:
                 return await run_vectors(runtime_config, {
                 'collection': collection,
                 'scopes': [dict(tenant_id=tenant, principal_id=principal,
                     authorization_revision='scope-rev', grant_ids=[])
                     for tenant,principal in zip(tenants,principals)],
-                }, admin, typescript=typescript, neon=neon, stage_only=vector_stage_only)
+                }, admin, typescript=typescript, neon=neon, **({} if dense else {'stage_only': vector_stage_only}))
             except Exception as error:
                 from check_vectors import VectorCheckError
-                if isinstance(error,VectorCheckError) and re.fullmatch(r'[a-z_]+',str(error)):
-                    raise RuntimeCheckError('vector_'+str(error)) from None
+                from check_dense import DenseCheckError
+                if isinstance(error,(VectorCheckError,DenseCheckError)) and re.fullmatch(r'[a-z_]+',str(error)):
+                    raise RuntimeCheckError(('dense_' if dense else 'vector_')+str(error)) from None
                 raise
         if ingestion:
             from check_ingestion import IngestionCheckError, run
@@ -545,9 +551,13 @@ def main() -> int:
     parser.add_argument('--results', action='store_true')
     parser.add_argument('--lifecycle', action='store_true')
     parser.add_argument('--vectors', action='store_true')
+    parser.add_argument('--dense', action='store_true')
     parser.add_argument('--vector-stage-only', action='store_true')
     parser.add_argument('--neon', action='store_true', help='Explicit direct Neon fixture mode with client TLS proof')
     args = parser.parse_args()
+    if args.dense and args.vector_stage_only:
+        print('Dense mode cannot select vector staging-only checks.')
+        return 2
     if args.vector_stage_only and not (args.vectors and args.typescript):
         print('Vector stage-only mode requires --vectors and --typescript.')
         return 2
@@ -556,7 +566,7 @@ def main() -> int:
         return 2
     try:
         async def bounded():
-            timeout = (600 if args.vectors else 600 if args.lifecycle else 420 if args.results else 300 if args.lexical
+            timeout = (600 if args.vectors or args.dense else 600 if args.lifecycle else 420 if args.results else 300 if args.lexical
                        else 180 if args.ingestion and args.typescript else 90)
             async with asyncio.timeout(timeout):
                 return await check(
@@ -564,7 +574,7 @@ def main() -> int:
                     typescript=args.typescript or args.lexical or args.results or args.lifecycle,
                     ingestion=args.ingestion or args.lexical or args.results or args.lifecycle,
                     lexical=args.lexical or args.results or args.lifecycle,
-                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors, vector_stage_only=args.vector_stage_only,
+                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors, vector_stage_only=args.vector_stage_only, dense=args.dense,
                 )
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:

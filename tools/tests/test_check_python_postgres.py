@@ -95,3 +95,21 @@ def test_fixture_does_not_wait_beyond_request_and_declared_cleanup_budgets():
                                              release_timeout=0.01)
         assert task.cancelled() and stopped.is_set()
     asyncio.run(run())
+
+
+def test_dense_cli_remains_explicit_and_rejects_staging_only_mode(monkeypatch, capsys):
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json', '--dense'])
+    check = AsyncMock(return_value={'state': 'passed'})
+    monkeypatch.setattr(PG, 'check', check)
+    assert PG.main() == 2
+    assert not check.called
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json',
+                                    '--allow-test-writes', '--dense', '--typescript'])
+    assert PG.main() == 0
+    assert check.call_args.kwargs['dense'] is True
+    assert check.call_args.kwargs['typescript'] is True
+    check.reset_mock()
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json',
+                                    '--allow-test-writes', '--dense', '--vector-stage-only', '--vectors', '--typescript'])
+    assert PG.main() == 2
+    assert not check.called
