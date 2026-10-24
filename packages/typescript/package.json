@@ -26,6 +26,10 @@
     "./embeddings": {
       "types": "./dist/embeddings.d.ts",
       "import": "./dist/embeddings.js"
+    },
+    "./reranking": {
+      "types": "./dist/reranking.d.ts",
+      "import": "./dist/reranking.js"
     }
   },
   "files": [

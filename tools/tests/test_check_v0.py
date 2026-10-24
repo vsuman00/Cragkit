@@ -33,8 +33,8 @@ def test_pipeline_runs_each_command_serially_with_owned_cwd_and_timeout(workspac
         running = False
         return SimpleNamespace(returncode=0)
     output = workspace / "artifacts with spaces"
-    assert CHECK.run_checks(workspace, output, runner) == 17
-    assert len(calls) == 17
+    assert CHECK.run_checks(workspace, output, runner) == 18
+    assert len(calls) == 18
     assert calls[0][0] == ["uv", "sync", "--project", "packages/python", "--frozen"]
     assert calls[1] == (["npm", "ci", "--ignore-scripts"], workspace / "packages/typescript")
     assert calls[-1][0][-2:] == ["--output-dir", str(output)]
@@ -46,6 +46,7 @@ def test_pipeline_runs_each_command_serially_with_owned_cwd_and_timeout(workspac
     assert any("tools/check_vector_contract.py" in command for command, _ in calls)
     assert any("tools/check_identifier_fusion.py" in command for command, _ in calls)
     assert any("tools/check_hybrid_contract.py" in command for command, _ in calls)
+    assert any("tools/check_reranking.py" in command for command, _ in calls)
 
 
 @pytest.mark.parametrize("failure", ["exit", "timeout", "missing-command"])

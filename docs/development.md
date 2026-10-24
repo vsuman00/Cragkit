@@ -605,3 +605,22 @@ The explicit hybrid native command includes the V2-08 development ablation: nine
 V2 exit also removes administrator configuration from the legacy Node child. The Python parent tests its existing administrator connection against the runtime guard; the child receives restricted configuration only. Reader/writer guards in both runtimes now reject direct/transitive membership in the five declared broad-data/server roles, regardless of INHERIT. No dangerous role is granted for testing. This is an explicit credential-handling fix, not an OS sandbox between processes running as the same user.
 
 The local checkpoint now has 17 serial stages, including public hybrid boundary and synthetic encoder parity. Native checks use a temporary restricted role, fixed local owner actions and at most two clients; run them before the default frozen checkpoint removes optional drivers. No live model or registry publication is part of this command. Optional exercise: explain why a failed SQL statement needs a savepoint rollback, then predict whether identifier fusion will rank the retry policy above a cache policy that also mentions `ERR-17`.
+
+
+## V3 bounded reranker checks
+
+The optional Python `cragkit.reranking` and Node `cragkit/reranking` modules expose the [RK-r2 boundary](../contracts/RERANKER_V3.md). They accept caller-owned asynchronous transports; no model, destination or credential is discovered at import. This adapter is not yet wired into PostgresRetriever. Real-model selection/comparison remains a V3-02 acceptance gate.
+
+Verified from the repository root:
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_reranking.py -q
+uv run --project packages/python --frozen --no-sync mypy packages/python/src/cragkit
+npm --prefix packages/typescript run typecheck
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/reranking.test.mjs
+uv run --project packages/python --frozen --no-sync python tools/check_reranking.py
+python3 tools/check_v0.py --artifacts-dir artifacts/V3/V3-02/final
+```
+
+Focused results: 26 Python tests and eight Node tests. The final checkpoint passed 18 stages, 870 Python/tool tests, 701 Node tests, 11 shared recorded adapter cases and four clean artifacts with three guarded installed import samples. Default installations imported the reranker modules without database/model extras or external I/O. These are native/synthetic checks; no real-model inference or relevance quality was evaluated. [Evidence and remaining gate](../evaluation/reports/V3/V3-02.md).

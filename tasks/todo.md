@@ -2,7 +2,7 @@
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). Next: V3-02 bounded reranking adapters. Registry publication, live-model quality and hosted CI evidence remain pending.
+V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). V3-02: native adapter checks passed; required real comparison awaits the owner’s model choice. V3 remains incomplete. Registry publication, live-model quality and hosted CI evidence remain pending.
 
 Use status notes when needed: READY, IN_PROGRESS, BLOCKED, IMPLEMENTED_UNVALIDATED, COMPLETE. Check a box only for COMPLETE and attach evidence. Public publication remains pending until actually authorized and verified.
 
@@ -166,7 +166,10 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V3-01: [Reranker contract and shortlist](versions/V3-evidence-quality.md#v3-01-reranker-contract-and-shortlist) — COMPLETE, documented RK-r1, local/API shortlist and recorded-example inspection; [evidence](../evaluation/reports/V3/V3-01.md).
 
-- [ ] V3-02: [Bounded reranking adapters](versions/V3-evidence-quality.md#v3-02-bounded-reranking-adapters) — evidence: pending.
+- [ ] V3-02: [Bounded reranking adapters](versions/V3-evidence-quality.md#v3-02-bounded-reranking-adapters) — IMPLEMENTED_UNVALIDATED for the parent: native adapter checks pass, required real-model comparison pending owner configuration; [evidence](../evaluation/reports/V3/V3-02.md).
+  - [x] V3-02A/B: native injectable adapters and focused failure checks.
+  - [x] V3-02C: shared 11-case parity, guarded installed imports and 18-stage regression checkpoint.
+  - [ ] V3-02D: owner-selected, configured real-model comparison; precedes dependent V3-03.
 
 - [ ] V3-03: [Tokenizer and renderer contract](versions/V3-evidence-quality.md#v3-03-tokenizer-and-renderer-contract) — evidence: pending.
 
@@ -752,3 +755,22 @@ State: COMPLETE for design and recorded compatibility, not runtime adapters. Cha
 Actual verification: serial Python/Node task-local recorded inspectors passed eleven matching mapping/order cases, plus three native nonfinite score rejections, UTF-8 prefix/source-preservation example and published MiniLM finite-score compatibility in each runtime. No product runtime regression/integration suite, model inference or quality evaluation ran for this design slice. Final documentation check passed 167 local Markdown links/anchors across seven artifacts, zero suspicious Unicode characters, low measured prose density and byte-identical deterministic cleanup; git diff --check passed. Commands/logs: artifacts/V3/V3-01/check_docs.py and docs.log.
 
 Resources: Python 3.14.6, Node v26.5.0, 39 GiB free disk; one check process, no installs/model downloads/provider calls/database/service/watchers. Real-model resource fit remains unmeasured. Protected runtime/schema/migration/lock/corpus/label files unchanged; both user audit reports remain untracked and excluded. Learning example/failure explanation delivered; practice pending. Next: V3-02A executable fake boundary and failure fixtures, then complementary runtime; live comparison remains a separate required V3-02 gate after explicit configuration, not satisfied by synthetic responses. Root commits accepted scope, pushes immediately and verifies synchronization.
+
+
+## V3 remaining-version assignments
+
+State: RUNNING, V3-02 first. User requested completion and full verification through V3-EXIT. Root owns shared contracts/fixtures, manifests/locks, docs/tracker/Git and final acceptance; protected historical inputs and unrelated reports preserved. Apply RK-r1, refined executable RK-r2 before consumers.
+
+- V3-02A `/root/v3_python`, gpt-6.1-sol, implementation/assembler: Python reranking.py and test_reranking.py.
+- V3-02B `/root/v3_node`, gpt-6.1-sol, implementation: Node reranking.ts and reranking.test.mjs.
+
+Shared outcome: bounded injectable adapters, complete raw-score mapping, stable ties, observable inference truncation, shared deadline/cancel and explicit visible fallback. Peers coordinate directly; no overlapping writes. Root serializes checks, owns contract freezes and dependent work. One local test process, no worker installs/models/providers/services/DB/Git. Real comparison configuration requested from user; routine fake work proceeds. Outcome/boundary/ownership escalation to root, unresolved material decisions to Astra. Child reports are input to root validation, not completion proof.
+
+
+## V3-02 session handoff
+
+State: IMPLEMENTED_UNVALIDATED parent; A/B/C verified locally. User requested full V3, but V3-02 requires a real comparison and V3-03 depends on V3-02. Owner model choice requested asynchronously (hosted Cohere or local MiniLM); answer/configuration still pending. Do not mark V3 complete or bypass dependent task gates. Next smallest action is configure and run V3-02D once that decision arrives.
+
+Changed: Python/Node reranking modules and tests, RK-r2 refinement, Node export, shared checker/helper/redaction test, serial pipeline/test, installed artifact import checker, development/CI/version docs, V3-02 report and tracker. Both peers transferred ownership; root integrated independent review deadline/input-bound fixes. Full final checks: 18 stages, 870 Python/tool and 701 Node tests, mypy21 source files, TypeScript typecheck/build, 11 complete result parity cases, unchanged schemas/seals, four clean artifacts/three guarded installed imports. Focused Python26/Node8; tool pipeline/redaction8 passed. No live model, source retrieval integration or real quality claim. Documentation checks passed: six reader-facing files, 220 local paths/anchors, zero suspicious Unicode, low measured prose density and unchanged deterministic cleanup; whitespace checks passed. No source/test edits after the final checkpoint.
+
+Resources: 39 GiB free disk, M4/16 GiB constraint, one test process, no new dependencies/models/providers/DB/services/watchers. All task test processes ended; artifact environments cleaned. Preserve both unrelated user audit reports and historical inputs. Learning example/failure explained; practice pending. Root commits only verified A/B/C scope, immediately pushes and verifies synchronization; parent and remaining V3 tasks stay unchecked.
