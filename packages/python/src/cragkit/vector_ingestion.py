@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable, cast
 from pydantic import ValidationError
 
 from . import ingestion as lexical
+from ._identifiers import extract_identifiers
 from ._postgres_pool import PoolResource
 from ._postgres_session import (EXPECTED_HISTORY, SessionConnection, _CATALOG_SQL, _COLLECTION_SQL,
                                 _HISTORY_SQL, _SCOPE_SQL, _check_deadline, _query)
@@ -368,7 +369,7 @@ class PostgresVectorIndexer:
         await query('INSERT INTO cragkit.document_revisions(tenant_id,collection_id,document_id,revision_id,source_sha256,source_locator,canonical_text,canonical_sha256,parser_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING RETURNING revision_id', (*key, r.revision_id, d.source_sha256, prepared.locator, d.canonical_text, d.canonical_sha256, d.parser_id))
         await query("INSERT INTO cragkit.index_generations(tenant_id,collection_id,document_id,revision_id,generation_id,chunker_profile,lexical_profile,embedding_profile,status,expected_chunk_count) VALUES (%s,%s,%s,%s,%s,%s,'native_fts.v1',%s,'staging',%s) RETURNING 1", (*key, r.revision_id, r.generation_id, d.chunker_profile, FAKE_PROFILE.profile_id, r.chunk_count))
         await query(lexical._CHUNKS_SQL, (*key, r.revision_id, r.generation_id, lexical._json(_chunk_rows(d))))
-        await query(lexical._LEXICAL_SQL, (*key, r.generation_id))
+        await query(lexical._LEXICAL_SQL, (*key, r.generation_id, lexical._json({chunk.chunk_id: extract_identifiers(chunk.text) for chunk in d.chunks})))
         await self._manifest(connection, prepared, deadline)
         return r
 

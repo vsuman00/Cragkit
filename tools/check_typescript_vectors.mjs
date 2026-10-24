@@ -31,7 +31,7 @@ async function run(config, fixture) {
   const scopes=fixture.scopes.map(parse_scope), shared=fixture.shared;
   const checks=[], state={calls:0,fail_at:null,wrong_model:false};
   const authorize=async(scope,collection,document)=>scopes.some(value=>JSON.stringify(value)===JSON.stringify(scope))
-    &&collection===fixture.collection&&['vector-shared','vector-node'].includes(document);
+    &&collection===fixture.collection&&['vector-shared','vector-node','node-identifier-lexical','node-identifier-vector'].includes(document);
   const transport=async(body, options)=>{
     state.calls++;
     const status=await resource.withLease({deadline:Math.min(options.deadline,now()+3)},async client=>client.getTransactionStatus());
@@ -69,6 +69,13 @@ async function run(config, fixture) {
   async function unchanged(expected,prior){requireCheck(await pointer()===expected,'failed_rebuild_pointer');requireCheck(JSON.stringify(normalized(await read()))===JSON.stringify(prior),'failed_rebuild_lexical');}
   try {
     await resource.open();
+    // IF-r1: prove both Node writers populate the existing exact-token array.
+    for(const [writer,document_id,intent_id] of [[lexical,'node-identifier-lexical','node-identifiers-lex'],[vector,'node-identifier-vector','node-identifiers-vec']]){
+      const receipt=await writer.ingest('ERR_CONN-42',options(intent_id,{document_id}));
+      const rows=await scoped('SELECT array_to_json(identifier_tokens) FROM cragkit.chunk_lexical WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4',[...key.slice(0,2),document_id,receipt.generation_id]);
+      requireCheck(rows.length===1&&JSON.stringify(rows[0][0])===JSON.stringify(['ERR_CONN-42']),'node_writer_identifier_tokens');
+    }
+    checks.push('node_lexical_and_vector_writers_store_exact_identifier_arrays');
     for(const privilege of ['CREATE','UPDATE']) {
       const beforeCalls=state.calls;
       await owner('unsafe_vector',true,privilege);

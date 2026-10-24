@@ -1,4 +1,5 @@
 /** Internal read-only scoped lifecycle and native lexical candidates. */
+import { validate_identifier } from './identifiers.js';
 import { z } from 'zod';
 import { isDeepStrictEqual } from 'node:util';
 import { EmbeddingBatchSchema, FAKE_PROFILE, type EmbeddingBatch } from './embeddings.js';
@@ -175,6 +176,26 @@ ORDER BY ts_rank_cd(l.search_vector,search.query) DESC,d.document_id COLLATE pg_
  g.revision_id COLLATE pg_catalog."C",c.ordinal,c.chunk_id COLLATE pg_catalog."C"
 LIMIT {limit}
 `;
+export const _IDENTIFIER_SQL = `
+SELECT d.tenant_id,d.collection_id,d.document_id,g.revision_id,g.generation_id,c.chunk_id,
+ c.start_byte,c.end_byte,c.text_sha256,1.0::double precision,g.lexical_profile,l.language_config
+FROM cragkit.documents d
+JOIN cragkit.index_generations g ON g.tenant_id=d.tenant_id AND g.collection_id=d.collection_id
+ AND g.document_id=d.document_id AND g.generation_id=d.active_generation_id
+JOIN cragkit.chunks c ON c.tenant_id=g.tenant_id AND c.collection_id=g.collection_id
+ AND c.document_id=g.document_id AND c.revision_id=g.revision_id AND c.generation_id=g.generation_id
+JOIN cragkit.chunk_lexical l ON l.tenant_id=c.tenant_id AND l.collection_id=c.collection_id
+ AND l.document_id=c.document_id AND l.revision_id=c.revision_id AND l.generation_id=c.generation_id AND l.chunk_id=c.chunk_id
+WHERE d.tenant_id=$1 AND d.collection_id=$2 AND NOT d.tombstoned
+ AND d.authorization_revision=$3 AND g.status='ready'
+ AND EXISTS(SELECT 1 FROM cragkit.document_grants x WHERE x.tenant_id=d.tenant_id AND x.collection_id=d.collection_id
+  AND x.document_id=d.document_id AND x.authorization_revision=$4
+  AND (x.principal_id=$5 OR (x.principal_id IS NULL AND x.grant_id=ANY($6::text[]))))
+ AND ({predicate}) AND l.identifier_tokens @> ARRAY[{identifier}]::cragkit.identity_text[]
+ORDER BY d.document_id COLLATE pg_catalog."C",
+ g.revision_id COLLATE pg_catalog."C",c.ordinal,c.chunk_id COLLATE pg_catalog."C"
+LIMIT {limit}
+`;
 export const _DENSE_SQL = `
 WITH query_vector AS (SELECT $1::cragkit_vector.vector(1536) AS embedding),
 eligible AS MATERIALIZED (
@@ -240,6 +261,11 @@ export const DenseCandidateSchema = CandidateSchema.extend({
   embedding_profile: z.literal('fake_embedding_1536_v1'),
   score_direction: z.literal('lower_is_better'), score_kind: z.literal('cosine_distance'),
 });
+export const IdentifierCandidateSchema = CandidateSchema.extend({
+  score: z.literal(1), score_kind: z.literal('exact_identifier'),
+  score_direction: z.literal('higher_is_better'), identifier_profile: z.literal('identifier_ascii_v1'),
+});
+export type IdentifierCandidate = Readonly<z.infer<typeof IdentifierCandidateSchema>>;
 export type DenseCandidate = Readonly<z.infer<typeof DenseCandidateSchema>>;
 const candidate_identity = (candidate: LexicalCandidate): boolean =>
   [candidate.tenant_id, candidate.collection, candidate.document_id, candidate.revision_id,
@@ -346,14 +372,15 @@ export class ScopedSession {
       return Object.freeze(rows.map(row => Object.freeze([row[0] as string, row[1] as string] as const)));
     } finally { this.busy = false; }
   }
-  async fetch_evidence(input: LexicalCandidate | DenseCandidate, options: { max_source_bytes: number }): Promise<SourceFetch> {
+  async fetch_evidence(input: LexicalCandidate | DenseCandidate | IdentifierCandidate, options: { max_source_bytes: number }): Promise<SourceFetch> {
     if (!this.active || this.busy || context.getStore() !== this.token) throw new InvalidRequest();
     if (!valid_native_json(input) || !valid_native_json(options)) throw new InvalidRequest();
     const budget = z.strictObject({ max_source_bytes: z.number().int().min(0).max(16777216) }).safeParse(options);
     if (!budget.success) throw new InvalidRequest();
     const maxSourceBytes = budget.data.max_source_bytes;
     const dense = input !== null && typeof input === 'object' && (Object.hasOwn(input, 'embedding_profile') || Object.hasOwn(input, 'score_direction') || Object.hasOwn(input, 'score_kind'));
-    const validated = (dense ? DenseCandidateSchema : CandidateSchema).safeParse(input);
+    const identifier = input !== null && typeof input === 'object' && Object.hasOwn(input, 'identifier_profile');
+    const validated = (identifier ? IdentifierCandidateSchema : dense ? DenseCandidateSchema : CandidateSchema).safeParse(input);
     const parsed = validated.success ? CandidateSchema.safeParse(Object.fromEntries(
       Object.keys(CandidateSchema.shape).map(key => [key, validated.data[key as keyof typeof validated.data]]))) : validated;
     const identityValues = parsed.success ? [parsed.data.tenant_id, parsed.data.collection, parsed.data.document_id, parsed.data.revision_id, parsed.data.generation_id, parsed.data.chunk_id] : [];
@@ -371,6 +398,44 @@ export class ScopedSession {
       const result = verify_source(candidate, rows, maxSourceBytes);
       check_options(this.options);
       return result;
+    } finally { this.busy = false; }
+  }
+  async identifier_candidates(input: string, options: { limit?: number } = {}): Promise<readonly IdentifierCandidate[]> {
+    if (!this.active || this.busy || context.getStore() !== this.token) throw new InvalidRequest();
+    const identifier = validate_identifier(input);
+    if (!valid_native_json(options)) throw new InvalidRequest();
+    const parsedOptions = z.strictObject({ limit: z.number().int().min(1).max(1000).default(100) }).safeParse(options);
+    if (!parsedOptions.success) throw new InvalidRequest();
+    const limit = Math.min(parsedOptions.data.limit, this.request.limits.max_candidates);
+    this.busy = true;
+    try {
+      const [predicate, parameters] = compile_filters(this.request.required_filters, 7);
+      const text = _IDENTIFIER_SQL.replace('{predicate}', predicate).replace('{identifier}', `$${7 + parameters.length}`).replace('{limit}', `$${8 + parameters.length}`);
+      const rows = await query(this.client, text, [this.scope.tenant_id, this.request.collection,
+        this.scope.authorization_revision, this.scope.authorization_revision, this.scope.principal_id,
+        [...this.scope.grant_ids], ...parameters, identifier, limit], this.options);
+      if (rows.length > limit) throw new IntegrityViolation();
+      const seen = new Set<string>();
+      const fields = Object.keys(CandidateSchema.shape);
+      const result = rows.map(row => {
+        if (row.length !== 12) throw new IntegrityViolation();
+        if (row[10] !== 'native_fts.v1' || row[11] !== 'pg_catalog.simple') throw new UnsupportedCapability();
+        const values = row.slice(0, 10);
+        for (const index of [6, 7]) {
+          const value = values[index];
+          if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value) && Number.isSafeInteger(Number(value))) values[index] = Number(value);
+        }
+        const parsed = IdentifierCandidateSchema.safeParse({ ...Object.fromEntries(fields.map((field, index) => [field, values[index]])),
+          score_kind: 'exact_identifier', score_direction: 'higher_is_better', identifier_profile: 'identifier_ascii_v1' });
+        if (!parsed.success || !candidate_identity(parsed.data) || parsed.data.tenant_id !== this.scope.tenant_id
+          || parsed.data.collection !== this.request.collection) throw new IntegrityViolation();
+        const identity = JSON.stringify(values.slice(0, 6));
+        if (seen.has(identity)) throw new IntegrityViolation();
+        seen.add(identity);
+        return Object.freeze(parsed.data);
+      });
+      check_options(this.options);
+      return Object.freeze(result);
     } finally { this.busy = false; }
   }
   async dense_candidates(input: EmbeddingBatch, options: { limit?: number } = {}): Promise<readonly DenseCandidate[]> {

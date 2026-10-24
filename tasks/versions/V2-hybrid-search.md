@@ -1,6 +1,6 @@
 # V2: Hybrid retrieval
 
-Status: V2-01 design decision complete: hosted opt-in OpenAI text-embedding-3-small, 1536 dimensions, with routine fake providers and live access disabled until separately configured. Metadata/synthetic interface evidence is distinct from unrun live verification. V2-02 Python embedding boundary has passed its local deterministic checks. V2-03 TypeScript embedding parity and V2-C1 have passed local deterministic/conformance/artifact checks. V2-04 vector generations/reindex is next; hybrid retrieval and live-provider validation remain unimplemented/unrun. Progress is tracked only in [todo.md](../todo.md).
+Status: V2-01 design decision complete: hosted opt-in OpenAI text-embedding-3-small, 1536 dimensions, with routine fake providers and live access disabled until separately configured. Metadata/synthetic interface evidence is distinct from unrun live verification. V2-02 Python embedding boundary has passed its local deterministic checks. V2-03 TypeScript embedding parity and V2-C1 have passed local deterministic/conformance/artifact checks. V2-04 vector generations/reindex and V2-05 dense candidates are complete; V2-06 identifier/fusion and V2-C2 are complete; acceptance is recorded in todo.md. Public hybrid orchestration and live-provider validation remain unimplemented/unrun. Progress is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
@@ -179,6 +179,8 @@ Verification: Use hand-calculated ranks, missing-list entries, tied scores and r
 Learning exercise: Compute RRF for three documents and vary the smoothing constant.
 
 Expected areas: `Shared ranking fixtures`, `both fusion modules`.
+
+IF-r1 child slices: V2-06A covers identifier extraction/storage then scoped selection/source in both runtimes; V2-06B covers pure native fusion; V2-06C covers shared parity and native scope/writer checks; V2-06D covers checkpoint acceptance and documentation. [Contract](../../contracts/IDENTIFIER_FUSION_V2.md), [report](../../evaluation/reports/V2/V2-06.md). Public orchestration remains V2-07.
 
 ### Checkpoint V2-C2
 

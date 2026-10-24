@@ -11,8 +11,9 @@ import json
 import math
 from typing import AsyncIterator, Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from ._identifiers import validate_identifier
 from ._postgres_filters import compile_filters
 from ._postgres_pool import PoolResource
 from ._postgres_source import SourceFetch, _SOURCE_SQL, verify_source
@@ -155,6 +156,28 @@ LIMIT %s
 """
 
 
+_IDENTIFIER_SQL = """
+
+SELECT d.tenant_id,d.collection_id,d.document_id,g.revision_id,g.generation_id,c.chunk_id,
+ c.start_byte,c.end_byte,c.text_sha256,1.0::double precision,g.lexical_profile,l.language_config
+FROM cragkit.documents d
+JOIN cragkit.index_generations g ON g.tenant_id=d.tenant_id AND g.collection_id=d.collection_id
+ AND g.document_id=d.document_id AND g.generation_id=d.active_generation_id
+JOIN cragkit.chunks c ON c.tenant_id=g.tenant_id AND c.collection_id=g.collection_id
+ AND c.document_id=g.document_id AND c.revision_id=g.revision_id AND c.generation_id=g.generation_id
+JOIN cragkit.chunk_lexical l ON l.tenant_id=c.tenant_id AND l.collection_id=c.collection_id
+ AND l.document_id=c.document_id AND l.revision_id=c.revision_id AND l.generation_id=c.generation_id AND l.chunk_id=c.chunk_id
+WHERE d.tenant_id=%s AND d.collection_id=%s AND NOT d.tombstoned
+ AND d.authorization_revision=%s AND g.status='ready'
+ AND EXISTS(SELECT 1 FROM cragkit.document_grants x WHERE x.tenant_id=d.tenant_id AND x.collection_id=d.collection_id
+  AND x.document_id=d.document_id AND x.authorization_revision=%s
+  AND (x.principal_id=%s OR (x.principal_id IS NULL AND x.grant_id=ANY(%s::text[]))))
+ AND ({predicate}) AND l.identifier_tokens @> ARRAY[%s]::cragkit.identity_text[]
+ORDER BY d.document_id COLLATE pg_catalog."C",
+ g.revision_id COLLATE pg_catalog."C",c.ordinal,c.chunk_id COLLATE pg_catalog."C"
+LIMIT %s
+"""
+
 _DENSE_SQL = """
 WITH query_vector AS (SELECT %s::cragkit_vector.vector(1536) AS embedding),
 eligible AS MATERIALIZED (
@@ -275,6 +298,20 @@ class DenseCandidate(LexicalCandidate):
     score_kind: Literal['cosine_distance'] = 'cosine_distance'
 
 
+class IdentifierCandidate(LexicalCandidate):
+    score: float = Field(default=1.0, ge=1, le=1, allow_inf_nan=False)
+    score_kind: Literal['exact_identifier'] = 'exact_identifier'
+    score_direction: Literal['higher_is_better'] = 'higher_is_better'
+    identifier_profile: Literal['identifier_ascii_v1'] = 'identifier_ascii_v1'
+
+    @field_validator('score', mode='before')
+    @classmethod
+    def exact_score(cls, value: object) -> object:
+        if type(value) not in (int, float) or value != 1:
+            raise ValueError('invalid exact identifier score')
+        return value
+
+
 class ScopedSession:
     """A task-bound read handle that expires when its transaction exits."""
 
@@ -330,6 +367,44 @@ class ScopedSession:
             if (candidate is None or candidate.tenant_id != self._scope.tenant_id
                     or candidate.collection != self._request.collection or candidate.end_byte <= candidate.start_byte):
                 raise IntegrityViolation()
+            candidates.append(candidate)
+        return tuple(candidates)
+
+
+    async def identifier_candidates(self, identifier: str, *, limit: int = 100) -> tuple[IdentifierCandidate, ...]:
+        if not self._active or asyncio.current_task() is not self._task:
+            raise InvalidRequest()
+        identifier = validate_identifier(identifier)
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise InvalidRequest()
+        effective_limit = min(limit, self._request.limits.max_candidates)
+        rows = await _query(self._connection, _IDENTIFIER_SQL.format(predicate=self._predicate), (
+            self._scope.tenant_id, self._request.collection, self._scope.authorization_revision,
+            self._scope.authorization_revision, self._scope.principal_id, list(self._scope.grant_ids),
+            *self._parameters, identifier, effective_limit,
+        ), self._deadline)
+        if len(rows) > effective_limit:
+            raise IntegrityViolation()
+        candidates = []
+        seen = set()
+        for row in rows:
+            if len(row) != 12:
+                raise IntegrityViolation()
+            if row[-2:] != ('native_fts.v1', 'pg_catalog.simple'):
+                raise UnsupportedCapability()
+            try:
+                candidate = IdentifierCandidate.model_validate(dict(zip(LexicalCandidate.model_fields, row[:-2], strict=True)))
+                identity = (candidate.tenant_id, candidate.collection, candidate.document_id,
+                            candidate.revision_id, candidate.generation_id, candidate.chunk_id)
+                if (candidate.tenant_id != self._scope.tenant_id or candidate.collection != self._request.collection
+                        or candidate.end_byte <= candidate.start_byte or identity in seen
+                        or any(not value.strip(' \t\r\n\f\v') or '\0' in value
+                               or len(value.encode('utf-8')) > (128 if index == 1 else 256)
+                               for index, value in enumerate(identity))):
+                    raise IntegrityViolation()
+                seen.add(identity)
+            except (ValidationError, ValueError, TypeError, UnicodeError):
+                raise IntegrityViolation() from None
             candidates.append(candidate)
         return tuple(candidates)
 
@@ -425,8 +500,9 @@ class ScopedSession:
             raise InvalidRequest()
         validated = None
         try:
-            if isinstance(candidate, DenseCandidate):
-                dense = DenseCandidate.model_validate(candidate.model_dump(mode='json'))
+            if isinstance(candidate, (DenseCandidate, IdentifierCandidate)):
+                model = IdentifierCandidate if isinstance(candidate, IdentifierCandidate) else DenseCandidate
+                dense = model.model_validate(candidate.model_dump(mode='json'))
                 validated = LexicalCandidate.model_validate({
                     field: getattr(dense, field) for field in LexicalCandidate.model_fields
                 })

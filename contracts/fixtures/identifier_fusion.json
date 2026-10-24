@@ -1,0 +1,997 @@
+{
+  "revision": "IF-r1",
+  "tolerance": 1e-12,
+  "extraction": [
+    {
+      "text": "ERR_CONN-42 ERR_CONN-42 err_conn-42 foo.bar std::vector C++ C# camelCase x1 HTTP hello",
+      "expected": [
+        "C#",
+        "C++",
+        "ERR_CONN-42",
+        "camelCase",
+        "err_conn-42",
+        "foo.bar",
+        "std::vector",
+        "x1"
+      ]
+    },
+    {
+      "text": "ordinary words HTTP 🙂 café 日本語",
+      "expected": []
+    },
+    {
+      "text": "x1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "expected": []
+    },
+    {
+      "text": "a/b-2 x_y z:42",
+      "expected": [
+        "a/b-2",
+        "x_y",
+        "z:42"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "three-docs-ranks-not-raw-scores",
+      "lists": [
+        {
+          "list_id": "dense",
+          "facet_id": "original",
+          "family": "dense",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 0.0,
+              "embedding_profile": "fake_embedding_1536_v1",
+              "score_direction": "lower_is_better",
+              "score_kind": "cosine_distance"
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0,
+              "embedding_profile": "fake_embedding_1536_v1",
+              "score_direction": "lower_is_better",
+              "score_kind": "cosine_distance"
+            }
+          ]
+        },
+        {
+          "list_id": "lexical",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 99999.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "c",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {
+        "k": 60
+      },
+      "expected": [
+        [
+          "b",
+          0.01626123744050767
+        ],
+        [
+          "a",
+          0.00819672131147541
+        ],
+        [
+          "c",
+          0.008064516129032258
+        ]
+      ]
+    },
+    {
+      "id": "duplicates-compact-ranks",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {
+        "k": 60
+      },
+      "expected": [
+        [
+          "a",
+          0.01639344262295082
+        ],
+        [
+          "b",
+          0.016129032258064516
+        ]
+      ]
+    },
+    {
+      "id": "empty-family-reserves-weight",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            }
+          ]
+        },
+        {
+          "list_id": "b",
+          "facet_id": "original",
+          "family": "dense",
+          "weight": 1.0,
+          "candidates": []
+        }
+      ],
+      "options": {
+        "k": 60
+      },
+      "expected": [
+        [
+          "a",
+          0.00819672131147541
+        ]
+      ]
+    },
+    {
+      "id": "canonical-ties",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "dense",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0,
+              "embedding_profile": "fake_embedding_1536_v1",
+              "score_direction": "lower_is_better",
+              "score_kind": "cosine_distance"
+            }
+          ]
+        },
+        {
+          "list_id": "b",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {
+        "k": 60
+      },
+      "expected": [
+        [
+          "a",
+          0.00819672131147541
+        ],
+        [
+          "b",
+          0.00819672131147541
+        ]
+      ]
+    },
+    {
+      "id": "repeated-family-best-rank",
+      "lists": [
+        {
+          "list_id": "z",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            }
+          ]
+        },
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            }
+          ]
+        },
+        {
+          "list_id": "b",
+          "facet_id": "original",
+          "family": "identifier",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0,
+              "identifier_profile": "identifier_ascii_v1",
+              "score_direction": "higher_is_better",
+              "score_kind": "exact_identifier"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "k": 60
+      },
+      "expected": [
+        [
+          "b",
+          0.01639344262295082
+        ],
+        [
+          "a",
+          0.00819672131147541
+        ]
+      ]
+    },
+    {
+      "id": "facets-normalized-separately",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "dense",
+          "weight": 3,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0,
+              "embedding_profile": "fake_embedding_1536_v1",
+              "score_direction": "lower_is_better",
+              "score_kind": "cosine_distance"
+            }
+          ]
+        },
+        {
+          "list_id": "b",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            }
+          ]
+        },
+        {
+          "list_id": "c",
+          "facet_id": "second",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {
+        "k": 60
+      },
+      "expected": [
+        [
+          "b",
+          0.020491803278688523
+        ],
+        [
+          "a",
+          0.012295081967213115
+        ]
+      ]
+    },
+    {
+      "id": "zero-smoothing",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "c",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {
+        "k": 0
+      },
+      "expected": [
+        [
+          "c",
+          1.0
+        ],
+        [
+          "a",
+          0.5
+        ],
+        [
+          "b",
+          0.3333333333333333
+        ]
+      ]
+    },
+    {
+      "id": "empty",
+      "lists": [],
+      "options": {
+        "k": 60
+      },
+      "expected": []
+    },
+    {
+      "id": "unicode-byte-order",
+      "lists": [
+        {
+          "list_id": "z",
+          "facet_id": "original",
+          "family": "dense",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "𐀀",
+              "score": 1.0,
+              "embedding_profile": "fake_embedding_1536_v1",
+              "score_direction": "lower_is_better",
+              "score_kind": "cosine_distance"
+            }
+          ]
+        },
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {
+        "k": 60
+      },
+      "expected": [
+        [
+          "",
+          0.00819672131147541
+        ],
+        [
+          "𐀀",
+          0.00819672131147541
+        ]
+      ]
+    },
+    {
+      "id": "subnormal-single-family-normalizes",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 5e-324,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {
+        "k": 60
+      },
+      "expected": [
+        [
+          "a",
+          0.01639344262295082
+        ],
+        [
+          "b",
+          0.016129032258064516
+        ]
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "id": "union-overflow",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {
+        "max_candidates": 1
+      },
+      "error": "invalid_request"
+    },
+    {
+      "id": "replayed-weight-change",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            }
+          ]
+        },
+        {
+          "list_id": "b",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 2.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {},
+      "error": "invalid_request"
+    },
+    {
+      "id": "immutable-conflict",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            }
+          ]
+        },
+        {
+          "list_id": "b",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "document_id": "a",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {},
+      "error": "integrity_violation"
+    },
+    {
+      "id": "list_id-newline",
+      "lists": [
+        {
+          "list_id": "a\n",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {},
+      "error": "invalid_request"
+    },
+    {
+      "id": "facet_id-newline",
+      "lists": [
+        {
+          "list_id": "a",
+          "facet_id": "original\n",
+          "family": "lexical",
+          "weight": 1.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 1.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {},
+      "error": "invalid_request"
+    },
+    {
+      "id": "positive-vote-underflow",
+      "lists": [
+        {
+          "list_id": "dense",
+          "facet_id": "original",
+          "family": "dense",
+          "weight": 5e-324,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "a",
+              "score": 0.0,
+              "embedding_profile": "fake_embedding_1536_v1",
+              "score_direction": "lower_is_better",
+              "score_kind": "cosine_distance"
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 1.0,
+              "embedding_profile": "fake_embedding_1536_v1",
+              "score_direction": "lower_is_better",
+              "score_kind": "cosine_distance"
+            }
+          ]
+        },
+        {
+          "list_id": "lexical",
+          "facet_id": "original",
+          "family": "lexical",
+          "weight": 1000000.0,
+          "candidates": [
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "b",
+              "score": 99999.0
+            },
+            {
+              "tenant_id": "tenant-a",
+              "collection": "manuals",
+              "revision_id": "rev-1",
+              "generation_id": "gen-1",
+              "chunk_id": "chunk-1",
+              "start_byte": 0,
+              "end_byte": 10,
+              "text_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "document_id": "c",
+              "score": 1.0
+            }
+          ]
+        }
+      ],
+      "options": {},
+      "error": "invalid_request"
+    }
+  ],
+  "native": {
+    "token": "ERR_CONN-42",
+    "suffix": " ERR_CONN-42 ERR_CONN-42 C++ camelCase",
+    "shadow_token": "SHADOW_42"
+  }
+}

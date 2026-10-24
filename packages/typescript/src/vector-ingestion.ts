@@ -1,4 +1,5 @@
 /** Explicit bounded shadow-vector staging; no import-time I/O. */
+import { extract_identifiers } from './identifiers.js';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
@@ -255,7 +256,7 @@ export class PostgresVectorIndexer {
     await q('INSERT INTO cragkit.document_revisions(tenant_id,collection_id,document_id,revision_id,source_sha256,source_locator,canonical_text,canonical_sha256,parser_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING revision_id', [...k, r.revision_id, d.source_sha256, p.locator, d.canonical_text, d.canonical_sha256, d.parser_id]);
     await q("INSERT INTO cragkit.index_generations(tenant_id,collection_id,document_id,revision_id,generation_id,chunker_profile,lexical_profile,embedding_profile,status,expected_chunk_count) VALUES ($1,$2,$3,$4,$5,$6,'native_fts.v1',$7,'staging',$8) RETURNING 1", [...k, r.revision_id, r.generation_id, d.chunker_profile, FAKE_PROFILE.profile_id, r.chunk_count]);
     await q(lexical._CHUNKS_SQL, [...k, r.revision_id, r.generation_id, JSON.stringify(chunk_rows(d))]);
-    await q(lexical._LEXICAL_SQL, [...k, r.generation_id]);
+    await q(lexical._LEXICAL_SQL, [...k, r.generation_id, JSON.stringify(Object.fromEntries(d.chunks.map(chunk => [chunk.chunk_id, extract_identifiers(chunk.text)])))]);
     await this.manifest(client, p, options);
     return r;
   }

@@ -555,3 +555,26 @@ python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-05-final
 The explicit dense native fixture provisions only temporary restricted roles/policies and synthetic records on the accepted empty dedicated target. It reuses the optional profile/setup grants, holds at most two native clients including the owner, closes Python before Node and accepts only fixed local owner actions. No administrator credential reaches the child. Do native checks before the final frozen default checkpoint removes optional Python drivers; restore only the locked postgres extra if needed.
 
 The 15-stage serial checkpoint adds canonical SQL and seven shared mathematical reference cases. Those reference cases validate geometry and SQL parity; the native fixture executes the real ranking in both runtimes. Exact search scans the authorized filtered set and has no HNSW/IVFFlat index or measured large-corpus performance guarantee. Fake-vector ordering is not model-quality evidence. [V2-05 report](../evaluation/reports/V2/V2-05.md) records actual results and limitations. Exercise: with limit one, explain why a required document filter must run before choosing the closest vector.
+
+## V2-06 exact identifiers and rank fusion
+
+For example, `ERR_CONN-42` is one exact, case-sensitive identifier even when FTS splits punctuation. The internal scoped handle adds `identifier_candidates`; both native ingestion paths populate the existing identifier array. [IF-r1](../contracts/IDENTIFIER_FUSION_V2.md) specifies the ASCII heuristic, strict query shape, scoped SQL and weighted reciprocal rank fusion. Old immutable generations are not backfilled: use a new ingestion intent to populate their tokens.
+
+Pure fusion uses distinct ranks, keeps raw scores as provenance, normalizes family weights per facet and retains each family's best rank across attempts. With equal dense/lexical weights, rank 1 in both lists scores `1/61`; rank 1 in only one scores `0.5/61`. Duplicate entries cannot add votes. A union above the declared global ceiling fails explicitly; V2-07 will budget branch fan-out before fusion. Positive votes that underflow to zero also fail. These are ranking values, not relevance probabilities.
+
+Run from the root, serially:
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_fusion.py packages/python/tests/test_postgres_identifiers.py tools/tests/test_check_identifier_fusion.py tools/tests/test_check_v0.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/fusion.test.mjs packages/typescript/tests/postgres-identifiers.test.mjs
+uv run --project packages/python --frozen --no-sync python tools/check_identifier_fusion.py
+uv sync --project packages/python --frozen --extra postgres
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --dense --typescript
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --vectors --typescript
+python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-06-final
+```
+
+The dense native fixture now includes actual identifier storage/search, scope and filters before limits, grant-only access, source revocation/tombstones, common snapshots and actual three-branch fusion arithmetic in both runtimes. The vector fixture separately asserts that Node lexical and vector writers populate exact arrays. They use only synthetic data, restricted temporary roles, fixed owner actions and at most two database clients; their Node children receive restricted configuration only. The base legacy fixture has a separate administrator-negative check design under security follow-up; do not generalize these children's credential boundary to every harness.
+
+The serial checkpoint has 16 stages, including actual extraction/fusion/provenance parity. Native checks run before its default frozen install removes optional Python drivers. [The V2-06 report](../evaluation/reports/V2/V2-06.md) records results and limitations. Public `PostgresRetriever` stays lexical until V2-07. Optional exercise: add a repeated family list to the three-document shared fixture and predict which ranks change without gaining an extra vote.

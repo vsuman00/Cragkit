@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict
 
+from ._identifiers import extract_identifiers
 from ._postgres_pool import PoolResource
 from ._postgres_session import (
     EXPECTED_HISTORY, SessionConnection, _CATALOG_SQL, _COLLECTION_SQL,
@@ -78,10 +79,14 @@ _CHUNKS_SQL = """INSERT INTO cragkit.chunks
 SELECT %s,%s,%s,%s,%s,x.chunk_id,x.ordinal,x.start_byte,x.end_byte,x.text,x.text_sha256,x.metadata
 FROM jsonb_to_recordset(%s::jsonb) AS x(chunk_id text,ordinal integer,start_byte bigint,end_byte bigint,
  text text,text_sha256 text,metadata jsonb) RETURNING 1"""
-_LEXICAL_SQL = """INSERT INTO cragkit.chunk_lexical
-(tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,language_config,search_vector)
-SELECT tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,'pg_catalog.simple',''::tsvector
-FROM cragkit.chunks WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s RETURNING 1"""
+_LEXICAL_SQL = """WITH selected AS (
+ SELECT * FROM cragkit.chunks WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s
+)
+INSERT INTO cragkit.chunk_lexical
+(tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,language_config,search_vector,identifier_tokens)
+SELECT tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,'pg_catalog.simple',''::tsvector,
+ ARRAY(SELECT jsonb_array_elements_text(%s::jsonb -> chunk_id))::cragkit.identity_text[]
+FROM selected RETURNING 1"""
 
 
 def _json(value: object) -> str:
@@ -366,7 +371,7 @@ class PostgresIndexer:
             'text_sha256': chunk.text_sha256, 'metadata': {'oversized_split': chunk.oversized_split,
             'token_count': chunk.token_count, 'tokenizer_id': document.tokenizer_id}} for chunk in document.chunks])
         await query(_CHUNKS_SQL, (*key, receipt.revision_id, receipt.generation_id, chunks_json))
-        await query(_LEXICAL_SQL, (*key, receipt.generation_id))
+        await query(_LEXICAL_SQL, (*key, receipt.generation_id, _json({chunk.chunk_id: extract_identifiers(chunk.text) for chunk in document.chunks})))
         if created:
             principal_grant = _hash(['cragkit.principal.v1', scope.principal_id])
             await query('INSERT INTO cragkit.document_grants(tenant_id,collection_id,document_id,grant_id,principal_id,authorization_revision) VALUES (%s,%s,%s,%s,%s,%s) RETURNING 1', (*key, principal_grant, scope.principal_id, scope.authorization_revision))

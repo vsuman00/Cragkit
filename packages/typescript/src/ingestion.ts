@@ -1,4 +1,5 @@
 /** Explicit native staged ingestion; no driver load or I/O at import. */
+import { extract_identifiers } from './identifiers.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { PoolResource, bounded, check_options, now, type LeaseOptions, type PgClient } from './postgres-pool.js';
@@ -28,7 +29,7 @@ export const _REVISION_SQL = "SELECT source_sha256,canonical_sha256,source_locat
 export const _GENERATION_SQL = "SELECT revision_id,status,expected_chunk_count FROM cragkit.index_generations\nWHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4";
 export const _COUNTS_SQL = "SELECT\n (SELECT count(*)::int FROM cragkit.chunks WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4),\n (SELECT count(*)::int FROM cragkit.chunk_lexical WHERE tenant_id=$5 AND collection_id=$6 AND document_id=$7 AND generation_id=$8)";
 export const _CHUNKS_SQL = "INSERT INTO cragkit.chunks\n(tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,ordinal,start_byte,end_byte,text,text_sha256,metadata)\nSELECT $1,$2,$3,$4,$5,x.chunk_id,x.ordinal,x.start_byte,x.end_byte,x.text,x.text_sha256,x.metadata\nFROM jsonb_to_recordset($6::jsonb) AS x(chunk_id text,ordinal integer,start_byte bigint,end_byte bigint,\n text text,text_sha256 text,metadata jsonb) RETURNING 1";
-export const _LEXICAL_SQL = "INSERT INTO cragkit.chunk_lexical\n(tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,language_config,search_vector)\nSELECT tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,'pg_catalog.simple',''::tsvector\nFROM cragkit.chunks WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4 RETURNING 1";
+export const _LEXICAL_SQL = "WITH selected AS (SELECT * FROM cragkit.chunks WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4) INSERT INTO cragkit.chunk_lexical (tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,language_config,search_vector,identifier_tokens) SELECT tenant_id,collection_id,document_id,revision_id,generation_id,chunk_id,'pg_catalog.simple',''::tsvector, ARRAY(SELECT jsonb_array_elements_text($5::jsonb -> chunk_id))::cragkit.identity_text[] FROM selected RETURNING 1";
 
 const digest = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 const hash = (value: unknown): string => digest(JSON.stringify(value));
@@ -245,7 +246,7 @@ export class PostgresIndexer {
       end_byte: chunk.end_byte, text: chunk.text, text_sha256: chunk.text_sha256,
       metadata: { oversized_split: chunk.oversized_split, token_count: chunk.token_count, tokenizer_id: document.tokenizer_id } }));
     await q(_CHUNKS_SQL, [...key, receipt.revision_id, receipt.generation_id, JSON.stringify(chunks)]);
-    await q(_LEXICAL_SQL, [...key, receipt.generation_id]);
+    await q(_LEXICAL_SQL, [...key, receipt.generation_id, JSON.stringify(Object.fromEntries(document.chunks.map(chunk => [chunk.chunk_id, extract_identifiers(chunk.text)])))]);
     if (created.length) await q('INSERT INTO cragkit.document_grants(tenant_id,collection_id,document_id,grant_id,principal_id,authorization_revision) VALUES ($1,$2,$3,$4,$5,$6) RETURNING 1', [...key, hash(['cragkit.principal.v1', scope.principal_id]), scope.principal_id, scope.authorization_revision]);
     await this.counts(client, key, receipt, options);
     if (hook) await bounded(Promise.resolve().then(hook), options);

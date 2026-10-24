@@ -22,6 +22,7 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
     from psycopg import sql
     from cragkit._postgres_pool import PoolResource
     from cragkit._postgres_session import PostgresSession
+    from cragkit._fusion import fuse
     from cragkit.contracts import parse_request, parse_scope
     from cragkit.embeddings import EmbeddingAdapter, EmbeddingBatch, EmbeddingUsage, FAKE_PROFILE
     from cragkit.errors import CragkitError, UnsupportedCapability
@@ -29,6 +30,10 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
     from cragkit.vector_ingestion import PostgresVectorIndexer
 
     shared = json.loads((Path(__file__).resolve().parents[1] / 'contracts/fixtures/dense.json').read_text())
+    identifier_fixture = json.loads((Path(__file__).resolve().parents[1] / 'contracts/fixtures/identifier_fusion.json').read_text())['native']
+    # Keep DN-r1 math fixtures immutable; add explicit IF-r1 synthetic identifiers only to this native run.
+    for item in shared['documents']:
+        item['source'] += identifier_fixture['suffix']
     scopes = [parse_scope(value) for value in fixture['scopes']]
     collection = fixture['collection']
     resource = PoolResource(config.model_copy(update={'max_size': 1}))
@@ -99,6 +104,42 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
             return await handle.dense_candidates(batch([1., 0.] if entry is None else entry['coordinates']),
                                                  limit=100 if entry is None else entry['limit'])
 
+    async def read_ids(*, scope=scopes[0], parsed=None, token=None, limit=100):
+        async with PostgresSession(resource).transaction(parsed or request(), scope=scope, deadline=loop.time()+12) as handle:
+            return await handle.identifier_candidates(identifier_fixture['token'] if token is None else token, limit=limit)
+
+    async def check_identifiers():
+        token = identifier_fixture['token']
+        identifiers = await read_ids()
+        require([item.document_id for item in identifiers] == ['dense-a', 'dense-b', 'dense-c', 'dense-d', 'legacy-only'], 'identifier_order_storage')
+        require(all(item.score == 1. and item.identifier_profile == 'identifier_ascii_v1' for item in identifiers), 'identifier_metadata')
+        require(not await read_ids(token=token.lower()), 'identifier_case_folded')
+        require([item.document_id for item in await read_ids(parsed=request(required_filters=[{'field': 'document_id', 'op': 'eq', 'value': 'dense-c'}]), limit=1)] == ['dense-c'], 'identifier_filter_before_limit')
+        require(len(await read_ids(parsed=request(limits={'max_candidates': 1}))) == 1, 'identifier_request_limit')
+        require(not await read_ids(scope=scopes[0].model_copy(update={'principal_id': 'denied'})), 'identifier_principal_leak')
+        grant_scope = scopes[0].model_copy(update={'principal_id': 'grant-only', 'grant_ids': ('dense-reader',)})
+        granted = await read_ids(scope=grant_scope)
+        require([item.document_id for item in granted] == ['dense-c'], 'identifier_grant_scope')
+        require((await read(scope=grant_scope, candidate=granted[0])).state == 'verified', 'identifier_grant_source')
+        wrong = grant_scope.model_copy(update={'grant_ids': ('wrong',)})
+        require(not await read_ids(scope=wrong), 'identifier_wrong_grant')
+        require((await read(scope=wrong, candidate=granted[0])).state == 'unavailable', 'identifier_wrong_grant_source')
+        other = await read_ids(scope=scopes[1])
+        require(len(other) == 1 and other[0].generation_id == receipts['other']['generation_id'], 'identifier_tenant_collision')
+        async with PostgresSession(resource).transaction(request(), scope=scopes[0], deadline=loop.time()+12) as handle:
+            branches = [('dense', await handle.dense_candidates(batch([1., 0.]))),
+                        ('lexical', await handle.lexical_candidates()),
+                        ('identifier', await handle.identifier_candidates(token))]
+            result = fuse([dict(list_id=family, facet_id='original', family=family, weight=1.,
+                                candidates=[item.model_dump(mode='json') for item in rows]) for family, rows in branches])
+            require(len(result) == 5 and all(item['candidate']['tenant_id'] == scopes[0].tenant_id for item in result), 'native_fusion_scope_union')
+            require(any(vote['family'] == 'identifier' for item in result for vote in item['contributions']), 'native_identifier_vote_missing')
+            for item in result:
+                expected = sum(1./3/(60+next(i+1 for i, row in enumerate(rows) if row.document_id == item['candidate']['document_id']))
+                               for _, rows in branches if any(row.document_id == item['candidate']['document_id'] for row in rows))
+                require(abs(item['score']-expected) <= 1e-12, 'native_fusion_arithmetic')
+        return identifiers[0]
+
     def normalized(candidates):
         return [(item.document_id, item.generation_id, item.chunk_id, item.score) for item in candidates]
 
@@ -117,16 +158,16 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
             result = await indexer.ingest(item['source'], collection=collection, document_id=item['document_id'],
                 intent_id='seed-'+item['document_id'], source_locator='synthetic:dense', scope=scopes[0], deadline=loop.time()+30)
             receipts[item['document_id']] = result.model_dump(mode='json')
-        other = await indexer.ingest('alpha other tenant', collection=collection, document_id='dense-a',
+        other = await indexer.ingest('alpha other tenant'+identifier_fixture['suffix'], collection=collection, document_id='dense-a',
             intent_id='seed-dense-a', source_locator='synthetic:dense', scope=scopes[1], deadline=loop.time()+30)
         receipts['other'] = other.model_dump(mode='json')
-        await PostgresIndexer(resource, authorize_write=allowed).ingest('alpha lexical only', collection=collection,
+        await PostgresIndexer(resource, authorize_write=allowed).ingest('alpha lexical only'+identifier_fixture['suffix'], collection=collection,
             document_id='legacy-only', intent_id='legacy-only', source_locator='synthetic:dense', scope=scopes[0], deadline=loop.time()+30)
-        shadow = await indexer.stage('alpha shadow replacement', collection=collection, document_id='dense-a',
+        shadow = await indexer.stage('alpha shadow replacement '+identifier_fixture['shadow_token'], collection=collection, document_id='dense-a',
             intent_id='dense-shadow', source_locator='synthetic:dense', scope=scopes[0], deadline=loop.time()+30,
             expected_generation_id=receipts['dense-a']['generation_id'])
         receipts['shadow'] = shadow.model_dump(mode='json')
-        unready = await indexer.stage('alpha unready vector', collection=collection, document_id='unready-only',
+        unready = await indexer.stage('alpha unready vector'+identifier_fixture['suffix'], collection=collection, document_id='unready-only',
             intent_id='unready-only', source_locator='synthetic:dense', scope=scopes[0], deadline=loop.time()+30)
         await command('UPDATE cragkit.documents SET active_generation_id=%s WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
                       (unready.generation_id, scopes[0].tenant_id, collection, 'unready-only'))
@@ -138,6 +179,8 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
         for entry in shared['cases']:
             assert_case(await read(entry), entry)
         checks.append('python_exact_distance_order_ties_filters_before_limit_and_staging_legacy_exclusion')
+        identifier_candidate = await check_identifiers()
+        checks.append('python_identifier_exact_storage_scope_filters_grants_source_and_native_fusion')
         require(len(await read(parsed=request(limits={'max_candidates': 1}))) == 1, 'request_candidate_limit')
         denied = scopes[0].model_copy(update={'principal_id': 'not-authorized'})
         require(not await read(scope=denied), 'same_tenant_principal_leak')
@@ -167,6 +210,8 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
             try:
                 require(all(item.document_id != 'dense-a' for item in await read()), 'denied_dense_candidate')
                 require((await read(candidate=candidate)).state == 'unavailable', 'denied_dense_source')
+                require(all(item.document_id != 'dense-a' for item in await read_ids()), 'denied_identifier_candidate')
+                require((await read(candidate=identifier_candidate)).state == 'unavailable', 'denied_identifier_source')
             finally:
                 await mutate(action, False)
         checks.append('python_dense_source_fidelity_and_revocation_tombstone_denial')
@@ -181,6 +226,7 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
                 raise DenseCheckError('unavailable_profile_accepted')
             async with PostgresSession(resource).transaction(request(), scope=scopes[0], deadline=loop.time()+12) as handle:
                 require(bool(await handle.lexical_candidates()), 'missing_profile_broke_lexical')
+                require(bool(await handle.identifier_candidates(identifier_fixture['token'])), 'missing_profile_broke_identifier')
         finally:
             await mutate('hide_profile', False)
         checks.append('python_missing_profile_typed_failure_keeps_lexical_available')
@@ -190,11 +236,16 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
             async with PostgresSession(resource).transaction(request(), scope=scopes[0], deadline=loop.time()+12) as handle:
                 before = await handle.dense_candidates(batch([1., 0.]))
                 lexical_before = await handle.lexical_candidates()
+                identifiers_before = await handle.identifier_candidates(identifier_fixture['token'])
                 require(bool(lexical_before), 'same_snapshot_lexical_empty')
                 await mutate('advance', True)
                 advanced = True
                 require(normalized(await handle.dense_candidates(batch([1., 0.]))) == normalized(before), 'dense_snapshot_changed')
                 require(normalized(await handle.lexical_candidates()) == normalized(lexical_before), 'lexical_snapshot_changed')
+                require(normalized(await handle.identifier_candidates(identifier_fixture['token'])) == normalized(identifiers_before), 'identifier_snapshot_changed')
+            historical_identifier = await read(candidate=identifiers_before[0])
+            require(historical_identifier.state == 'verified' and historical_identifier.stale and historical_identifier.evidence.text == shared['documents'][0]['source'], 'identifier_retained_source')
+            require(all(item.document_id != 'dense-a' for item in await read_ids()), 'identifier_new_generation_tokens')
             historical = await read(candidate=before[0])
             require(historical.state == 'verified' and historical.stale and historical.evidence.text == shared['documents'][0]['source'], 'dense_retained_source')
         finally:
@@ -204,7 +255,7 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
         stage = 'node'
         if typescript:
             await resource.close()
-            result = await run_node(config, dict(**fixture, shared=shared, receipts=receipts, neon=neon), mutate)
+            result = await run_node(config, dict(**fixture, shared=shared, receipts=receipts, neon=neon, identifier_fixture=identifier_fixture), mutate)
             checks.extend(result['checks'])
         return dict(state='passed', runtime='python_and_node' if typescript else 'python', checks=checks,
                     maximum_connections=2, cleanup_verified=True)

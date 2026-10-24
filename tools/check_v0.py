@@ -40,6 +40,7 @@ def pipeline(root: Path, artifacts_dir: Path) -> tuple[Step, ...]:
         Step("embedding-parity", uv + ("python", "tools/check_embeddings.py"), root, 60),
         Step("vector-generation-parity", uv + ("python", "tools/check_vector_contract.py"), root, 60),
         Step("dense-parity", uv + ("python", "tools/check_dense_contract.py"), root, 60),
+        Step("identifier-fusion-parity", uv + ("python", "tools/check_identifier_fusion.py"), root, 60),
         Step("development-corpus", (sys.executable, "tools/check_corpus.py", "--require-human-review"), root, 60),
         Step("sealed-input-integrity", (sys.executable, "tools/check_seal.py"), root, 60),
         Step("clean-package-artifacts", (sys.executable, "tools/check_artifacts.py", "--output-dir", str(artifacts_dir)), root, 600),
