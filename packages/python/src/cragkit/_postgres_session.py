@@ -9,7 +9,7 @@ import asyncio
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 import json
 import math
-from typing import AsyncIterator, Literal, Protocol, cast
+from typing import AsyncIterator, Awaitable, Callable, Literal, Protocol, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -67,7 +67,11 @@ SELECT current_user = session_user
  AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolcanlogin)
  AND NOT EXISTS (
    SELECT 1 FROM pg_roles r WHERE pg_has_role(current_user,r.oid,'MEMBER')
-     AND (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication)
+     AND (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication
+       -- MEMBER rejects direct/transitive membership even for NOINHERIT logins.
+       -- Exact broad-data and server file/program role denylist:
+       OR r.rolname IN ('pg_read_all_data','pg_write_all_data','pg_read_server_files',
+                        'pg_write_server_files','pg_execute_server_program'))
  ) AND NOT EXISTS (
    SELECT 1 FROM pg_namespace n WHERE n.nspname='cragkit'
      AND (pg_has_role(current_user,n.nspowner,'MEMBER')
@@ -312,6 +316,9 @@ class IdentifierCandidate(LexicalCandidate):
         return value
 
 
+_BranchResult = TypeVar("_BranchResult")
+
+
 class ScopedSession:
     """A task-bound read handle that expires when its transaction exits."""
 
@@ -325,6 +332,52 @@ class ScopedSession:
         self._parameters = parameters
         self._task = asyncio.current_task()
         self._active = True
+        self._branch_active = False
+        self._branch_broken = False
+
+    async def candidate_branch(self, operation: Callable[[], Awaitable[_BranchResult]]) -> _BranchResult:
+        """Isolate a trusted branch failure without replacing the outer snapshot."""
+        if (not self._active or self._branch_broken or self._branch_active
+                or asyncio.current_task() is not self._task or not callable(operation)):
+            raise InvalidRequest()
+        _check_deadline(self._deadline)
+        self._branch_active = True
+        async def command(sql: str) -> None:
+            failure = None
+            try:
+                async with asyncio.timeout(_remaining(self._deadline)):
+                    await self._connection.execute(sql)
+                _check_deadline(self._deadline)
+            except CragkitError:
+                self._branch_broken = True
+                self._active = False
+                raise
+            except TimeoutError:
+                self._branch_broken = True
+                self._active = False
+                raise DeadlineExceeded() from None
+            except Exception as error:
+                failure = _safe_error(error)
+            if failure is not None:
+                self._branch_broken = True
+                self._active = False
+                raise failure from None
+        try:
+            await command('SAVEPOINT cragkit_candidate_branch')
+            try:
+                result = await operation()
+            except BaseException:
+                try:
+                    await command('ROLLBACK TO SAVEPOINT cragkit_candidate_branch')
+                    await command('RELEASE SAVEPOINT cragkit_candidate_branch')
+                except BaseException:
+                    self._branch_broken = True
+                    raise
+                raise
+            await command('RELEASE SAVEPOINT cragkit_candidate_branch')
+            return result
+        finally:
+            self._branch_active = False
 
     async def visible_documents(self, *, limit: int = 100) -> tuple[tuple[str, str], ...]:
         if not self._active or asyncio.current_task() is not self._task:

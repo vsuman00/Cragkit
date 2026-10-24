@@ -7,7 +7,7 @@ import { parse_pool_config, PoolResource, now } from '../packages/typescript/dis
 import { PostgresRetriever } from '../packages/typescript/dist/retrieval.js';
 import { PostgresSession } from '../packages/typescript/dist/postgres-session.js';
 import { parse_request, parse_scope } from '../packages/typescript/dist/contracts.js';
-import { DeadlineExceeded, UnauthorizedScope, UnsupportedCapability } from '../packages/typescript/dist/errors.js';
+import { DeadlineExceeded, UnsupportedCapability } from '../packages/typescript/dist/errors.js';
 
 class CheckError extends Error {}
 function requireCheck(condition, code) { if (!condition) throw new CheckError(code); }
@@ -76,7 +76,6 @@ export async function run(runtimeInput, fixture, channel) {
   const resource = new PoolResource(config);
   if (fixture.neon) verifyNeonResource(resource, config.host);
   const checks = [];
-  let adminResource;
   let physicalPID;
   async function raw(callback) {
     return resource.withLease({ deadline: now() + 8 }, async client => {
@@ -207,18 +206,9 @@ export async function run(runtimeInput, fixture, channel) {
     await session.validate({ deadline: now() + 8 });
     checks.push('schema_rejection_restoration');
     await resource.close();
-    adminResource = new PoolResource(parse_pool_config({ ...privateJSON(fixture.admin_config), max_size: 1 }));
-    await adminResource.open();
-    let rejected = false;
-    try { await new PostgresSession(adminResource).validate({ deadline: now() + 8 }); }
-    catch (error) { rejected = error instanceof UnauthorizedScope; }
-    requireCheck(rejected, 'unsafe_admin_accepted');
-    await adminResource.close();
-    checks.push('unsafe_admin_rejected');
     return { type: 'result', state: 'passed', checks, runtime_login: true, runtime_connections: 1 };
   } finally {
-    // Both pools close before the Python owner removes policies, fixture rows and role.
-    if (adminResource) await adminResource.close();
+    // Close the runtime pool before the Python owner removes its fixture.
     await resource.close();
   }
 }

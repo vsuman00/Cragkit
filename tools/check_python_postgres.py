@@ -66,21 +66,39 @@ def pgpass_field(value: str) -> str:
     return value.replace('\\', '\\\\').replace(':', '\\:')
 
 
+async def require_parent_admin_role_rejected(connection, role_sql: str) -> None:
+    # Reuse the parent's administrator connection; never disclose it to a child.
+    cursor = await connection.execute(role_sql)
+    if await cursor.fetchall() != [(False,)]:
+        raise RuntimeCheckError('unsafe_administrator_accepted')
+
+
+def base_child_fixture(collection, tenants, principals, *, neon: bool) -> dict:
+    return {
+        'collection': collection,
+        'scopes': [dict(tenant_id=tenant, principal_id=principal,
+                       authorization_revision='scope-rev', grant_ids=[])
+                   for tenant, principal in zip(tenants, principals)],
+        'expected_documents': [[f'document-{index}', f'revision-{index}'] for index in range(2)],
+        'neon': neon,
+    }
+
+
 async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False,
-                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False, dense: bool = False) -> dict:
+                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False, dense: bool = False, hybrid: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
     import psycopg
     from psycopg import sql
     from cragkit._postgres_pool import PoolResource, parse_pool_config
-    from cragkit._postgres_session import PostgresSession
+    from cragkit._postgres_session import PostgresSession, _ROLE_SQL
     from cragkit.retrieval import PostgresRetriever
     from contextlib import asynccontextmanager
     from cragkit.contracts import parse_request, parse_scope
-    from cragkit.errors import DeadlineExceeded, IndexNotReady, UnauthorizedScope, UnsupportedCapability
+    from cragkit.errors import DeadlineExceeded, IndexNotReady, UnsupportedCapability
 
-    if dense:
+    if dense or hybrid:
         vectors = True
     if vectors:
         ingestion = True
@@ -181,23 +199,26 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
             destination.write(':'.join(pgpass_field(value) for value in (config.host, str(config.port), config.dbname, role, password)) + '\n')
         runtime_config = config.model_copy(update={'user': role, 'passfile': passfile})
         if vectors:
-            if dense:
+            if hybrid:
+                from check_hybrid import run as run_vectors
+            elif dense:
                 from check_dense import run as run_vectors
             else:
                 from check_vectors import run as run_vectors
-            CURRENT_STAGE = 'dense_retrieval' if dense else 'vector_generations'
+            CURRENT_STAGE = 'hybrid_evaluation' if hybrid else 'dense_retrieval' if dense else 'vector_generations'
             try:
                 return await run_vectors(runtime_config, {
                 'collection': collection,
                 'scopes': [dict(tenant_id=tenant, principal_id=principal,
                     authorization_revision='scope-rev', grant_ids=[])
                     for tenant,principal in zip(tenants,principals)],
-                }, admin, typescript=typescript, neon=neon, **({} if dense else {'stage_only': vector_stage_only}))
+                }, admin, typescript=typescript, neon=neon, **({} if dense or hybrid else {'stage_only': vector_stage_only}))
             except Exception as error:
                 from check_vectors import VectorCheckError
                 from check_dense import DenseCheckError
-                if isinstance(error,(VectorCheckError,DenseCheckError)) and re.fullmatch(r'[a-z_]+',str(error)):
-                    raise RuntimeCheckError(('dense_' if dense else 'vector_')+str(error)) from None
+                from check_hybrid import HybridCheckError
+                if isinstance(error,(VectorCheckError,DenseCheckError,HybridCheckError)) and re.fullmatch(r'[a-z_]+',str(error)):
+                    raise RuntimeCheckError(('hybrid_' if hybrid else 'dense_' if dense else 'vector_')+str(error)) from None
                 raise
         if ingestion:
             from check_ingestion import IngestionCheckError, run
@@ -214,19 +235,13 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 code = str(error) if re.fullmatch(r'[a-z_]{1,80}', str(error)) else 'check_failed'
                 raise RuntimeCheckError('ingestion_' + code) from None
             return {**result, 'runtime': 'python_and_node' if typescript else 'python', 'cleanup_verified': True, 'maximum_connections': 2}
+        await require_parent_admin_role_rejected(admin, _ROLE_SQL)
+        completed.append('parent_unsafe_administrator_role_rejected')
         if typescript:
             CURRENT_STAGE = 'typescript_runtime'
             fixture_path = Path(temporary.name) / 'fixture.json'
             runtime_path = Path(temporary.name) / 'runtime.json'
-            fixture = {
-                'collection': collection,
-                'scopes': [dict(tenant_id=tenant, principal_id=principal,
-                               authorization_revision='scope-rev', grant_ids=[])
-                           for tenant, principal in zip(tenants, principals)],
-                'expected_documents': [[f'document-{index}', f'revision-{index}'] for index in range(2)],
-                'admin_config': str(config_path.resolve()),
-                'neon': neon,
-            }
+            fixture = base_child_fixture(collection, tenants, principals, neon=neon)
             for path, value in ((fixture_path, fixture),
                                 (runtime_path, runtime_config.model_dump(mode='json'))):
                 descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -293,7 +308,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 if await node_process.wait() != 0 or result is None:
                     raise RuntimeCheckError('typescript_runtime_failed')
                 return {'state': 'passed', 'runtime': 'typescript', 'cleanup_verified': True,
-                        'maximum_connections': 2, 'checks': result.get('checks', [])}
+                        'maximum_connections': 2, 'checks': completed + result.get('checks', [])}
             finally:
                 if node_process.returncode is None:
                     node_process.kill()
@@ -373,18 +388,6 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                         raise RuntimeCheckError('scope_not_reset')
         await assert_reset()
         completed.append('body_rollback_and_reset')
-        class BorrowedAdmin:
-            async def getconn(self, timeout=None): return admin
-            async def putconn(self, connection): return None
-        unsafe = PoolResource(config, pool=BorrowedAdmin())
-        try:
-            await PostgresSession(unsafe).validate(deadline=loop.time() + 5)
-        except UnauthorizedScope:
-            pass
-        else:
-            raise RuntimeCheckError('unsafe_administrator_accepted')
-        await unsafe.close()
-        completed.append('unsafe_administrator_rejected')
 
         CURRENT_STAGE = 'deadline_cancellation'
         retriever = PostgresRetriever(runtime)
@@ -552,9 +555,13 @@ def main() -> int:
     parser.add_argument('--lifecycle', action='store_true')
     parser.add_argument('--vectors', action='store_true')
     parser.add_argument('--dense', action='store_true')
+    parser.add_argument('--hybrid', action='store_true')
     parser.add_argument('--vector-stage-only', action='store_true')
     parser.add_argument('--neon', action='store_true', help='Explicit direct Neon fixture mode with client TLS proof')
     args = parser.parse_args()
+    if args.hybrid and (args.dense or args.vector_stage_only):
+        print("Hybrid mode cannot select dense-only or staging-only checks.")
+        return 2
     if args.dense and args.vector_stage_only:
         print('Dense mode cannot select vector staging-only checks.')
         return 2
@@ -566,7 +573,7 @@ def main() -> int:
         return 2
     try:
         async def bounded():
-            timeout = (600 if args.vectors or args.dense else 600 if args.lifecycle else 420 if args.results else 300 if args.lexical
+            timeout = (600 if args.vectors or args.dense or args.hybrid else 600 if args.lifecycle else 420 if args.results else 300 if args.lexical
                        else 180 if args.ingestion and args.typescript else 90)
             async with asyncio.timeout(timeout):
                 return await check(
@@ -574,7 +581,7 @@ def main() -> int:
                     typescript=args.typescript or args.lexical or args.results or args.lifecycle,
                     ingestion=args.ingestion or args.lexical or args.results or args.lifecycle,
                     lexical=args.lexical or args.results or args.lifecycle,
-                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors, vector_stage_only=args.vector_stage_only, dense=args.dense,
+                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors, vector_stage_only=args.vector_stage_only, dense=args.dense, hybrid=args.hybrid,
                 )
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:

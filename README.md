@@ -1,8 +1,8 @@
 # Cragkit
 
-Cragkit is a native Python and TypeScript retrieval library in development. The consuming application owns identity, data, providers and final answers. The planned library returns source-linked evidence, coverage estimates, limitations and execution diagnostics.
+Cragkit is a native Python and TypeScript retrieval library in development. The consuming application owns identity, data, providers and final answers. The library returns source-linked evidence, limitations and execution diagnostics; coverage remains explicitly unknown until an assessor is implemented.
 
-V0 is complete locally and V1 is complete for the scoped native lexical library milestone, including final source authorization, cancellation and installed-artifact acceptance. See the [V1 evidence and limitations](evaluation/reports/V1/V1-10-12.md) and [current tracker](tasks/todo.md). Later hybrid, coverage-assessment and corrective capabilities remain planned. Package version `0.0.0` and the `cragkit` package names are provisional; registry publication, license selection and hosted CI evidence remain separate.
+V0 is complete locally and V1 is complete for the scoped native lexical library milestone, including final source authorization, cancellation and installed-artifact acceptance. See the [V1 evidence and limitations](evaluation/reports/V1/V1-10-12.md) and [current tracker](tasks/todo.md). V2 is complete for native dense/identifier retrieval, rank fusion, public hybrid orchestration and the declared synthetic development comparison. See [V2 exit evidence](evaluation/reports/V2/V2-07-08-exit.md) and [HY-r1 configuration](contracts/HYBRID_V2.md). Coverage assessment, reranking and corrective capabilities remain planned. Live model quality and production acceptance are unvalidated. Package version `0.0.0` and the `cragkit` package names are provisional; registry publication, license selection and hosted CI evidence remain separate.
 
 ## Run local checks
 

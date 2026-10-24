@@ -59,3 +59,7 @@ Public validation entrypoints: Python `cragkit.contracts` exports `parse_request
 Use the installed Pydantic strict APIs and Zod strict objects, checked against their current official documentation: [Pydantic strict mode](https://docs.pydantic.dev/latest/concepts/strict_mode/), [Pydantic model configuration](https://docs.pydantic.dev/latest/api/config/), [Zod schemas](https://zod.dev/api). Runtime support and dependency pins are in [development.md](../docs/development.md).
 
 Schema files describe structural constraints. Byte limits, finite/safe numbers, recursive bounds and cross-field invariants remain normative even where JSON Schema cannot express them fully. Schema conformance alone does not prove relevance, authorization or retrieval quality.
+
+## V2 optional PostgreSQL behavior
+
+The unchanged 0.1 wire schemas also carry explicitly degraded execution from the trusted [HY-r1 retrieval configuration](HYBRID_V2.md). [IF-r1](IDENTIFIER_FUSION_V2.md) governs exact identifiers and fusion; [DN-r1](DENSE_V2.md) governs dense candidates. Constructor configuration and these adapter contracts do not add agent-editable scope, permission or fallback fields to ToolRequest.

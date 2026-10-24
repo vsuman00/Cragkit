@@ -108,7 +108,11 @@ SELECT current_user = session_user
  AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolcanlogin)
  AND NOT EXISTS (
    SELECT 1 FROM pg_roles r WHERE pg_has_role(current_user,r.oid,'MEMBER')
-     AND (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication)
+     AND (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication
+       -- MEMBER rejects direct/transitive membership even for NOINHERIT logins.
+       -- Exact broad-data and server file/program role denylist:
+       OR r.rolname IN ('pg_read_all_data','pg_write_all_data','pg_read_server_files',
+                        'pg_write_server_files','pg_execute_server_program'))
  ) AND NOT EXISTS (
    SELECT 1 FROM pg_namespace n WHERE n.nspname='cragkit'
      AND (pg_has_role(current_user,n.nspowner,'MEMBER')
@@ -272,7 +276,7 @@ const candidate_identity = (candidate: LexicalCandidate): boolean =>
     candidate.generation_id, candidate.chunk_id].every(value => Buffer.byteLength(value) <= 256
       && /[^ \t\r\n\f\v]/.test(value) && !/[\0\uD800-\uDFFF]/u.test(value))
   && Buffer.byteLength(candidate.collection) <= 128 && candidate.end_byte > candidate.start_byte;
-function dense_batch(input: unknown): EmbeddingBatch {
+export function dense_batch(input: unknown): EmbeddingBatch {
   try {
     if (!valid_native_json(input)) throw new InvalidRequest();
     const batch = z.strictObject({ profile: z.strictObject({ profile_id: z.string(), provider: z.string(),
@@ -348,15 +352,39 @@ async function validate(client: PgClient, options: LeaseOptions): Promise<void> 
   const history = await query(client, _HISTORY_SQL, undefined, options);
   if (JSON.stringify(history) !== JSON.stringify(EXPECTED_HISTORY)) throw new UnsupportedCapability();
 }
+export class CandidateCleanupFailure extends ProviderUnavailable {}
 const context = new AsyncLocalStorage<symbol>();
 export class ScopedSession {
   private active = true;
   private busy = false;
+  private branching = false;
   constructor(private readonly client: PgClient, private readonly request: RetrievalRequest,
               private readonly scope: TrustedScope, private readonly options: LeaseOptions,
               private readonly predicate: string, private readonly parameters: readonly unknown[],
               private readonly token: symbol) {}
   invalidate(): void { this.active = false; }
+  async candidate_branch<T>(operation: () => Promise<T>): Promise<T> {
+    if (!this.active || this.busy || this.branching || context.getStore() !== this.token || typeof operation !== 'function') throw new InvalidRequest();
+    check_options(this.options);
+    this.branching = true;
+    const control = async (text: string): Promise<void> => {
+      try { await bounded(this.client.query({text, rowMode:'array'}), this.options); }
+      catch (error) { this.invalidate(); check_options(this.options); throw new CandidateCleanupFailure(); }
+    };
+    try {
+      await control('SAVEPOINT cragkit_candidate_branch');
+      let result: T;
+      try { result = await operation(); check_options(this.options); }
+      catch (error) {
+        await control('ROLLBACK TO SAVEPOINT cragkit_candidate_branch');
+        await control('RELEASE SAVEPOINT cragkit_candidate_branch');
+        throw error;
+      }
+      await control('RELEASE SAVEPOINT cragkit_candidate_branch');
+      return result;
+    } finally { this.branching = false; }
+  }
+
   async visible_documents(options: { limit?: number } = {}): Promise<readonly (readonly [string, string])[]> {
     if (!this.active || this.busy || context.getStore() !== this.token) throw new InvalidRequest();
     if (!options || typeof options !== 'object') throw new InvalidRequest();

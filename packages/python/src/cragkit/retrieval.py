@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 from pydantic import ValidationError
 
+from ._hybrid import profile_snapshot, select
+from .embeddings import EmbeddingAdapter
 from ._postgres_pool import PoolResource
 from ._postgres_session import PostgresSession, _check_deadline
 from .contracts import Evidence, RetrievalRequest, RetrievalResult, TrustedScope, parse_request, parse_scope
@@ -15,13 +18,25 @@ from .errors import ContextBudgetTooSmall, IntegrityViolation, InvalidRequest, U
 class PostgresRetriever:
     """Reuse caller-owned resources; do not infer semantic support from lexical hits."""
 
-    def __init__(self, resource: PoolResource) -> None:
+    def __init__(self, resource: PoolResource, *, mode: str = 'lexical',
+                 embedder: EmbeddingAdapter | None = None, allow_degraded: bool = False,
+                 identifiers: bool = True) -> None:
+        if (type(mode) is not str or mode not in ('lexical', 'dense', 'hybrid')
+                or type(allow_degraded) is not bool or type(identifiers) is not bool
+                or (mode == 'lexical' and (embedder is not None or allow_degraded))
+                or (mode != 'lexical' and not isinstance(embedder, EmbeddingAdapter))
+                or (mode == 'dense' and allow_degraded)):
+            raise InvalidRequest()
+        self._mode, self._embedder = mode, embedder
+        self._allow_degraded, self._identifiers = allow_degraded, identifiers
         self._session = PostgresSession(resource)
 
     async def retrieve(self, request: RetrievalRequest, *, scope: TrustedScope,
                        deadline: float) -> RetrievalResult:
         started = asyncio.get_running_loop().time()
         _check_deadline(deadline)
+        mode, embedder = self._mode, self._embedder
+        allow_degraded, identifiers = self._allow_degraded, self._identifiers
         if not isinstance(request, RetrievalRequest) or not isinstance(scope, TrustedScope):
             raise InvalidRequest()
         invalid = False
@@ -39,10 +54,20 @@ class PostgresRetriever:
             raise ContextBudgetTooSmall()
         deadline = min(deadline, started + request.limits.deadline_ms / 1000)
         _check_deadline(deadline)
+        profile = profile_snapshot(embedder) if embedder is not None else None
         capacity = min(262_144, 4 * (request.limits.max_context_tokens - output.envelope_reserve_tokens))
         candidate_limit = min(65, request.limits.max_candidates)
-        async with self._session.transaction(request, scope=scope, deadline=deadline) as handle:
-            candidates = await handle.lexical_candidates(limit=candidate_limit)
+        degraded = False
+        prompt_tokens: int | None = 0
+        stages: list[dict[str, Any]] = []
+        if mode == 'lexical':
+            async with self._session.transaction(request, scope=scope, deadline=deadline) as handle:
+                candidates = await handle.lexical_candidates(limit=candidate_limit)
+        else:
+            assert embedder is not None and profile is not None
+            candidates, degraded, prompt_tokens, stages = await select(
+                self._session, request, scope, deadline, mode=mode, embedder=embedder,
+                allow_degraded=allow_degraded, identifiers=identifiers, profile=profile)
         if len(candidates) > candidate_limit:
             raise IntegrityViolation()
         identities = [(item.tenant_id, item.collection, item.document_id, item.revision_id,
@@ -88,6 +113,8 @@ class PostgresRetriever:
                     evidence.append(item)
                     context = proposed
         limitations = [{'code': 'coverage_unknown'}]
+        if degraded:
+            limitations.append({'code': 'degraded_search'})
         if stale:
             limitations.append({'code': 'stale_evidence'})
         if truncated:
@@ -98,13 +125,17 @@ class PostgresRetriever:
         result = None
         try:
             result = RetrievalResult.model_validate({
+                'execution': 'degraded' if degraded else 'complete',
                 'request_id': request.request_id, 'status': 'partial' if evidence else 'insufficient',
                 'evidence': [item.model_dump(mode='json') for item in evidence], 'facets': [],
                 'context': context, 'limitations': limitations,
-                'usage': {'attempt_count': 1, 'provider_calls': 0, 'provider_input_tokens': 0,
+                'usage': {'attempt_count': 1, 'provider_calls': 0 if mode == 'lexical' else 1, 'provider_input_tokens': prompt_tokens,
+                          'stage_durations': stages,
                           'provider_output_tokens': 0, 'cost_usd': 0, 'cost_kind': 'known',
                           'context_counting': 'estimated', 'context_tokens': (len(context.encode('utf-8')) + 3) // 4},
-                'versions': {'index': 'native_fts.v1'},
+                'versions': {'index': 'native_fts.v1'} if mode == 'lexical' else {
+                    'model': 'fake_embedding_model_v1',
+                    'index': 'dense_fake.v1' if mode == 'dense' else 'hybrid_rrf.v1'},
             })
         except (ValidationError, TypeError, ValueError):
             pass

@@ -578,3 +578,30 @@ python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-06-final
 The dense native fixture now includes actual identifier storage/search, scope and filters before limits, grant-only access, source revocation/tombstones, common snapshots and actual three-branch fusion arithmetic in both runtimes. The vector fixture separately asserts that Node lexical and vector writers populate exact arrays. They use only synthetic data, restricted temporary roles, fixed owner actions and at most two database clients; their Node children receive restricted configuration only. The base legacy fixture has a separate administrator-negative check design under security follow-up; do not generalize these children's credential boundary to every harness.
 
 The serial checkpoint has 16 stages, including actual extraction/fusion/provenance parity. Native checks run before its default frozen install removes optional Python drivers. [The V2-06 report](../evaluation/reports/V2/V2-06.md) records results and limitations. Public `PostgresRetriever` stays lexical until V2-07. Optional exercise: add a repeated family list to the three-document shared fixture and predict which ranks change without gaining an extra vote.
+
+## V2-07 hybrid orchestration and V2-08 evaluation
+
+For example, a dense SQL failure raises by default. With trusted `allow_degraded=True` in Python or `allow_degraded: true` in Node, hybrid mode can roll back the failed branch to a savepoint, search the remaining branches in the same snapshot and return `execution: degraded`. An authorization error, deadline, corrupt source or broken savepoint remains fatal.
+
+The optional PostgreSQL `PostgresRetriever` now accepts trusted constructor configuration for `mode` (`lexical`, `dense`, `hybrid`), `embedder`, `allow_degraded` and `identifiers`. The default remains lexical. Dense/hybrid require a configured `EmbeddingAdapter` under the provisioned synthetic profile; no adapter is created implicitly. [HY-r1](../contracts/HYBRID_V2.md) defines validation, invocation accounting, branch budgets, diagnostics and source reauthorization. Node exports the `RetrieverOptions` type from `cragkit/postgres`. Call the existing retrieve method with a separately bound trusted scope and absolute deadline.
+
+Dense/hybrid reserve one embedding boundary invocation before a candidate lease. They run one original query/attempt, at most three serial branch families, at most 40 candidates per branch and a global ceiling of min(request limit,200). Tiny hybrid ceilings below the planned family count fail before provider/DB work. Budgets are divided before execution; failures cannot gain retries or expand the surviving branches. Only an explicitly enabled hybrid policy recovers `ProviderUnavailable`/`UnsupportedCapability` from individual branches or embedding. Source release always uses a fresh scoped transaction.
+
+Run the following from the repository root, one command at a time:
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_hybrid.py packages/python/tests/test_hybrid_savepoint.py packages/python/tests/test_role_guards.py tools/tests/test_v2_metrics.py tools/tests/test_check_hybrid_contract.py tools/tests/test_check_python_postgres.py tools/tests/test_check_v0.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/hybrid.test.mjs packages/typescript/tests/hybrid-savepoint.test.mjs packages/typescript/tests/role-guards.test.mjs
+uv run --project packages/python --frozen --no-sync python tools/check_hybrid_contract.py
+uv sync --project packages/python --frozen --extra postgres
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --hybrid --typescript
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --typescript
+python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-exit
+```
+
+The explicit hybrid native command includes the V2-08 development ablation: nine approved document revisions, six question IDs frozen in the shared fixture before measurement, three modes and 18 requests per runtime. It reads no held-out labels. Python and Node compare full results after timing normalization; the label-blind hash encoder is a synthetic mechanics baseline. Historical logical revision filters map to generated physical IDs without changing labels. Active-generation candidate search intentionally misses a historical-only target; the report retains that regression. [Evaluation protocol](../evaluation/protocol.md#v2-development-ablation) and [V2 exit report](../evaluation/reports/V2/V2-07-08-exit.md).
+
+V2 exit also removes administrator configuration from the legacy Node child. The Python parent tests its existing administrator connection against the runtime guard; the child receives restricted configuration only. Reader/writer guards in both runtimes now reject direct/transitive membership in the five declared broad-data/server roles, regardless of INHERIT. No dangerous role is granted for testing. This is an explicit credential-handling fix, not an OS sandbox between processes running as the same user.
+
+The local checkpoint now has 17 serial stages, including public hybrid boundary and synthetic encoder parity. Native checks use a temporary restricted role, fixed local owner actions and at most two clients; run them before the default frozen checkpoint removes optional drivers. No live model or registry publication is part of this command. Optional exercise: explain why a failed SQL statement needs a savepoint rollback, then predict whether identifier fusion will rank the retry policy above a cache policy that also mentions `ERR-17`.

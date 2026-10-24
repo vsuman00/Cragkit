@@ -113,3 +113,67 @@ def test_dense_cli_remains_explicit_and_rejects_staging_only_mode(monkeypatch, c
                                     '--allow-test-writes', '--dense', '--vector-stage-only', '--vectors', '--typescript'])
     assert PG.main() == 2
     assert not check.called
+
+
+def test_hybrid_cli_is_explicit_and_cannot_mix_staging_or_dense_modes(monkeypatch, capsys):
+    check = AsyncMock(return_value={'state':'passed'})
+    monkeypatch.setattr(PG,'check',check)
+    base=['check_python_postgres.py','--config','/unused/private.json','--hybrid']
+    monkeypatch.setattr(sys,'argv',base)
+    assert PG.main()==2 and not check.called
+    for extra in (['--dense'],['--vector-stage-only']):
+        monkeypatch.setattr(sys,'argv',[*base,'--allow-test-writes',*extra])
+        assert PG.main()==2 and not check.called
+    monkeypatch.setattr(sys,'argv',[*base,'--allow-test-writes','--typescript'])
+    assert PG.main()==0
+    assert check.call_args.kwargs['hybrid'] is True
+
+
+def test_base_child_fixture_contains_only_synthetic_scope_data():
+    import json
+    fixture = PG.base_child_fixture('synthetic', ['tenant-a', 'tenant-b'],
+                                    ['principal-a', 'principal-b'], neon=True)
+    serialized = json.dumps(fixture)
+    assert set(fixture) == {'collection', 'scopes', 'expected_documents', 'neon'}
+    assert 'admin' not in serialized
+    assert 'passfile' not in serialized
+    assert 'password' not in serialized
+    assert fixture['expected_documents'] == [['document-0', 'revision-0'],
+                                              ['document-1', 'revision-1']]
+
+
+def test_base_parent_serializes_allowlisted_fixture_and_child_never_reads_admin_config():
+    import inspect
+    parent = inspect.getsource(PG.check)
+    child = Path(PG.__file__).with_name('check_typescript_postgres.mjs').read_text()
+    assert 'fixture = base_child_fixture(collection, tenants, principals, neon=neon)' in parent
+    assert "'admin_config'" not in parent
+    assert 'adminResource' not in child
+    assert 'admin_config' not in child
+    assert 'unsafe_admin_rejected' not in child
+    assert 'parent_unsafe_administrator_role_rejected' in parent
+    assert "'checks': completed + result.get('checks', [])" in parent
+
+
+@pytest.mark.parametrize('result', [[(False,)], [(True,)], [], [(None,)], [(False,), (False,)]])
+def test_parent_admin_role_check_uses_existing_connection_and_requires_explicit_false(result):
+    connection = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(
+        fetchall=AsyncMock(return_value=result))))
+    if result == [(False,)]:
+        asyncio.run(PG.require_parent_admin_role_rejected(connection, 'synthetic role guard'))
+    else:
+        with pytest.raises(PG.RuntimeCheckError, match='unsafe_administrator_accepted'):
+            asyncio.run(PG.require_parent_admin_role_rejected(connection, 'synthetic role guard'))
+    connection.execute.assert_awaited_once_with('synthetic role guard')
+
+
+def test_parent_admin_guard_failure_is_reported_without_child_success(monkeypatch, capsys):
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json',
+                                    '--allow-test-writes', '--typescript'])
+    monkeypatch.setattr(PG, 'check', AsyncMock(
+        side_effect=PG.RuntimeCheckError('unsafe_administrator_accepted')))
+    assert PG.main() == 1
+    output = capsys.readouterr().out
+    assert 'unsafe_administrator_accepted' in output
+    assert 'unsafe_admin_rejected' not in output
+    assert '"state": "passed"' not in output

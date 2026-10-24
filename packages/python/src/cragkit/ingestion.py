@@ -44,7 +44,11 @@ SELECT current_user = session_user
  AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolcanlogin)
  AND NOT EXISTS (
    SELECT 1 FROM pg_roles r WHERE pg_has_role(current_user,r.oid,'MEMBER')
-     AND (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication)
+     AND (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication
+       -- MEMBER rejects direct/transitive membership even for NOINHERIT logins.
+       -- Exact broad-data and server file/program role denylist:
+       OR r.rolname IN ('pg_read_all_data','pg_write_all_data','pg_read_server_files',
+                        'pg_write_server_files','pg_execute_server_program'))
  ) AND NOT EXISTS (
    SELECT 1 FROM pg_namespace n WHERE n.nspname='cragkit'
      AND (pg_has_role(current_user,n.nspowner,'MEMBER') OR has_schema_privilege(current_user,n.oid,'CREATE'))

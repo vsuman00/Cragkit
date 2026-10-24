@@ -1,10 +1,10 @@
 # V2: Hybrid retrieval
 
-Status: V2-01 design decision complete: hosted opt-in OpenAI text-embedding-3-small, 1536 dimensions, with routine fake providers and live access disabled until separately configured. Metadata/synthetic interface evidence is distinct from unrun live verification. V2-02 Python embedding boundary has passed its local deterministic checks. V2-03 TypeScript embedding parity and V2-C1 have passed local deterministic/conformance/artifact checks. V2-04 vector generations/reindex and V2-05 dense candidates are complete; V2-06 identifier/fusion and V2-C2 are complete; acceptance is recorded in todo.md. Public hybrid orchestration and live-provider validation remain unimplemented/unrun. Progress is tracked only in [todo.md](../todo.md).
+Status: COMPLETE for the native/synthetic development milestone through V2-08, V2-C3 and V2-EXIT. Both public runtimes support bounded hybrid orchestration and explicit degraded execution. The frozen development comparison, regression investigation, security fixes and remaining live/production/publication limits are recorded in [the exit report](../../evaluation/reports/V2/V2-07-08-exit.md). The completion tracker is [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
-Direct Neon development target/security/native acceptance is complete under [DB-NEON-01](../../docs/neon-migration-plan.md); see [the evidence](../../evaluation/reports/V2/DB-NEON-01.md). Prior Supabase results are separate evidence; pooling and production remain unvalidated. V2-04 now records explicit pgvector setup, synthetic profile storage and native generation acceptance in the [final report](../../evaluation/reports/V2/V2-04G.md). Dense retrieval remains V2-05. Use the [Neon runbook](../../docs/neon.md) and tracker for actual host state.
+Direct Neon development target/security/native acceptance is complete under [DB-NEON-01](../../docs/neon-migration-plan.md); see [the evidence](../../evaluation/reports/V2/DB-NEON-01.md). Prior Supabase results are separate evidence; pooling and production remain unvalidated. V2-04 now records explicit pgvector setup, synthetic profile storage and native generation acceptance in the [final report](../../evaluation/reports/V2/V2-04G.md). Dense candidates, identifier/fusion and public hybrid orchestration are implemented; the exit report records their acceptance. Use the [Neon runbook](../../docs/neon.md) and tracker for actual host state.
 
 Both runtimes combine dense and lexical evidence under the same constraints and return reproducible rank-fusion fixtures.
 
@@ -12,7 +12,7 @@ Entry: V1 complete, including authorization and lifecycle tests.
 
 Architecture mapping: Architecture phase 2; sections 6-8, 12-13.
 
-Artifact goal: Local 0.2.0-alpha.1 candidate; no automatic publication.
+Artifact goal: Local 0.2.0-alpha.1 candidate label is tentative. Clean V2 artifacts are verified under the existing internal 0.0.0 package identity; milestone labels are not SemVer releases or automatic publication, as the master plan specifies.
 
 Follow the [master plan](../plan.md), [learning workflow](../LEARNING.md), and [edge-case inventory](../EDGE_CASES.md). Respect task dependency order and run one language suite at a time on the development machine. Independent authorized agent lanes follow [the coordination protocol](../../docs/agents/WORKFLOW.md); dependent work keeps one writer. A task has a target scope of 1-5 implementation/test files; if it expands beyond one focused session, split it into child tasks before proceeding. Paths below identify expected areas, not permission to rewrite entire directories.
 
@@ -199,6 +199,8 @@ Verification: Inject dense or lexical failure; verify no silent downgrade and no
 Learning exercise: Explain logical parallel branches versus physical DB execution.
 
 Expected areas: `Both retrieval orchestrators`, `branch-failure tests`.
+
+HY-r1 implementation slices A/B cover the two runtimes; C covers public/native parity, source/cancellation/failure checks and integration. [Contract](../../contracts/HYBRID_V2.md), [exit evidence](../../evaluation/reports/V2/V2-07-08-exit.md).
 
 ### V2-08: Hybrid evaluation and checkpoint
 

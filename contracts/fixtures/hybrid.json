@@ -1,0 +1,98 @@
+{
+  "revision": "HY-r1",
+  "evaluation": {
+    "question_ids": [
+      "q01",
+      "q03",
+      "q05",
+      "q08",
+      "q19",
+      "q20"
+    ],
+    "k": 5,
+    "max_candidates": 15,
+    "max_context_tokens": 20000,
+    "synthetic_encoder": "sha256-ascii-word-count.v1",
+    "selection": "frozen before metrics: current identifier, historical revision, absent answer, second tenant, conflict, required filter",
+    "modes": [
+      "lexical",
+      "dense",
+      "hybrid"
+    ]
+  },
+  "fault_cases": [
+    {
+      "id": "dense-default",
+      "family": "dense",
+      "allow_degraded": false,
+      "expected_error": "provider_unavailable"
+    },
+    {
+      "id": "dense-degraded",
+      "family": "dense",
+      "allow_degraded": true,
+      "expected_execution": "degraded"
+    },
+    {
+      "id": "lexical-default",
+      "family": "lexical",
+      "allow_degraded": false,
+      "expected_error": "provider_unavailable"
+    },
+    {
+      "id": "lexical-degraded",
+      "family": "lexical",
+      "allow_degraded": true,
+      "expected_execution": "degraded"
+    }
+  ],
+  "boundary_cases": [
+    {
+      "id": "hybrid-three-budget",
+      "mode": "hybrid",
+      "max_candidates": 8
+    },
+    {
+      "id": "dense-only",
+      "mode": "dense",
+      "max_candidates": 200
+    },
+    {
+      "id": "embedding-default-fatal",
+      "mode": "hybrid",
+      "max_candidates": 8,
+      "fail_embedding": true
+    },
+    {
+      "id": "embedding-explicit-degraded",
+      "mode": "hybrid",
+      "max_candidates": 8,
+      "fail_embedding": true,
+      "allow_degraded": true
+    },
+    {
+      "id": "lexical-default-fatal",
+      "mode": "hybrid",
+      "max_candidates": 8,
+      "fail_family": "lexical"
+    },
+    {
+      "id": "dense-explicit-degraded",
+      "mode": "hybrid",
+      "max_candidates": 8,
+      "fail_family": "dense",
+      "allow_degraded": true
+    },
+    {
+      "id": "cap-preflight",
+      "mode": "hybrid",
+      "max_candidates": 2
+    },
+    {
+      "id": "calls-preflight",
+      "mode": "hybrid",
+      "max_candidates": 8,
+      "max_provider_calls": 0
+    }
+  ]
+}

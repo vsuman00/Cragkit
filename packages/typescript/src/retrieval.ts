@@ -1,4 +1,5 @@
 /** Minimal lexical evidence assembly; coverage and model-token counts remain estimates. */
+import { configuration, select, profile_snapshot, type RetrieverOptions } from './hybrid.js';
 import { PoolResource, check_options, now, type LeaseOptions } from './postgres-pool.js';
 import { PostgresSession } from './postgres-session.js';
 import { parse_request, parse_scope, type RetrievalRequest, type TrustedScope } from './contracts.js';
@@ -7,7 +8,8 @@ import { deep_freeze } from './shared.js';
 import { ContextBudgetTooSmall, IntegrityViolation, UnsupportedCapability } from './errors.js';
 
 export class PostgresRetriever {
-  constructor(private readonly resource: PoolResource) {}
+  private readonly config: ReturnType<typeof configuration>;
+  constructor(private readonly resource: PoolResource, options: RetrieverOptions = {}) { this.config = configuration(options); }
   async retrieve(input: RetrievalRequest, options: LeaseOptions & {scope: TrustedScope}): Promise<RetrievalResult> {
     const started = now();
     check_options(options);
@@ -20,7 +22,8 @@ export class PostgresRetriever {
     const bound = {scope, deadline, signal:options.signal};
     check_options(bound);
     const session = new PostgresSession(this.resource);
-    const candidates = await session.transaction(request,bound,handle=>handle.lexical_candidates({limit:Math.min(65,request.limits.max_candidates)}));
+    const selection = this.config.mode === 'lexical' ? null : await select(session,request,bound,this.config,profile_snapshot(this.config.embedder!));
+    const candidates = selection?.candidates ?? await session.transaction(request,bound,handle=>handle.lexical_candidates({limit:Math.min(65,request.limits.max_candidates)}));
     if (candidates.length > Math.min(65,request.limits.max_candidates)) throw new IntegrityViolation();
     const candidateKeys = new Set<string>();
     for (const candidate of candidates) {
@@ -34,7 +37,7 @@ export class PostgresRetriever {
     let context = '';
     let sourceRemaining = 16777216;
     let stale = false;
-    let truncated = candidates.length > 64;
+    let truncated = selection?.truncated ?? candidates.length > 64;
     let exhausted = false;
     if (candidates.length) await session.transaction(request,bound,async handle=>{
       for (const candidate of candidates.slice(0,64)) {
@@ -57,16 +60,17 @@ export class PostgresRetriever {
       }
     });
     check_options(bound);
-    const limitations: {code:'coverage_unknown'|'stale_evidence'|'truncated_evidence'|'budget_exhausted'}[] = [{code:'coverage_unknown'}];
+    const limitations: {code:'coverage_unknown'|'stale_evidence'|'truncated_evidence'|'budget_exhausted'|'degraded_search'}[] = [{code:'coverage_unknown'}];
+    if (selection?.degraded) limitations.push({code:'degraded_search'});
     if (stale) limitations.push({code:'stale_evidence'});
     if (truncated) limitations.push({code:'truncated_evidence'});
     if (exhausted) limitations.push({code:'budget_exhausted'});
     let result: RetrievalResult;
-    try { result = parse_result({request_id:request.request_id,status:evidence.length?'partial':'insufficient',execution:'complete',
+    try { result = parse_result({request_id:request.request_id,status:evidence.length?'partial':'insufficient',execution:selection?.degraded?'degraded':'complete',
       evidence,facets:[],context,limitations,trace_id:null,
-      usage:{attempt_count:1,provider_calls:0,provider_input_tokens:0,provider_output_tokens:0,cost_usd:0,cost_kind:'known',
-        context_tokens:Math.ceil(Buffer.byteLength(context,'utf8')/4),context_counting:'estimated',stage_durations:[]},
-      versions:{engine:'0.0.0',policy:'unassessed.v0',model:null,tokenizer:null,index:'native_fts.v1'}}); } catch { throw new IntegrityViolation(); }
+      usage:{attempt_count:1,provider_calls:selection?1:0,provider_input_tokens:selection?selection.input_tokens:0,provider_output_tokens:0,cost_usd:0,cost_kind:'known',
+        context_tokens:Math.ceil(Buffer.byteLength(context,'utf8')/4),context_counting:'estimated',stage_durations:selection?.stages ?? []},
+      versions:{engine:'0.0.0',policy:'unassessed.v0',model:selection?'fake_embedding_model_v1':null,tokenizer:null,index:selection?(this.config.mode==='dense'?'dense_fake.v1':'hybrid_rrf.v1'):'native_fts.v1'}}); } catch { throw new IntegrityViolation(); }
     check_options(bound);
     return deep_freeze(result);
   }
