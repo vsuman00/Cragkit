@@ -1,0 +1,100 @@
+{
+  "billing_kind": "estimated_not_invoice",
+  "cumulative_requests": 4,
+  "earlier_authentication_failures": 2,
+  "estimated_successful_token_cost_usd": 1.72e-06,
+  "evidence_kind": "live_synthetic_sample",
+  "max_observed_difference": 3.00000000119649e-08,
+  "node": {
+    "admission_pair_upper_usd": 0.00393216,
+    "api_version": "2",
+    "billed_input_tokens": 43,
+    "http_status": 200,
+    "observed_ms": 485.957,
+    "order": [
+      "room-a",
+      "room-b",
+      "room-c"
+    ],
+    "processed_tokens": null,
+    "profile": {
+      "model": "rerank-v5.0-fast",
+      "model_revision": "mutable_alias:rerank-v5.0-fast",
+      "preprocessing_revision": "ascii_short_probe_v1",
+      "profile_id": "cohere_v5fast_probe_v1",
+      "provider": "cohere",
+      "score_direction": "higher_is_better",
+      "score_kind": "relevance_score",
+      "truncation_policy": "reject"
+    },
+    "provider_calls": 1,
+    "provider_truncation": "unknown",
+    "request_id_present": true,
+    "runtime": "node",
+    "scores": [
+      {
+        "candidate_id": "room-a",
+        "raw_score": 0.7686431
+      },
+      {
+        "candidate_id": "room-b",
+        "raw_score": 0.5748985
+      },
+      {
+        "candidate_id": "room-c",
+        "raw_score": 0.22015837
+      }
+    ],
+    "state": "passed",
+    "synthetic": false,
+    "weight_revision": "mutable_alias"
+  },
+  "python": {
+    "admission_pair_upper_usd": 0.00393216,
+    "api_version": "2",
+    "billed_input_tokens": 43,
+    "degraded": false,
+    "http_status": 200,
+    "observed_ms": 557.392,
+    "order": [
+      "room-a",
+      "room-b",
+      "room-c"
+    ],
+    "processed_tokens": null,
+    "profile": {
+      "model": "rerank-v5.0-fast",
+      "model_revision": "mutable_alias:rerank-v5.0-fast",
+      "preprocessing_revision": "ascii_short_probe_v1",
+      "profile_id": "cohere_v5fast_probe_v1",
+      "provider": "cohere",
+      "score_direction": "higher_is_better",
+      "score_kind": "relevance_score",
+      "truncation_policy": "reject"
+    },
+    "provider_calls": 1,
+    "provider_truncation": "unknown",
+    "request_id_present": true,
+    "runtime": "python",
+    "scores": [
+      {
+        "candidate_id": "room-a",
+        "raw_score": 0.7686431
+      },
+      {
+        "candidate_id": "room-b",
+        "raw_score": 0.5748985
+      },
+      {
+        "candidate_id": "room-c",
+        "raw_score": 0.2201584
+      }
+    ],
+    "state": "passed",
+    "synthetic": false,
+    "truncations": [],
+    "weight_revision": "mutable_alias"
+  },
+  "revision": "RK-r2",
+  "score_absolute_tolerance": 1e-06
+}

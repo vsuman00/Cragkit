@@ -624,3 +624,21 @@ python3 tools/check_v0.py --artifacts-dir artifacts/V3/V3-02/final
 ```
 
 Focused results: 26 Python tests and eight Node tests. The final checkpoint passed 18 stages, 870 Python/tool tests, 701 Node tests, 11 shared recorded adapter cases and four clean artifacts with three guarded installed import samples. Default installations imported the reranker modules without database/model extras or external I/O. These are native/synthetic checks; no real-model inference or relevance quality was evaluated. [Evidence and remaining gate](../evaluation/reports/V3/V3-02.md).
+
+
+## Cohere live probe and private credential entry
+
+For the selected hosted reranker, save a **Cohere** API key through the hidden prompt:
+
+```sh
+python3 tools/save_cohere_key.py
+```
+
+The helper atomically creates/replaces `$HOME/.config/cragkit/cohere/api-key` outside Git, with owner-only file permissions 0600 and directory 0700. Do not paste keys into chat, shell arguments, reports or fixtures. A key from OpenAI or another provider does not authenticate to Cohere. An invalid entry preserves the existing file; replacing the local file does not revoke a key at its provider.
+
+The explicitly opted-in Python and Node probe tools each permit one fixed-host verified-TLS request on the existing synthetic room sample, no retries and no private corpus. They reject unsafe key-file permissions. Root runs Python first, Node only after Python succeeds; do not run both automatically after an authentication failure. Each request caps input to three short ASCII passages and response to 65,536 bytes. The pair's dated price/context admission estimate is USD 0.00393216, below its USD 0.01 budget; that estimate is not observed billing. Live output preserves unknown processed-token/truncation behavior and mutable model identity. A parent 30-second subprocess limit was used for the actual Python attempt; socket timeouts alone are not a hard wall-clock guarantee.
+
+Two separately configured Python attempts returned 401; Node was not dispatched. The owner confirmed another provider’s key, and an offline check after the replacement confirmation still found an OpenAI-style key format. The saver and probes now reject recognizable OpenAI project/service keys before dispatch. The hidden prompt refuses echoed-input fallback. The owner retained Cohere; a valid key and successful comparison remain pending. [Attempt evidence](../evaluation/reports/V3/V3-02D-attempt.md). Never treat an authentication failure as a successful model evaluation.
+
+
+The later configured [Cohere comparison](../evaluation/reports/V3/V3-02D.md) passed in Python and Node, completing V3-02. Earlier failed attempts above remain historical evidence. No more model calls are needed for routine tests.
