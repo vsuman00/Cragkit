@@ -63,3 +63,8 @@ Schema files describe structural constraints. Byte limits, finite/safe numbers, 
 ## V2 optional PostgreSQL behavior
 
 The unchanged 0.1 wire schemas also carry explicitly degraded execution from the trusted [HY-r1 retrieval configuration](HYBRID_V2.md). [IF-r1](IDENTIFIER_FUSION_V2.md) governs exact identifiers and fusion; [DN-r1](DENSE_V2.md) governs dense candidates. Constructor configuration and these adapter contracts do not add agent-editable scope, permission or fallback fields to ToolRequest.
+
+
+## V3 reranker design boundary
+
+[RK-r1](RERANKER_V3.md) defines the next optional reranker boundary and its [recorded examples](fixtures/reranking.json). The [shortlist decision](../docs/decisions/0002-reranker-policy.md) separates synthetic mechanics from real-model evaluation. V3-01 documents this design; executable adapters and their failure tests belong to V3-02. No public wire-schema change follows from the design record.

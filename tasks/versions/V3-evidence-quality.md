@@ -1,6 +1,6 @@
 # V3: Evidence selection and honest coverage
 
-Status: planned, not implemented. Progress is tracked only in [todo.md](../todo.md).
+Status: in progress. V3-01 defines the reranker contract and shortlist; runtime adapters and later evidence-selection work remain pending. Progress is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
