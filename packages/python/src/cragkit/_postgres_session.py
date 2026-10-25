@@ -544,10 +544,11 @@ class ScopedSession:
         return tuple(candidates)
 
 
-    async def fetch_evidence(self, candidate: LexicalCandidate, *, max_source_bytes: int) -> SourceFetch:
+    async def fetch_evidence(self, candidate: LexicalCandidate, *, max_source_bytes: int,
+                             include_source: bool = False) -> SourceFetch:
         if not self._active or asyncio.current_task() is not self._task:
             raise InvalidRequest()
-        if type(max_source_bytes) is not int or not 0 <= max_source_bytes <= 16_777_216:
+        if type(include_source) is not bool or type(max_source_bytes) is not int or not 0 <= max_source_bytes <= 16_777_216:
             raise InvalidRequest()
         if not isinstance(candidate, LexicalCandidate):
             raise InvalidRequest()
@@ -583,7 +584,7 @@ class ScopedSession:
             self._scope.authorization_revision, self._scope.authorization_revision,
             self._scope.principal_id, list(self._scope.grant_ids), *self._parameters,
         ), self._deadline)
-        result = verify_source(candidate, rows, max_source_bytes)
+        result = verify_source(candidate, rows, max_source_bytes, include_source=include_source)
         _remaining(self._deadline)
         return result
 

@@ -119,6 +119,18 @@ async def run(config, fixture, admin):
         session = PostgresSession(resource)
         async with session.transaction(parse_request(request), scope=scopes[0], deadline=loop.time()+10) as handle:
             candidates = await handle.lexical_candidates(limit=1)
+        async with session.transaction(parse_request(request), scope=scopes[0], deadline=loop.time()+10) as handle:
+            captured = await handle.fetch_evidence(candidates[0], max_source_bytes=16777216, include_source=True)
+            snapshot = captured.source_snapshot()
+            require(snapshot['text'] == canonical.canonical_text
+                    and snapshot['source_sha256'] == canonical.canonical_sha256
+                    and 'text' not in captured.model_dump(), 'source_private_snapshot')
+        from cragkit.packing import pack_evidence
+        packed = await pack_evidence([captured.evidence], [snapshot], deadline=loop.time()+10,
+                                     max_tokens=1000, reserve=0)
+        require(packed['evidence'][0]['source_sha256'] == canonical.canonical_sha256,
+                'source_snapshot_exact_pack')
+        checks.append('python_opt_in_authorized_source_snapshot_and_exact_packing')
         denied_scope = parse_scope({**scopes[0].model_dump(mode='json'), 'principal_id': 'unauthorized-principal', 'grant_ids': []})
         async with session.transaction(parse_request(request), scope=denied_scope, deadline=loop.time()+10) as handle:
             denied = await handle.fetch_evidence(candidates[0], max_source_bytes=16777216)

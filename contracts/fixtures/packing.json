@@ -1,0 +1,627 @@
+{
+  "revision": "PK-r1",
+  "cases": [
+    {
+      "id": "utf8-overlap",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 10,
+          "text": "caf\u00e9 \ud83d\ude42",
+          "source_sha256": "1c3491fc099a392ea0575c42c2baae0a46dce12166522555c2927846259467e3",
+          "text_sha256": "b58cfd033d253fc874fd36ba8375290e5b9b473c0daf3c6b3856347dd88f3026"
+        },
+        {
+          "evidence_id": "b",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-b",
+          "source_locator": "fixture",
+          "start_byte": 6,
+          "end_byte": 19,
+          "text": "\ud83d\ude42 evidence",
+          "source_sha256": "1c3491fc099a392ea0575c42c2baae0a46dce12166522555c2927846259467e3",
+          "text_sha256": "31cfd9c8c0e7c86b7cadf2e726bfce91449cc28c49b20e816347e24de9ad7456"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "1c3491fc099a392ea0575c42c2baae0a46dce12166522555c2927846259467e3",
+          "text": "caf\u00e9 \ud83d\ude42 evidence"
+        }
+      ],
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "expected_texts": [
+        "caf\u00e9 \ud83d\ude42 evidence"
+      ]
+    },
+    {
+      "id": "disjoint",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 5,
+          "text": "first",
+          "source_sha256": "4362814e7c7db45c05dcb18c1d00a83ea0d752df3e244751e7ca497bd9c72c81",
+          "text_sha256": "a7937b64b8caa58f03721bb6bacf5c78cb235febe0e70b1b84cd99541461a08e"
+        },
+        {
+          "evidence_id": "b",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-b",
+          "source_locator": "fixture",
+          "start_byte": 14,
+          "end_byte": 18,
+          "text": "last",
+          "source_sha256": "4362814e7c7db45c05dcb18c1d00a83ea0d752df3e244751e7ca497bd9c72c81",
+          "text_sha256": "3547cb112ac4489af2310c0626cdba6f3097a2ad5a3b42ddd3b59c76c7a079a3"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "4362814e7c7db45c05dcb18c1d00a83ea0d752df3e244751e7ca497bd9c72c81",
+          "text": "first omitted last"
+        }
+      ],
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "expected_texts": [
+        "first",
+        "last"
+      ]
+    },
+    {
+      "id": "adjacent",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 2,
+          "text": "he",
+          "source_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+          "text_sha256": "372f7e2fd2d01ce2a1d71dc072acbba4c6fd25a1087cd7f153f4ec0ce37e1ede"
+        },
+        {
+          "evidence_id": "b",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-b",
+          "source_locator": "fixture",
+          "start_byte": 2,
+          "end_byte": 5,
+          "text": "llo",
+          "source_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+          "text_sha256": "13d896353557f29e6c8aac4bde65c743f4206df820ff8328ae567f924189d339"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+          "text": "hello"
+        }
+      ],
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "expected_texts": [
+        "hello"
+      ]
+    },
+    {
+      "id": "literal-source",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 8,
+          "text": "\ufeff\r\n\u0000  ",
+          "source_sha256": "1e7886d783ed97a9495aaed33c6814f96fbc3f697e68e14da6bf69a759f19415",
+          "text_sha256": "1e7886d783ed97a9495aaed33c6814f96fbc3f697e68e14da6bf69a759f19415"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "1e7886d783ed97a9495aaed33c6814f96fbc3f697e68e14da6bf69a759f19415",
+          "text": "\ufeff\r\n\u0000  "
+        }
+      ],
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "expected_texts": [
+        "\ufeff\r\n\u0000  "
+      ]
+    },
+    {
+      "id": "prototype-id",
+      "evidence": [
+        {
+          "evidence_id": "__proto__",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-__proto__",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 5,
+          "text": "hello",
+          "source_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+          "text_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+          "text": "hello"
+        }
+      ],
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "expected_texts": [
+        "hello"
+      ]
+    },
+    {
+      "id": "negation-code-expansion",
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "fd9db56314b86a030a294106fb5d7078dcad2c5858f22f485eca3a7da2e0578f",
+          "text": "Heading\n\nDo not delete.\n```py\nx = 1\n```\n\nTail"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 16,
+          "end_byte": 22,
+          "text": "delete",
+          "source_sha256": "fd9db56314b86a030a294106fb5d7078dcad2c5858f22f485eca3a7da2e0578f",
+          "text_sha256": "6197595503f01ee2a34e403fe08d2e1d9d0c14cf1cdfc2b74739895dc9a15a04"
+        }
+      ],
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 256
+      },
+      "expected_texts": [
+        "Do not delete.\n```py\nx = 1\n```"
+      ]
+    },
+    {
+      "id": "estimated-1",
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba",
+          "text": "\u00e9 \"quote\" <|endoftext|>"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 24,
+          "text": "\u00e9 \"quote\" <|endoftext|>",
+          "source_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba",
+          "text_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba"
+        }
+      ],
+      "options": {
+        "max_tokens": 1,
+        "reserve": 0,
+        "surrounding_bytes": 0,
+        "counting_mode": "estimated"
+      },
+      "expected_texts": []
+    },
+    {
+      "id": "estimated-1000",
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba",
+          "text": "\u00e9 \"quote\" <|endoftext|>"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 24,
+          "text": "\u00e9 \"quote\" <|endoftext|>",
+          "source_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba",
+          "text_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba"
+        }
+      ],
+      "options": {
+        "max_tokens": 1000,
+        "reserve": 0,
+        "surrounding_bytes": 0,
+        "counting_mode": "estimated"
+      },
+      "expected_texts": [
+        "\u00e9 \"quote\" <|endoftext|>"
+      ]
+    },
+    {
+      "id": "strict-1",
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba",
+          "text": "\u00e9 \"quote\" <|endoftext|>"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 24,
+          "text": "\u00e9 \"quote\" <|endoftext|>",
+          "source_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba",
+          "text_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba"
+        }
+      ],
+      "options": {
+        "max_tokens": 1,
+        "reserve": 0,
+        "surrounding_bytes": 0,
+        "counting_mode": "strict"
+      },
+      "expected_texts": []
+    },
+    {
+      "id": "strict-1000",
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba",
+          "text": "\u00e9 \"quote\" <|endoftext|>"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 24,
+          "text": "\u00e9 \"quote\" <|endoftext|>",
+          "source_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba",
+          "text_sha256": "b16c19a6423fe2da9b684310b2c2845d13f84e131ed22704b7a401995f5c0dba"
+        }
+      ],
+      "options": {
+        "max_tokens": 1000,
+        "reserve": 0,
+        "surrounding_bytes": 0,
+        "counting_mode": "strict"
+      },
+      "expected_texts": [
+        "\u00e9 \"quote\" <|endoftext|>"
+      ]
+    },
+    {
+      "id": "reject-missing",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 12,
+          "text": "exact source",
+          "source_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab",
+          "text_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab"
+        }
+      ],
+      "sources": [],
+      "options": {
+        "max_tokens": 1,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "expected_error": "integrity_violation"
+    },
+    {
+      "id": "reject-digest",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 12,
+          "text": "exact source",
+          "source_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab",
+          "text_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "text": "exact source"
+        }
+      ],
+      "options": {
+        "max_tokens": 1,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "expected_error": "integrity_violation"
+    },
+    {
+      "id": "reject-text",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 12,
+          "text": "exact source",
+          "source_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab",
+          "text_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab",
+          "text": "changed"
+        }
+      ],
+      "options": {
+        "max_tokens": 1,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "expected_error": "integrity_violation"
+    },
+    {
+      "id": "reject-facet",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 12,
+          "text": "exact source",
+          "source_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab",
+          "text_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab",
+          "text": "exact source"
+        }
+      ],
+      "options": {
+        "max_tokens": 1,
+        "reserve": 0,
+        "surrounding_bytes": 0,
+        "facet_evidence": [
+          [
+            "unknown"
+          ]
+        ]
+      },
+      "expected_error": "invalid_request"
+    },
+    {
+      "id": "reject-envelope",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "chunk-a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 12,
+          "text": "exact source",
+          "source_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab",
+          "text_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "da2df902a025f99567ef7d1e93839e9b5b2e5644d39e01d7231a227e2b0e52ab",
+          "text": "exact source"
+        }
+      ],
+      "options": {
+        "max_tokens": 1,
+        "reserve": 1,
+        "surrounding_bytes": 0
+      },
+      "expected_error": "context_budget_too_small"
+    },
+    {
+      "id": "blank-lines-code",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "a",
+          "source_locator": "fixture",
+          "start_byte": 20,
+          "end_byte": 25,
+          "text": "b = 2",
+          "source_sha256": "b3f4d78fa4bd377ce23239a9a6969925e15949446010bfcb52ee79a9889f2fba",
+          "text_sha256": "f74f51ca02a3709d12a81f18f276abaab20f5f50a0e8144cbf9d0004e4af3eda"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "b3f4d78fa4bd377ce23239a9a6969925e15949446010bfcb52ee79a9889f2fba",
+          "text": "Intro\n\n```py\na = 1\n\nb = 2\n```\n\nTail"
+        }
+      ],
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 256
+      },
+      "expected_texts": [
+        "```py\na = 1\n\nb = 2\n```"
+      ]
+    },
+    {
+      "id": "markdown-heading",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "a",
+          "source_locator": "fixture",
+          "start_byte": 20,
+          "end_byte": 26,
+          "text": "delete",
+          "source_sha256": "e8e64671ae360fcc52d020088a2d7c0a706648c78d966713fdf50b860b3a1607",
+          "text_sha256": "6197595503f01ee2a34e403fe08d2e1d9d0c14cf1cdfc2b74739895dc9a15a04"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "e8e64671ae360fcc52d020088a2d7c0a706648c78d966713fdf50b860b3a1607",
+          "text": "# Retention\n\nDo not delete logs.\n\nTail"
+        }
+      ],
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 256
+      },
+      "expected_texts": [
+        "# Retention\n\nDo not delete logs."
+      ]
+    }
+  ]
+}

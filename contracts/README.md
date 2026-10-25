@@ -73,3 +73,5 @@ The unchanged 0.1 wire schemas also carry explicitly degraded execution from the
 ## V3 context representation
 
 [TK-r1](TOKEN_CONTEXT_V3.md) defines the optional exact Evidence renderer and pinned local cl100k tokenizer pair. Strict context counting includes citations and the declared wrapper reserve; estimated mode remains labelled. This standalone boundary does not change the legacy PostgreSQL retrieval default.
+
+[PK-r1](PACKING_V3.md) defines bounded exact-source expansion/merging, whole-span selection, aliases and final context recounting. It requires caller-authorized immutable sources and does not infer coverage.

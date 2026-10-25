@@ -4,6 +4,13 @@ import type { LexicalCandidate } from './postgres-session.js';
 import { IntegrityViolation, InvalidRequest, UnsupportedCapability } from './errors.js';
 
 export type SourceFetch = Readonly<{ state: 'verified' | 'unavailable' | 'budget_exhausted'; evidence: Readonly<Evidence> | null; source_bytes: number; stale: boolean }>;
+const sourceTexts = new WeakMap<SourceFetch, string>();
+export function source_snapshot(value: SourceFetch): Readonly<{collection:string;document_id:string;revision_id:string;source_sha256:string;text:string}> {
+  const text = sourceTexts.get(value);
+  if (value.state !== 'verified' || !value.evidence || text === undefined) throw new UnsupportedCapability();
+  const e = value.evidence;
+  return Object.freeze({collection:e.collection,document_id:e.document_id,revision_id:e.revision_id,source_sha256:e.source_sha256,text});
+}
 const sha = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 const digest = /^[0-9a-f]{64}$/;
 const identity = (value: unknown): value is string => typeof value === 'string' && value.length <= 256 && !/[\uD800-\uDFFF\0]/u.test(value) && Buffer.byteLength(value) <= 256 && /[^ \t\r\n\f\v]/.test(value);
@@ -12,7 +19,8 @@ export function exact_integer(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new IntegrityViolation();
   return value;
 }
-export function verify_source(candidate: LexicalCandidate, rows: unknown[][], budget: number): SourceFetch {
+export function verify_source(candidate: LexicalCandidate, rows: unknown[][], budget: number, include_source = false): SourceFetch {
+  if (typeof include_source !== 'boolean') throw new InvalidRequest();
   if (!Number.isSafeInteger(budget) || budget < 0 || budget > 16777216) throw new InvalidRequest();
   if (!rows.length) return Object.freeze({ state: 'unavailable', evidence: null, source_bytes: 0, stale: false });
   if (rows.length !== 1 || rows[0].length !== 17) throw new IntegrityViolation();
@@ -38,5 +46,7 @@ export function verify_source(candidate: LexicalCandidate, rows: unknown[][], bu
   try { slice = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(raw.subarray(start,end)); } catch { throw new IntegrityViolation(); }
   if (slice !== excerpt) throw new IntegrityViolation();
   const evidence: Evidence = { evidence_id: sha(JSON.stringify(['cragkit.evidence.v1',candidate.tenant_id,candidate.collection,candidate.document_id,candidate.revision_id,candidate.chunk_id,String(start),String(end),row[13]])), collection: candidate.collection, document_id: candidate.document_id, revision_id: candidate.revision_id, chunk_id: candidate.chunk_id, source_locator: row[14], start_byte: start, end_byte: end, text: excerpt, source_sha256: row[6], text_sha256: row[13] };
-  return Object.freeze({ state:'verified', evidence:Object.freeze(evidence), source_bytes:size, stale:!row[16] });
+  const result: SourceFetch = Object.freeze({ state:'verified', evidence:Object.freeze(evidence), source_bytes:size, stale:!row[16] });
+  if (include_source) sourceTexts.set(result, text);
+  return result;
 }

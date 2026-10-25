@@ -70,7 +70,7 @@ def archive_files(path: Path) -> dict[str, bytes]:
 
 def inspect_wheel(path: Path) -> dict[str, bytes]:
     files = archive_files(path)
-    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py', 'cragkit/embeddings.py', 'cragkit/vector_ingestion.py', 'cragkit/reranking.py', 'cragkit/context.py'} <= files.keys(), 'wheel_missing_core')
+    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py', 'cragkit/embeddings.py', 'cragkit/vector_ingestion.py', 'cragkit/reranking.py', 'cragkit/context.py', 'cragkit/packing.py'} <= files.keys(), 'wheel_missing_core')
     names = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(names) == 1, 'wheel_metadata')
     metadata = email.parser.BytesParser().parsebytes(files[names[0]])
@@ -89,7 +89,7 @@ def inspect_npm(path: Path) -> dict[str, bytes]:
     package = json.loads(files['package/package.json'])
     require(package['name'] == 'cragkit' and package['version'] == '0.0.0' and package.get('private') is True, 'npm_identity')
     require(package.get('dependencies') == {'zod': '4.6.7'}, 'npm_core_dependencies')
-    for name in ('.', './contracts', './errors', './postgres', './embeddings', './reranking', './context'):
+    for name in ('.', './contracts', './errors', './postgres', './embeddings', './reranking', './context', './packing'):
         target = package.get('exports', {}).get(name, {})
         for kind, suffix in (('import', '.js'), ('types', '.d.ts')):
             value = target.get(kind)
@@ -125,7 +125,7 @@ def audit(event, args):
         raise RuntimeError('Import attempted external I/O')
 sys.addaudithook(audit)
 start = time.perf_counter()
-modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres', 'cragkit.embeddings', 'cragkit.reranking', 'cragkit.context')]
+modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres', 'cragkit.embeddings', 'cragkit.reranking', 'cragkit.context', 'cragkit.packing')]
 elapsed = time.perf_counter() - start
 assert modules[0].__version__ == '0.0.0'
 assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve()) for module in modules)
@@ -138,6 +138,7 @@ assert callable(modules[3].VectorIngestionReceipt)
 assert callable(modules[4].EmbeddingAdapter)
 assert callable(modules[5].RerankingAdapter)
 assert modules[6].count_context([], max_tokens=1000)["counting_mode"] == "estimated"
+assert callable(modules[7].pack_evidence)
 rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 print(json.dumps({'import_seconds': elapsed, 'peak_rss_bytes': rss if sys.platform == 'darwin' else rss * 1024,
  'platform': sys.platform, 'python': sys.version.split()[0],
@@ -162,7 +163,7 @@ for (const [object, names] of [[http,['request','get','createServer']],[https,['
 }
 syncBuiltinESMExports();
 const start = performance.now();
-const [core, contracts, errors, postgres, embeddings, reranking, context] = await Promise.all([import('cragkit'), import('cragkit/contracts'), import('cragkit/errors'), import('cragkit/postgres'), import('cragkit/embeddings'), import('cragkit/reranking'), import('cragkit/context')]);
+const [core, contracts, errors, postgres, embeddings, reranking, context, packing] = await Promise.all([import('cragkit'), import('cragkit/contracts'), import('cragkit/errors'), import('cragkit/postgres'), import('cragkit/embeddings'), import('cragkit/reranking'), import('cragkit/context'), import('cragkit/packing')]);
 const importSeconds = (performance.now()-start)/1000;
 assert.equal(core.version,'0.0.0');
 assert.equal(contracts.parse_result({request_id:'smoke',status:'insufficient'}).usage.cost_usd,null);
@@ -173,6 +174,7 @@ assert.equal(typeof postgres.PostgresVectorIndexer,'function');
 assert.equal(typeof embeddings.EmbeddingAdapter,'function');
 assert.equal(typeof reranking.RerankingAdapter,'function');
 assert.equal(context.count_context([],{max_tokens:1000}).counting_mode,'estimated');
+assert.equal(typeof packing.pack_evidence,'function');
 console.log(JSON.stringify({import_seconds:importSeconds,peak_rss_bytes:process.resourceUsage().maxRSS*1024,node:process.version}));
 '''
 

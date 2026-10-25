@@ -6,10 +6,10 @@ import json
 import re
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, PrivateAttr, ValidationError
 
 from .contracts import Evidence
-from .errors import IntegrityViolation, UnsupportedCapability
+from .errors import IntegrityViolation, InvalidRequest, UnsupportedCapability
 
 if TYPE_CHECKING:
     from ._postgres_session import LexicalCandidate
@@ -48,6 +48,14 @@ class SourceFetch(BaseModel):
     evidence: Evidence | None = None
     source_bytes: int = 0
     stale: bool = False
+    _canonical_text: str | None = PrivateAttr(default=None)
+
+    def source_snapshot(self) -> dict[str, str]:
+        if self.state != 'verified' or self.evidence is None or self._canonical_text is None:
+            raise UnsupportedCapability()
+        return {'collection': self.evidence.collection, 'document_id': self.evidence.document_id,
+                'revision_id': self.evidence.revision_id, 'source_sha256': self.evidence.source_sha256,
+                'text': self._canonical_text}
 
 
 def _integer(value: object, minimum: int, maximum: int) -> int:
@@ -72,7 +80,9 @@ def _text(value: object, maximum: int, *, nonblank: bool = False) -> str:
 
 
 def verify_source(candidate: LexicalCandidate, rows: list[tuple[object, ...]],
-                  max_source_bytes: int) -> SourceFetch:
+                  max_source_bytes: int, *, include_source: bool = False) -> SourceFetch:
+    if type(include_source) is not bool:
+        raise InvalidRequest()
     if not rows:
         return SourceFetch(state='unavailable')
     if len(rows) != 1 or len(rows[0]) != 17:
@@ -128,4 +138,7 @@ def verify_source(candidate: LexicalCandidate, rows: list[tuple[object, ...]],
         pass
     if evidence is None:
         raise IntegrityViolation()
-    return SourceFetch(state='verified', evidence=evidence, source_bytes=source_bytes, stale=not row[16])
+    result = SourceFetch(state='verified', evidence=evidence, source_bytes=source_bytes, stale=not row[16])
+    if include_source:
+        result._canonical_text = canonical
+    return result

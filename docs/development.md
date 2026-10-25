@@ -661,3 +661,17 @@ uv run --project packages/python --frozen python tools/check_context.py
 Python applications install the optional `tokenizers` extra and call `Cl100kCounter.from_file(path)`. Node applications supply optional `tiktoken@1.0.22`, call `await Cl100kCounter.create(path)` and close the counter after use. Both factories require the same verified local asset; imports never acquire it. The development lock includes these dependencies for regression checks, while default built installations omit them. No embedding model is installed.
 
 Strict mode counts `cragkit.context.v2` with cl100k; estimated mode reports the ceiling of UTF-8 bytes divided by four. The wrapper reserve is an allowance, not a measurement of an arbitrary downstream tool response. A too-small mandatory `[]` envelope raises `ContextBudgetTooSmall`.
+
+
+## V3 extractive packing
+
+The optional `cragkit.packing` / `cragkit/packing` module implements [PK-r1](../contracts/PACKING_V3.md). Supply authorized immutable source snapshots; the packer verifies exact bytes/digests, expands bounded structural context, merges overlaps and counts every final proposal with TK-r1. Disjoint excerpts remain separate array items. Facet selection hints do not establish semantic coverage.
+
+```sh
+uv run --project packages/python --frozen pytest packages/python/tests/test_packing.py packages/python/tests/test_source_snapshot.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/packing.test.mjs packages/typescript/tests/source-snapshot.test.mjs
+uv run --project packages/python --frozen python tools/check_packing.py
+```
+
+The existing native `--results --typescript` development fixture now also captures an explicitly opted-in verified source snapshot through each restricted runtime and packs it. Credentials remain in the private configuration; use the established Neon command with `--allow-test-writes` only on the dedicated development target. Default fetch serialization does not include full source text. A snapshot is not a durable permission grant: final retrieval release must reauthorize.

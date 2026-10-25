@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { createInterface } from 'node:readline';
 import { lstatSync, readFileSync } from 'node:fs';
 import { PoolResource, parse_pool_config, now } from '../packages/typescript/dist/postgres-pool.js';
+import { source_snapshot } from '../packages/typescript/dist/postgres-source.js';
+import { pack_evidence } from '../packages/typescript/dist/packing.js';
+import { createHash } from 'node:crypto';
 import { PostgresSession } from '../packages/typescript/dist/postgres-session.js';
 import { PostgresRetriever } from '../packages/typescript/dist/retrieval.js';
 import { parse_request, parse_scope } from '../packages/typescript/dist/contracts.js';
@@ -63,6 +66,18 @@ async function run(config, fixture) {
       }, handle => handle.fetch_evidence(fixture.source_candidate, { max_source_bytes: 16777216 }));
       requireCheck(source.state === 'unavailable' && source.evidence === null && source.source_bytes === 0,
         'source_node_direct_denial_failed');
+      const first = fixture.cases[0];
+      const captured = await new PostgresSession(resource).transaction(parse_request(first.request), {
+        scope: parse_scope(first.scope), deadline: now() + 20,
+      }, async handle => {
+        const candidates = await handle.lexical_candidates({limit:1});
+        return handle.fetch_evidence(candidates[0], {max_source_bytes:16777216, include_source:true});
+      });
+      const snapshot = source_snapshot(captured);
+      assert.equal(createHash('sha256').update(snapshot.text).digest('hex'), snapshot.source_sha256);
+      requireCheck(!JSON.stringify(captured).includes('canonical_text'), 'source_snapshot_serialization');
+      const packed = await pack_evidence([captured.evidence], [snapshot], {deadline:now()+10,max_tokens:1000,reserve:0});
+      assert.equal(packed.evidence[0].source_sha256, snapshot.source_sha256);
       for (const item of fixture.cases) {
         const result = await retriever.retrieve(parse_request(item.request), {
           scope: parse_scope(item.scope), deadline: now() + 20,

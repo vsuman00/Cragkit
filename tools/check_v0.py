@@ -45,6 +45,7 @@ def pipeline(root: Path, artifacts_dir: Path) -> tuple[Step, ...]:
         Step("hybrid-parity", uv + ("python", "tools/check_hybrid_contract.py"), root, 60),
         Step("reranking-parity", uv + ("python", "tools/check_reranking.py"), root, 60),
         Step("context-parity", uv + ("python", "tools/check_context.py"), root, 60),
+        Step("packing-parity", uv + ("python", "tools/check_packing.py"), root, 60),
         Step("development-corpus", (sys.executable, "tools/check_corpus.py", "--require-human-review"), root, 60),
         Step("sealed-input-integrity", (sys.executable, "tools/check_seal.py"), root, 60),
         Step("clean-package-artifacts", (sys.executable, "tools/check_artifacts.py", "--output-dir", str(artifacts_dir)), root, 600),

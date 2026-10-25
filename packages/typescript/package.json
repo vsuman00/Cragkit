@@ -34,6 +34,10 @@
     "./context": {
       "types": "./dist/context.d.ts",
       "import": "./dist/context.js"
+    },
+    "./packing": {
+      "types": "./dist/packing.d.ts",
+      "import": "./dist/packing.js"
     }
   },
   "files": [

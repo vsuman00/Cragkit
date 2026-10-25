@@ -400,10 +400,10 @@ export class ScopedSession {
       return Object.freeze(rows.map(row => Object.freeze([row[0] as string, row[1] as string] as const)));
     } finally { this.busy = false; }
   }
-  async fetch_evidence(input: LexicalCandidate | DenseCandidate | IdentifierCandidate, options: { max_source_bytes: number }): Promise<SourceFetch> {
+  async fetch_evidence(input: LexicalCandidate | DenseCandidate | IdentifierCandidate, options: { max_source_bytes: number; include_source?: boolean }): Promise<SourceFetch> {
     if (!this.active || this.busy || context.getStore() !== this.token) throw new InvalidRequest();
     if (!valid_native_json(input) || !valid_native_json(options)) throw new InvalidRequest();
-    const budget = z.strictObject({ max_source_bytes: z.number().int().min(0).max(16777216) }).safeParse(options);
+    const budget = z.strictObject({ max_source_bytes: z.number().int().min(0).max(16777216), include_source:z.boolean().optional() }).safeParse(options);
     if (!budget.success) throw new InvalidRequest();
     const maxSourceBytes = budget.data.max_source_bytes;
     const dense = input !== null && typeof input === 'object' && (Object.hasOwn(input, 'embedding_profile') || Object.hasOwn(input, 'score_direction') || Object.hasOwn(input, 'score_kind'));
@@ -423,7 +423,7 @@ export class ScopedSession {
       const rows = await query(this.client, _SOURCE_SQL.replace('{predicate}', predicate), [maxSourceBytes,
         candidate.tenant_id,candidate.collection,candidate.document_id,candidate.revision_id,candidate.generation_id,candidate.chunk_id,
         this.scope.tenant_id,this.request.collection,this.scope.authorization_revision,this.scope.authorization_revision,this.scope.principal_id,[...this.scope.grant_ids],...parameters],this.options);
-      const result = verify_source(candidate, rows, maxSourceBytes);
+      const result = verify_source(candidate, rows, maxSourceBytes, budget.data.include_source ?? false);
       check_options(this.options);
       return result;
     } finally { this.busy = false; }
