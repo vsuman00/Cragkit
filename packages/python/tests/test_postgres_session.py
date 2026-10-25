@@ -455,13 +455,14 @@ def test_driver_suppressed_rollback_failure_discards_nonidle_connection():
     ({'required_filters': [{'op': 'in', 'field': 'revision_id', 'values': ['bad\0id']}]}, {}),
     ({'required_filters': [{'op': 'not', 'filter': {'op': 'eq', 'field': 'document_id', 'value': 'bad\0id'}}]}, {}),
 ])
-def test_postgres_nul_boundaries_reject_before_lease_without_changing_wire_contract(changes, scope_changes):
+def test_postgres_nul_boundaries_reject_bypassed_models_before_lease(changes, scope_changes):
     async def run():
         connection = Connection()
         resource = Resource(connection)
         session = PostgresSession(resource)
-        bound_scope = parse_scope({**scope().model_dump(mode='json'), **scope_changes})
-        parsed = parse_request({'query': 'synthetic', 'collection': 'engineering', **changes})
+        # model_copy deliberately bypasses validation; the adapter must revalidate.
+        bound_scope = scope().model_copy(update=scope_changes)
+        parsed = request().model_copy(update=changes)
         with pytest.raises(InvalidRequest):
             async with session.transaction(parsed, scope=bound_scope, deadline=asyncio.get_running_loop().time() + 1):
                 pytest.fail('invalid input leased a connection')

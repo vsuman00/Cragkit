@@ -5,12 +5,13 @@ from uuid import uuid4
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
-from ._validation import filter_roots, identity, integer, native_json, number, scalar, sequence, text
+from ._validation import filter_roots, identity, input_text, integer, native_json, number, scalar, sequence
 
-Identity: TypeAlias = Annotated[str, AfterValidator(identity)]
-Query: TypeAlias = Annotated[str, AfterValidator(lambda value: text(value, 16_384))]
-Collection: TypeAlias = Annotated[str, AfterValidator(lambda value: text(value, 128))]
-Scalar: TypeAlias = Annotated[str | bool | int | float, BeforeValidator(scalar)]
+InputString: TypeAlias = Annotated[str, Field(pattern=r"^[^\u0000]*$")]
+Identity: TypeAlias = Annotated[InputString, AfterValidator(identity)]
+Query: TypeAlias = Annotated[InputString, AfterValidator(lambda value: input_text(value, 16_384))]
+Collection: TypeAlias = Annotated[InputString, AfterValidator(lambda value: input_text(value, 128))]
+Scalar: TypeAlias = Annotated[InputString | bool | int | float, BeforeValidator(scalar)]
 Number: TypeAlias = Annotated[int | float, BeforeValidator(number)]
 Integer: TypeAlias = Annotated[int, BeforeValidator(integer)]
 FilterField: TypeAlias = Literal["document_id", "revision_id", "language", "kind", "tag"]

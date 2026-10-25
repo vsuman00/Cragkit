@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { InvalidRequest } from './errors.js';
-import { deep_freeze, identity, integer, safe_number, text, valid_native_json } from './shared.js';
+import { deep_freeze, identity, input_text, integer, safe_number, valid_native_json } from './shared.js';
 
 const FieldSchema = z.enum(['document_id', 'revision_id', 'language', 'kind', 'tag']);
-const ScalarSchema = z.union([safe_number, z.boolean(), text(1024, false)]);
+const ScalarSchema = z.union([safe_number, z.boolean(), input_text(1024, false)]);
 export const EqualityFilterSchema = z.strictObject({ op: z.enum(['eq', 'ne']), field: FieldSchema, value: ScalarSchema });
 export const OrderFilterSchema = z.strictObject({ op: z.enum(['gt', 'gte', 'lt', 'lte']), field: FieldSchema, value: safe_number });
 export const MembershipFilterSchema = z.strictObject({ op: z.literal('in'), field: FieldSchema, values: z.array(ScalarSchema).min(1).max(32) });
@@ -54,9 +54,9 @@ export const OutputProfileSchema = z.strictObject({
 const common = {
   schema_version: z.literal('0.1').default('0.1'),
   request_id: identity.default(() => randomUUID()),
-  query: text(16384),
-  collection: text(128),
-  search_hints: z.array(text(256)).max(8).default([]),
+  query: input_text(16384),
+  collection: input_text(128),
+  search_hints: z.array(input_text(256)).max(8).default([]),
 };
 export const RequestSchema = z.custom<unknown>(bounded_request).pipe(z.strictObject({
   ...common,

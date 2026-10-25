@@ -4,14 +4,17 @@
       "additionalProperties": false,
       "properties": {
         "chunk_id": {
+          "pattern": "^[^\\u0000]*$",
           "title": "Chunk Id",
           "type": "string"
         },
         "collection": {
+          "pattern": "^[^\\u0000]*$",
           "title": "Collection",
           "type": "string"
         },
         "document_id": {
+          "pattern": "^[^\\u0000]*$",
           "title": "Document Id",
           "type": "string"
         },
@@ -22,14 +25,17 @@
           "type": "integer"
         },
         "evidence_id": {
+          "pattern": "^[^\\u0000]*$",
           "title": "Evidence Id",
           "type": "string"
         },
         "revision_id": {
+          "pattern": "^[^\\u0000]*$",
           "title": "Revision Id",
           "type": "string"
         },
         "source_locator": {
+          "pattern": "^[^\\u0000]*$",
           "title": "Source Locator",
           "type": "string"
         },
@@ -74,17 +80,20 @@
       "properties": {
         "assessment_method": {
           "default": "none",
+          "pattern": "^[^\\u0000]*$",
           "title": "Assessment Method",
           "type": "string"
         },
         "assessment_version": {
           "default": "0",
+          "pattern": "^[^\\u0000]*$",
           "title": "Assessment Version",
           "type": "string"
         },
         "evidence_ids": {
           "default": [],
           "items": {
+            "pattern": "^[^\\u0000]*$",
             "type": "string"
           },
           "maxLength": 64,
@@ -92,6 +101,7 @@
           "type": "array"
         },
         "facet_id": {
+          "pattern": "^[^\\u0000]*$",
           "title": "Facet Id",
           "type": "string"
         },
@@ -141,6 +151,7 @@
         "evidence_ids": {
           "default": [],
           "items": {
+            "pattern": "^[^\\u0000]*$",
             "type": "string"
           },
           "maxLength": 64,
@@ -150,6 +161,7 @@
         "facet_ids": {
           "default": [],
           "items": {
+            "pattern": "^[^\\u0000]*$",
             "type": "string"
           },
           "maxLength": 32,
@@ -180,6 +192,7 @@
           "title": "Duration Ms"
         },
         "stage": {
+          "pattern": "^[^\\u0000]*$",
           "title": "Stage",
           "type": "string"
         }
@@ -309,12 +322,14 @@
       "properties": {
         "engine": {
           "default": "0.0.0",
+          "pattern": "^[^\\u0000]*$",
           "title": "Engine",
           "type": "string"
         },
         "index": {
           "anyOf": [
             {
+              "pattern": "^[^\\u0000]*$",
               "type": "string"
             },
             {
@@ -327,6 +342,7 @@
         "model": {
           "anyOf": [
             {
+              "pattern": "^[^\\u0000]*$",
               "type": "string"
             },
             {
@@ -338,12 +354,14 @@
         },
         "policy": {
           "default": "unassessed.v0",
+          "pattern": "^[^\\u0000]*$",
           "title": "Policy",
           "type": "string"
         },
         "tokenizer": {
           "anyOf": [
             {
+              "pattern": "^[^\\u0000]*$",
               "type": "string"
             },
             {
@@ -403,6 +421,7 @@
       "type": "array"
     },
     "request_id": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Request Id",
       "type": "string"
     },
@@ -424,6 +443,7 @@
     "trace_id": {
       "anyOf": [
         {
+          "pattern": "^[^\\u0000]*$",
           "type": "string"
         },
         {

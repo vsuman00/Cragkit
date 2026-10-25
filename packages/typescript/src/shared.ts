@@ -19,7 +19,11 @@ export const text = (bytes: number, nonblank = true) => z.string().refine(
     && (!nonblank || /[^ \t\r\n\f\v]/.test(value)),
   { message: 'Invalid text.' },
 );
-export const identity = text(256);
+export const input_text = (bytes: number, nonblank = true) => text(bytes, nonblank).refine(
+  value => !value.includes('\u0000'),
+  { message: 'Invalid text.' },
+);
+export const identity = input_text(256);
 
 export function valid_native_json(input: unknown): boolean {
   const ancestors = new Set<object>();

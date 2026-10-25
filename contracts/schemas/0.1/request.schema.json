@@ -25,6 +25,7 @@
         "value": {
           "anyOf": [
             {
+              "pattern": "^[^\\u0000]*$",
               "type": "string"
             },
             {
@@ -200,6 +201,7 @@
           "items": {
             "anyOf": [
               {
+                "pattern": "^[^\\u0000]*$",
                 "type": "string"
               },
               {
@@ -343,12 +345,14 @@
         },
         "renderer": {
           "default": "cragkit.context.v1",
+          "pattern": "^[^\\u0000]*$",
           "title": "Renderer",
           "type": "string"
         },
         "tokenizer": {
           "anyOf": [
             {
+              "pattern": "^[^\\u0000]*$",
               "type": "string"
             },
             {
@@ -367,6 +371,7 @@
   "additionalProperties": false,
   "properties": {
     "collection": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Collection",
       "type": "string"
     },
@@ -377,10 +382,12 @@
       "$ref": "#/$defs/OutputProfile"
     },
     "query": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Query",
       "type": "string"
     },
     "request_id": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Request Id",
       "type": "string"
     },
@@ -432,6 +439,7 @@
     "search_hints": {
       "default": [],
       "items": {
+        "pattern": "^[^\\u0000]*$",
         "type": "string"
       },
       "maxLength": 8,

@@ -120,7 +120,7 @@ test('deadline getters cannot execute during options validation',async()=>{
 test('unsafe scope identifiers fail before authorizer or lease',async()=>{
   const {resource,lifecycle}=fixture(async()=>assert.fail('authorizer called'));
   for(const change of [{tenant_id:'\0'},{principal_id:'\0'},{authorization_revision:'\0'},{grant_ids:['\0']}]){
-    await assert.rejects(lifecycle.tombstone({...options(),scope:parse_scope({...scope(),...change})}),InvalidRequest);
+    await assert.rejects(lifecycle.tombstone({...options(),scope:{...scope(),...change}}),InvalidRequest);
   }
   assert.equal(resource.leases,0);
 });

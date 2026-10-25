@@ -3,12 +3,14 @@
   "additionalProperties": false,
   "properties": {
     "authorization_revision": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Authorization Revision",
       "type": "string"
     },
     "grant_ids": {
       "default": [],
       "items": {
+        "pattern": "^[^\\u0000]*$",
         "type": "string"
       },
       "maxLength": 64,
@@ -16,10 +18,12 @@
       "type": "array"
     },
     "principal_id": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Principal Id",
       "type": "string"
     },
     "tenant_id": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Tenant Id",
       "type": "string"
     }

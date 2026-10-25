@@ -242,8 +242,8 @@ for (const [changes,scope_changes] of [
   [{required_filters:[{op:'not',filter:{op:'eq',field:'document_id',value:'bad\0id'}}]},{}],
 ]) test(`Postgres NUL boundary ${JSON.stringify([changes,scope_changes])}`,async()=>{
   const {client,resource,session}=sessionFixture();
-  const input=parse_request({query:'synthetic',collection:'collection',...changes});
-  const bound=parse_scope({...scope('tenant'),...scope_changes});
+  const input={...parse_request({query:'synthetic',collection:'collection'}),...changes};
+  const bound={...scope('tenant'),...scope_changes};
   await assert.rejects(session.transaction(input,{...options(),scope:bound},async()=>assert.fail('invalid lease')),InvalidRequest);
   assert.equal(client.queries.length,0);assert.equal(client.releases.length,0);await resource.close();
 });

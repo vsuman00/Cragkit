@@ -12,13 +12,19 @@ def text(value: str, limit: int, *, nonblank: bool = True) -> str:
     return value
 
 
+def input_text(value: str, limit: int, *, nonblank: bool = True) -> str:
+    if "\0" in value:
+        raise ValueError("Input text contains null character")
+    return text(value, limit, nonblank=nonblank)
+
+
 def identity(value: str) -> str:
-    return text(value, 256)
+    return input_text(value, 256)
 
 
 def scalar(value: object) -> object:
     if type(value) is str:
-        return text(value, 1024, nonblank=False)
+        return input_text(value, 1024, nonblank=False)
     if type(value) is bool:
         return value
     return number(value)

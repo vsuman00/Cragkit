@@ -3,14 +3,17 @@
   "additionalProperties": false,
   "properties": {
     "collection": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Collection",
       "type": "string"
     },
     "query": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Query",
       "type": "string"
     },
     "request_id": {
+      "pattern": "^[^\\u0000]*$",
       "title": "Request Id",
       "type": "string"
     },
@@ -23,6 +26,7 @@
     "search_hints": {
       "default": [],
       "items": {
+        "pattern": "^[^\\u0000]*$",
         "type": "string"
       },
       "maxLength": 8,

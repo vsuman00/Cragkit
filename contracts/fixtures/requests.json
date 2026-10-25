@@ -834,6 +834,239 @@
         ]
       },
       "valid": false
+    },
+    {
+      "id": "nul-request-query",
+      "kind": "request",
+      "input": {
+        "query": "bad\u0000value",
+        "collection": "docs",
+        "request_id": "nul-test"
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-tool-query",
+      "kind": "tool",
+      "input": {
+        "query": "bad\u0000value",
+        "collection": "docs",
+        "request_id": "nul-test"
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-request-collection",
+      "kind": "request",
+      "input": {
+        "query": "find",
+        "collection": "bad\u0000value",
+        "request_id": "nul-test"
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-tool-collection",
+      "kind": "tool",
+      "input": {
+        "query": "find",
+        "collection": "bad\u0000value",
+        "request_id": "nul-test"
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-request-request_id",
+      "kind": "request",
+      "input": {
+        "query": "find",
+        "collection": "docs",
+        "request_id": "bad\u0000value"
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-tool-request_id",
+      "kind": "tool",
+      "input": {
+        "query": "find",
+        "collection": "docs",
+        "request_id": "bad\u0000value"
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-scope-tenant_id",
+      "kind": "scope",
+      "input": {
+        "tenant_id": "bad\u0000value",
+        "principal_id": "p",
+        "authorization_revision": "a"
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-scope-principal_id",
+      "kind": "scope",
+      "input": {
+        "tenant_id": "t",
+        "principal_id": "bad\u0000value",
+        "authorization_revision": "a"
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-scope-authorization_revision",
+      "kind": "scope",
+      "input": {
+        "tenant_id": "t",
+        "principal_id": "p",
+        "authorization_revision": "bad\u0000value"
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-scope-grant_ids",
+      "kind": "scope",
+      "input": {
+        "tenant_id": "t",
+        "principal_id": "p",
+        "authorization_revision": "a",
+        "grant_ids": [
+          "bad\u0000grant"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-profile-renderer",
+      "kind": "request",
+      "input": {
+        "query": "find",
+        "collection": "docs",
+        "request_id": "nul-test",
+        "output_profile": {
+          "renderer": "bad\u0000value"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-profile-tokenizer",
+      "kind": "request",
+      "input": {
+        "query": "find",
+        "collection": "docs",
+        "request_id": "nul-test",
+        "output_profile": {
+          "tokenizer": "bad\u0000value"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-request-hint",
+      "kind": "request",
+      "input": {
+        "query": "find",
+        "collection": "docs",
+        "request_id": "nul-test",
+        "search_hints": [
+          "bad\u0000value"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-tool-hint",
+      "kind": "tool",
+      "input": {
+        "query": "find",
+        "collection": "docs",
+        "request_id": "nul-test",
+        "search_hints": [
+          "bad\u0000value"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-filter-eq-nested",
+      "kind": "request",
+      "input": {
+        "query": "find",
+        "collection": "docs",
+        "request_id": "nul-test",
+        "required_filters": [
+          {
+            "op": "not",
+            "filter": {
+              "op": "and",
+              "filters": [
+                {
+                  "op": "eq",
+                  "field": "tag",
+                  "value": "bad\u0000value"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-filter-ne-nested",
+      "kind": "request",
+      "input": {
+        "query": "find",
+        "collection": "docs",
+        "request_id": "nul-test",
+        "required_filters": [
+          {
+            "op": "not",
+            "filter": {
+              "op": "and",
+              "filters": [
+                {
+                  "op": "ne",
+                  "field": "tag",
+                  "value": "bad\u0000value"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "nul-filter-in-nested",
+      "kind": "request",
+      "input": {
+        "query": "find",
+        "collection": "docs",
+        "request_id": "nul-test",
+        "required_filters": [
+          {
+            "op": "not",
+            "filter": {
+              "op": "and",
+              "filters": [
+                {
+                  "op": "in",
+                  "field": "tag",
+                  "values": [
+                    "safe",
+                    "bad\u0000value"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "valid": false
     }
   ],
   "native_invalid_numbers": [
