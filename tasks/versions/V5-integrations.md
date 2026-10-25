@@ -92,6 +92,17 @@ Learning exercise: Explain at-least-once retry and why idempotency matters.
 
 Expected areas: `Qdrant ingestion adapter`, `repair integration tests`.
 
+Execute V5-04 as bounded children. The parent remains incomplete until native publication and recovery acceptance passes:
+
+- V5-04A: freeze the concrete writer, authoritative intent/claim/dispatch, publication and recovery contract, the numerical vector representation and the native fault matrix. Distinguish normative expectations from executed evidence.
+- V5-04B1/B2: implement pure native vector sealing/readback validation, then immutable generation/intent manifest codecs, with shared deterministic fixtures. Freeze each codec before its consumers; do not hash floating-point JSON or mutable ACL/filter replicas as immutable content.
+- V5-04C: add the separately versioned authority migration for durable intents, global physical claims, document ownership, dispatch uncertainty and publication preparation. Validate constraints, least-privilege writer policies and rollback on real PostgreSQL. Preserve migration 0001 and explicitly version compatible reader/catalog checks.
+- V5-04D: implement native authoritative writer operations against C, including current authorization, idempotency, atomic claims and publication CAS. Split Python and TypeScript into separately owned implementation/test slices after shared SQL contracts freeze. No network call belongs inside the publication transaction.
+- V5-04E: implement the selected optional, caller-owned single-node supervisor capability and immutable credential epochs. Serialize instance-wide recovery, fence old admitted transports, verify supported WAL replay configuration and fail closed when supervisor ownership is lost. A lease or a caller-supplied boolean is not proof of quiescence. Each runtime needs its own native implementation or application capability; Node must not require a Python service.
+- V5-04F: implement bounded staged ingestion and publication using B-D and E. Record each dispatch before its side effect, complete every named vector, verify the full expected set and preserve the prior active generation after prepublication failure. Run native runtimes serially.
+- V5-04G: implement repair, current ACL/filter replication, monotonic tombstoning and scoped purge. Unknown old writes block conflicting mutations; immediate authoritative revocation/deletion remains independent of replica recovery. Reclaim claims only after verified cleanup and durable fencing.
+- V5-04H: execute the complete shared fault matrix against actual isolated PostgreSQL and Qdrant in both runtimes, including writer crash, lost acknowledgments, publication races, same-count wrong membership/vectors, stale grants, deletion during repair, old-key rejection and interrupted purge. Verify full cleanup and affected regressions before accepting the parent. Fake transports or a design walkthrough do not replace this gate.
+
 ### V5-05: Existing-index contract example
 
 Dependency: V5-04. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.

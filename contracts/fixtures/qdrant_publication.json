@@ -1,0 +1,128 @@
+{
+  "revision": "QW-r1",
+  "native_revision": "QW-native-r1",
+  "task": "V5-04A",
+  "status": "normative_unexecuted_design",
+  "executed": false,
+  "rules": {
+    "expansion": "Resolve $ref strings against this fixture, copy values before mutations, and expand dense basis vectors to exactly 1536 components. UTF-8 fixture strings preserve every byte. Identity tuples are the ordered all-string QC-r1 tuples, not concatenated labels.",
+    "pending_outputs": "Root independently computed all SHA-256 and UUID expectations from QW-r1. The canonical_tuples values declare exact ordered manifest and stage-intent inputs; computed identities are design goldens, not native execution evidence.",
+    "scope": "Synthetic fake-profile data only. No fixture is a measured execution, real-model vector, billing claim or publication acceptance.",
+    "immutable": "Source bytes, revision/generation/chunk identity, complete membership and named-vector/profile identity are immutable. Current ACL/filter replicas are reconstructed from authority and excluded from immutable intent/manifest identity.",
+    "recovery": "A label or boolean cannot prove quiescence. Native acceptance must observe old writer termination/fencing, managed server stop and restart, old write-key rejection, readiness/WAL settlement and exact reconciliation before unresolved dispatches clear."
+  },
+  "limits": {"documents": 2, "base_members": 2, "points_per_write": 1, "max_write_attempts": 3, "max_verification_pages": 2, "max_verification_points": 3, "model_calls": 0},
+  "profile_limits": {"members_per_generation": 64, "write_batch_points": 8, "readback_batch_points": 8, "http_response_bytes": 1048576, "aggregate_readback_bytes": 8388608, "dispatch_slots_per_intent": 256, "source_bytes": 16777216, "excerpt_bytes": 32768, "active_operations_per_store": 1},
+  "supervisor_profile": {"ownership": "borrowed exclusive application-owned supervisor outliving all writer and coordinator processes", "automatic_takeover": false, "supervisor_loss": "durably blocked until out-of-band independently verified dead-process recovery", "recovery_scope": "entire managed Qdrant instance; quarantine every unresolved attempt across all documents", "capabilities": "opaque per-attempt capabilities bound to managed instance and epoch; old actors cannot refresh credentials", "prevent_unoptimized": false},
+  "vector_identity": {
+    "input_validation": "Validate original values against the full E-r1 profile first. Convert to nearest-ties-even float32; reject nonfinite conversion and any original nonzero value rounded to zero. Retain representable subnormals and canonicalize negative zero to positive zero. Do not repeat E-r1's norm tolerance after rounding.",
+    "input_seal": "SHA256 of ASCII cragkit.qdrant.vector.v1 followed by NUL, frame(kind), frame(name), uint32LE(profile field count), ordered frame(key)+frame(UTF8 string value) pairs, then dense uint32LE(dimensions)+float32LE components or sparse uint32LE(nnz)+all uint32LE indices+all float32LE values. A frame is uint32LE byte length followed by bytes. Kind and name are dense or sparse. This is not a hash of server readback.",
+    "dense_profile_field_order": ["profile_id", "provider", "model", "dimensions", "tokenizer", "normalization"],
+    "sparse_profile_field_order": ["profile_id", "encoder", "model", "revision", "vocabulary", "preprocessing", "weighting", "corpus_statistics_revision"],
+    "profile_integer_encoding": "dimensions is its canonical unsigned decimal UTF-8 string",
+    "dense_readback": "Let x be canonical submitted float32 components and u=x/sqrt(sum(x_i*x_i)), with ordered binary64 accumulation. Convert returned components to float32. Require every component abs(y_i-u_i)<=T*abs(u_i)+2^-126, abs(norm(y)-1)<=T, and L2distance(y,u)<=T.",
+    "T": "0.0002 - 0.000000000002",
+    "sparse_readback": "Exact sorted indices and canonical float32 value bits; no cosine normalization or approximate sparse match."
+  },
+  "numeric_cases": [
+    {"id": "dense_nontrivial_normalization", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 0.6], [1, 0.8]]}, "expected": "accepted input and bounded normalized readback equivalence; do not require storage hash equality"},
+    {"id": "dense_norm_low", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 0.5994], [1, 0.7992]]}, "expected": "validate original E-r1 norm then accept server normalization under dense equivalence"},
+    {"id": "dense_norm_high", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 0.6006], [1, 0.8008]]}, "expected": "validate original E-r1 norm then accept server normalization under dense equivalence"},
+    {"id": "signed_zero", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 1]], "negative_zero_index": 1}, "expected": "canonical positive-zero bits in input seal across runtimes"},
+    {"id": "representable_subnormal", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 1], [1, 1.401298464324817e-45]]}, "expected": "retain float32 subnormal in canonical input; dense readback uses declared equivalence"},
+    {"id": "nonzero_underflow", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 1], [1, 1e-50]]}, "expected_error": "InvalidRequest"},
+    {"id": "float32_overflow", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 1e39]]}, "expected_error": "InvalidRequest"},
+    {"id": "changed_direction", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 0.6], [1, 0.8]]}, "readback_encoding": {"dimensions": 1536, "nonzero": [[0, 0.8], [1, 0.6]]}, "expected_error": "IntegrityViolation"},
+    {"id": "changed_sign", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 0.6], [1, 0.8]]}, "readback_encoding": {"dimensions": 1536, "nonzero": [[0, -0.6], [1, 0.8]]}, "expected_error": "IntegrityViolation"},
+    {"id": "ties_to_even_down", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 0.5000000298023224], [1, 0.8660254037844386]]}, "expected_float32_bits_le": [{"index": 0, "hex": "0000003f"}], "expected": "round halfway input toward the even lower binary32 significand"},
+    {"id": "ties_to_even_up", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 0.5000000894069672], [1, 0.8660254037844386]]}, "expected_float32_bits_le": [{"index": 0, "hex": "0200003f"}], "expected": "round halfway input toward the even upper binary32 significand"},
+    {"id": "dense_tolerance_inside", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 1]]}, "readback_encoding": {"dimensions": 1536, "nonzero": [[0, 1.0001]]}, "expected": "accept the explicitly bounded dense equivalence"},
+    {"id": "dense_tolerance_outside", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 1]]}, "readback_encoding": {"dimensions": 1536, "nonzero": [[0, 1.0003]]}, "expected_error": "IntegrityViolation"},
+    {"id": "changed_zero_component", "input_encoding": {"dimensions": 1536, "nonzero": [[0, 1]]}, "readback_encoding": {"dimensions": 1536, "nonzero": [[0, 1], [1, 0.000001]]}, "expected_error": "IntegrityViolation"}
+  ],
+  "profiles": {
+    "dense": {"profile_id": "fake_embedding_1536_v1", "provider": "fake", "model": "fake_embedding_model_v1", "dimensions": 1536, "tokenizer": "fake-byte-v1", "normalization": "l2"},
+    "sparse": {"profile_id": "fake_manual_sparse_v1", "encoder": "caller_supplied_fixture", "model": "none", "revision": "1", "vocabulary": "fixture_uint32_v1", "preprocessing": "none", "weighting": "caller_supplied", "corpus_statistics_revision": "none"}
+  },
+  "physical": {"backend_namespace": "fixture-local", "physical_collection": "cragkit_pub_fixture", "collection_incarnation": "pub-inc-1"},
+  "document": {"tenant_id": "tenant-a", "collection": "docs", "document_id": "doc-1", "active_generation_id": "gen-1", "authorization_revision": "auth-1", "mutation_epoch": 1, "principal_ids": ["reader-a"], "grant_ids": ["grant-a"], "language": "en", "kind": "guide", "tag": "reference", "tombstoned": false},
+  "source_revision": {"revision_id": "rev-2", "canonical_utf8": {"encoding": "utf8", "value": "A café 雪.\n"}, "source_bytes": 13, "source_sha256": "0391605f65138f90f93b9a7ad361ceaa0628163bd80dfb2b8912775ebf16fc05", "source_locator": "fixture:qdrant/doc-1@rev-2", "parser_id": "fixture_parser_v1"},
+  "intent": {"intent_id": "intent-2", "initial_authorization": null, "expected_active_generation_id": "gen-1", "revision_id": "rev-2", "generation_id": "gen-2", "chunker_profile": "fixture_chunker_v1", "payload_sha256": "32741cccf756a00a16fbe25c6f86a25ccd051d636dfb5f46bd84da6da8f7a9cf", "manifest_sha256": "4c5c1d1685ba90582c2358bc1189342e605e011b7525cccc8d11e023b9433fff", "expected_authorization_revision": "auth-1", "expected_mutation_epoch": 1},
+  "members": [
+    {
+      "chunk_id": "chunk-1", "start_byte": 2, "end_byte": 7, "excerpt_utf8": {"encoding": "utf8", "value": "café"}, "text_sha256": "850f7dc43910ff890f8879c0ed26fe697c93a067ad93a7d50f466a7028a9bf4e",
+      "identity_tuple": ["cragkit.qdrant.point.v1", "fixture-local", "cragkit_pub_fixture", "pub-inc-1", "tenant-a", "docs", "doc-1", "rev-2", "gen-2", "chunk-1", "fake_embedding_1536_v1", "fake_manual_sparse_v1"],
+      "point_id": "5edd7b92-5f53-506e-a689-262f54605df9",
+      "dense": {"encoding": "basis_float32", "dimensions": 1536, "basis_index": 0, "value": 1.0, "vector_sha256": "e23b8700fd62e28814e88fd339d943cb3716914866838bf8b59935c0b1411042"},
+      "sparse": {"indices": [2, 7], "values": [1.0, 0.5], "vector_sha256": "ee8bde04677f5de545e00d521cd06ba2c9d03fc61f7b44d47b154efc0516ffba"}
+    },
+    {
+      "chunk_id": "chunk-2", "start_byte": 8, "end_byte": 11, "excerpt_utf8": {"encoding": "utf8", "value": "雪"}, "text_sha256": "53058fe2e03c00d93c4ba9361889dd7569d7d7b9674ed172266ee66265208cc6",
+      "identity_tuple": ["cragkit.qdrant.point.v1", "fixture-local", "cragkit_pub_fixture", "pub-inc-1", "tenant-a", "docs", "doc-1", "rev-2", "gen-2", "chunk-2", "fake_embedding_1536_v1", "fake_manual_sparse_v1"],
+      "point_id": "96353d29-e104-52a5-9de4-96da588b07d4",
+      "dense": {"encoding": "basis_float32", "dimensions": 1536, "basis_index": 1, "value": 1.0, "vector_sha256": "a73b4fe60c1df71faf4f08975c34e52416f5a631f875e20d16d5b0f95bffc380"},
+      "sparse": {"indices": [3], "values": [2.0], "vector_sha256": "eaec0f4cb709fa3a7748df8a74d004b9a762fefda8cd2d1fd99a9dbe82d7ee96"}
+    }
+  ],
+  "canonical_tuples": {
+    "manifest": ["cragkit.qdrant.manifest.v1","fixture-local","cragkit_pub_fixture","pub-inc-1","tenant-a","docs","doc-1","rev-2","gen-2","0391605f65138f90f93b9a7ad361ceaa0628163bd80dfb2b8912775ebf16fc05","13","fixture:qdrant/doc-1@rev-2","fixture_parser_v1","fixture_chunker_v1",[["profile_id","fake_embedding_1536_v1"],["provider","fake"],["model","fake_embedding_model_v1"],["dimensions","1536"],["tokenizer","fake-byte-v1"],["normalization","l2"]],[["profile_id","fake_manual_sparse_v1"],["encoder","caller_supplied_fixture"],["model","none"],["revision","1"],["vocabulary","fixture_uint32_v1"],["preprocessing","none"],["weighting","caller_supplied"],["corpus_statistics_revision","none"]],"2",[[["cragkit.qdrant.point.v1","fixture-local","cragkit_pub_fixture","pub-inc-1","tenant-a","docs","doc-1","rev-2","gen-2","chunk-1","fake_embedding_1536_v1","fake_manual_sparse_v1"],"5edd7b92-5f53-506e-a689-262f54605df9","2","7","850f7dc43910ff890f8879c0ed26fe697c93a067ad93a7d50f466a7028a9bf4e","e23b8700fd62e28814e88fd339d943cb3716914866838bf8b59935c0b1411042","ee8bde04677f5de545e00d521cd06ba2c9d03fc61f7b44d47b154efc0516ffba"],[["cragkit.qdrant.point.v1","fixture-local","cragkit_pub_fixture","pub-inc-1","tenant-a","docs","doc-1","rev-2","gen-2","chunk-2","fake_embedding_1536_v1","fake_manual_sparse_v1"],"96353d29-e104-52a5-9de4-96da588b07d4","8","11","53058fe2e03c00d93c4ba9361889dd7569d7d7b9674ed172266ee66265208cc6","a73b4fe60c1df71faf4f08975c34e52416f5a631f875e20d16d5b0f95bffc380","eaec0f4cb709fa3a7748df8a74d004b9a762fefda8cd2d1fd99a9dbe82d7ee96"]]],
+    "stage_intent": ["cragkit.qdrant.intent.v1","stage","intent-2","tenant-a","docs","doc-1","4c5c1d1685ba90582c2358bc1189342e605e011b7525cccc8d11e023b9433fff","gen-1","auth-1","1",null]
+  },
+  "complete_point_template": {
+    "id": "$member:point_id",
+    "vector": {"dense": "$member:dense", "sparse": "$member:sparse"},
+    "payload": {
+      "backend_namespace": "fixture-local", "physical_collection": "cragkit_pub_fixture", "collection_incarnation": "pub-inc-1", "tenant_id": "tenant-a", "collection": "docs", "document_id": "doc-1", "revision_id": "rev-2", "generation_id": "gen-2", "chunk_id": "$member:chunk_id",
+      "start_byte": "$member:start_byte", "end_byte": "$member:end_byte", "source_sha256": "$ref:source_revision.source_sha256", "text_sha256": "$member:text_sha256", "dense_profile_id": "fake_embedding_1536_v1", "sparse_profile_id": "fake_manual_sparse_v1", "dense_profile": "$ref:profiles.dense", "sparse_profile": "$ref:profiles.sparse",
+      "authorization_revision": "$current:authorization_revision", "principal_ids": "$current:principal_ids", "grant_ids": "$current:grant_ids", "language": "$current:language", "kind": "$current:kind", "tag": "$current:tag"
+    }
+  },
+  "claims": {"key_fields": ["backend_namespace", "physical_collection", "collection_incarnation", "point_id"], "owner_fields": ["tenant_id", "collection", "document_id", "revision_id", "generation_id", "chunk_id", "source_sha256", "text_sha256", "start_byte", "end_byte", "dense_profile", "sparse_profile", "dense_vector_sha256", "sparse_vector_sha256"], "reservation": "atomic unique authority operation before any Qdrant point mutation", "retention": "keep while any stored point, retained generation or unresolved dispatch references the claim"},
+  "dispatch_example": {"dispatch_id": "dispatch-2-1", "intent_id": "intent-2", "backend_epoch": 7, "owner_token": "owner-process-incarnation-7", "operation": "complete_point_upsert", "point_members": ["chunk-1"], "state_before_api": "reserved", "completion_policy": "wait=true completed, followed by exact identity/profile/vector readback", "unknown_blocks_successor": true},
+  "recovery_example": {"state_before": "recovery_blocked", "old_epoch": 7, "next_epoch": 8, "old_key_label": "write-key-epoch-7", "new_key_label": "write-key-epoch-8", "proof_requirements": ["new dispatch admission blocked backend-wide", "old managed writer process identity verified and execution terminated", "old HTTP clients and connections closed or invalidated", "managed Qdrant process stopped with observed exit", "fresh write key not available to old writers", "server restarted on same durable storage", "old write key rejected by actual mutation endpoint", "server readiness and durable replay settled", "exact claims/intents/points reconciled before clearing unknown"]},
+  "cases": [
+    {"id": "intent_commit_failed", "qd_rows": ["QD-W01"], "inject": "authority transaction rollback before durable intent", "expected": {"active": "gen-1", "intent": "absent", "qdrant_writes": 0}},
+    {"id": "intent_ack_lost", "qd_rows": ["QD-W01"], "inject": "commit intent then drop acknowledgment", "expected": {"active": "gen-1", "action": "read same intent and payload binding", "allocate_new_generation": false}},
+    {"id": "intent_payload_changed", "qd_rows": ["QD-W01"], "inject": "reuse intent-2 with different canonical bytes or vector/profile manifest", "expected": {"error": "IntegrityViolation", "qdrant_writes": 0}},
+    {"id": "bootstrap_acl_changed", "qd_rows": ["QD-W01", "QD-A01"], "inject": "create a document with a stage intent binding initial_authorization, then replay the same intent with changed initial grants or metadata after a later security update", "expected": {"error": "IntegrityViolation", "qdrant_writes": 0, "current_authorization_changed": false, "initial_authorization_restored": false}},
+    {"id": "source_commit_failed", "qd_rows": ["QD-W02"], "inject": "rollback immutable revision stage", "expected": {"active": "gen-1", "intent": "staged", "published": false}},
+    {"id": "source_ack_lost", "qd_rows": ["QD-W02"], "inject": "source commit succeeds but acknowledgment is lost", "expected": {"action": "read exact rev-2 bytes and digest before continuing same intent", "published": false}},
+    {"id": "partial_member_stage", "qd_rows": ["QD-W03"], "inject": "only chunk-1 member committed", "expected": {"active": "gen-1", "expected_members": ["chunk-1", "chunk-2"], "stored_members": ["chunk-1"], "published": false}},
+    {"id": "journal_commit_before_api", "qd_rows": ["QD-W04", "QD-P03"], "inject": "pause after durable reserved dispatch and before HTTP request", "expected": {"dispatch": "reserved", "successor_admitted": false, "publish": false}},
+    {"id": "reserved_owner_crash", "qd_rows": ["QD-P03"], "inject": "terminate owner after reserved commit with dispatch occurrence unknown", "expected": {"dispatch": "unknown", "lease_expiry_clears_unknown": false, "recovery_required": true}},
+    {"id": "partial_qdrant_write", "qd_rows": ["QD-W04"], "inject": "chunk-1 completed; chunk-2 request not completed", "expected": {"active": "gen-1", "published": false, "resume_identity": "intent-2/rev-2/gen-2"}},
+    {"id": "write_ack_lost", "qd_rows": ["QD-W04"], "inject": "backend accepts a complete point but client loses completion acknowledgment", "expected": {"dispatch": "unknown", "publish": false, "readback_alone_clears_unknown": false}},
+    {"id": "equal_count_wrong_set", "qd_rows": ["QD-W05"], "inject": "replace chunk-2 with unexpected chunk-x while total remains two", "expected": {"error": "IntegrityViolation", "publish": false, "adopt_unexpected_point": false}},
+    {"id": "wrong_dense_vector", "qd_rows": ["QD-W05"], "inject": "chunk-1 stores basis e1 instead of expected e0 under the same full profile", "expected": {"error": "IntegrityViolation", "publish": false}},
+    {"id": "wrong_sparse_vector", "qd_rows": ["QD-W05", "QD-P01"], "inject": "chunk-1 sparse weight differs under the same sparse descriptor", "expected": {"error": "IntegrityViolation", "publish": false}},
+    {"id": "missing_sparse_vector", "qd_rows": ["QD-W05", "QD-P01"], "inject": "same-ID replay omits required sparse vector", "expected": {"error": "IntegrityViolation", "publish": false, "repair_replays_complete_named_vectors": true}},
+    {"id": "wrong_full_profile", "qd_rows": ["QD-W05", "QD-R03"], "inject": "same profile ID but a different model or sparse revision", "expected": {"error": "IntegrityViolation", "publish": false}},
+    {"id": "verified_prepared_commit_lost", "qd_rows": ["QD-W06"], "inject": "exact verification succeeds; prepared commit acknowledgment is absent", "expected": {"active": "gen-1", "action": "read durable prepared state and reverify when required", "publish_without_preparation": false}},
+    {"id": "prepared_not_published", "qd_rows": ["QD-W07"], "inject": "prepared authority record exists; publication CAS not run", "expected": {"active": "gen-1", "new_search_gen_2": false}},
+    {"id": "publication_ack_lost", "qd_rows": ["QD-W08"], "inject": "CAS and intent success commit atomically then acknowledgment is lost", "expected": {"active": "gen-2", "intent": "published", "second_publication": false, "action": "read authoritative intent and active pointer"}},
+    {"id": "pointer_cas_race", "qd_rows": ["QD-W09"], "inject": "another publisher changes active to gen-3 before intent-2 CAS", "expected": {"active": "gen-3", "intent": "conflict", "rebase_expected_active": false}},
+    {"id": "global_uuid_collision", "qd_rows": ["QD-W10"], "inject": "two documents concurrently reserve the same physical UUID with different immutable owner tuples", "expected": {"claim_winners": 1, "loser_error": "IntegrityViolation", "loser_qdrant_writes": 0, "existing_point_overwritten": false}},
+    {"id": "claim_ack_lost", "qd_rows": ["QD-W10"], "inject": "atomic claim commit acknowledgment is lost", "expected": {"point_write_before_claim_readback": false, "action": "read same physical claim and compare complete immutable owner"}},
+    {"id": "revocation_between_stages", "qd_rows": ["QD-A01", "QD-D03"], "inject": "authority revokes grant and advances fence after staging before publication", "expected": {"intent": "denied", "publish": false, "provider_text_bytes": 0, "restore_old_grant": false}},
+    {"id": "acl_replica_ack_lost", "qd_rows": ["QD-A02"], "inject": "authority auth-2 committed; replica update acknowledgment lost", "expected": {"authority_revoked": true, "dispatch": "unknown", "provider_text_bytes": 0, "replay_uses_current_authority": true}},
+    {"id": "old_acl_late_upsert", "qd_rows": ["QD-A02", "QD-D03", "QD-P03"], "inject": "old full-point request with auth-1 held before completion while auth-2 commits", "expected": {"authority_change_waits_for_qdrant": false, "new_conflicting_qdrant_dispatch_before_settlement": false, "provider_text_bytes": 0, "post_recovery_payload_authorization_revision": "auth-2"}},
+    {"id": "tombstone_before_purge", "qd_rows": ["QD-D01"], "inject": "tombstone commits before any derived point deletion", "expected": {"new_search_eligible": false, "retained_release_eligible": false, "purge": "pending"}},
+    {"id": "tombstone_during_repair", "qd_rows": ["QD-D03"], "inject": "tombstone commits after repair admission but before publication", "expected": {"publish": false, "repair_restores_source_or_grant": false, "purge": "pending_until_uncertainty_settled"}},
+    {"id": "purge_interruption", "qd_rows": ["QD-D02"], "inject": "chunk-1 deletion completes; chunk-2 deletion acknowledgment unknown", "expected": {"purge": "pending", "source_release": false, "claim_reclaimed": false, "replacement_generation_deleted": false}},
+    {"id": "old_write_after_initial_purge", "qd_rows": ["QD-D03"], "inject": "old pre-tombstone upsert may land after first absence read", "expected": {"purge_complete": false, "repeat_absence_after_fencing_required": true, "claim_reclaimed": false}},
+    {"id": "source_authority_outage", "qd_rows": ["QD-R01"], "inject": "authority unavailable during resume/publication authorization", "expected": {"error": "ProviderUnavailable", "publish": false, "ordinary_empty_success": false}},
+    {"id": "mixed_revision_member", "qd_rows": ["QD-R02"], "inject": "a gen-2 member names another immutable revision", "expected": {"error": "IntegrityViolation", "publish": false}},
+    {"id": "malformed_utf8_span", "qd_rows": ["QD-R03"], "inject": "chunk-1 end byte changed from 7 to 6 inside é", "expected": {"error": "IntegrityViolation", "qdrant_writes": 0, "publish": false}},
+    {"id": "unsupported_sparse_encoder", "qd_rows": ["QD-P01"], "inject": "generic sparse data presented as undeclared BM25", "expected": {"error": "UnsupportedCapability", "qdrant_writes": 0}},
+    {"id": "budget_before_dispatch", "qd_rows": ["QD-P02"], "inject": "remaining attempt or byte allowance cannot admit the complete next write", "expected": {"new_dispatch": false, "published": false, "filters_or_scope_relaxed": false}},
+    {"id": "cancellation_after_dispatch", "qd_rows": ["QD-P02", "QD-W04"], "inject": "cancel after durable dispatch and actual request send", "expected": {"native_cancellation": true, "write_undone_claim": false, "dispatch": "unknown_unless_known_completion", "resume_identity": "intent-2/rev-2/gen-2"}},
+    {"id": "lease_expiry_not_fencing", "qd_rows": ["QD-P03"], "inject": "owner loses authority connection and lease expires while HTTP request remains live", "expected": {"successor_mutation_admitted": false, "unknown_cleared": false}},
+    {"id": "forged_quiescence_proof", "qd_rows": ["QD-P03"], "inject": "caller supplies drained=true or an invented PID/epoch statement", "expected": {"error": "UnsupportedCapability", "unknown_cleared": false}},
+    {"id": "managed_recovery_old_key_rejected", "qd_rows": ["QD-P03", "QD-W04"], "inject": "run the managed stop/rotate/restart/reconcile path against an unresolved dispatch", "expected": {"old_key_mutation_rejected": true, "old_process_cannot_dispatch": true, "new_epoch": 8, "clear_unknown_before_native_proof": false}},
+    {"id": "known_completed_replay", "qd_rows": ["QD-W04", "QD-W08"], "inject": "restart a client after durable settled write/publication state exists", "expected": {"identity_reused": true, "new_generation": false, "new_provider_usage": false, "duplicate_members": false}},
+    {"id": "backend_wide_recovery_gate", "qd_rows": ["QD-P03"], "inject": "another document has its own unresolved attempt and tries a write during physical backend credential recovery", "expected": {"second_document_dispatch": false, "all_documents_unknowns_quarantined": true, "authoritative_revocation_still_commits": true}},
+    {"id": "writer_crash_live_supervisor", "qd_rows": ["QD-P03"], "inject": "writer exits after durable dispatch while its exclusive application-owned supervisor remains alive", "expected": {"supervisor_reconciles_same_instance": true, "clear_before_stop_rotate_restart_reconcile": false, "automatic_supervisor_takeover": false}},
+    {"id": "supervisor_crash_blocks", "qd_rows": ["QD-P03"], "inject": "exclusive supervisor dies or pauses while a writer has an admitted capability", "expected": {"successor_supervisor_admitted": false, "dispatch_admitted": false, "out_of_band_verified_dead_process_recovery_required": true}},
+    {"id": "paused_old_worker_resumes", "qd_rows": ["QD-P03", "QD-A02"], "inject": "old worker resumes an admitted request after instance recovery rotated the write key", "expected": {"old_key_mutation_rejected": true, "old_worker_refreshes_new_key": false, "current_authorization_restored_by_reconciliation": true}}
+  ]
+}

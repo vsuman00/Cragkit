@@ -250,7 +250,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V5-C1: Native demonstration, 1725 Python/tool and 980 Node package regressions, strict types/build and scoped security checks passed; learning practice unassessed. [Evidence](../evaluation/reports/V5/V5-03D.md).
 
-- [ ] V5-04: [Publication and repair](versions/V5-integrations.md#v5-04-publication-and-repair) — evidence: pending.
+- [ ] V5-04: [Publication and repair](versions/V5-integrations.md#v5-04-publication-and-repair) — implementation and native fault acceptance pending.
+  - [x] V5-04A: QW-r1 publication/recovery boundary, 43 fault scenarios, 14 numeric cases and computed cross-runtime goldens; [design acceptance](../evaluation/reports/V5/V5-04A.md).
+  - [ ] V5-04B1: Pure native vector encoders and readback validators; implementation running.
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
 
@@ -297,6 +299,28 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04A: Publication/repair execution contract
+
+State: COMPLETE for design acceptance. Prior goal turn made verified progress: V5-03/C1 accepted and pushed in 5393b92, synchronized 0/0; three untracked user audits remain preserved. Concrete outcome: frozen native writer/authority/coordinator boundaries, immutable vector/manifest representation and bounded real-fault acceptance before dependent writer edits. This is the first required child of full V5-04, not a replacement for implementation or recovery tests.
+
+- Sol v5_candidate_contract owns only new contracts/QDRANT_PUBLICATION_V5.md and docs/decisions/0004-qdrant-managed-writes.md; contract/protocol and named assembler.
+- Sol v5_candidate_fixtures owns only new contracts/fixtures/qdrant_publication.json and docs/qdrant-publication-acceptance.md; complementary fault scenarios and native acceptance mapping.
+- Root owns shared decisions/plan/tracker/edge updates, primary-source verification, all commands, integration and Git. Existing QS/QC/QD contracts, runtime source, migrations, manifests/locks and user audits remain protected. Peers coordinate concrete dependencies directly and revise only their assigned split by agreement. Outcome/protected-boundary/ownership changes to root; unresolved material choices to Astra after peer/coordinator review.
+
+Accepted reference uses the existing single-node Qdrant 1.20.0 target and optional PostgreSQL authority, durable global physical claims, per-document CAS ownership and dispatch records written before side effects. Unresolved dispatches block successors even after lease expiry. Normal completion requires wait=true completed and complete readback. The borrowed exclusive supervisor survives worker crashes, closes instance-wide admission and proves stop/rotate/restart/reconciliation with old credentials rejected. Supervisor loss has no automatic takeover. Explicit prevent_unoptimized=false and exact readback are required; health alone does not prove full replay. Exact Float32LE input seals are separate from bounded normalized dense readback equivalence; sparse readback is exact. Migration 0001/source-only catalog remain unchanged; the upgrade requires a separate exact history/catalog profile.
+
+Final handoff: both substantive Sol peers coordinated directly; the contract peer assembled and both transferred ownership before root corrections. Root escalated two material controller/numeric decisions to Astra, checked pinned primary source and preserved existing write-authorization and model-ledger semantics. All 43 fault cases map to the native matrix and cover 21 QD rows. Four vector seals and two ordered manifest/intent hashes independently matched Python and Node; exact source/span/UUID/tie expectations, relative links, 16 sealed inputs and three user audit hashes passed. Prose skill found no suspicious carriers and low density; deterministic output unchanged. No product test suite, native datastore process/mutation, model, install or service ran for this design-only child. Resource snapshot: 39 GiB disk, 64 percent system memory free. Learning practice unassessed. Next: V5-04B1 pure native codec, followed by B2-H implementation and native faults; full V5 remains active.
+
+### V5-04B1: Native vector identity and readback validation
+
+State: RUNNING. Concrete shared outcome: implement QW-r1's pure exact Float32LE input encoders, full-profile seals and bounded dense/exact sparse readback checks in native Python and TypeScript. No public ingestion export or publication capability is introduced.
+
+- Sol v5_candidate_contract owns only new packages/python/src/cragkit/_qdrant_vectors.py and packages/python/tests/test_qdrant_vectors.py; Python implementation/tests and named assembler.
+- Sol v5_candidate_fixtures owns only new packages/typescript/src/qdrant-vectors.ts and packages/typescript/tests/qdrant-vectors.test.mjs; complementary TypeScript implementation/tests.
+- Root owns frozen shared QW-r1/fixture revisions, reports/tracker, all commands and Git. Existing runtime files, migrations, manifests/locks, core exports and user drafts remain protected. Peers resolve routine dependencies directly and transfer any file before another writer edits; outcome/protected boundary/ownership changes go to root and unresolved material decisions to Astra.
+
+Workers write tests first and notify root before implementation. Root checks expected missing-module failures, then authorizes implementation, runs focused checks, strict types and affected regressions serially. Workers run no tests/processes, network/provider/database calls, services, installations or Git. Use small synthetic data and one test process. Acceptance includes shared seals, all 14 numeric cases, ties/subnormal/underflow/overflow/profile/container/immutability failures, closest representable tolerance bounds and exact sparse mapping. No model or service is needed. Root is final integrator; next action is the tests-first check and implementation against the frozen codec.
 
 ### V5-03D: Real local PostgreSQL/Qdrant disclosure acceptance
 

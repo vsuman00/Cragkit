@@ -156,3 +156,11 @@ At each version exit, inspect all cases owned by that version. At V6, audit the 
 | --- | --- | --- | --- | --- |
 | E85 | Canonical bytes include NUL, a mid-scalar span or invalid UTF-8 outside a valid excerpt | Preserve exact bytea/digests; native verification strictly decodes the whole source and excerpt before release. SQL digest equality alone is insufficient. | V5-03A, V5-03B/C | U/I |
 | E86 | Malformed scope-grant JSON contains extreme numeric exponents or depth | Deny access without a parser exception; keep cancellation, timeout, memory and connection failures operational. | V5-03A | U/I |
+
+## Qdrant publication and recovery
+
+| ID | Failure or boundary | Required behavior | Owner | Check |
+| --- | --- | --- | --- | --- |
+| E87 | Cosine storage normalizes Float32 inputs, or two runtimes serialize floats differently | Bind exact submitted content with the declared binary codec. Verify dense readback using the fixed numerical equivalence rule and sparse readback using exact canonical values; do not claim equality of arbitrary floating-point JSON hashes. Reject nonfinite conversion and nonzero input underflow under the publication profile. | V5-04B1, V5-04H | U/I |
+| E88 | An old worker resumes after lease expiry or an instance restart affects another document | Preserve durable uncertainty, gate all documents during recovery and fence old immutable credentials before reconciliation. A lease, PID alone or caller-provided flag cannot admit a successor. Supervisor loss remains blocked until independently verified controlled recovery. | V5-04C, V5-04E, V5-04H | U/I |
+| E89 | Qdrant loads while acknowledged WAL operations are still queued for background replay | Require the supported single-node replay configuration, including explicit `prevent_unoptimized=false`, and full exact reconciliation. Health alone does not establish publication, recovery or purge completion. | V5-04E, V5-04H | I |
