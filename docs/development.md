@@ -772,6 +772,25 @@ The [dense composition examples](../examples/qdrant_dense.md) connect E-r1 batch
 
 Add `--dense-only` to the native checker and select a separate artifact directory, such as `--artifacts-dir artifacts/V5/native-dense-only`, to verify a genuine dense-only collection. This mode uses fake E-r1 inference and batch binding before each actual scoped backend query. The accepted OpenAI configuration exposes dense only; no sparse model is required. [V5-02E evidence](../evaluation/reports/V5/V5-02E.md) records both deployment modes and their limits.
 
+## V5 authoritative source schema
+
+[QS-r1](../contracts/QDRANT_SOURCES_V5.md) and [the optional schema guide](../storage/qdrant/postgres/README.md) freeze the source-only foundation. The [V5-03A report](../evaluation/reports/V5/V5-03A.md) separates actual SQL checks from later source-adapter, runtime LOGIN and publication acceptance. The authority uses PostgreSQL 17 without a pgvector/FTS dependency; existing core/vector histories remain separate.
+
+Verified focused checks, from the root and one process at a time:
+
+```sh
+uv sync --project packages/python --frozen --extra qdrant --extra postgres
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_authority_schema.py -q
+```
+
+After verifying the dedicated nonproduction direct Neon target, client TLS, creator/runtime privileges and existing migration/security gates, the explicit rollback-only native command is:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_authority_schema.py --config "$HOME/.config/cragkit/neon/admin-config.json" --confirm-dedicated-target --allow-test-writes --artifacts-dir artifacts/V5/source-schema
+```
+
+It refuses an existing `cragkit_qdrant` namespace, takes the shared administrative locks, creates the exact schema/ledger and synthetic data, and tests forced RLS through an ephemeral NOLOGIN role with SELECT/helper permissions. It never permanently applies the migration. Deferred FK events are resolved before changing fixture RLS, avoiding SQLSTATE `55006`. Administrative seeding temporarily removes FORCE only on the four newly created fixture tables; actual reader assertions run with FORCE restored. All DDL/data/role/membership work rolls back, old histories and role fingerprints are compared, and rollback/connection closure are bounded with redacted combined failures. This is not an actual reader LOGIN test. No Qdrant service or model provider runs in this command.
+
 ## V4 bounded corrective execution
 
 The optional `cragkit.corrective` / `cragkit/corrective` modules accept a trusted backend. `PostgresCorrectiveBackend` in `cragkit.postgres_corrective` / `cragkit/postgres-corrective` reuses caller-owned native sessions. Ledger, planner and event modules are explicit imports/subpaths. Importing them does not connect a service or load a model. Read [the execution contract](../contracts/EXECUTION_V4.md) and [V4-03 through V4-05 evidence](../evaluation/reports/V4/V4-03-05.md).

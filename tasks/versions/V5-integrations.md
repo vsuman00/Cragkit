@@ -68,6 +68,12 @@ Learning exercise: Explain source authority versus search-index replicas.
 
 Expected areas: `SourceStore implementations`, `cross-store authorization tests`.
 
+Execute V5-03 as bounded children after V5-02:
+
+- V5-03A: freeze authoritative read/source identity and canonical row fixtures, and implement an isolated optional PostgreSQL source schema with its own migration ledger and read policies. No applied `cragkit` migration/history changes. Native SQL validation must prove schema/constraint/read-policy behavior and rollback cleanup before acceptance.
+- V5-03B/C: native Python and TypeScript source adapters on separate owned paths, with immutable source verification, fresh authorization, bounded reads and matching failure semantics. Reuse pools/deadlines, not the existing read-only session as a writer.
+- V5-03D: serial real PostgreSQL plus Qdrant stale-grant/provider-spy/final-release acceptance, including source outage, unpublished/superseded/malformed references and retained previously published bindings. Source-only checks do not establish publication/coordinator compatibility; V5-04 supplies those capabilities.
+
 ### Checkpoint V5-C1
 
 After tasks through V5-03, run focused regression tests and the shared fixtures touched by this group. Demonstrate the current behavior, inspect one failure case, and record resource observations. Discuss one learning takeaway. Fix failures before adding the next capability. Run the complete version acceptance suite at the final checkpoint.

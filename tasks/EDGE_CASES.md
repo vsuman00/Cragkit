@@ -148,3 +148,11 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.
 
 At each version exit, inspect all cases owned by that version. At V6, audit the entire inventory and verify that no required case is merely planned, skipped without explanation, or supported only by a mock when real integration is required.
+
+
+## Qdrant authoritative source gates
+
+| ID | Failure or boundary | Required behavior | Owner | Check |
+| --- | --- | --- | --- | --- |
+| E85 | Canonical bytes include NUL, a mid-scalar span or invalid UTF-8 outside a valid excerpt | Preserve exact bytea/digests; native verification strictly decodes the whole source and excerpt before release. SQL digest equality alone is insufficient. | V5-03A, V5-03B/C | U/I |
+| E86 | Malformed scope-grant JSON contains extreme numeric exponents or depth | Deny access without a parser exception; keep cancellation, timeout, memory and connection failures operational. | V5-03A | U/I |

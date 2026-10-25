@@ -1,0 +1,631 @@
+{
+  "revision": "QS-r1",
+  "task": "V5-03A",
+  "status": "normative_design_data",
+  "executed": false,
+  "rules": {
+    "expansion": "Resolve $ref strings before assertions. Convert encoding=utf8 fixture objects to strict UTF-8 bytes without normalization; encoding=hex objects hold exact raw bytes. Copy the base row and nomination before applying dot-path set mutations. Digest expectations were computed from exact synthetic bytes by the final integrator.",
+    "authority": "Only synthetic immutable bytes and authoritative state are represented. A matching vector payload is not authorization. These scenarios are future adapter expectations, not executed observations.",
+    "binding": "An issued binding is an opaque object held by one live source request. Labels such as issued_binding are scenario references, never serialized capabilities.",
+    "denial": "Unavailable reveals no distinction between missing, denied, tombstoned, unpublished or superseded new-search content. Operational failures are typed exceptions, never unavailable success."
+  },
+  "digests": {
+    "source_sha256": "0391605f65138f90f93b9a7ad361ceaa0628163bd80dfb2b8912775ebf16fc05",
+    "text_sha256": "b4fc7b69bf285cd1e8c09a95c041f9c5f79067188c0cb411fb650ea5f6a5bc95"
+  },
+  "nul_digests": {
+    "source_sha256": "6f3f977d72d5cfcfa91e5bb946534240a52c5369e011f26a977c98a89bdf14d1",
+    "text_sha256": "320473aa02b4b7fe1bd4f3f827cf21ebc9b944214439c65c8399d258f28a33e2"
+  },
+  "invalid_utf8_source_sha256": "d282161f202c0f0dc79bd53121af741a4a15ffe4621c03cbbeb23e4ec3ae175c",
+  "bounds": {
+    "source_bytes_per_request": 16777216,
+    "excerpt_bytes": 32768,
+    "fetch_attempts": 64,
+    "bindings": 64,
+    "release_attempts_per_binding": 2,
+    "source_operations": 192
+  },
+  "profiles": {
+    "dense": {
+      "profile_id": "fake_embedding_1536_v1",
+      "provider": "fake",
+      "model": "fake_embedding_model_v1",
+      "dimensions": 1536,
+      "tokenizer": "fake-byte-v1",
+      "normalization": "l2"
+    },
+    "sparse": {
+      "profile_id": "fake_manual_sparse_v1",
+      "encoder": "caller_supplied_fixture",
+      "model": "none",
+      "revision": "1",
+      "vocabulary": "fixture_uint32_v1",
+      "preprocessing": "none",
+      "weighting": "caller_supplied",
+      "corpus_statistics_revision": "none"
+    }
+  },
+  "request": {
+    "query": "synthetic source lookup",
+    "collection": "docs",
+    "required_filters": [
+      {
+        "op": "eq",
+        "field": "kind",
+        "value": "guide"
+      }
+    ]
+  },
+  "scope": {
+    "tenant_id": "tenant-a",
+    "principal_id": "reader-a",
+    "grant_ids": [
+      "grant-a"
+    ],
+    "authorization_revision": "auth-1"
+  },
+  "base_row": {
+    "point_id": "45c24a7e-d460-5846-8dae-39569ac502e8",
+    "backend_namespace": "fixture-local",
+    "physical_collection": "cragkit_qc_r1",
+    "collection_incarnation": "inc-1",
+    "tenant_id": "tenant-a",
+    "collection": "docs",
+    "document_id": "doc-1",
+    "revision_id": "rev-1",
+    "generation_id": "gen-1",
+    "chunk_id": "chunk-1",
+    "start_byte": 2,
+    "end_byte": 11,
+    "source_sha256": "$ref:digests.source_sha256",
+    "text_sha256": "$ref:digests.text_sha256",
+    "dense_profile_id": "fake_embedding_1536_v1",
+    "sparse_profile_id": "fake_manual_sparse_v1",
+    "dense_profile": "$ref:profiles.dense",
+    "sparse_profile": "$ref:profiles.sparse",
+    "authorization_revision": "auth-1",
+    "mutation_epoch": 1,
+    "principal_ids": [
+      "reader-a"
+    ],
+    "grant_ids": [
+      "grant-a"
+    ],
+    "language": "en",
+    "kind": "guide",
+    "tag": "reference",
+    "source_locator": "fixture:qdrant/doc-1@rev-1",
+    "parser_id": "fixture_parser_v1",
+    "chunker_profile": "fixture_chunker_v1",
+    "source_bytes": 13,
+    "canonical_utf8": {
+      "encoding": "utf8",
+      "value": "A café 雪.\n"
+    },
+    "excerpt_bytes": 9,
+    "excerpt_utf8": {
+      "encoding": "utf8",
+      "value": "café 雪"
+    },
+    "active_generation_id": "gen-1",
+    "generation_published": true,
+    "generation_ever_published": true,
+    "tombstoned": false
+  },
+  "nomination": {
+    "point_id": "45c24a7e-d460-5846-8dae-39569ac502e8",
+    "branch": "dense",
+    "score": 0.75,
+    "score_kind": "cosine_similarity",
+    "score_direction": "higher_is_better",
+    "verification": "UNVERIFIED",
+    "payload": {
+      "backend_namespace": "fixture-local",
+      "physical_collection": "cragkit_qc_r1",
+      "collection_incarnation": "inc-1",
+      "tenant_id": "tenant-a",
+      "collection": "docs",
+      "document_id": "doc-1",
+      "revision_id": "rev-1",
+      "generation_id": "gen-1",
+      "chunk_id": "chunk-1",
+      "start_byte": 2,
+      "end_byte": 11,
+      "source_sha256": "$ref:digests.source_sha256",
+      "text_sha256": "$ref:digests.text_sha256",
+      "dense_profile_id": "fake_embedding_1536_v1",
+      "sparse_profile_id": "fake_manual_sparse_v1",
+      "dense_profile": "$ref:profiles.dense",
+      "sparse_profile": "$ref:profiles.sparse",
+      "authorization_revision": "auth-1",
+      "principal_ids": [
+        "reader-a"
+      ],
+      "grant_ids": [
+        "grant-a"
+      ],
+      "language": "en",
+      "kind": "guide",
+      "tag": "reference"
+    }
+  },
+  "cases": [
+    {
+      "id": "active_unicode",
+      "operation": "fetch_candidate",
+      "max_source_bytes": 13,
+      "expected": {
+        "state": "verified",
+        "text": "café 雪",
+        "source_bytes": 13,
+        "stale": false,
+        "binding_issued": true,
+        "canonical_source_public": false
+      }
+    },
+    {
+      "id": "private_source_opt_in",
+      "operation": "fetch_candidate",
+      "include_source": true,
+      "expected": {
+        "state": "verified",
+        "private_canonical_source": "A café 雪.\n",
+        "canonical_source_public": false
+      }
+    },
+    {
+      "id": "budget_before_bytes",
+      "operation": "fetch_candidate",
+      "max_source_bytes": 12,
+      "expected": {
+        "state": "budget_exhausted",
+        "source_bytes": 0,
+        "binding_issued": false
+      }
+    },
+    {
+      "id": "missing_member",
+      "operation": "fetch_candidate",
+      "authority": "no_row",
+      "expected": {
+        "state": "unavailable",
+        "source_bytes": 0,
+        "binding_issued": false
+      }
+    },
+    {
+      "id": "stale_payload_grant_revoked",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.principal_ids": [],
+        "base_row.grant_ids": []
+      },
+      "nomination_unchanged": true,
+      "expected": {
+        "state": "unavailable",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "authorization_revision_changed",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.authorization_revision": "auth-2"
+      },
+      "expected": {
+        "state": "unavailable",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "required_metadata_changed",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.kind": "other"
+      },
+      "expected": {
+        "state": "unavailable",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "tombstone",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.tombstoned": true
+      },
+      "expected": {
+        "state": "unavailable",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "staging_generation",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.generation_published": false,
+        "base_row.generation_ever_published": false
+      },
+      "expected": {
+        "state": "unavailable",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "superseded_new_candidate",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.active_generation_id": "gen-2"
+      },
+      "expected": {
+        "state": "unavailable",
+        "binding_issued": false,
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "bound_then_new_publication",
+      "operation": "release",
+      "precondition": "issued_binding_from_active_unicode",
+      "set": {
+        "base_row.active_generation_id": "gen-2"
+      },
+      "expected": {
+        "state": "verified",
+        "text": "café 雪",
+        "stale": true
+      }
+    },
+    {
+      "id": "unbound_historical_tuple",
+      "operation": "release",
+      "binding": "serialized_identity_copy",
+      "set": {
+        "base_row.active_generation_id": "gen-2"
+      },
+      "expected": {
+        "error": "InvalidRequest",
+        "sql_calls": 0
+      }
+    },
+    {
+      "id": "other_request_binding",
+      "operation": "release",
+      "binding": "issued_by_other_request",
+      "expected": {
+        "error": "InvalidRequest",
+        "sql_calls": 0
+      }
+    },
+    {
+      "id": "revocation_after_provider_before_final",
+      "operation": "release",
+      "precondition": "provider_received_while_authorized",
+      "set": {
+        "base_row.principal_ids": [],
+        "base_row.grant_ids": []
+      },
+      "expected": {
+        "state": "unavailable",
+        "final_text_bytes": 0,
+        "prior_delivery_retractable": false
+      }
+    },
+    {
+      "id": "tombstone_after_binding",
+      "operation": "release",
+      "precondition": "issued_binding_from_active_unicode",
+      "set": {
+        "base_row.tombstoned": true
+      },
+      "expected": {
+        "state": "unavailable",
+        "final_text_bytes": 0
+      }
+    },
+    {
+      "id": "retention_removed",
+      "operation": "release",
+      "precondition": "issued_binding_from_active_unicode",
+      "authority": "no_row",
+      "expected": {
+        "state": "unavailable",
+        "final_text_bytes": 0
+      }
+    },
+    {
+      "id": "source_outage",
+      "operation": "fetch_candidate",
+      "authority": "connection_failure",
+      "expected": {
+        "error": "ProviderUnavailable",
+        "provider_text_bytes": 0,
+        "ordinary_empty_success": false
+      }
+    },
+    {
+      "id": "deadline",
+      "operation": "fetch_candidate",
+      "authority": "deadline_expired",
+      "expected": {
+        "error": "DeadlineExceeded",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "foreign_scope",
+      "operation": "fetch_candidate",
+      "set": {
+        "nomination.payload.tenant_id": "tenant-b"
+      },
+      "expected": {
+        "error": "UnauthorizedScope",
+        "sql_calls": 0
+      }
+    },
+    {
+      "id": "wrong_incarnation",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.collection_incarnation": "inc-2"
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "wrong_revision",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.revision_id": "rev-2"
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "wrong_profile_same_dimension",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.dense_profile.model": "other-model"
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "source_digest_mismatch",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "excerpt_digest_mismatch",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.text_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "mid_scalar_span",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.end_byte": 10
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "wrong_excerpt_bytes",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.excerpt_utf8": {
+          "encoding": "utf8",
+          "value": "cafe 雪"
+        }
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "provider_text_in_nomination",
+      "operation": "fetch_candidate",
+      "set": {
+        "nomination.payload.text": "SYNTHETIC INJECTION"
+      },
+      "expected": {
+        "error": "InvalidRequest",
+        "sql_calls": 0
+      }
+    },
+    {
+      "id": "payload_locator_injection",
+      "operation": "fetch_candidate",
+      "set": {
+        "nomination.payload.source_locator": "https://invalid.example/source"
+      },
+      "expected": {
+        "error": "InvalidRequest",
+        "follow_locator": false,
+        "sql_calls": 0
+      }
+    },
+    {
+      "id": "embedded_nul_exact_excerpt",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.canonical_utf8": {
+          "encoding": "utf8",
+          "value": "A\u0000café 雪.\n"
+        },
+        "base_row.excerpt_utf8": {
+          "encoding": "utf8",
+          "value": "\u0000café 雪"
+        },
+        "base_row.start_byte": 1,
+        "base_row.excerpt_bytes": 10,
+        "base_row.source_sha256": "$ref:nul_digests.source_sha256",
+        "base_row.text_sha256": "$ref:nul_digests.text_sha256",
+        "nomination.payload.start_byte": 1,
+        "nomination.payload.source_sha256": "$ref:nul_digests.source_sha256",
+        "nomination.payload.text_sha256": "$ref:nul_digests.text_sha256"
+      },
+      "expected": {
+        "state": "verified",
+        "text": "\u0000café 雪",
+        "source_bytes": 13,
+        "nul_preserved": true
+      }
+    },
+    {
+      "id": "nul_adjacent_to_excerpt",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.canonical_utf8": {
+          "encoding": "utf8",
+          "value": "A\u0000café 雪.\n"
+        },
+        "base_row.source_sha256": "$ref:nul_digests.source_sha256",
+        "nomination.payload.source_sha256": "$ref:nul_digests.source_sha256"
+      },
+      "expected": {
+        "state": "verified",
+        "text": "café 雪",
+        "source_bytes": 13,
+        "nul_preserved_in_canonical_source": true
+      }
+    },
+    {
+      "id": "invalid_utf8_outside_excerpt",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.canonical_utf8": {
+          "encoding": "hex",
+          "value": "4120636166c3a920e99baa2eff"
+        },
+        "base_row.source_sha256": "$ref:invalid_utf8_source_sha256",
+        "nomination.payload.source_sha256": "$ref:invalid_utf8_source_sha256"
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "source_absolute_cap",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.source_bytes": 16777217
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "excerpt_absolute_cap",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.excerpt_bytes": 32769
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "repeated_reads_charge_budget",
+      "operation": "release",
+      "precondition": "issued_binding_from_active_unicode",
+      "remaining_source_bytes": 12,
+      "expected": {
+        "state": "budget_exhausted",
+        "source_bytes": 0,
+        "final_text_bytes": 0
+      }
+    },
+    {
+      "id": "fetch_slot_exhaustion",
+      "operation": "fetch_candidate",
+      "prior_fetch_attempts": 64,
+      "expected": {
+        "state": "budget_exhausted",
+        "sql_calls": 0
+      }
+    },
+    {
+      "id": "release_slot_replay",
+      "operation": "release",
+      "precondition": "provider_and_final_release_already_attempted",
+      "expected": {
+        "error": "InvalidRequest",
+        "sql_calls": 0
+      }
+    },
+    {
+      "id": "closed_request_binding",
+      "operation": "release",
+      "precondition": "binding_request_closed",
+      "expected": {
+        "error": "InvalidRequest",
+        "sql_calls": 0
+      }
+    },
+    {
+      "id": "missing_current_metadata",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.kind": null
+      },
+      "expected": {
+        "state": "unavailable",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "wrong_stored_point_id",
+      "operation": "fetch_candidate",
+      "set": {
+        "base_row.point_id": "00000000-0000-5000-8000-000000000000"
+      },
+      "expected": {
+        "error": "IntegrityViolation",
+        "provider_text_bytes": 0
+      }
+    },
+    {
+      "id": "stale_mutable_replicas_do_not_deny_current_authority",
+      "operation": "fetch_candidate",
+      "set": {
+        "nomination.payload.authorization_revision": "auth-0",
+        "nomination.payload.principal_ids": [],
+        "nomination.payload.grant_ids": [
+          "old-grant"
+        ],
+        "nomination.payload.kind": "old-kind"
+      },
+      "expected": {
+        "state": "verified",
+        "text": "café 雪",
+        "stale": false
+      }
+    }
+  ]
+}
