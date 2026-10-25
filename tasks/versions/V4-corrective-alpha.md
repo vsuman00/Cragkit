@@ -1,6 +1,6 @@
 # V4: Corrective retrieval alpha
 
-Status: in progress; ledger/planning and focused corrective paths have local evidence. Full-version acceptance is pending. Progress is tracked only in [todo.md](../todo.md).
+Status: complete for the internal native/synthetic development milestone. [Exit evidence](../../evaluation/reports/V4/V4-08-exit.md) records verification and limits. Progress is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
