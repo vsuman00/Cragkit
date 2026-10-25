@@ -221,6 +221,14 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V4-EXIT: Version acceptance complete; evidence and limitations recorded.
 
+### Post-exit operational follow-ups
+
+[Readiness recheck](../evaluation/reports/V4/V4-READINESS.md): the feature milestone remains accepted. V5-01 design may begin; resolve these before V5 backend implementation/native acceptance.
+
+- [ ] V4-AUD-02: Retain bounded redacted cleanup diagnostics, preserving original and cleanup failures separately; prove credential/raw-SQL/private-text exclusion. OPEN, not implemented.
+- [ ] V4-AUD-01: Diagnose interrupted hybrid fixture cleanup and add bounded idempotent recovery with exact ownership, failure-injection tests, empty-inventory checks and preserved histories/unrelated data. OPEN; observed root cause unproven.
+
+
 ## V5: Backend and transport extensions
 
 [Version plan](versions/V5-integrations.md)
@@ -976,3 +984,11 @@ V4-01 through V4-08, C1-C3 and EXIT COMPLETE for the internal native/synthetic m
 Six reviewed development questions showed no recall gain from correction (0.8 document/facet recall, same reciprocal rank/nDCG in all modes), with six/11/17 synthetic calls for hybrid/reranked/corrective respectively. Correction stays opt-in. Weak-query recovery is mechanics-only; variants are label-derived, no held-out scoring. [Machine results](../evaluation/reports/V4/V4-08-results.json) include source/archive hashes, metrics, footprint and run history.
 
 Root integrated Sol writer/test pairs with direct peer coordination and named assemblers, plus independent review; one Astra budget-policy escalation resolved within scope. Final implementation fixes and regressions accepted. Core commit beaa41b and optional SDK commit a3fe3d3 were pushed immediately and verified synchronized. Final report/prose/link/scope review precedes the exit evidence commit/push. Original two untracked security reports remain user-owned and excluded. All task test processes/pools/temp credentials closed; no persistent service started. Latest snapshot M4/16 GiB, 38 GiB disk / 54 percent memory free; snapshots only. Learning exercise unassessed, no implementation gate remains. Next smallest action: V5-01 consistency specification before store-adapter coding.
+
+## V4 readiness recheck assignment
+
+V4-READINESS RUNNING: user asked whether V5 can begin or V4 has remaining work. New local untracked AUDIT-V2-V4.md is review input, preserved with the original V1/V2 reports. Shared outcome: distinguish accepted V4 features from newly reported harness follow-ups and identify the next authorized slice. Two gpt-6.1-sol read-only peers: v4_readiness_harness owns cleanup source/test-gap verification and assembles; v4_readiness_exit owns plan/exit/evidence reconciliation. No writable peer paths, edits, tests, processes, network/DB calls or Git actions. Peers coordinate concrete dependencies directly; root integrates findings and owns readiness note/tracker/prose/Git. Source baseline f91eb37. Preserve product contracts, credentials, histories, user reports and existing evidence; Astra only if a material disagreement remains.
+
+### V4 readiness recheck handoff
+
+Assessment COMPLETE, follow-ups OPEN. Root integrated the read-only Sol pair and independently confirmed 14 source hashes, saved 34-stage acceptance, passed core/SDK artifact reports and the saved native 18-group cleanup success. Current source confirms generic cleanup diagnostics and missing parent-harness recovery coverage; new audit reports repeated cleanup failure, but this turn did not reproduce it or inspect live DB state. No demonstrated new product vulnerability. Next smallest implementation task: V4-AUD-02, then V4-AUD-01; V5-01 consistency design may proceed, with backend coding/native acceptance after these follow-ups. No tests, DB/provider calls, services or installs ran; resource use was small local reads/hash/prose checks, no new capacity claim. Learning example: recovery must converge on exact owned resources; practice unassessed. Three user-owned untracked audits preserved/excluded. Only readiness note/tracker changed; root owns prose/link/consistency checks and scoped commit/push.
