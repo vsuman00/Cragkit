@@ -11,10 +11,20 @@ import re
 from pathlib import Path
 import secrets
 import stat
+import sys
 import tempfile
 
 
 CURRENT_STAGE = 'not_started'
+
+
+def require_installed_origin(expected: str | None, module_file: str, interpreter_prefix: str) -> None:
+    if expected is None:
+        return
+    target = Path(expected).resolve()
+    if (Path(interpreter_prefix).resolve() != target
+            or not Path(module_file).resolve().is_relative_to(target)):
+        raise RuntimeCheckError('installed_product_origin_required')
 
 
 def require_neon_host(host: str) -> None:
@@ -88,6 +98,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False, dense: bool = False, hybrid: bool = False, evidence: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
+    import cragkit
+    require_installed_origin(os.environ.get('CRAGKIT_REQUIRE_INSTALLED_PREFIX'), cragkit.__file__, sys.prefix)
     # Optional dependencies are loaded only after explicit CLI authorization.
     import psycopg
     from psycopg import sql

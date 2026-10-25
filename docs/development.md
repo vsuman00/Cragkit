@@ -716,3 +716,16 @@ node --test --test-concurrency=1 packages/typescript/tests/calibration-replay.te
 ```
 
 `tools/run_v3_calibration.py` refuses dispatch without `--allow-live`. Its explicit baseline/output arguments select a verified native baseline and task-owned report. A new live run requires its own recorded budget/rationale; it is not part of routine acceptance. Parent-bounded serial children read the private Cohere key, retain redacted call/failure accounting and never retry automatically. Node replay takes an explicit `--replay` local public JSON payload and never accesses credentials or the network.
+
+## V3 installed evidence release checkpoint
+
+The artifact verifier now runs source/authorization, context, packing, coverage and bounded-rebalance fixtures using clean installed wheel/npm product modules. It first checks three default installations with optional tokenizer/database/model packages absent and external I/O denied. Then it explicitly installs pinned tokenizer extras, copies probes/examples outside the checkout, validates module provenance and compares complete native outputs. Fake source fixtures are contract checks, separate from database RLS evidence.
+
+```sh
+python3 tools/check_artifacts.py --output-dir artifacts/V3/V3-installed
+python3 tools/check_artifacts.py --output-dir artifacts/V3/V3-installed-native --postgres-config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --evidence-native
+```
+
+The second command is an explicit synthetic-write check on the dedicated development target. It copies the harness, links only fixture/storage/evaluation data, and loads Python product code from the installed wheel and Node product code from the installed npm package. No checkout Python product path is available. Provenance guards fail if those paths or the Python interpreter prefix disagree. The existing least-privilege runtime child and maximum two-client boundary remain in effect. An outer 720-second bound leaves time for cleanup after the native 600-second workload limit. Temporary environments and fixture state must both report cleaned.
+
+The examples require the optional tokenizer and explicit local asset. Copy the relevant example into the application's package environment before running it with `--tokenizer`; the artifact verifier performs that setup automatically. Python uses the tokenizers extra; Node uses tiktoken 1.0.22. Generated archives retain the internal 0.0.0 package identity; V3 is an implementation milestone, not a registry release. Hosted CI, production and cross-platform checks remain separate.

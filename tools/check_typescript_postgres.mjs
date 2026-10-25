@@ -1,8 +1,8 @@
 /** Explicit child of the Python-owned empty-target fixture; performs no database DDL. */
-import { readFileSync, lstatSync } from 'node:fs';
+import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { relative, isAbsolute } from 'node:path';
 import { parse_pool_config, PoolResource, now } from '../packages/typescript/dist/postgres-pool.js';
 import { PostgresRetriever } from '../packages/typescript/dist/retrieval.js';
 import { PostgresSession } from '../packages/typescript/dist/postgres-session.js';
@@ -20,7 +20,14 @@ export function requireNeonTLS(client, host) {
     && client?.ssl?.rejectUnauthorized === true && client?.ssl?.servername === host,
   'native_client_tls_required');
 }
+export function requireInstalledOrigin(expected, modulePath) {
+  if (expected === undefined) return;
+  const difference = relative(realpathSync(expected), realpathSync(modulePath));
+  requireCheck(difference !== '' && !difference.startsWith('..') && !isAbsolute(difference), 'installed_product_origin_required');
+}
 export function verifyNeonResource(resource, host) {
+  requireInstalledOrigin(process.env.CRAGKIT_INSTALLED_NODE_ROOT,
+    new URL('../packages/typescript/dist/index.js', import.meta.url));
   // Test tooling instruments the existing owned factory before guarded leases
   // hide the raw driver socket. No raw socket is added to the library interface.
   const factory = resource.factory;
@@ -235,4 +242,4 @@ export async function main(argv = process.argv.slice(2)) {
     return 1;
   } finally { channel?.close(); }
 }
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) process.exitCode = await main();
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main();

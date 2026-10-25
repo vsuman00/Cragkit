@@ -1,6 +1,6 @@
+import {realpathSync} from 'node:fs';
 /** Replay explicit development recordings through native adapters; never dispatch HTTP. */
 import {open} from 'node:fs/promises';
-import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {RerankingAdapter,RerankProfileSchema} from '../packages/typescript/dist/reranking.js';
 import {Cl100kCounter,render_context} from '../packages/typescript/dist/context.js';
@@ -78,6 +78,6 @@ async function main(){
   if(!fields(payload,['cases','recordings']))throw new InvalidRequest();
   console.log(JSON.stringify(await replay(payload.cases,payload.recordings)));
 }
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+if(process.argv[1]&&realpathSync(process.argv[1])===realpathSync(fileURLToPath(import.meta.url))){
   main().catch(()=>{console.error(JSON.stringify({state:'failed',code:'calibration_replay_failed'}));process.exitCode=1;});
 }

@@ -1,0 +1,84 @@
+{
+  "archives": {
+    "npm": {
+      "bytes": 66957,
+      "file_count": 49,
+      "name": "cragkit-0.0.0.tgz",
+      "sha256": "dad0f8bf4523d8301558527f7a5672bab1b24fcefe1cec0ae1fe7b4f52d1670e"
+    },
+    "rebuilt_wheel": {
+      "bytes": 67201,
+      "file_count": 29,
+      "name": "cragkit-0.0.0-py3-none-any.whl",
+      "sha256": "82e14fc763dc28ebca4a51400d66103a3a3d70356dd3bd1fc0edff1f766ac515"
+    },
+    "sdist": {
+      "bytes": 142883,
+      "file_count": 55,
+      "name": "cragkit-0.0.0.tar.gz",
+      "sha256": "68811bb4eca16ebea7a98ebed47b635b165375711de90e95a1c533ccd5db7bda"
+    },
+    "wheel": {
+      "bytes": 67201,
+      "file_count": 29,
+      "name": "cragkit-0.0.0-py3-none-any.whl",
+      "sha256": "82e14fc763dc28ebca4a51400d66103a3a3d70356dd3bd1fc0edff1f766ac515"
+    }
+  },
+  "artifact_count": 4,
+  "examples": {
+    "partial_states": [
+      "supported",
+      "missing"
+    ],
+    "partial_status": "partial",
+    "strict_context": "[]",
+    "strict_status": "insufficient",
+    "strict_tokens": 1
+  },
+  "guarded_default_import_samples": 3,
+  "installed_contract_counts": {
+    "assessment_cases": 35,
+    "context_cases": 8,
+    "packing_cases": 17,
+    "pipeline_cases": 6,
+    "source_cases": 23,
+    "token_cases": 127
+  },
+  "limitations": [
+    "current_platform_only",
+    "hosted_CI_unrun",
+    "not_registry_published",
+    "source_contract_fakes_separate_from_native_RLS",
+    "curated_assessment_not_general_semantic_quality"
+  ],
+  "model_calls": 0,
+  "native": {
+    "checks": [
+      "python_dense_default",
+      "python_dense_degraded",
+      "python_lexical_default",
+      "python_lexical_degraded",
+      "python_hybrid_fresh_source_tombstone_denied",
+      "python_development_ablation_18_requests_verified_sources",
+      "python_v3_six_query_packed_assessment_strict_budget_and_accounting",
+      "python_v3_no_model_lease_and_post_model_tombstone_denied",
+      "node_dense_default",
+      "node_dense_degraded",
+      "node_lexical_default",
+      "node_lexical_degraded",
+      "node_hybrid_fresh_source_tombstone_denied",
+      "node_v3_post_model_tombstone_and_no_model_lease",
+      "node_v3_six_query_full_packed_result_parity_and_strict_count",
+      "node_development_ablation_18_requests_full_result_parity"
+    ],
+    "cleanup_verified": true,
+    "maximum_connections": 2,
+    "provenance_guards": true,
+    "runtime": "installed_wheel_and_npm"
+  },
+  "package_identity": "0.0.0",
+  "revision": "INST-r1",
+  "state": "passed",
+  "temporary_environments_cleaned": true
+}

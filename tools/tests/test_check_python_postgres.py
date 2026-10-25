@@ -190,3 +190,14 @@ def test_evidence_cli_requires_hybrid_and_test_write_authorization(monkeypatch):
     assert PG.main()==0
     assert check.call_args.kwargs['evidence'] is True
     assert check.call_args.kwargs['hybrid'] is True
+
+
+def test_installed_origin_guard_rejects_checkout_and_wrong_interpreter(tmp_path):
+    prefix=tmp_path/'installed'
+    module=prefix/'lib'/'cragkit'/'__init__.py'
+    PG.require_installed_origin(str(prefix),str(module),str(prefix))
+    PG.require_installed_origin(None,str(tmp_path/'checkout/cragkit.py'),str(tmp_path))
+    with pytest.raises(PG.RuntimeCheckError,match='installed_product_origin_required'):
+        PG.require_installed_origin(str(prefix),str(tmp_path/'checkout/cragkit.py'),str(prefix))
+    with pytest.raises(PG.RuntimeCheckError,match='installed_product_origin_required'):
+        PG.require_installed_origin(str(prefix),str(module),str(tmp_path/'other'))

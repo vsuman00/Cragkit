@@ -98,3 +98,101 @@ def test_installed_import_guards_require_optional_vector_api():
     assert 'PostgresVectorIndexer' in ART.PYTHON_PROBE
     assert 'VectorIngestionReceipt' in ART.PYTHON_PROBE
     assert 'postgres.PostgresVectorIndexer' in ART.NODE_PROBE
+
+
+def test_native_harness_links_only_data_and_installed_product(tmp_path):
+    root, work, node = tmp_path / 'checkout', tmp_path / 'work', tmp_path / 'node'
+    (root / 'tools/__pycache__').mkdir(parents=True)
+    (root / 'tools/check_python_postgres.py').write_text('pass\n')
+    (root / 'tools/__pycache__/private.pyc').write_bytes(b'not copied')
+    for name in ('storage', 'evaluation', 'contracts', 'artifacts/tokenizers'):
+        (root / name).mkdir(parents=True)
+    (node / 'node_modules/cragkit/dist').mkdir(parents=True)
+    work.mkdir()
+    python = work / 'wheel/bin/python'
+    config = tmp_path / 'private-config.json'
+    command, harness, environment = ART.native_harness(root, work, python, node, config)
+    assert command[:4] == [str(python), '-I', '-B', '-c']
+    assert command[5:7] == [str(harness / 'tools'), str(harness / 'tools/check_python_postgres.py')]
+    assert command[-5:] == ['--allow-test-writes', '--neon', '--hybrid', '--evidence', '--typescript']
+    assert environment == dict(CRAGKIT_REQUIRE_INSTALLED_PREFIX=str(work / 'wheel'),
+                               CRAGKIT_INSTALLED_NODE_ROOT=str(node / 'node_modules/cragkit'))
+    assert (harness / 'tools/check_python_postgres.py').is_file()
+    assert not (harness / 'tools/__pycache__').exists()
+    assert not (harness / 'packages/python').exists()
+    assert not (harness / 'packages/typescript/src').exists()
+    assert (harness / 'packages/typescript/dist').resolve() == (node / 'node_modules/cragkit/dist').resolve()
+    assert (harness / 'packages/typescript/node_modules').resolve() == (node / 'node_modules').resolve()
+    assert (harness / 'contracts').resolve() == (root / 'contracts').resolve()
+    assert 'PYTHONPATH' not in environment
+
+
+def installed_probe_setup(tmp_path):
+    root, work, node = tmp_path / 'checkout', tmp_path / 'work', tmp_path / 'node'
+    for directory in [root / 'tools', root / 'examples', root / 'contracts/fixtures', work, node]:
+        directory.mkdir(parents=True)
+    for name in ['tools/probe_installed_evidence.py', 'tools/probe_installed_evidence.mjs',
+                 'examples/evidence.py', 'examples/evidence.mjs']:
+        (root / name).write_text('copied outside checkout')
+    for filename in ['retrieval.json', 'context.json', 'packing.json', 'assessment.json', 'evidence-pipeline.json']:
+        (root / 'contracts/fixtures' / filename).write_text(json.dumps(dict(source_cases=[{}], cases=[{}], token_cases=[{}])))
+    result = dict(revision='INST-r1', source_cases=[{'state': 'verified'}],
+        context=dict(cases=[{'context': '[]'}], token_counts=[{'id': 'regression', 'tokens': 4}]),
+        packing=[{'aliases': {'id': ['seed']}}], assessment=[{'status': 'partial'}], pipeline=[{'rebalance_count': 1}])
+    examples = dict(partial=dict(status='partial'), strict_budget=dict(counting_mode='strict'))
+    return root, work, node, result, examples
+
+
+def test_installed_probe_compares_complete_outputs_and_explicit_paths(tmp_path, monkeypatch):
+    root, work, node, result, examples = installed_probe_setup(tmp_path)
+    seen = []
+    def fake_run(command, cwd, commands, **kwargs):
+        seen.append((command, cwd))
+        return json.dumps(result if any('probe_installed_evidence' in arg for arg in command) else examples)
+    monkeypatch.setattr(ART, 'run', fake_run)
+    report = ART.installed_evidence(root, work, work / 'wheel/bin/python', node, [])
+    assert report['state'] == 'passed' and report['results'] == result and report['examples'] == examples
+    assert report['counts'] == dict(source_cases=1, context_cases=1, token_cases=1, packing_cases=1, assessment_cases=1, pipeline_cases=1)
+    assert len(seen) == 4
+    assert seen[0][0][1:3] == ['-I', '-B']
+    assert '--fixtures' in seen[0][0] and '--tokenizer' in seen[0][0] and '--prefix' in seen[0][0]
+    assert str(work / 'wheel') in seen[0][0]
+    assert str(node / 'node_modules/cragkit') in seen[1][0]
+    assert all(cwd in (work, node) for _, cwd in seen)
+
+
+def test_installed_probe_rejects_equal_counts_with_different_nested_results(tmp_path, monkeypatch):
+    root, work, node, result, examples = installed_probe_setup(tmp_path)
+    def fake_run(command, cwd, commands, **kwargs):
+        value = json.loads(json.dumps(result))
+        if command[0] == 'node': value['context']['token_counts'][0]['tokens'] = 2
+        return json.dumps(value)
+    monkeypatch.setattr(ART, 'run', fake_run)
+    with pytest.raises(ART.ArtifactError, match='installed_evidence_parity'):
+        ART.installed_evidence(root, work, work / 'wheel/bin/python', node, [])
+
+
+@pytest.mark.parametrize('flags', [['--evidence-native'], ['--neon'],
+    ['--postgres-config', '/private/config', '--evidence-native'],
+    ['--postgres-config', '/private/config', '--allow-test-writes', '--evidence-native']])
+def test_hosted_flags_require_explicit_target_and_write_consent(flags, monkeypatch):
+    monkeypatch.setattr(ART.sys, 'argv', ['check_artifacts.py', *flags])
+    monkeypatch.setattr(ART, 'accept_artifacts', lambda *args, **kwargs: pytest.fail('must reject before build'))
+    with pytest.raises(SystemExit) as caught: ART.main()
+    assert caught.value.code == 2
+
+
+def test_legacy_main_call_shape_is_preserved(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ART.sys, 'argv', ['check_artifacts.py', '--output-dir', str(tmp_path)])
+    def accept(root, output, config):
+        calls.append((root, output, config))
+        return dict(state='passed', artifacts={}, imports={})
+    monkeypatch.setattr(ART, 'accept_artifacts', accept)
+    assert ART.main() == 0
+    assert calls == [(ART.ROOT, tmp_path, None)]
+
+
+def test_native_options_reject_without_building(tmp_path):
+    with pytest.raises(ART.ArtifactError, match='native_evidence_requires_neon_config'):
+        ART.accept_artifacts(tmp_path, tmp_path / 'out', evidence_native=True)

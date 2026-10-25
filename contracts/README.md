@@ -1,6 +1,6 @@
 # Cragkit wire contracts
 
-Contract revision `0.1`, internal V0 foundation. Python and TypeScript implement this specification natively. This defines validation and serialization, not a working retrieval engine. Shared fixtures are normative for their cases; runtime-specific malformed objects also need focused tests.
+Contract revision `0.1`, internal V0 foundation. Python and TypeScript implement this specification natively. This page defines wire validation and serialization; versioned adapter contracts below specify implemented runtime behavior. Shared fixtures are normative for their cases; runtime-specific malformed objects also need focused tests.
 
 ## Request and trusted scope
 

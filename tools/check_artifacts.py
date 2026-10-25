@@ -188,7 +188,93 @@ def artifact_record(path: Path, files: dict[str, bytes]) -> dict[str, Any]:
             'file_count': len(files), 'unpacked_bytes': sum(map(len, files.values()))}
 
 
-def accept_artifacts(root: Path, output: Path, postgres_config: Path | None = None) -> dict[str, Any]:
+def installed_evidence(root: Path, work: Path, python: Path, node_env: Path,
+                       commands: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compare complete native contract results from installed artifacts."""
+    fixtures = root / 'contracts/fixtures'
+    tokenizer = root / 'artifacts/tokenizers/cl100k_base.tiktoken'
+    python_probe, node_probe = work / 'probe_installed_evidence.py', node_env / 'probe_installed_evidence.mjs'
+    shutil.copyfile(root / 'tools/probe_installed_evidence.py', python_probe)
+    shutil.copyfile(root / 'tools/probe_installed_evidence.mjs', node_probe)
+    py_prefix = python.parent.parent
+    node_prefix = node_env / 'node_modules/cragkit'
+    py_result = json.loads(run([str(python), '-I', '-B', str(python_probe), '--fixtures', str(fixtures),
+        '--tokenizer', str(tokenizer), '--prefix', str(py_prefix)], work, commands))
+    node_result = json.loads(run(['node', str(node_probe), '--fixtures', str(fixtures),
+        '--tokenizer', str(tokenizer), '--prefix', str(node_prefix)], node_env, commands))
+    require(py_result == node_result and py_result.get('revision') == 'INST-r1', 'installed_evidence_parity')
+    counts = {'source_cases': len(py_result['source_cases']), 'context_cases': len(py_result['context']['cases']),
+        'token_cases': len(py_result['context']['token_counts']), 'packing_cases': len(py_result['packing']),
+        'assessment_cases': len(py_result['assessment']), 'pipeline_cases': len(py_result['pipeline'])}
+    expected = {
+        'source_cases': len(json.loads((fixtures / 'retrieval.json').read_text())['source_cases']),
+        'context_cases': len(json.loads((fixtures / 'context.json').read_text())['cases']),
+        'token_cases': len(json.loads((fixtures / 'context.json').read_text())['token_cases']),
+        'packing_cases': len(json.loads((fixtures / 'packing.json').read_text())['cases']),
+        'assessment_cases': len(json.loads((fixtures / 'assessment.json').read_text())['cases']),
+        'pipeline_cases': len(json.loads((fixtures / 'evidence-pipeline.json').read_text())['cases']),
+    }
+    require(counts == expected, 'installed_evidence_counts')
+    python_example, node_example = work / 'evidence.py', node_env / 'evidence.mjs'
+    shutil.copyfile(root / 'examples/evidence.py', python_example)
+    shutil.copyfile(root / 'examples/evidence.mjs', node_example)
+    py_example = json.loads(run([str(python), '-I', '-B', str(python_example), '--tokenizer', str(tokenizer),
+        '--prefix', str(py_prefix)], work, commands))
+    js_example = json.loads(run(['node', str(node_example), '--tokenizer', str(tokenizer),
+        '--prefix', str(node_prefix)], node_env, commands))
+    require(py_example == js_example and set(py_example) == {'partial', 'strict_budget'}, 'installed_example_parity')
+    require(py_example['partial']['status'] == 'partial'
+            and py_example['strict_budget']['counting_mode'] == 'strict', 'installed_example_behavior')
+    return dict(state='passed', counts=counts, results=py_result, examples=py_example,
+                provenance='Installed wheel and npm product modules; copied probes and examples outside checkout; source fixtures use fakes, not a database.')
+
+
+def native_harness(root: Path, work: Path, python: Path, node_env: Path,
+                   postgres_config: Path) -> tuple[list[str], Path, dict[str, str]]:
+    """Copy harness code and link data without exposing checkout product modules."""
+    harness = work / 'installed-native-harness'
+    harness.mkdir()
+    shutil.copytree(root / 'tools', harness / 'tools', ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    for name in ('storage', 'evaluation', 'contracts'):
+        (harness / name).symlink_to(root / name, target_is_directory=True)
+    (harness / 'artifacts').mkdir()
+    (harness / 'artifacts/tokenizers').symlink_to(root / 'artifacts/tokenizers', target_is_directory=True)
+    ts = harness / 'packages/typescript'
+    ts.mkdir(parents=True)
+    installed_node = node_env / 'node_modules/cragkit'
+    (ts / 'dist').symlink_to(installed_node / 'dist', target_is_directory=True)
+    (ts / 'node_modules').symlink_to(node_env / 'node_modules', target_is_directory=True)
+    bootstrap = ('import runpy,sys; sys.path.insert(0,sys.argv[1]); '
+                 'sys.argv=sys.argv[2:]; runpy.run_path(sys.argv[0],run_name="__main__")')
+    command = [str(python), '-I', '-B', '-c', bootstrap, str(harness / 'tools'),
+        str(harness / 'tools/check_python_postgres.py'), '--config', str(postgres_config),
+        '--allow-test-writes', '--neon', '--hybrid', '--evidence', '--typescript']
+    environment = {'CRAGKIT_REQUIRE_INSTALLED_PREFIX': str(python.parent.parent),
+                   'CRAGKIT_INSTALLED_NODE_ROOT': str(installed_node)}
+    return command, harness, environment
+
+
+def installed_postgres_examples(root: Path, work: Path, python: Path, node_env: Path,
+                                config: Path, commands: list[dict[str, Any]], *, neon: bool = False) -> dict[str, Any]:
+    python_example, node_example = work / 'postgres.py', node_env / 'postgres.mjs'
+    shutil.copyfile(root / 'examples/postgres.py', python_example)
+    shutil.copyfile(root / 'examples/postgres.mjs', node_example)
+    command = ['uv', 'run', '--project', str(root / 'packages/python'), '--frozen', '--extra', 'postgres',
+        'python', str(root / 'tools/check_python_postgres.py'), '--config', str(config), '--allow-test-writes', '--results']
+    if neon:
+        command.append('--neon')
+    hosted = json.loads(run(command, root, commands, timeout=600, environment={
+        'CRAGKIT_INSTALLED_PYTHON': str(python), 'CRAGKIT_INSTALLED_PYTHON_EXAMPLE': str(python_example),
+        'CRAGKIT_INSTALLED_NODE_EXAMPLE': str(node_example)}))
+    require(hosted.get('state') == 'passed' and hosted.get('cleanup_verified') is True,
+            'installed_postgres_examples_failed')
+    return hosted
+
+
+def accept_artifacts(root: Path, output: Path, postgres_config: Path | None = None, *,
+                     neon: bool = False, evidence_native: bool = False) -> dict[str, Any]:
+    require(type(neon) is bool and type(evidence_native) is bool, 'artifact_options')
+    require(not evidence_native or (postgres_config is not None and neon), 'native_evidence_requires_neon_config')
     output.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {'state': 'in_progress', 'commands': [], 'artifacts': {}, 'imports': {},
         'method': 'One fresh child process per installed artifact; filesystem caches are uncontrolled. Duration covers core, contracts, errors and the optional PostgreSQL/embedding entry points together. Peak RSS covers the whole child lifetime, not an import-only increment. macOS Python RSS is bytes; other supported Unix Python and Node RSS are KiB converted to bytes. Samples are separate and never summed.',
@@ -224,7 +310,7 @@ def accept_artifacts(root: Path, output: Path, postgres_config: Path | None = No
             require(npm_path.parent == npm_out and npm_path.is_file(), 'npm_pack_path')
             report['artifacts']['npm'] = artifact_record(npm_path, inspect_npm(npm_path))
             constraints = work / 'constraints.txt'
-            run(['uv', 'export', '--project', str(root / 'packages/python'), '--frozen', '--no-dev', '--no-emit-project', '--no-hashes', '--format', 'requirements.txt', '--output-file', str(constraints)], root, commands)
+            run(['uv', 'export', '--project', str(root / 'packages/python'), '--frozen', '--all-extras', '--no-dev', '--no-emit-project', '--no-hashes', '--format', 'requirements.txt', '--output-file', str(constraints)], root, commands)
             for name, package in (('wheel', wheel), ('rebuilt_sdist_wheel', rebuilt)):
                 environment = work / name
                 run(['uv', 'venv', '--python', sys.executable, '--no-python-downloads', str(environment)], work, commands)
@@ -243,27 +329,34 @@ def accept_artifacts(root: Path, output: Path, postgres_config: Path | None = No
             sample['installed'] = json.loads(run(['npm', 'ls', '--omit=dev', '--json'], node_env, commands))
             sample['clean_environment_bytes'] = size_tree(node_env / 'node_modules')
             report['imports']['npm'] = sample
+            # Optional tokenizer dependencies are added after all three default import guards.
+            installed_python = work / 'wheel' / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')
+            run(['uv', 'pip', 'install', '--python', str(installed_python), '--constraints', str(constraints),
+                 str(wheel) + '[tokenizers]'], work, commands)
+            run(['npm', 'install', '--ignore-scripts', '--no-audit', '--no-fund', 'tiktoken@1.0.22'], node_env, commands)
+            report['installed_evidence'] = installed_evidence(root, work, installed_python, node_env, commands)
             if postgres_config is not None:
                 # Install optional drivers only after the driver-free import probes.
                 installed_python = work / 'wheel' / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')
-                run(['uv', 'pip', 'install', '--python', str(installed_python), str(wheel) + '[postgres]'], work, commands)
+                run(['uv', 'pip', 'install', '--python', str(installed_python), '--constraints', str(constraints),
+                     str(wheel) + '[postgres,tokenizers]'], work, commands)
                 run(['npm', 'install', '--ignore-scripts', '--no-audit', '--no-fund', 'pg@8.23.1'], node_env, commands)
-                python_example = work / 'postgres.py'
-                node_example = node_env / 'postgres.mjs'
-                shutil.copyfile(root / 'examples/postgres.py', python_example)
-                shutil.copyfile(root / 'examples/postgres.mjs', node_example)
-                hosted = json.loads(run(['uv', 'run', '--project', str(root / 'packages/python'), '--frozen', '--extra', 'postgres',
-                    'python', str(root / 'tools/check_python_postgres.py'), '--config', str(postgres_config),
-                    '--allow-test-writes', '--results'], root, commands, timeout=600, environment={
-                        'CRAGKIT_INSTALLED_PYTHON': str(installed_python),
-                        'CRAGKIT_INSTALLED_PYTHON_EXAMPLE': str(python_example),
-                        'CRAGKIT_INSTALLED_NODE_EXAMPLE': str(node_example)}))
-                require(hosted.get('state') == 'passed' and hosted.get('cleanup_verified') is True,
-                        'installed_postgres_examples_failed')
-                report['hosted_examples'] = hosted
+                if evidence_native:
+                    command, harness, environment = native_harness(root, work, installed_python, node_env, postgres_config)
+                    hosted = json.loads(run(command, harness, commands, timeout=720, environment=environment))
+                    require(hosted.get('state') == 'passed' and hosted.get('cleanup_verified') is True,
+                            'installed_native_evidence_failed')
+                    report['hosted_evidence_native'] = hosted
+                else:
+                    hosted = installed_postgres_examples(root, work, installed_python, node_env, postgres_config,
+                                                         commands, neon=neon)
+                    report['hosted_examples'] = hosted
         report['state'] = 'passed'
         report['temporary_environments_cleaned'] = not work.exists()
         return report
+    except ArtifactError as error:
+        report['failure_code'] = str(error)
+        raise
     finally:
         if report['state'] != 'passed':
             report['state'] = 'failed'
@@ -276,11 +369,21 @@ def main() -> int:
     parser.add_argument('--output-dir', type=Path, default=ROOT / 'artifacts/V0')
     parser.add_argument('--postgres-config', type=Path, help='Private hosted test configuration; requires explicit write consent')
     parser.add_argument('--allow-test-writes', action='store_true')
+    parser.add_argument('--neon', action='store_true', help='Explicit direct Neon target for optional hosted checks')
+    parser.add_argument('--evidence-native', action='store_true', help='Run hosted V3 checks against installed native product modules')
     args = parser.parse_args()
     if args.postgres_config is not None and not args.allow_test_writes:
         parser.error('--postgres-config requires --allow-test-writes')
+    if args.neon and args.postgres_config is None:
+        parser.error('--neon requires --postgres-config')
+    if args.evidence_native and (args.postgres_config is None or not args.neon):
+        parser.error('--evidence-native requires --postgres-config, --allow-test-writes and --neon')
     try:
-        report = accept_artifacts(ROOT, args.output_dir.resolve(), args.postgres_config)
+        if args.neon or args.evidence_native:
+            report = accept_artifacts(ROOT, args.output_dir.resolve(), args.postgres_config,
+                                      neon=args.neon, evidence_native=args.evidence_native)
+        else:
+            report = accept_artifacts(ROOT, args.output_dir.resolve(), args.postgres_config)
     except (ArtifactError, OSError, ValueError, KeyError, tarfile.TarError, zipfile.BadZipFile):
         print('Artifact acceptance failed; inspect acceptance.json command statuses.')
         return 1

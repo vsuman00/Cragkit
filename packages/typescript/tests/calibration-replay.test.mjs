@@ -81,3 +81,20 @@ test('recording accessors never execute and caller mutation cannot alter replay 
   input.evidence.length=0;input.sources.length=0;scores[0].candidate_id='invented';
   const [result]=await pending;assert.deepEqual(result.order,['a']);assert.equal(result.before.evidence[0].text,'support');
 });
+
+
+test('CLI executes through a symlink in a directory with spaces',async()=>{
+  const fs=await import('node:fs'),os=await import('node:os'),path=await import('node:path');
+  const {fileURLToPath}=await import('node:url');
+  const {spawnSync}=await import('node:child_process');
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'cragkit replay '));
+  try{
+    const entry=path.join(directory,'linked replay.mjs'),payload=path.join(directory,'public.json');
+    fs.symlinkSync(fileURLToPath(new URL('../../../tools/check_typescript_v3_calibration.mjs',import.meta.url)),entry);
+    const a=item('a','public synthetic evidence'),input=example('symlink-case',[a]);
+    fs.writeFileSync(payload,JSON.stringify({cases:[input],recordings:{'symlink-case':recording([a])}}));
+    const result=spawnSync(process.execPath,[entry,'--replay',payload],{encoding:'utf8',timeout:10000});
+    assert.equal(result.status,0,result.stderr);
+    assert.equal(JSON.parse(result.stdout)[0].question_id,'symlink-case');
+  }finally{fs.rmSync(directory,{recursive:true,force:true});}
+});
