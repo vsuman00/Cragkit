@@ -10,6 +10,7 @@ dependencies = ["pydantic==2.14.1"]
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]==3.3.6", "psycopg-pool==3.3.3"]
+qdrant = ["httpx==0.28.1"]
 tokenizers = [
     "tiktoken==0.14.0",
 ]

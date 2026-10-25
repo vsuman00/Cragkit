@@ -235,12 +235,13 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V5-01: [Alternative-store consistency specification](versions/V5-integrations.md#v5-01-alternative-store-consistency-specification) — [ADR 0003](../docs/decisions/0003-qdrant-consistency.md), [QD-r1](../contracts/QDRANT_V5.md) and [26 normative scenarios](../contracts/fixtures/qdrant_consistency.json); 21 failure boundaries walked through, independent review resolved, JSON/row/link/prose checks passed. Design acceptance only; adapter execution remains V5-02 through V5-04.
 
-- [ ] V5-02: [Qdrant scoped candidate adapter](versions/V5-integrations.md#v5-02-qdrant-scoped-candidate-adapter) — evidence: pending.
+- [ ] V5-02: [Qdrant scoped candidate adapter](versions/V5-integrations.md#v5-02-qdrant-scoped-candidate-adapter) — [initial B/C/D acceptance](../evaluation/reports/V5/V5-02.md); E remains open to support the already selected real dense profile before parent-task exit.
 
   - [x] V5-02A: Candidate/filter/profile contract, deterministic identity and isolated reference target selected and verified. [QC-r1](../contracts/QDRANT_CANDIDATES_V5.md), [fixtures](../contracts/fixtures/qdrant_candidates.json), [version/target/prototype evidence](../evaluation/reports/V5/V5-02A.md). Native candidate implementation and full adapter integration remain B/C/D.
-  - [ ] V5-02B: Native Python candidate adapter and focused negative cases.
-  - [ ] V5-02C: Native TypeScript candidate adapter and focused negative cases.
-  - [ ] V5-02D: Serial isolated Qdrant adapter acceptance and final resource shutdown.
+  - [x] V5-02B: Native Python candidate adapter and focused negative cases accepted for initial QC-r1 profiles.
+  - [x] V5-02C: Native TypeScript candidate adapter and focused negative cases, including E83, accepted for initial QC-r1 profiles.
+  - [x] V5-02D: Serial isolated Qdrant candidate acceptance and final resource shutdown verified for initial profiles.
+  - [ ] V5-02E: Selected OpenAI dense-only profile, full-profile embedding batch binding, accounting and bounded example; no paid call required.
 
 - [ ] V5-03: [Source resolution and authorization](versions/V5-integrations.md#v5-03-source-resolution-and-authorization) — evidence: pending.
 
@@ -293,6 +294,18 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-02B/C/D: Native scoped candidates
+
+State: COMPLETE for B/C/D initial-profile acceptance. Shared outcome: native QC-r1 adapters with strict scoped preselection, text-free immutable nominations, bounded streaming transport and serial isolated-backend acceptance. Dependency: V5-02A accepted in a54ef1f; QC-r1's native-binding appendix fixes the shared interface before dependent edits.
+
+- `/root/v5_candidate_contract`, gpt-6.1-sol, Python implementation peer and assembler: owns `packages/python/src/cragkit/qdrant.py`, `_qdrant_contract.py`, `_qdrant_transport.py` and `packages/python/tests/test_qdrant.py`, `test_qdrant_transport.py` only.
+- `/root/v5_candidate_fixtures`, gpt-6.1-sol, Node implementation peer: owns `packages/typescript/src/qdrant.ts`, `qdrant-contract.ts`, `qdrant-transport.ts` and `packages/typescript/tests/qdrant.test.mjs`, `qdrant-transport.test.mjs` only.
+- Root owns shared QC-r1/fixtures, manifests/locks, optional exports, test harnesses, serial execution, tracker/evidence and Git. Peers coordinate interfaces and failures directly, request corrections from the owner and escalate outcome/protected-boundary changes before dependent edits. Shared wire/core/PostgreSQL contracts, migrations, sealed inputs and user audits remain protected. No overlapping edits; assembler never rewrites the other lane without stopped-writer transfer.
+
+Workers may read actual APIs and write owned files; no tests, installs, services, network/database/provider calls or Git. Root alone runs one test process/language suite at a time, optional HTTPX setup and the one-worker isolated synthetic Qdrant service. Acceptance: focused unit and hostile-input/stream/cancellation tests, strict types, QC-r1 native fixtures and real scoped search in both runtimes; guard core imports and close every task resource. V5-03 authority and V5-04 publication remain dependencies for complete retrieval and are not implemented by candidate nominations.
+
+Final B/C/D handoff: peers coordinated and assembled their five-file native lanes, then stopped/transferred writes. Independent Sol review found the NODE_OPTIONS proxy gap; Node fixed it and root reran checks. Root source review also corrected credential-length, long numeric-token and unsafe deadline parity, with regressions. Focused acceptance: 131 Python/tool tests, 26 Node cases, mypy over 33 source files and Node build passed. Full regression: 1536 Python/tool tests with four existing deliberate Pydantic serializer warnings; 904 Node tests. Actual Qdrant 1.20.0: 12 cases per runtime with complete nomination/ledger parity, read-only/anonymous write denial and verified cleanup. Explicit Python/Node import guards passed. User audits and sealed inputs remain unchanged. No live model, remote DB, package release or hosted CI used. Latest headroom: 39 GiB disk/68 percent free system memory, a snapshot. [Evidence](../evaluation/reports/V5/V5-02.md); machine outputs are ignored under artifacts/V5. Learning practice unassessed. Full V5 remains active: E is next, then source authority, durable repair, existing-index/MCP, parity and artifact gates. Astra advised E because permanently fake-only support would be too narrow, while the accepted architecture permits real dense-only deployment without inventing a new sparse encoder; no provider/cost permission is inferred.
 
 ### V5-02A: Native candidate contract and reference target
 

@@ -130,6 +130,12 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 | E80 | A managed host rejects pre-hashed SQL-role passwords | Use an explicit host-specific fixture mode, prove native TLS before the in-memory password statement, redact errors and remove temporary roles; keep existing host behavior unchanged. | DB-NEON-01-C, DB-NEON-01-E | U/I |
 | E81 | A credential import supplies a pooled/wrong target, unsafe URI options or an existing/symlink output | Pin the selected direct target, reject unsupported security options and control bytes, preserve existing files and write owner-only credentials outside Git through hidden input. | DB-NEON-01-C | U/I |
 
+## Qdrant transport admission
+
+| ID | Trigger | Expected behavior | Owner | Layer |
+| --- | --- | --- | --- | --- |
+| E83 | Node enables ambient proxies through `NODE_OPTIONS`, rather than `execArgv` | Reject the unsupported transport configuration before dispatch, including quoted startup flag forms; keep credentials and startup-option contents out of errors. | V5-02C | U/I |
+
 ## Native acceptance harness
 
 | ID | Trigger | Expected behavior | Owner | Layer |

@@ -746,6 +746,28 @@ The security gate checks effective global creator defaults and additive schema d
 
 Native ingestion/lexical fixtures require the SQL FTS behavior that matches `Café` against `Café🙂` under `pg_catalog.simple`. The parent performs a read-only check before fixture writes and returns `lexical_fixture_locale_unsupported` when it fails. UTF8 encoding alone is insufficient. Disposable local databases should use a compatible UTF-8 ctype (for example the previously tested en_US.UTF-8 or C.UTF-8); plain C can tokenize the emoji as part of the word. Production search semantics still depend on the declared PostgreSQL configuration and locale. Canonical bytes and approved corpus inputs are unchanged.
 
+## V5 native Qdrant candidates
+
+The explicit Python module `cragkit.qdrant` and Node subpath `cragkit/qdrant` implement [QC-r1](../contracts/QDRANT_CANDIDATES_V5.md). They return text-free, unverified nominations; authoritative source release and distributed publication remain separate V5-03/04 gates. The [candidate report](../evaluation/reports/V5/V5-02.md) records tested configurations and limitations.
+
+Verified focused commands from the repository root, one suite at a time:
+
+```sh
+uv sync --project packages/python --frozen --extra qdrant
+uv run --project packages/python --frozen --no-sync --extra qdrant pytest packages/python/tests/test_qdrant.py packages/python/tests/test_qdrant_transport.py tools/tests/test_check_qdrant.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant mypy --config-file packages/python/pyproject.toml packages/python/src
+```
+
+In `packages/typescript`, run `npm run build`, then `node --test --test-concurrency=1 tests/qdrant.test.mjs tests/qdrant-transport.test.mjs`. The optional Python extra pins HTTPX 0.28.1. Node uses its built-in fetch; no Qdrant SDK or model runtime is installed. Neither module import starts a service or connects to a database.
+
+An administrator explicitly acquires and verifies a supported Qdrant server binary. The current macOS arm64 reference is 1.20.0; acquisition evidence is in [V5-02A](../evaluation/reports/V5/V5-02A.md). No library import or native checker downloads it. After building Node and installing the Python extra, the verified isolated integration command is:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant python tools/check_qdrant.py --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --artifacts-dir artifacts/V5/native-candidates
+```
+
+The checker creates one owned loopback process, private administrative/read-only keys and eight synthetic points. It runs the native runtimes serially and compares all returned nominations and ledger snapshots. It verifies write denial for the read-only key, deletes its collection, confirms an empty inventory, terminates the process and removes private config/data. Generated artifacts contain synthetic records only. Explicit clients must close the store and then their owned transport; borrowed resources are not closed by the store. Remote endpoints require verified HTTPS. Plain HTTP is allowed only for explicitly configured `127.0.0.1` or `::1` development endpoints; proxy/TLS bypass settings are unsupported.
+
 ## V4 bounded corrective execution
 
 The optional `cragkit.corrective` / `cragkit/corrective` modules accept a trusted backend. `PostgresCorrectiveBackend` in `cragkit.postgres_corrective` / `cragkit/postgres-corrective` reuses caller-owned native sessions. Ledger, planner and event modules are explicit imports/subpaths. Importing them does not connect a service or load a model. Read [the execution contract](../contracts/EXECUTION_V4.md) and [V4-03 through V4-05 evidence](../evaluation/reports/V4/V4-03-05.md).

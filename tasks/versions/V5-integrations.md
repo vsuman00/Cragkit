@@ -1,6 +1,6 @@
 # V5: Backend and transport extensions
 
-Status: active; runtime extensions remain unimplemented. Progress is tracked only in [todo.md](../todo.md).
+Status: active implementation. Progress and acceptance evidence are tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
@@ -52,6 +52,7 @@ Execute as bounded child slices after QD-r1 acceptance:
 - V5-02B: native Python candidate adapter and its focused negative cases, against the frozen shared fixtures.
 - V5-02C: native TypeScript candidate adapter and its focused negative cases, on separate owned paths. B and C may proceed in parallel only after A freezes their contract.
 - V5-02D: one integrator runs each runtime serially against the isolated Qdrant collection, verifies bounded filtering, identity and capability failures, closes task resources and records acceptance. Synthetic transport tests do not replace this integration gate.
+- V5-02E: extend the initial synthetic profile to the already accepted E-r1 OpenAI dense profile, with a genuine dense-only configuration, full-profile batch binding and explicit embedding usage accounting. Verify real-profile routing with spies and actual backend mechanics with fake-profile vectors; no paid inference or synthetic vectors stored under real model identity. Sparse text encoding remains unsupported for that real deployment. Complete E before V5-02 exits and before the source-authority profile freezes.
 
 ### V5-03: Source resolution and authorization
 
