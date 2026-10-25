@@ -1,6 +1,6 @@
 # V5: Backend and transport extensions
 
-Status: planned, not implemented. Progress is tracked only in [todo.md](../todo.md).
+Status: active; runtime extensions remain unimplemented. Progress is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
@@ -30,6 +30,8 @@ Learning exercise: Explain why two stores cannot share one PostgreSQL transactio
 
 Expected areas: `docs/decisions/`, `Qdrant contract fixtures`.
 
+Design artifacts: [ADR 0003](../../docs/decisions/0003-qdrant-consistency.md), [QD-r1](../../contracts/QDRANT_V5.md) and [normative scenarios](../../contracts/fixtures/qdrant_consistency.json). These specify the optional single-node reference profile; they do not establish native Qdrant acceptance. Distributed profiles require separate declared consistency and conformance evidence.
+
 ### V5-02: Qdrant scoped candidate adapter
 
 Dependency: V5-01. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.
@@ -43,6 +45,13 @@ Verification: Run small adapter fixtures one runtime at a time against an isolat
 Learning exercise: Explain backend capability negotiation.
 
 Expected areas: `Both optional Qdrant search adapters`, `adapter tests`.
+
+Execute as bounded child slices after QD-r1 acceptance:
+
+- V5-02A: freeze the candidate/profile/filter mapping, point-ID derivation and capability boundary; verify exact client/server versions and select an isolated reference target before dependent adapter edits.
+- V5-02B: native Python candidate adapter and its focused negative cases, against the frozen shared fixtures.
+- V5-02C: native TypeScript candidate adapter and its focused negative cases, on separate owned paths. B and C may proceed in parallel only after A freezes their contract.
+- V5-02D: one integrator runs each runtime serially against the isolated Qdrant collection, verifies bounded filtering, identity and capability failures, closes task resources and records acceptance. Synthetic transport tests do not replace this integration gate.
 
 ### V5-03: Source resolution and authorization
 

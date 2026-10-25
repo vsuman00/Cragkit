@@ -233,7 +233,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 [Version plan](versions/V5-integrations.md)
 
-- [ ] V5-01: [Alternative-store consistency specification](versions/V5-integrations.md#v5-01-alternative-store-consistency-specification) — evidence: pending.
+- [x] V5-01: [Alternative-store consistency specification](versions/V5-integrations.md#v5-01-alternative-store-consistency-specification) — [ADR 0003](../docs/decisions/0003-qdrant-consistency.md), [QD-r1](../contracts/QDRANT_V5.md) and [26 normative scenarios](../contracts/fixtures/qdrant_consistency.json); 21 failure boundaries walked through, independent review resolved, JSON/row/link/prose checks passed. Design acceptance only; adapter execution remains V5-02 through V5-04.
 
 - [ ] V5-02: [Qdrant scoped candidate adapter](versions/V5-integrations.md#v5-02-qdrant-scoped-candidate-adapter) — evidence: pending.
 
@@ -288,6 +288,22 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-01: Consistency specification assignment
+
+State: COMPLETE for design acceptance. Outcome: freeze QD-r1 authority, generation publication, sparse identity and ACL synchronization before Qdrant adapter code. Dependencies: V4 exit and audit follow-ups accepted; V4 default-budget performance limitations remain unchanged.
+
+- V5-01-A, Sol specification peer and assembler: write only `docs/decisions/0003-qdrant-consistency.md`; define authority, identity and publication protocol. Read architecture, current source contracts and the peer failure table. No implementation, schema, migration, dependency or lock changes.
+- V5-01-B, Sol failure-model peer: write only `contracts/QDRANT_V5.md` and `contracts/fixtures/qdrant_consistency.json`; define bounded scenario records and every write-boundary outcome, including revocation, tombstones and ambiguous acknowledgements. Coordinate directly with A against QD-r1; escalate unresolved contract changes to root.
+- Root: final integration, tracker and index links, official-source verification, local JSON/link/consistency/prose checks, scoped Git commit/push. Both peers contribute substantive artifacts; A assembles after B reports ready. Shared architecture, existing contracts, wire schemas, manifests/locks, storage and user-owned audits are protected. No overlapping edits; ownership transfers require the previous writer to stop and root notification.
+
+Allowed resources: local reads and owned documentation/fixture writes only; no worker test processes, services, installs, databases, providers or Git actions. Root serializes checks. This task specifies behavior; it cannot establish adapter or production acceptance. QD-r1 is frozen; the next task is V5-02's native scoped candidate slices.
+
+25 October 2026 final handoff: `/root/v5_consistency_spec` (gpt-6.1-sol) wrote the ADR and assembled `/root/v5_consistency_cases` (gpt-6.1-sol)'s substantive contract/fixture work after direct coordination. Both transferred their paths to root before integration. `/root/v5_consistency_review` (gpt-6.1-sol) independently found a cross-document physical-ID collision race; root added the shared atomic point-ownership registry, ambiguous claim reconciliation and two scenarios. The reviewer rechecked and accepted the correction. No unresolved escalation required Astra. Root also distinguished known missing/deauthorized sources from authority outages and assigned absent coordinator capability its own failure row.
+
+Changed files: ADR 0003, QD-r1 contract and scenario JSON, contract index, active V5 plan and this tracker. Root walked all 21 table boundaries and 26 synthetic scenarios against architecture, existing retained-generation policy and official Qdrant point/completion/consistency semantics. Local checks passed strict duplicate-key JSON parsing, unique IDs, UUID example shape, row/task mappings and complete row coverage; Markdown target/anchor and prose checks passed. These are document consistency checks, not executed adapter/security tests. Deterministic prose cleaning preserves code/identifiers and claims; generated inspection/check evidence is under ignored `artifacts/V5/V5-01/`.
+
+No product code, migration, package/lock, sealed evaluation input or user-owned audit report changed. No test suite, database/provider call, install or background service ran. SourceStore/coordinator/client versions and durable behavior still need implementation and isolated integration acceptance; V5-02 through V5-08, checkpoints and V5 exit remain open. Resource observation: 38 GiB disk and 53 percent system memory free before these small local checks, a snapshot rather than performance evidence. No task-owned process remains. Learning example: vector completion alone cannot publish a tombstoned generation; a per-document lock also cannot reserve a physical point ID across documents. Practice unassessed: explain why an ambiguous write and a tombstone must be reconciled before publication or purge completion. Next smallest action: V5-02A, freeze native candidate/filter/profile contracts and select verified versions/isolated target before parallel runtime implementation. Root owns the scoped commit, immediate push and synchronization check; the final reply records the result.
 
 ### DOC-AGENT-01: Project coordination and manager skills
 

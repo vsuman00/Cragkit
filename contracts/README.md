@@ -79,3 +79,7 @@ The unchanged 0.1 wire schemas also carry explicitly degraded execution from the
 [AS-r1](ASSESSMENT_V3.md) defines conservative query-bound reviewed-anchor coverage and emitted-reference validation. Curated matching is not a general semantic judge or proof of source truth.
 
 [EP-r1](EVIDENCE_PIPELINE_V3.md) combines packing with emitted-only assessment and one bounded rebalance. Its explicit PostgreSQL constructor option preserves trusted scope and reauthorizes after optional reranking.
+
+## V5 alternative-store design
+
+[QD-r1](QDRANT_V5.md) and [ADR 0003](../docs/decisions/0003-qdrant-consistency.md) specify authoritative source resolution, atomic publication, sparse identity and bounded repair for the optional Qdrant profile. The [scenario fixture](fixtures/qdrant_consistency.json) records design expectations. Executable adapter and recovery acceptance belong to V5-02 through V5-04; these documents introduce no runtime API.
