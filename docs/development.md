@@ -675,3 +675,17 @@ uv run --project packages/python --frozen python tools/check_packing.py
 ```
 
 The existing native `--results --typescript` development fixture now also captures an explicitly opted-in verified source snapshot through each restricted runtime and packs it. Credentials remain in the private configuration; use the established Neon command with `--allow-test-writes` only on the dedicated development target. Default fetch serialization does not include full source text. A snapshot is not a durable permission grant: final retrieval release must reauthorize.
+
+
+## V3 curated facet assessment
+
+The optional `cragkit.assessment` / `cragkit/assessment` modules implement [AS-r1](../contracts/ASSESSMENT_V3.md). Supply a trusted query-bound reviewed-anchor policy. `assess_evidence` uses only emitted spans; `validate_assessment` rejects malformed facets and invented references. No policy stays unknown, and a known conflict cannot disappear into sufficient coverage when only one side survives.
+
+```sh
+uv run --project packages/python --frozen pytest packages/python/tests/test_assessment.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/assessment.test.mjs
+uv run --project packages/python --frozen python tools/check_assessment.py
+```
+
+Shared reviewed examples are development lookup checks, not unseen semantic quality measurements. The consuming application owns policy applicability and must include necessary qualifications in the reviewed anchor.

@@ -2,7 +2,7 @@
 
 The V0 check entrypoint is `python3 tools/check_v0.py`, run from a checkout with Python 3.14, Node 26.5 or later in the declared 26.x range, npm and uv available. Local compatibility evidence is limited to the exact versions recorded in [development.md](development.md). The private [GitHub repository](https://github.com/vsuman00/Cragkit) and local `main` branch were created after V0 acceptance. Hosted CI and branch protection remain unconfigured and unrun; repository creation alone does not establish either.
 
-The runner installs from the frozen Python and npm locks, verifies the explicit pinned tokenizer asset, then runs typing, Python/tool tests, TypeScript tests/build, schema drift, native request/result/embedding and vector-generation/dense/identifier-fusion/hybrid/reranker/context/packing parity, approved development-corpus checks, sealed-input integrity and clean package verification. The 21 stages execute one subprocess at a time and stop at the first failed or timed-out stage. Failed checks return nonzero; a success summary appears only after every stage passes.
+The runner installs from the frozen Python and npm locks, verifies the explicit pinned tokenizer asset, then runs typing, Python/tool tests, TypeScript tests/build, schema drift, native request/result/embedding and vector-generation/dense/identifier-fusion/hybrid/reranker/context/packing/assessment parity, approved development-corpus checks, sealed-input integrity and clean package verification. The 22 stages execute one subprocess at a time and stop at the first failed or timed-out stage. Failed checks return nonzero; a success summary appears only after every stage passes.
 
 ```sh
 python3 tools/check_v0.py

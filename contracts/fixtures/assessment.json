@@ -1,0 +1,1620 @@
+{
+  "revision": "AS-r1",
+  "cases": [
+    {
+      "id": "q01-reviewed",
+      "query": "How many retry attempts does ERR-17 permit now?",
+      "evidence": [
+        {
+          "evidence_id": "q01-f1-0",
+          "chunk_id": "q01-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 32,
+          "end_byte": 67,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "ebff38dca15c72004b904eafbd9818e941f496eeaa913bd85a8ef3dbd35fd070",
+        "facets": [
+          {
+            "facet_id": "q01-f1",
+            "question": "What is the current ERR-17 attempt limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q01-drop-0",
+      "query": "How many retry attempts does ERR-17 permit now?",
+      "evidence": [],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "ebff38dca15c72004b904eafbd9818e941f496eeaa913bd85a8ef3dbd35fd070",
+        "facets": [
+          {
+            "facet_id": "q01-f1",
+            "question": "What is the current ERR-17 attempt limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "missing"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "q02-reviewed",
+      "query": "What delay applies between ERR-17 retries?",
+      "evidence": [
+        {
+          "evidence_id": "q02-f1-0",
+          "chunk_id": "q02-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 68,
+          "end_byte": 115,
+          "text": "The delay between attempts is 250 milliseconds.",
+          "text_sha256": "3c7b66d507ca50d9d19f3c8128d82ac05f1823cc5cbb4ca992ae6e5c581ed6f7"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "4ccdcfc06adf59b748a594c739c88f82202f335cac0923c1b3e9967ec1e62521",
+        "facets": [
+          {
+            "facet_id": "q02-f1",
+            "question": "What is the retry delay?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 68,
+                "end_byte": 115,
+                "text": "The delay between attempts is 250 milliseconds."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q03-reviewed",
+      "query": "In revision r1, what was the ERR-17 retry limit?",
+      "evidence": [
+        {
+          "evidence_id": "q03-f1-0",
+          "chunk_id": "q03-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r1",
+          "source_sha256": "5fa4ae4b3c9f411c5da71c8411f6b2ee150765f65735899daae55e95fc2111f6",
+          "start_byte": 32,
+          "end_byte": 66,
+          "text": "ERR-17 permits two retry attempts.",
+          "text_sha256": "65e56ac31532578364e0fb6acb4eb8de1cbf71fd83b695a6cebebfa9a88dd630"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "726d2727288a095f06feea0258714fe4b0a940dcff0bd5e1e36a2c7669be6889",
+        "facets": [
+          {
+            "facet_id": "q03-f1",
+            "question": "What limit was recorded in r1?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r1",
+                "source_sha256": "5fa4ae4b3c9f411c5da71c8411f6b2ee150765f65735899daae55e95fc2111f6",
+                "start_byte": 32,
+                "end_byte": 66,
+                "text": "ERR-17 permits two retry attempts."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q04-reviewed",
+      "query": "Give the current ERR-17 limit and policy owner.",
+      "evidence": [
+        {
+          "evidence_id": "q04-f1-0",
+          "chunk_id": "q04-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 32,
+          "end_byte": 67,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "cdb4a968a5148090998f1cd7962e2b89823ab8043c7b0ccb050d6cf720b8cb6d",
+        "facets": [
+          {
+            "facet_id": "q04-f1",
+            "question": "What is the current attempt limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          },
+          {
+            "facet_id": "q04-f2",
+            "question": "Who owns the retry policy?",
+            "required": true,
+            "absence": "missing",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "supported",
+        "missing"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "q05-reviewed",
+      "query": "Who owns the retry policy?",
+      "evidence": [],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "285e0c056d76d47be5184febdaf519adcfd7a28bcb2018afbc1c10b33d4c7e8f",
+        "facets": [
+          {
+            "facet_id": "q05-f1",
+            "question": "Who owns the retry policy?",
+            "required": true,
+            "absence": "missing",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "missing"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "q06-reviewed",
+      "query": "When do CACHE-17 entries expire?",
+      "evidence": [
+        {
+          "evidence_id": "q06-f1-0",
+          "chunk_id": "q06-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "cache-policy",
+          "revision_id": "r1",
+          "source_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5",
+          "start_byte": 13,
+          "end_byte": 54,
+          "text": "CACHE-17 entries expire after 60 seconds.",
+          "text_sha256": "2e84206b5c7e3ac1eaf35b6f151f42c7c3984a1c5d850b7f3e9b9ba9545383f8"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "f7940eb9033ed0dac394f488f837142bfe2784364ce137fddbe08d448996fad9",
+        "facets": [
+          {
+            "facet_id": "q06-f1",
+            "question": "What is the CACHE-17 lifetime?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "cache-policy",
+                "revision_id": "r1",
+                "source_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5",
+                "start_byte": 13,
+                "end_byte": 54,
+                "text": "CACHE-17 entries expire after 60 seconds."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q07-reviewed",
+      "query": "Does cache eviction retry a job?",
+      "evidence": [
+        {
+          "evidence_id": "q07-f1-0",
+          "chunk_id": "q07-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "cache-policy",
+          "revision_id": "r1",
+          "source_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5",
+          "start_byte": 121,
+          "end_byte": 189,
+          "text": "Cache eviction removes the stored response but does not retry a job.",
+          "text_sha256": "3ae4fa76860e021fe3c5764e5d7234387a994fea7dad2467fbade2b785dfa71a"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "a3fce75f5d31e0813b51139e46dfe7f6e02a61cda1e27564832d40cb787c4519",
+        "facets": [
+          {
+            "facet_id": "q07-f1",
+            "question": "Does eviction retry the job?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "cache-policy",
+                "revision_id": "r1",
+                "source_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5",
+                "start_byte": 121,
+                "end_byte": 189,
+                "text": "Cache eviction removes the stored response but does not retry a job."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q08-reviewed",
+      "query": "How many retry attempts does ERR-17 permit for my tenant?",
+      "evidence": [
+        {
+          "evidence_id": "q08-f1-0",
+          "chunk_id": "q08-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r1",
+          "source_sha256": "ed5c8f366a17962ff090874ed1eecc5b56d8ff20fe3294d536a001a06175e3a3",
+          "start_byte": 28,
+          "end_byte": 61,
+          "text": "ERR-17 permits one retry attempt.",
+          "text_sha256": "7ca6c24d45dc688a894cf263ff7cbf3d48e5f6be387bb2bc7dd9c82cc3a7ff60"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "55d47440d61062bef6f7c753216694b41361a2f48ef30285cb80a8c628e41de9",
+        "facets": [
+          {
+            "facet_id": "q08-f1",
+            "question": "What is tenant B retry limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r1",
+                "source_sha256": "ed5c8f366a17962ff090874ed1eecc5b56d8ff20fe3294d536a001a06175e3a3",
+                "start_byte": 28,
+                "end_byte": 61,
+                "text": "ERR-17 permits one retry attempt."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q09-reviewed",
+      "query": "How long are BACK-4 snapshots retained?",
+      "evidence": [],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "f1d81d83f93f5bafa216f52a320faf252350142963dcd3070c6e6618bf568186",
+        "facets": [
+          {
+            "facet_id": "q09-f1",
+            "question": "What is the authorized BACK-4 retention period?",
+            "required": true,
+            "absence": "missing",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "missing"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "q10-reviewed",
+      "query": "What is the exact service label in the Unicode notes?",
+      "evidence": [
+        {
+          "evidence_id": "q10-f1-0",
+          "chunk_id": "q10-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "900719925474099312345",
+          "revision_id": "r1",
+          "source_sha256": "9802d1c25a1d17e10a3b39b130556062af65e3d658c67f15550feb45c47ded28",
+          "start_byte": 22,
+          "end_byte": 60,
+          "text": "The service label is Caf\u00e9 Relay \ud83d\ude42.",
+          "text_sha256": "42002c58a95744970fbe0217aa20a02ace8b56b67d53bf5252ce1dd21a4cc668"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "c0a5e62ab8fb9b2a3c52529dad098404fb0d6229a4370869636162aa01172478",
+        "facets": [
+          {
+            "facet_id": "q10-f1",
+            "question": "What service label is recorded?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "900719925474099312345",
+                "revision_id": "r1",
+                "source_sha256": "9802d1c25a1d17e10a3b39b130556062af65e3d658c67f15550feb45c47ded28",
+                "start_byte": 22,
+                "end_byte": 60,
+                "text": "The service label is Caf\u00e9 Relay \ud83d\ude42."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q11-reviewed",
+      "query": "Where does Caf\u00e9 Relay \ud83d\ude42 write diagnostics?",
+      "evidence": [
+        {
+          "evidence_id": "q11-f1-0",
+          "chunk_id": "q11-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "900719925474099312345",
+          "revision_id": "r1",
+          "source_sha256": "9802d1c25a1d17e10a3b39b130556062af65e3d658c67f15550feb45c47ded28",
+          "start_byte": 61,
+          "end_byte": 110,
+          "text": "Its diagnostics path is /var/log/caf\u00e9/relay.log.",
+          "text_sha256": "ed4b0d82a518de45553aa8896b673e541ff49cdcc4b00c00b105e16b085358fa"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "f5c6b5509f8a10d00514712f5da9f3f5e8a6832886847c910b49e65f277c2e3b",
+        "facets": [
+          {
+            "facet_id": "q11-f1",
+            "question": "What diagnostics path is recorded?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "900719925474099312345",
+                "revision_id": "r1",
+                "source_sha256": "9802d1c25a1d17e10a3b39b130556062af65e3d658c67f15550feb45c47ded28",
+                "start_byte": 61,
+                "end_byte": 110,
+                "text": "Its diagnostics path is /var/log/caf\u00e9/relay.log."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q12-reviewed",
+      "query": "Give the service zone and its owner.",
+      "evidence": [
+        {
+          "evidence_id": "q12-f1-0",
+          "chunk_id": "q12-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "900719925474099312345",
+          "revision_id": "r1",
+          "source_sha256": "9802d1c25a1d17e10a3b39b130556062af65e3d658c67f15550feb45c47ded28",
+          "start_byte": 111,
+          "end_byte": 143,
+          "text": "The service runs in zone west-2.",
+          "text_sha256": "7323d804e8c609377e1615d5b528017fbf28abec132e8c0b958c997ad837bc24"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "ec171bebbc59e06ef6568299d61266400ebe5dbcfcfbbfbb5e1a9c60c9d4ebd9",
+        "facets": [
+          {
+            "facet_id": "q12-f1",
+            "question": "Which zone runs the service?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "900719925474099312345",
+                "revision_id": "r1",
+                "source_sha256": "9802d1c25a1d17e10a3b39b130556062af65e3d658c67f15550feb45c47ded28",
+                "start_byte": 111,
+                "end_byte": 143,
+                "text": "The service runs in zone west-2."
+              }
+            ]
+          },
+          {
+            "facet_id": "q12-f2",
+            "question": "Who owns the service?",
+            "required": true,
+            "absence": "missing",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "supported",
+        "missing"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "q13-reviewed",
+      "query": "What documented recovery action applies to IDX-8?",
+      "evidence": [
+        {
+          "evidence_id": "q13-f1-0",
+          "chunk_id": "q13-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "index-runbook",
+          "revision_id": "r1",
+          "source_sha256": "7ee028d96172c5f5967198025d1fe517a8c5a3294327148a5a9cc753db0faeef",
+          "start_byte": 23,
+          "end_byte": 64,
+          "text": "For IDX-8, restart the index worker once.",
+          "text_sha256": "ba29814d2f550356b8cc166950afc377bb314e7a05dfa6f0e5a8df44eda8a269"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "b9add43cd0787fecf844fcb1c43fabf21c936f47f83e1317ed2c47b3e6f0c44a",
+        "facets": [
+          {
+            "facet_id": "q13-f1",
+            "question": "What is the documented IDX-8 recovery action?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "index-runbook",
+                "revision_id": "r1",
+                "source_sha256": "7ee028d96172c5f5967198025d1fe517a8c5a3294327148a5a9cc753db0faeef",
+                "start_byte": 23,
+                "end_byte": 64,
+                "text": "For IDX-8, restart the index worker once."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q14-reviewed",
+      "query": "What is the admin token value?",
+      "evidence": [],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "c19919a04694ae17f2dd5c850408af962adc5f9b08733d2f8060fb264e78be1b",
+        "facets": [
+          {
+            "facet_id": "q14-f1",
+            "question": "What authorized admin token value is recorded?",
+            "required": true,
+            "absence": "missing",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "missing"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "q15-reviewed",
+      "query": "How long should BACK-4 snapshots be retained?",
+      "evidence": [
+        {
+          "evidence_id": "q15-f1-0",
+          "chunk_id": "q15-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "backup-policy",
+          "revision_id": "r1",
+          "source_sha256": "459535af9fa209d7bf0a934936f6fb8893733f00226ae60b8a002bdbfc89d26d",
+          "start_byte": 52,
+          "end_byte": 88,
+          "text": "Retain BACK-4 snapshots for 14 days.",
+          "text_sha256": "94877c55cbb30697b4cdce7e9d7380fc1e0c0408de08ce2f7d2b66b228d3dbcc"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "09ee234e167fe6c4c78d68fe5990a35467098e214fbbf76256fc6cfce9159baf",
+        "facets": [
+          {
+            "facet_id": "q15-f1",
+            "question": "What retention period is recorded?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "backup-policy",
+                "revision_id": "r1",
+                "source_sha256": "459535af9fa209d7bf0a934936f6fb8893733f00226ae60b8a002bdbfc89d26d",
+                "start_byte": 52,
+                "end_byte": 88,
+                "text": "Retain BACK-4 snapshots for 14 days."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q16-reviewed",
+      "query": "How often do BACK-4 snapshots run?",
+      "evidence": [
+        {
+          "evidence_id": "q16-f1-0",
+          "chunk_id": "q16-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "backup-policy",
+          "revision_id": "r1",
+          "source_sha256": "459535af9fa209d7bf0a934936f6fb8893733f00226ae60b8a002bdbfc89d26d",
+          "start_byte": 14,
+          "end_byte": 51,
+          "text": "BACK-4 snapshots run every six hours.",
+          "text_sha256": "0159c57437c1019be6285b32a4467f655457540eaee30410149f529f2816fee1"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "a68693021c9e84ab60c90d6b70e754b1fc81af808818a325f0192dce2a820500",
+        "facets": [
+          {
+            "facet_id": "q16-f1",
+            "question": "What snapshot interval is recorded?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "backup-policy",
+                "revision_id": "r1",
+                "source_sha256": "459535af9fa209d7bf0a934936f6fb8893733f00226ae60b8a002bdbfc89d26d",
+                "start_byte": 14,
+                "end_byte": 51,
+                "text": "BACK-4 snapshots run every six hours."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q17-reviewed",
+      "query": "What is the BACK-4 restore-time objective?",
+      "evidence": [],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "2a784a1f9dbc6e412d6e19846877f9b9939c76f88f7c244fc265c13a5e44fe18",
+        "facets": [
+          {
+            "facet_id": "q17-f1",
+            "question": "What numeric restore-time objective is recorded?",
+            "required": true,
+            "absence": "missing",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "missing"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "q18-reviewed",
+      "query": "Give BACK-4 retention and restore-time objective.",
+      "evidence": [
+        {
+          "evidence_id": "q18-f1-0",
+          "chunk_id": "q18-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "backup-policy",
+          "revision_id": "r1",
+          "source_sha256": "459535af9fa209d7bf0a934936f6fb8893733f00226ae60b8a002bdbfc89d26d",
+          "start_byte": 52,
+          "end_byte": 88,
+          "text": "Retain BACK-4 snapshots for 14 days.",
+          "text_sha256": "94877c55cbb30697b4cdce7e9d7380fc1e0c0408de08ce2f7d2b66b228d3dbcc"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "5ce8fff21b6d1f439d96e5e0da56f128a02d207953b33ae0f2c6cfaf03710375",
+        "facets": [
+          {
+            "facet_id": "q18-f1",
+            "question": "What is snapshot retention?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "backup-policy",
+                "revision_id": "r1",
+                "source_sha256": "459535af9fa209d7bf0a934936f6fb8893733f00226ae60b8a002bdbfc89d26d",
+                "start_byte": 52,
+                "end_byte": 88,
+                "text": "Retain BACK-4 snapshots for 14 days."
+              }
+            ]
+          },
+          {
+            "facet_id": "q18-f2",
+            "question": "What numeric restore-time objective is recorded?",
+            "required": true,
+            "absence": "missing",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "supported",
+        "missing"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "q19-reviewed",
+      "query": "What timeout should GATE-6 use across the current notes?",
+      "evidence": [
+        {
+          "evidence_id": "q19-f1-0",
+          "chunk_id": "q19-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "timeout-policy-a",
+          "revision_id": "r1",
+          "source_sha256": "ab4acbdbc0a9dd4a54dc21941d9134c525a50951c528c83a59b07429c4db1532",
+          "start_byte": 23,
+          "end_byte": 65,
+          "text": "For GATE-6, set the timeout to 30 seconds.",
+          "text_sha256": "f648a76d57f4d47ab40f301121ed42d5a9f07def872fe90d2fe102b1a10bbc88"
+        },
+        {
+          "evidence_id": "q19-f1-1",
+          "chunk_id": "q19-f1-1",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "timeout-policy-b",
+          "revision_id": "r1",
+          "source_sha256": "0a1aebe7c036148a10e6aa301f8f0c91d46e6d04042327ab8b93c235b9a30103",
+          "start_byte": 23,
+          "end_byte": 65,
+          "text": "For GATE-6, set the timeout to 45 seconds.",
+          "text_sha256": "935a07c0c01cb1df82d2b74e182e8a2097ee564cbbce6832239a24536e6e1504"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "00c855f8d3e83ebc691804adbdd1399e829a24cab7da3938be2c78529137e890",
+        "facets": [
+          {
+            "facet_id": "q19-f1",
+            "question": "What consistent timeout do the notes establish?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "0",
+                "collection": "engineering",
+                "document_id": "timeout-policy-a",
+                "revision_id": "r1",
+                "source_sha256": "ab4acbdbc0a9dd4a54dc21941d9134c525a50951c528c83a59b07429c4db1532",
+                "start_byte": 23,
+                "end_byte": 65,
+                "text": "For GATE-6, set the timeout to 30 seconds."
+              },
+              {
+                "claim_id": "1",
+                "collection": "engineering",
+                "document_id": "timeout-policy-b",
+                "revision_id": "r1",
+                "source_sha256": "0a1aebe7c036148a10e6aa301f8f0c91d46e6d04042327ab8b93c235b9a30103",
+                "start_byte": 23,
+                "end_byte": 65,
+                "text": "For GATE-6, set the timeout to 45 seconds."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "conflicting"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "q19-drop-0",
+      "query": "What timeout should GATE-6 use across the current notes?",
+      "evidence": [
+        {
+          "evidence_id": "q19-f1-1",
+          "chunk_id": "q19-f1-1",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "timeout-policy-b",
+          "revision_id": "r1",
+          "source_sha256": "0a1aebe7c036148a10e6aa301f8f0c91d46e6d04042327ab8b93c235b9a30103",
+          "start_byte": 23,
+          "end_byte": 65,
+          "text": "For GATE-6, set the timeout to 45 seconds.",
+          "text_sha256": "935a07c0c01cb1df82d2b74e182e8a2097ee564cbbce6832239a24536e6e1504"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "00c855f8d3e83ebc691804adbdd1399e829a24cab7da3938be2c78529137e890",
+        "facets": [
+          {
+            "facet_id": "q19-f1",
+            "question": "What consistent timeout do the notes establish?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "0",
+                "collection": "engineering",
+                "document_id": "timeout-policy-a",
+                "revision_id": "r1",
+                "source_sha256": "ab4acbdbc0a9dd4a54dc21941d9134c525a50951c528c83a59b07429c4db1532",
+                "start_byte": 23,
+                "end_byte": 65,
+                "text": "For GATE-6, set the timeout to 30 seconds."
+              },
+              {
+                "claim_id": "1",
+                "collection": "engineering",
+                "document_id": "timeout-policy-b",
+                "revision_id": "r1",
+                "source_sha256": "0a1aebe7c036148a10e6aa301f8f0c91d46e6d04042327ab8b93c235b9a30103",
+                "start_byte": 23,
+                "end_byte": 65,
+                "text": "For GATE-6, set the timeout to 45 seconds."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "unknown"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "q19-drop-1",
+      "query": "What timeout should GATE-6 use across the current notes?",
+      "evidence": [
+        {
+          "evidence_id": "q19-f1-0",
+          "chunk_id": "q19-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "timeout-policy-a",
+          "revision_id": "r1",
+          "source_sha256": "ab4acbdbc0a9dd4a54dc21941d9134c525a50951c528c83a59b07429c4db1532",
+          "start_byte": 23,
+          "end_byte": 65,
+          "text": "For GATE-6, set the timeout to 30 seconds.",
+          "text_sha256": "f648a76d57f4d47ab40f301121ed42d5a9f07def872fe90d2fe102b1a10bbc88"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "00c855f8d3e83ebc691804adbdd1399e829a24cab7da3938be2c78529137e890",
+        "facets": [
+          {
+            "facet_id": "q19-f1",
+            "question": "What consistent timeout do the notes establish?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "0",
+                "collection": "engineering",
+                "document_id": "timeout-policy-a",
+                "revision_id": "r1",
+                "source_sha256": "ab4acbdbc0a9dd4a54dc21941d9134c525a50951c528c83a59b07429c4db1532",
+                "start_byte": 23,
+                "end_byte": 65,
+                "text": "For GATE-6, set the timeout to 30 seconds."
+              },
+              {
+                "claim_id": "1",
+                "collection": "engineering",
+                "document_id": "timeout-policy-b",
+                "revision_id": "r1",
+                "source_sha256": "0a1aebe7c036148a10e6aa301f8f0c91d46e6d04042327ab8b93c235b9a30103",
+                "start_byte": 23,
+                "end_byte": 65,
+                "text": "For GATE-6, set the timeout to 45 seconds."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "unknown"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "q20-reviewed",
+      "query": "What timeout is specified by note A?",
+      "evidence": [
+        {
+          "evidence_id": "q20-f1-0",
+          "chunk_id": "q20-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "timeout-policy-a",
+          "revision_id": "r1",
+          "source_sha256": "ab4acbdbc0a9dd4a54dc21941d9134c525a50951c528c83a59b07429c4db1532",
+          "start_byte": 23,
+          "end_byte": 65,
+          "text": "For GATE-6, set the timeout to 30 seconds.",
+          "text_sha256": "f648a76d57f4d47ab40f301121ed42d5a9f07def872fe90d2fe102b1a10bbc88"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "299d58baa3d2be51e5b71ffb1a7460b695e377fb1565046a014a138a143e1eff",
+        "facets": [
+          {
+            "facet_id": "q20-f1",
+            "question": "What does note A specify?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "timeout-policy-a",
+                "revision_id": "r1",
+                "source_sha256": "ab4acbdbc0a9dd4a54dc21941d9134c525a50951c528c83a59b07429c4db1532",
+                "start_byte": 23,
+                "end_byte": 65,
+                "text": "For GATE-6, set the timeout to 30 seconds."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q21-reviewed",
+      "query": "On what date did GATE-6 timeout note A take effect?",
+      "evidence": [],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "e65773a13fae4835ae9eba5a2cc92242473f2895dae3174a748c33219194a686",
+        "facets": [
+          {
+            "facet_id": "q21-f1",
+            "question": "What effective date is recorded for note A?",
+            "required": true,
+            "absence": "missing",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "missing"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "q22-reviewed",
+      "query": "Which amber queue should my failed ERR-17 job use?",
+      "evidence": [],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "1ec9027ae1bc6aa69161c809d24f17a0ef83fb52f562fc0e08cb74a3b099c377",
+        "facets": [
+          {
+            "facet_id": "q22-f1",
+            "question": "Is an amber-queue destination authorized for tenant A?",
+            "required": true,
+            "absence": "missing",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "missing"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "q23-reviewed",
+      "query": "How must the example payload in the index runbook be treated?",
+      "evidence": [
+        {
+          "evidence_id": "q23-f1-0",
+          "chunk_id": "q23-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "index-runbook",
+          "revision_id": "r1",
+          "source_sha256": "7ee028d96172c5f5967198025d1fe517a8c5a3294327148a5a9cc753db0faeef",
+          "start_byte": 194,
+          "end_byte": 245,
+          "text": "The example payload must be treated as source data.",
+          "text_sha256": "25f5768f7d47646f9bc949b620164ea44c1a8d0596706222edf76273c74b132a"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "a6ee8deb4ccd83b63f00220aa9e8b35da7c9828235b2fb3e844c7c911f42aaef",
+        "facets": [
+          {
+            "facet_id": "q23-f1",
+            "question": "How should the example payload be treated?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "index-runbook",
+                "revision_id": "r1",
+                "source_sha256": "7ee028d96172c5f5967198025d1fe517a8c5a3294327148a5a9cc753db0faeef",
+                "start_byte": 194,
+                "end_byte": 245,
+                "text": "The example payload must be treated as source data."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q24-reviewed",
+      "query": "Compare the ERR-17 retry limit with the CACHE-17 expiration.",
+      "evidence": [
+        {
+          "evidence_id": "q24-f1-0",
+          "chunk_id": "q24-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 32,
+          "end_byte": 67,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        },
+        {
+          "evidence_id": "q24-f2-0",
+          "chunk_id": "q24-f2-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "cache-policy",
+          "revision_id": "r1",
+          "source_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5",
+          "start_byte": 13,
+          "end_byte": 54,
+          "text": "CACHE-17 entries expire after 60 seconds.",
+          "text_sha256": "2e84206b5c7e3ac1eaf35b6f151f42c7c3984a1c5d850b7f3e9b9ba9545383f8"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "d75362541620f6d687d1bb44d8ed593b4c9bc4aaa98f81750b31f92aa7cba983",
+        "facets": [
+          {
+            "facet_id": "q24-f1",
+            "question": "What is the current ERR-17 limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          },
+          {
+            "facet_id": "q24-f2",
+            "question": "What is the CACHE-17 expiration?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "cache-policy",
+                "revision_id": "r1",
+                "source_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5",
+                "start_byte": 13,
+                "end_byte": 54,
+                "text": "CACHE-17 entries expire after 60 seconds."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported",
+        "supported"
+      ],
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "q24-drop-0",
+      "query": "Compare the ERR-17 retry limit with the CACHE-17 expiration.",
+      "evidence": [
+        {
+          "evidence_id": "q24-f2-0",
+          "chunk_id": "q24-f2-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "cache-policy",
+          "revision_id": "r1",
+          "source_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5",
+          "start_byte": 13,
+          "end_byte": 54,
+          "text": "CACHE-17 entries expire after 60 seconds.",
+          "text_sha256": "2e84206b5c7e3ac1eaf35b6f151f42c7c3984a1c5d850b7f3e9b9ba9545383f8"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "d75362541620f6d687d1bb44d8ed593b4c9bc4aaa98f81750b31f92aa7cba983",
+        "facets": [
+          {
+            "facet_id": "q24-f1",
+            "question": "What is the current ERR-17 limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          },
+          {
+            "facet_id": "q24-f2",
+            "question": "What is the CACHE-17 expiration?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "cache-policy",
+                "revision_id": "r1",
+                "source_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5",
+                "start_byte": 13,
+                "end_byte": 54,
+                "text": "CACHE-17 entries expire after 60 seconds."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "missing",
+        "supported"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "q24-drop-1",
+      "query": "Compare the ERR-17 retry limit with the CACHE-17 expiration.",
+      "evidence": [
+        {
+          "evidence_id": "q24-f1-0",
+          "chunk_id": "q24-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 32,
+          "end_byte": 67,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "d75362541620f6d687d1bb44d8ed593b4c9bc4aaa98f81750b31f92aa7cba983",
+        "facets": [
+          {
+            "facet_id": "q24-f1",
+            "question": "What is the current ERR-17 limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          },
+          {
+            "facet_id": "q24-f2",
+            "question": "What is the CACHE-17 expiration?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "cache-policy",
+                "revision_id": "r1",
+                "source_sha256": "855a2fdfb0cb8146aaa1ae4522dccc7251d572d0fd577a01ad0800ce6fb623a5",
+                "start_byte": 13,
+                "end_byte": 54,
+                "text": "CACHE-17 entries expire after 60 seconds."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported",
+        "missing"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "wrong-query",
+      "query": "How many retry attempts does ERR-17 permit now? changed",
+      "evidence": [
+        {
+          "evidence_id": "q01-f1-0",
+          "chunk_id": "q01-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 32,
+          "end_byte": 67,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "ebff38dca15c72004b904eafbd9818e941f496eeaa913bd85a8ef3dbd35fd070",
+        "facets": [
+          {
+            "facet_id": "q01-f1",
+            "question": "What is the current ERR-17 attempt limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_error": "invalid_request"
+    },
+    {
+      "id": "wrong-source-digest",
+      "query": "How many retry attempts does ERR-17 permit now?",
+      "evidence": [
+        {
+          "evidence_id": "q01-f1-0",
+          "chunk_id": "q01-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "start_byte": 32,
+          "end_byte": 67,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "ebff38dca15c72004b904eafbd9818e941f496eeaa913bd85a8ef3dbd35fd070",
+        "facets": [
+          {
+            "facet_id": "q01-f1",
+            "question": "What is the current ERR-17 attempt limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "missing"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "wrong-offset",
+      "query": "How many retry attempts does ERR-17 permit now?",
+      "evidence": [
+        {
+          "evidence_id": "q01-f1-0",
+          "chunk_id": "q01-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 33,
+          "end_byte": 68,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "ebff38dca15c72004b904eafbd9818e941f496eeaa913bd85a8ef3dbd35fd070",
+        "facets": [
+          {
+            "facet_id": "q01-f1",
+            "question": "What is the current ERR-17 attempt limit?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "missing"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "no-policy",
+      "query": "How many retry attempts does ERR-17 permit now?",
+      "evidence": [
+        {
+          "evidence_id": "q01-f1-0",
+          "chunk_id": "q01-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 32,
+          "end_byte": 67,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        }
+      ],
+      "policy": null,
+      "expected_states": [
+        "unknown"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "declared-unknown",
+      "query": "How many retry attempts does ERR-17 permit now?",
+      "evidence": [
+        {
+          "evidence_id": "q01-f1-0",
+          "chunk_id": "q01-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 32,
+          "end_byte": 67,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "ebff38dca15c72004b904eafbd9818e941f496eeaa913bd85a8ef3dbd35fd070",
+        "facets": [
+          {
+            "facet_id": "q01-f1",
+            "question": "What is the current ERR-17 attempt limit?",
+            "required": true,
+            "absence": "unknown",
+            "anchors": []
+          }
+        ]
+      },
+      "expected_states": [
+        "unknown"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "optional-only",
+      "query": "How many retry attempts does ERR-17 permit now?",
+      "evidence": [
+        {
+          "evidence_id": "q01-f1-0",
+          "chunk_id": "q01-f1-0",
+          "source_locator": "fixture",
+          "collection": "engineering",
+          "document_id": "retry-policy",
+          "revision_id": "r2",
+          "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+          "start_byte": 32,
+          "end_byte": 67,
+          "text": "ERR-17 permits four retry attempts.",
+          "text_sha256": "3fc999074f1f5a12594f5f599886e7f4d1d04ec95626feaa9343baa68f4b9bac"
+        }
+      ],
+      "policy": {
+        "policy_id": "reviewed-dev",
+        "version": "1",
+        "query_sha256": "ebff38dca15c72004b904eafbd9818e941f496eeaa913bd85a8ef3dbd35fd070",
+        "facets": [
+          {
+            "facet_id": "q01-f1",
+            "question": "What is the current ERR-17 attempt limit?",
+            "required": false,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "engineering",
+                "document_id": "retry-policy",
+                "revision_id": "r2",
+                "source_sha256": "d9c7b823d3a232d4830fae01b0b17ce19a3df9bcf2fd6f078e19fb640502d113",
+                "start_byte": 32,
+                "end_byte": 67,
+                "text": "ERR-17 permits four retry attempts."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_states": [
+        "supported"
+      ],
+      "expected_status": "partial"
+    }
+  ]
+}

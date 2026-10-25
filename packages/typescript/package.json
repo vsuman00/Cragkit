@@ -38,6 +38,10 @@
     "./packing": {
       "types": "./dist/packing.d.ts",
       "import": "./dist/packing.js"
+    },
+    "./assessment": {
+      "types": "./dist/assessment.d.ts",
+      "import": "./dist/assessment.js"
     }
   },
   "files": [
