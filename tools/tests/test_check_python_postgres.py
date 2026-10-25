@@ -8,6 +8,8 @@ import sys
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 SPEC = importlib.util.spec_from_file_location('check_python_postgres', Path(__file__).resolve().parents[1] / 'check_python_postgres.py')
 assert SPEC and SPEC.loader
 PG = importlib.util.module_from_spec(SPEC)
@@ -231,3 +233,47 @@ def test_corrective_cli_requires_hybrid_and_explicit_writes(monkeypatch):
     monkeypatch.setattr(sys, 'argv', [*base, '--hybrid', '--typescript', '--allow-test-writes'])
     assert PG.main() == 0
     assert check.call_args.kwargs['corrective'] is True
+
+
+def test_cli_preserves_redacted_original_and_cleanup_diagnostics(monkeypatch, capsys):
+    import json
+    secret = "postgresql://private:password@host/db SELECT private_source"
+    class DatabaseFault(Exception):
+        sqlstate = '08006'
+    failure = PG.CleanupFailure([('row_delete', DatabaseFault(secret)), ('admin_close', TimeoutError(secret))],
+        primary=RuntimeError(secret), stage='hybrid_evaluation')
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json', '--allow-test-writes'])
+    monkeypatch.setattr(PG, 'check', AsyncMock(side_effect=failure))
+    assert PG.main() == 1
+    output = capsys.readouterr()
+    assert secret not in output.out + output.err
+    value = json.loads(output.out)
+    assert value['state'] == 'failed' and value['code'] == 'cleanup_failed'
+    assert value['primary']['stage'] == 'hybrid_evaluation'
+    assert value['primary']['category'] == 'operation'
+    assert value['cleanup'][0]['operation'] == 'row_delete'
+    assert value['cleanup'][0]['sqlstate'] == '08006'
+    assert value['cleanup'][1]['category'] == 'timeout'
+
+
+def test_cli_diagnostic_category_preserves_cancellation_without_raw_reason(monkeypatch, capsys):
+    import json
+    failure = PG.CleanupFailure([('cleanup_budget', TimeoutError('private-timeout'))],
+        primary=asyncio.CancelledError('private-cancel'), stage='hybrid_evaluation')
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json', '--allow-test-writes'])
+    monkeypatch.setattr(PG, 'check', AsyncMock(side_effect=failure))
+    assert PG.main() == 1
+    output = capsys.readouterr().out
+    assert 'private' not in output
+    assert json.loads(output)['primary']['category'] == 'cancelled'
+
+
+def test_cli_cannot_report_success_when_only_cleanup_fails(monkeypatch, capsys):
+    import json
+    failure = PG.CleanupFailure([('role_drop', ConnectionError('private-cleanup'))], stage='hybrid_evaluation')
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json', '--allow-test-writes'])
+    monkeypatch.setattr(PG, 'check', AsyncMock(side_effect=failure))
+    assert PG.main() == 1
+    value = json.loads(capsys.readouterr().out)
+    assert value['state'] == 'failed' and value['primary'] is None
+    assert value['cleanup'][0]['category'] == 'connection'

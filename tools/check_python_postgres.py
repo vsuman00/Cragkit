@@ -14,6 +14,8 @@ import stat
 import sys
 import tempfile
 
+from runtime_diagnostics import CleanupFailure
+
 
 CURRENT_STAGE = 'not_started'
 
@@ -508,42 +510,58 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
         completed.append('schema_rejection_and_restore')
         return {'state': 'passed', 'checks': completed, 'runtime_login': True, 'maximum_connections': 2, 'cleanup_verified': True}
     finally:
+        primary_failure = sys.exception()
+        cleanup_stage = CURRENT_STAGE
         async def cleanup():
             nonlocal renamed
             errors = []
+            operation = 'runtime_close'
             if runtime is not None:
                 try:
                     await asyncio.wait_for(runtime.close(), 3)
-                except Exception:
-                    errors.append('runtime_close')
+                except Exception as error:
+                    errors.append(('runtime_close', error))
             if admin is not None:
                 try:
+                    operation = 'schema_restore'
                     if renamed:
                         await command('ALTER TABLE cragkit.documents RENAME COLUMN probe_hidden_authorization_revision TO authorization_revision')
                         renamed = False
                     if await rows("SELECT count(*) FROM information_schema.columns WHERE table_schema='cragkit' AND table_name='documents' AND column_name='authorization_revision'") != [(1,)] or await rows("SELECT count(*) FROM information_schema.columns WHERE table_schema='cragkit' AND table_name='documents' AND column_name='probe_hidden_authorization_revision'") != [(0,)]:
                         raise RuntimeCheckError('schema_restore_failed')
                     if created_role:
+                        operation = 'fixture_transaction'
                         async with admin.transaction():
+                            operation = 'privilege_revoke'
                             if lifecycle:
                                 await command(sql.SQL('REVOKE UPDATE(created_at),DELETE ON cragkit.documents FROM {}').format(sql.Identifier(role)))
+                            operation = 'policy_drop'
                             if ingestion:
                                 await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.index_generations').format(sql.Identifier(role + '_block_ready')))
                             for table in selected:
+                                operation = 'policy_drop'
                                 await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.{}').format(sql.Identifier(policy), sql.Identifier(table)))
+                                operation = 'privilege_revoke'
                                 permissions = 'SELECT,INSERT,UPDATE' if ingestion and table not in ('migration_history','embedding_profiles') else 'SELECT'
                                 await command(sql.SQL('REVOKE ' + permissions + ' ON cragkit.{} FROM {}').format(sql.Identifier(table), sql.Identifier(role)))
                             if vectors:
+                                operation = 'policy_drop'
                                 await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit_vector.setup_history').format(sql.Identifier(policy)))
+                                operation = 'privilege_revoke'
                                 await command(sql.SQL('REVOKE SELECT ON cragkit_vector.setup_history FROM {}').format(sql.Identifier(role)))
                                 await command(sql.SQL('REVOKE USAGE ON SCHEMA cragkit_vector FROM {}').format(sql.Identifier(role)))
+                            operation = 'row_delete'
                             await command('DELETE FROM cragkit.documents WHERE tenant_id=ANY(%s) AND collection_id=%s', (tenants, collection))
                             await command('DELETE FROM cragkit.collections WHERE tenant_id=ANY(%s) AND collection_id=%s', (tenants, collection))
                             # CREATEROLE does not grant permission to DROP OWNED BY
                             # the new role. Revoke only this fixture's exact grants.
+                            operation = 'privilege_revoke'
                             await command(sql.SQL('REVOKE USAGE ON DOMAIN cragkit.identity_text,cragkit.collection_text,cragkit.sha256_hex,cragkit.safe_count FROM {}').format(sql.Identifier(role)))
                             await command(sql.SQL('REVOKE USAGE ON SCHEMA cragkit FROM {}').format(sql.Identifier(role)))
+                            operation = 'role_drop'
                             await command(sql.SQL('DROP ROLE {}').format(sql.Identifier(role)))
+                            operation = 'fixture_transaction'
+                        operation = 'verify_inventory'
                         if await rows('SELECT 1 FROM pg_roles WHERE rolname=%s', (role,)):
                             raise RuntimeCheckError('role_cleanup_failed')
                         if await rows("SELECT count(*) FROM pg_policies WHERE schemaname IN ('cragkit','cragkit_vector')") != [(0,)]:
@@ -551,19 +569,25 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                         for table in tables:
                             if await rows(sql.SQL('SELECT count(*) FROM cragkit.{}').format(sql.Identifier(table))) != [(0,)]:
                                 raise RuntimeCheckError('fixture_cleanup_failed')
+                    operation = 'lock_release'
                     if locked:
                         await command('SELECT pg_advisory_unlock(1129464148,1)')
-                except Exception:
-                    errors.append('database_cleanup')
+                except Exception as error:
+                    errors.append((operation, error))
                 finally:
-                    await asyncio.wait_for(admin.close(), 3)
+                    try:
+                        await asyncio.wait_for(admin.close(), 3)
+                    except Exception as error:
+                        errors.append(('admin_close', error))
             if errors:
-                raise RuntimeCheckError('cleanup_failed')
+                raise CleanupFailure(errors, primary=primary_failure, stage=cleanup_stage)
         try:
             async with asyncio.timeout(25):
                 await cleanup()
-        except Exception:
-            raise RuntimeCheckError('cleanup_failed') from None
+        except CleanupFailure:
+            raise
+        except BaseException as error:
+            raise CleanupFailure([('cleanup_budget', error)], primary=primary_failure, stage=cleanup_stage) from None
         finally:
             temporary.cleanup()
 
@@ -616,6 +640,9 @@ def main() -> int:
                     results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors, vector_stage_only=args.vector_stage_only, dense=args.dense, hybrid=args.hybrid, evidence=args.evidence, corrective=args.corrective,
                 )
         result = asyncio.run(bounded())
+    except CleanupFailure as error:
+        print(json.dumps({'state': 'failed', **error.to_dict()}, sort_keys=True))
+        return 1
     except RuntimeCheckError as error:
         code = str(error) if re.fullmatch(r'[a-z_]+', str(error)) else 'runtime_check_failed'
         print(f'Runtime PostgreSQL checks failed: {code}; stage={CURRENT_STAGE}.')
