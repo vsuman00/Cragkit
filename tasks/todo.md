@@ -207,11 +207,11 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V4-05: [Privacy-controlled events](versions/V4-corrective-alpha.md#v4-05-privacy-controlled-events) — evidence: [local core acceptance](../evaluation/reports/V4/V4-03-05.md); final source checkpoint follows branch-budget regression.
 
-- [ ] V4-06: [Python framework adapter](versions/V4-corrective-alpha.md#v4-06-python-framework-adapter) — evidence: pending.
+- [x] V4-06: [Python framework adapter](versions/V4-corrective-alpha.md#v4-06-python-framework-adapter) — evidence: [native SDK and installed-artifact acceptance](../evaluation/reports/V4/V4-06-07.md).
 
-- [ ] V4-C2: Demonstration, relevant regression checks, learning review and resource note through V4-06.
+- [x] V4-C2: Demonstration, relevant regression checks, learning review and resource note through V4-06.
 
-- [ ] V4-07: [TypeScript framework adapter](versions/V4-corrective-alpha.md#v4-07-typescript-framework-adapter) — evidence: pending.
+- [x] V4-07: [TypeScript framework adapter](versions/V4-corrective-alpha.md#v4-07-typescript-framework-adapter) — evidence: [native SDK and installed-artifact acceptance](../evaluation/reports/V4/V4-06-07.md).
 
 - [ ] V4-08: [Corrective quality and alpha packaging](versions/V4-corrective-alpha.md#v4-08-corrective-quality-and-alpha-packaging) — evidence: pending.
 
@@ -960,3 +960,9 @@ V4-03/04 branch-admission correction COMPLETE locally: six Python and six Node n
 V4-06 and C2 COMPLETE locally: root inspected the real SDK adapter and assembler/test artifacts, then passed strict mypy for its source and 72 real SDK tests. Shared tool/result fixtures and an actual corrective-engine targeted recovery preserve the full direct result and trusted authority. Privacy checks enabled ambient tracing under network denial; strict final SDK message recount, oversized wrappers, native cancellation/deadline, redacted failures and alternate paths passed. Initial type failures exposed SDK overload differences; explicit unsupported boundaries were corrected without weakening validation. Clean installed SDK artifacts remain a version-exit check. No model/paid call or background service.
 
 V4-07 RUNNING after V4-06/C2. Node Sol v4_node owns only packages/langchain-typescript/src/index.ts and assembles. Python Sol v4_python owns packages/langchain-typescript/tests/adapter.test.mjs, complementary substantive real-SDK/shared-engine tests. AD-r1 same shared outcome and authority/privacy/count/cancellation constraints; direct peer API coordination. Root owns manifests/locks/installs/shared fixtures/checks/evidence/tracker/Git. No worker processes/tests/network/SDK install/provider/DB/Git. Test fixtures/tokenizer support explicit environment paths for isolated artifact acceptance. Source/config/migrations/sealed inputs outside optional package protected. Root resolves boundary changes; Astra only unresolved material escalation.
+
+### V4-07 local acceptance and final SDK review
+
+V4-07 COMPLETE: root inspected the assembled Node source and real SDK tests. The first 34-stage version run passed (72 Python SDK / 66 Node SDK); independent Sol review then found a forged AbortError message leak and closed-counter pre-dispatch gap. Native peers resolved both directly, added three Node regressions and stopped writes. Root reran all 34 stages successfully against final source: 1,216 Python/tool and 878 core Node tests; 72 Python and 69 Node SDK tests; both native/SDK typechecks/builds, complete shared parity/seals, core four archives/three guarded imports, installed core 216 evidence plus 44 V4 cases, optional four archives with 72/69 SDK tests repeated in isolated installed environments. SDK locks/version/integrity and import origins passed. No live model/paid call or new service. [Adapter evidence](../evaluation/reports/V4/V4-06-07.md).
+
+V4-08 final DB evaluation remains RUNNING. A final-source attempt failed honestly at the existing hybrid deadline; cleanup completed with an informational connection discard, no suppression/deadline increase. Its retry was interrupted by the user; inventory found exactly one task-owned role, 12 fixture policies and two fixture collections, with the advisory lock free. Root removed only that exact fixture in a transaction, verified both histories unchanged and all fixture tables/roles/policies empty, then restarted native acceptance after the successful 34-stage final check. Current resource snapshot: 38 GiB disk/54 percent memory free on M4/16 GiB; snapshots, not performance guarantees. Original untracked security reports preserved. Full V4 is pending the final DB result and exit report; no V5 implementation started.

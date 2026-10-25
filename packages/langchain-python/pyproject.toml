@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cragkit-langchain"
+version = "0.0.0"
+requires-python = ">=3.14,<3.15"
+dependencies = ["cragkit==0.0.0", "langchain-core==1.7.0"]
+
+[tool.uv.sources]
+cragkit = { path = "../python", editable = true }
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "mypy==2.4.0", "tiktoken==0.14.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cragkit_langchain"]

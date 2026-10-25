@@ -59,9 +59,10 @@ def pipeline(root: Path, artifacts_dir: Path) -> tuple[Step, ...]:
 
 
 def run_checks(root: Path, artifacts_dir: Path,
-               runner: Callable[..., Any] = subprocess.run) -> int:
+               runner: Callable[..., Any] = subprocess.run, *,
+               steps: tuple[Step, ...] | None = None) -> int:
     root = root.resolve()
-    steps = pipeline(root, artifacts_dir.resolve())
+    steps = pipeline(root, artifacts_dir.resolve()) if steps is None else steps
     completed = 0
     for step in steps:
         cwd = step.cwd.resolve()

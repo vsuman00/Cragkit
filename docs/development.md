@@ -759,3 +759,22 @@ python3 tools/check_v0.py --artifacts-dir artifacts/V4/checkpoint-core
 It runs 27 stages, including complete execution, planning, corrective and event parity. Clean installed archives also run the 44 V4 shared state-machine cases outside the checkout. The optional framework packages have separate environments; they are not installed by this core command. Internal core archives retain version 0.0.0; V4 is an implementation milestone, and public alpha publication remains separate.
 
 Event exporters are cooperative async application callbacks. Retrieval only queues events; call `flush` explicitly outside its critical path with an absolute monotonic deadline. No implementation can make a synchronously blocking application callback cooperative. Shared sinks expose cumulative counters; generated trace IDs separate concurrent requests without storing request text. The final result's events snapshot is a point-in-time view of that shared queue, not a per-request delivery receipt.
+
+### Optional V4 framework verification
+
+The separate `packages/langchain-python` project pins LangChain Core 1.7.0; `packages/langchain-typescript` pins `@langchain/core` 1.3.0 and LangSmith 0.11.1. Their locks include SDK dependencies; core manifests remain framework-free. See [the adapter guide](integrations/langchain.md).
+
+```sh
+python3 tools/check_v4.py --artifacts-dir artifacts/V4/acceptance
+```
+
+This serial entrypoint runs the 27 core stages followed by frozen SDK installs, both adapter typechecks, real SDK tests and clean optional archives/install tests: 34 stages total. It requires registry access for missing pinned dependencies. It does not run a live model or touch a database. Hosted CI remains unconfigured/unrun. For a focused SDK pass, run each command separately:
+
+```sh
+uv run --project packages/langchain-python --frozen mypy --config-file packages/langchain-python/pyproject.toml packages/langchain-python/src
+uv run --project packages/langchain-python --frozen pytest packages/langchain-python/tests -q
+npm --prefix packages/langchain-typescript run typecheck
+npm --prefix packages/langchain-typescript test
+```
+
+Clean framework verification builds Python wheel/source/rebuilt wheel and npm archive, installs those products in temporary environments, reruns the SDK tests there, verifies product import origins and checks SDK dependency versions/integrities. Original checkout files still exist; this proves isolated installed imports, not physical removal of the checkout. Environment payload sizes are logical file totals, not disk allocation or runtime memory. Core and optional reports live in separate subdirectories.

@@ -25,3 +25,7 @@ For example, corrupting a sealed source file makes the integrity stage fail befo
 When implementing hosted CI, create one job on pull requests and pushes using a clean supported runner. Check out the code, install the recorded Python/Node/uv toolchain, and run the same entrypoint. Keep test processes serial and exclude models, provider credentials and database services from V0. Retain the archives and acceptance report as job artifacts, without publishing packages. Configure branch protection separately when the hosted job has actually been observed to pass.
 
 Cross-platform execution, hosted runner behavior and branch protection remain unvalidated until that real job runs. The local job definition is documented here rather than claiming an unavailable hosted CI result.
+
+## V4 optional SDK checkpoint
+
+`python3 tools/check_v4.py --artifacts-dir artifacts/V4/acceptance` runs the 27 core stages and seven optional SDK stages serially. Optional SDK installs have their own frozen locks; they do not change the default core import/dependency gate. The final stage builds and installs optional adapter archives outside the checkout, checks SDK versions/integrities and reruns the real SDK tests against installed products. Database acceptance remains an explicit separate run with private configuration and test-write authorization. A passing local V4 command does not establish hosted CI or registry publication.
