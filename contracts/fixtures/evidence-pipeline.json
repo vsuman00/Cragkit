@@ -1,0 +1,658 @@
+{
+  "revision": "EP-r1",
+  "cases": [
+    {
+      "query": "What are the attempts and delay?",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 341,
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context ",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "59202d030f3a4843dcfd34435ad2c447c168a892b30990d8a7171bca0c25b594"
+        },
+        {
+          "evidence_id": "b",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "b",
+          "source_locator": "fixture",
+          "start_byte": 343,
+          "end_byte": 367,
+          "text": "Delay: 250 milliseconds.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "80e2ddc95adc1d5aa5b75251b5089713c8385e518d2ad6a210b0300bc823c68a"
+        },
+        {
+          "evidence_id": "c",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "c",
+          "source_locator": "fixture",
+          "start_byte": 369,
+          "end_byte": 383,
+          "text": "Four attempts.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "29aaf6149452d9198915c0d3062f6651ecbb4e2172f20d9319a136ee1eb4088a"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context \n\nDelay: 250 milliseconds.\n\nFour attempts."
+        }
+      ],
+      "policy": {
+        "policy_id": "ep-fixture",
+        "version": "1",
+        "query_sha256": "503b580141ef5b108bdb126304c7f47e4f824740a1531cd1f397de6ef3b62465",
+        "facets": [
+          {
+            "facet_id": "attempts",
+            "question": "Attempts?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 0,
+                "end_byte": 341,
+                "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context "
+              },
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 369,
+                "end_byte": 383,
+                "text": "Four attempts."
+              }
+            ]
+          },
+          {
+            "facet_id": "delay",
+            "question": "Delay?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 343,
+                "end_byte": 367,
+                "text": "Delay: 250 milliseconds."
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "id": "all-fit",
+      "expected_status": "sufficient",
+      "expected_states": [
+        "supported",
+        "supported"
+      ],
+      "expected_rebalance_count": 0
+    },
+    {
+      "query": "What are the attempts and delay?",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 341,
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context ",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "59202d030f3a4843dcfd34435ad2c447c168a892b30990d8a7171bca0c25b594"
+        },
+        {
+          "evidence_id": "b",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "b",
+          "source_locator": "fixture",
+          "start_byte": 343,
+          "end_byte": 367,
+          "text": "Delay: 250 milliseconds.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "80e2ddc95adc1d5aa5b75251b5089713c8385e518d2ad6a210b0300bc823c68a"
+        },
+        {
+          "evidence_id": "c",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "c",
+          "source_locator": "fixture",
+          "start_byte": 369,
+          "end_byte": 383,
+          "text": "Four attempts.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "29aaf6149452d9198915c0d3062f6651ecbb4e2172f20d9319a136ee1eb4088a"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context \n\nDelay: 250 milliseconds.\n\nFour attempts."
+        }
+      ],
+      "policy": {
+        "policy_id": "ep-fixture",
+        "version": "1",
+        "query_sha256": "503b580141ef5b108bdb126304c7f47e4f824740a1531cd1f397de6ef3b62465",
+        "facets": [
+          {
+            "facet_id": "attempts",
+            "question": "Attempts?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 0,
+                "end_byte": 341,
+                "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context "
+              },
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 369,
+                "end_byte": 383,
+                "text": "Four attempts."
+              }
+            ]
+          },
+          {
+            "facet_id": "delay",
+            "question": "Delay?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 343,
+                "end_byte": 367,
+                "text": "Delay: 250 milliseconds."
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "max_tokens": 171,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "id": "one-required-omitted",
+      "expected_status": "partial",
+      "expected_states": [
+        "supported",
+        "missing"
+      ],
+      "expected_rebalance_count": 0
+    },
+    {
+      "query": "What are the attempts and delay?",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 341,
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context ",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "59202d030f3a4843dcfd34435ad2c447c168a892b30990d8a7171bca0c25b594"
+        },
+        {
+          "evidence_id": "b",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "b",
+          "source_locator": "fixture",
+          "start_byte": 343,
+          "end_byte": 367,
+          "text": "Delay: 250 milliseconds.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "80e2ddc95adc1d5aa5b75251b5089713c8385e518d2ad6a210b0300bc823c68a"
+        },
+        {
+          "evidence_id": "c",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "c",
+          "source_locator": "fixture",
+          "start_byte": 369,
+          "end_byte": 383,
+          "text": "Four attempts.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "29aaf6149452d9198915c0d3062f6651ecbb4e2172f20d9319a136ee1eb4088a"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context \n\nDelay: 250 milliseconds.\n\nFour attempts."
+        }
+      ],
+      "policy": {
+        "policy_id": "ep-fixture",
+        "version": "1",
+        "query_sha256": "503b580141ef5b108bdb126304c7f47e4f824740a1531cd1f397de6ef3b62465",
+        "facets": [
+          {
+            "facet_id": "attempts",
+            "question": "Attempts?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 0,
+                "end_byte": 341,
+                "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context "
+              },
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 369,
+                "end_byte": 383,
+                "text": "Four attempts."
+              }
+            ]
+          },
+          {
+            "facet_id": "delay",
+            "question": "Delay?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 343,
+                "end_byte": 367,
+                "text": "Delay: 250 milliseconds."
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "max_tokens": 171,
+        "reserve": 0,
+        "surrounding_bytes": 0,
+        "rebalance": true
+      },
+      "id": "bounded-rebalance",
+      "expected_status": "sufficient",
+      "expected_states": [
+        "supported",
+        "supported"
+      ],
+      "expected_rebalance_count": 1
+    },
+    {
+      "query": "What are the attempts and delay?",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 341,
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context ",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "59202d030f3a4843dcfd34435ad2c447c168a892b30990d8a7171bca0c25b594"
+        },
+        {
+          "evidence_id": "b",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "b",
+          "source_locator": "fixture",
+          "start_byte": 343,
+          "end_byte": 367,
+          "text": "Delay: 250 milliseconds.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "80e2ddc95adc1d5aa5b75251b5089713c8385e518d2ad6a210b0300bc823c68a"
+        },
+        {
+          "evidence_id": "c",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "c",
+          "source_locator": "fixture",
+          "start_byte": 369,
+          "end_byte": 383,
+          "text": "Four attempts.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "29aaf6149452d9198915c0d3062f6651ecbb4e2172f20d9319a136ee1eb4088a"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context \n\nDelay: 250 milliseconds.\n\nFour attempts."
+        }
+      ],
+      "policy": {
+        "policy_id": "ep-fixture",
+        "version": "1",
+        "query_sha256": "503b580141ef5b108bdb126304c7f47e4f824740a1531cd1f397de6ef3b62465",
+        "facets": [
+          {
+            "facet_id": "attempts",
+            "question": "Attempts?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 0,
+                "end_byte": 341,
+                "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context "
+              },
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 369,
+                "end_byte": 383,
+                "text": "Four attempts."
+              }
+            ]
+          },
+          {
+            "facet_id": "delay",
+            "question": "Delay?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 343,
+                "end_byte": 367,
+                "text": "Delay: 250 milliseconds."
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "max_tokens": 1,
+        "reserve": 0,
+        "surrounding_bytes": 0,
+        "rebalance": true
+      },
+      "id": "envelope-only",
+      "expected_status": "insufficient",
+      "expected_states": [
+        "missing",
+        "missing"
+      ],
+      "expected_rebalance_count": 1
+    },
+    {
+      "query": "What are the attempts and delay?",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 341,
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context ",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "59202d030f3a4843dcfd34435ad2c447c168a892b30990d8a7171bca0c25b594"
+        },
+        {
+          "evidence_id": "b",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "b",
+          "source_locator": "fixture",
+          "start_byte": 343,
+          "end_byte": 367,
+          "text": "Delay: 250 milliseconds.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "80e2ddc95adc1d5aa5b75251b5089713c8385e518d2ad6a210b0300bc823c68a"
+        },
+        {
+          "evidence_id": "c",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "c",
+          "source_locator": "fixture",
+          "start_byte": 369,
+          "end_byte": 383,
+          "text": "Four attempts.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "29aaf6149452d9198915c0d3062f6651ecbb4e2172f20d9319a136ee1eb4088a"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context \n\nDelay: 250 milliseconds.\n\nFour attempts."
+        }
+      ],
+      "policy": null,
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 0,
+        "rebalance": true
+      },
+      "id": "no-policy",
+      "expected_status": "partial",
+      "expected_states": [
+        "unknown"
+      ],
+      "expected_rebalance_count": 0
+    },
+    {
+      "query": "What are the attempts and delay? changed",
+      "evidence": [
+        {
+          "evidence_id": "a",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "a",
+          "source_locator": "fixture",
+          "start_byte": 0,
+          "end_byte": 341,
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context ",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "59202d030f3a4843dcfd34435ad2c447c168a892b30990d8a7171bca0c25b594"
+        },
+        {
+          "evidence_id": "b",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "b",
+          "source_locator": "fixture",
+          "start_byte": 343,
+          "end_byte": 367,
+          "text": "Delay: 250 milliseconds.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "80e2ddc95adc1d5aa5b75251b5089713c8385e518d2ad6a210b0300bc823c68a"
+        },
+        {
+          "evidence_id": "c",
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "chunk_id": "c",
+          "source_locator": "fixture",
+          "start_byte": 369,
+          "end_byte": 383,
+          "text": "Four attempts.",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text_sha256": "29aaf6149452d9198915c0d3062f6651ecbb4e2172f20d9319a136ee1eb4088a"
+        }
+      ],
+      "sources": [
+        {
+          "collection": "c",
+          "document_id": "d",
+          "revision_id": "r",
+          "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+          "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context \n\nDelay: 250 milliseconds.\n\nFour attempts."
+        }
+      ],
+      "policy": {
+        "policy_id": "ep-fixture",
+        "version": "1",
+        "query_sha256": "503b580141ef5b108bdb126304c7f47e4f824740a1531cd1f397de6ef3b62465",
+        "facets": [
+          {
+            "facet_id": "attempts",
+            "question": "Attempts?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 0,
+                "end_byte": 341,
+                "text": "Four retry attempts. context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context context "
+              },
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 369,
+                "end_byte": 383,
+                "text": "Four attempts."
+              }
+            ]
+          },
+          {
+            "facet_id": "delay",
+            "question": "Delay?",
+            "required": true,
+            "absence": "missing",
+            "anchors": [
+              {
+                "claim_id": "compatible",
+                "collection": "c",
+                "document_id": "d",
+                "revision_id": "r",
+                "source_sha256": "de22296d5e460a294dbd419639a29692727f8e6898e8ceff6c009b53a4737548",
+                "start_byte": 343,
+                "end_byte": 367,
+                "text": "Delay: 250 milliseconds."
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "max_tokens": 10000,
+        "reserve": 0,
+        "surrounding_bytes": 0
+      },
+      "id": "wrong-query",
+      "expected_error": "invalid_request"
+    }
+  ]
+}

@@ -85,7 +85,7 @@ def base_child_fixture(collection, tenants, principals, *, neon: bool) -> dict:
 
 
 async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False,
-                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False, dense: bool = False, hybrid: bool = False) -> dict:
+                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False, dense: bool = False, hybrid: bool = False, evidence: bool = False) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -212,7 +212,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 'scopes': [dict(tenant_id=tenant, principal_id=principal,
                     authorization_revision='scope-rev', grant_ids=[])
                     for tenant,principal in zip(tenants,principals)],
-                }, admin, typescript=typescript, neon=neon, **({} if dense or hybrid else {'stage_only': vector_stage_only}))
+                }, admin, typescript=typescript, neon=neon, **({'evidence': evidence} if hybrid else {} if dense else {'stage_only': vector_stage_only}))
             except Exception as error:
                 from check_vectors import VectorCheckError
                 from check_dense import DenseCheckError
@@ -556,9 +556,13 @@ def main() -> int:
     parser.add_argument('--vectors', action='store_true')
     parser.add_argument('--dense', action='store_true')
     parser.add_argument('--hybrid', action='store_true')
+    parser.add_argument('--evidence', action='store_true', help='Explicit V3 packed-assessment checks within --hybrid')
     parser.add_argument('--vector-stage-only', action='store_true')
     parser.add_argument('--neon', action='store_true', help='Explicit direct Neon fixture mode with client TLS proof')
     args = parser.parse_args()
+    if args.evidence and not args.hybrid:
+        print('Evidence checks require --hybrid.')
+        return 2
     if args.hybrid and (args.dense or args.vector_stage_only):
         print("Hybrid mode cannot select dense-only or staging-only checks.")
         return 2
@@ -581,7 +585,7 @@ def main() -> int:
                     typescript=args.typescript or args.lexical or args.results or args.lifecycle,
                     ingestion=args.ingestion or args.lexical or args.results or args.lifecycle,
                     lexical=args.lexical or args.results or args.lifecycle,
-                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors, vector_stage_only=args.vector_stage_only, dense=args.dense, hybrid=args.hybrid,
+                    results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors, vector_stage_only=args.vector_stage_only, dense=args.dense, hybrid=args.hybrid, evidence=args.evidence,
                 )
         result = asyncio.run(bounded())
     except RuntimeCheckError as error:

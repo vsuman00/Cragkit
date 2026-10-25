@@ -77,3 +77,5 @@ The unchanged 0.1 wire schemas also carry explicitly degraded execution from the
 [PK-r1](PACKING_V3.md) defines bounded exact-source expansion/merging, whole-span selection, aliases and final context recounting. It requires caller-authorized immutable sources and does not infer coverage.
 
 [AS-r1](ASSESSMENT_V3.md) defines conservative query-bound reviewed-anchor coverage and emitted-reference validation. Curated matching is not a general semantic judge or proof of source truth.
+
+[EP-r1](EVIDENCE_PIPELINE_V3.md) combines packing with emitted-only assessment and one bounded rebalance. Its explicit PostgreSQL constructor option preserves trusted scope and reauthorizes after optional reranking.

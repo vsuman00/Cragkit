@@ -33,8 +33,8 @@ def test_pipeline_runs_each_command_serially_with_owned_cwd_and_timeout(workspac
         running = False
         return SimpleNamespace(returncode=0)
     output = workspace / "artifacts with spaces"
-    assert CHECK.run_checks(workspace, output, runner) == 22
-    assert len(calls) == 22
+    assert CHECK.run_checks(workspace, output, runner) == 23
+    assert len(calls) == 23
     assert calls[0][0] == ["uv", "sync", "--project", "packages/python", "--frozen"]
     assert calls[1] == (["npm", "ci", "--ignore-scripts"], workspace / "packages/typescript")
     assert calls[-1][0][-2:] == ["--output-dir", str(output)]
@@ -50,6 +50,7 @@ def test_pipeline_runs_each_command_serially_with_owned_cwd_and_timeout(workspac
     assert any("tools/check_context.py" in command for command, _ in calls)
     assert any("tools/check_packing.py" in command for command, _ in calls)
     assert any("tools/check_assessment.py" in command for command, _ in calls)
+    assert any("tools/check_evidence_pipeline.py" in command for command, _ in calls)
     assert any("tools/fetch_tokenizer.py" in command for command, _ in calls)
 
 

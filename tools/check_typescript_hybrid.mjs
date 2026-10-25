@@ -7,6 +7,8 @@ import {PostgresRetriever} from '../packages/typescript/dist/retrieval.js';
 import {PostgresSession} from '../packages/typescript/dist/postgres-session.js';
 import {query} from '../packages/typescript/dist/ingestion.js';
 import {EmbeddingAdapter,FAKE_PROFILE} from '../packages/typescript/dist/embeddings.js';
+import {RerankingAdapter} from '../packages/typescript/dist/reranking.js';
+import {Cl100kCounter} from '../packages/typescript/dist/context.js';
 import {parse_request,parse_scope} from '../packages/typescript/dist/contracts.js';
 import {encode} from '../evaluation/runners/synthetic-vectors.mjs';
 import {verifyNeonResource} from './check_typescript_postgres.mjs';
@@ -98,14 +100,54 @@ async function run(config,fixture){
       assert.ok(result.limitations.some(item=>item.code==='stale_evidence'));
       checks.push('node_hybrid_fresh_source_tombstone_denied');
     }finally{PostgresSession.prototype.transaction=originalTransaction;await owner(false);}
-    for(const entry of fixture.cases){
-      const options=entry.mode==='lexical'?{}:{mode:entry.mode,embedder:embedder()};
-      const started=now();
-      const result=await new PostgresRetriever(resource,options).retrieve(parse_request(entry.request),
-        {scope:parse_scope(entry.scope),deadline:now()+25});
-      latency_ms[entry.mode].push((now()-started)*1000);
-      assert.deepEqual(normalized(result),entry.expected);
-    }
+    let active = 0;
+    const beforeTracking = PostgresSession.prototype.transaction;
+    PostgresSession.prototype.transaction = function(request, options, body) {
+      return beforeTracking.call(this,request,options,async handle => {
+        active++;
+        try { return await body(handle); } finally { active--; }
+      });
+    };
+    const rank = async body => {
+      assert.equal(active,0);
+      const value = JSON.parse(Buffer.from(body).toString('utf8'));
+      return Buffer.from(JSON.stringify(value.candidates.map((item,index)=>({candidate_id:item.candidate_id,raw_score:value.candidates.length-index}))));
+    };
+    try {
+      for(const entry of fixture.cases){
+        const options=entry.mode==='lexical'?{}:{mode:entry.mode,embedder:embedder()};
+        let counter;
+        try {
+          if(entry.evidence_options){
+            options.evidence_options={...entry.evidence_options,reranker:new RerankingAdapter(rank)};
+            if(entry.request.output_profile.counting_mode==='strict') {
+              counter=await Cl100kCounter.create('artifacts/tokenizers/cl100k_base.tiktoken');
+              options.evidence_options.counter=counter;
+            }
+          }
+          const started=now();
+          const result=await new PostgresRetriever(resource,options).retrieve(parse_request(entry.request),
+            {scope:parse_scope(entry.scope),deadline:now()+25});
+          if(!entry.evidence_options)latency_ms[entry.mode].push((now()-started)*1000);
+          assert.deepEqual(normalized(result),entry.expected);
+        } finally {counter?.close();}
+      }
+      if(fixture.evidence){
+        const revoke=async body=>{assert.equal(active,0);await owner(true);return rank(body);};
+        try {
+          const result=await new PostgresRetriever(resource,{mode:'hybrid',embedder:embedder(),
+            evidence_options:{reranker:new RerankingAdapter(revoke)}}).retrieve(
+              parse_request({query:'ERR-17',collection:fixture.collection,
+                required_filters:[{field:'document_id',op:'eq',value:'retry-policy'}],
+                output_profile:{renderer:'cragkit.context.v2'}}),
+              {scope:parse_scope(fixture.scopes[0]),deadline:now()+25});
+          assert.equal(result.evidence.length,0);assert.equal(result.status,'insufficient');
+          assert.ok(result.limitations.some(item=>item.code==='stale_evidence'));
+          checks.push('node_v3_post_model_tombstone_and_no_model_lease');
+        } finally {await owner(false);}
+        checks.push('node_v3_six_query_full_packed_result_parity_and_strict_count');
+      }
+    } finally {PostgresSession.prototype.transaction=beforeTracking;}
     checks.push('node_development_ablation_18_requests_full_result_parity');
     return {state:'passed',checks,latency_ms};
   }finally{await resource.close();}

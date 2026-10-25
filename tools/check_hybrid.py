@@ -36,7 +36,7 @@ def normalized(result):
     return value
 
 
-async def run(config, fixture, admin, *, typescript=False, neon=False):
+async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=False):
     from psycopg import sql
     from cragkit._postgres_pool import PoolResource
     from cragkit._postgres_session import PostgresSession, _query
@@ -194,17 +194,26 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
                 result = await retriever(mode).retrieve(parsed, scope=scoped[question['tenant_id']], deadline=loop.time()+25)
                 duration = (time.perf_counter()-started)*1000
                 value = result.model_dump(mode='json')
-                evidence = [dict(document_id=e.document_id,
+                metric_evidence = [dict(document_id=e.document_id,
                     revision_id=reverse[(question['tenant_id'],e.document_id,e.revision_id)],
                     start_byte=e.start_byte,end_byte=e.end_byte) for e in result.evidence]
-                metric = score_question(question, evidence, k=spec['evaluation']['k'])
+                metric = score_question(question, metric_evidence, k=spec['evaluation']['k'])
                 scores[mode].append(metric)
-                records.append(dict(mode=mode, metrics=metric, ranked=[(e['document_id'],e['revision_id']) for e in evidence], latency_ms=duration))
+                records.append(dict(mode=mode, metrics=metric, ranked=[(e['document_id'],e['revision_id']) for e in metric_evidence], latency_ms=duration))
                 cases.append(dict(mode=mode, request=parsed.model_dump(mode='json'), scope=scoped[question['tenant_id']].model_dump(mode='json'), expected=normalized(value)))
         checks.append('python_development_ablation_18_requests_verified_sources')
+        if evidence:
+            from check_evidence_native import run as run_evidence
+            async def evidence_tombstone(enabled):
+                await command('UPDATE cragkit.documents SET tombstoned=%s WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
+                              (enabled,scopes[0].tenant_id,collection,'retry-policy'))
+            extra_cases,extra_checks=await run_evidence(resource,questions,receipts,scoped,collection,request,embedder,evidence_tombstone)
+            cases.extend(extra_cases)
+            checks.extend(extra_checks)
+
         if typescript:
             await resource.close()
-            child = await run_node(config, dict(**fixture,cases=cases,fault_cases=spec['fault_cases'],neon=neon), admin)
+            child = await run_node(config, dict(**fixture,cases=cases,fault_cases=spec['fault_cases'],neon=neon,evidence=evidence), admin)
             checks.extend(child['checks'])
         else: child = dict(latency_ms={})
         summary = {mode: dict(aggregate(scores[mode]),

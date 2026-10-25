@@ -177,3 +177,16 @@ def test_parent_admin_guard_failure_is_reported_without_child_success(monkeypatc
     assert 'unsafe_administrator_accepted' in output
     assert 'unsafe_admin_rejected' not in output
     assert '"state": "passed"' not in output
+
+
+def test_evidence_cli_requires_hybrid_and_test_write_authorization(monkeypatch):
+    check = AsyncMock(return_value={'state':'passed'})
+    monkeypatch.setattr(PG,'check',check)
+    base=['check_python_postgres.py','--config','/unused/private.json','--evidence']
+    for extra in ([],['--allow-test-writes'],['--hybrid']):
+        monkeypatch.setattr(sys,'argv',[*base,*extra])
+        assert PG.main()==2 and not check.called
+    monkeypatch.setattr(sys,'argv',[*base,'--hybrid','--allow-test-writes','--typescript'])
+    assert PG.main()==0
+    assert check.call_args.kwargs['evidence'] is True
+    assert check.call_args.kwargs['hybrid'] is True

@@ -689,3 +689,19 @@ uv run --project packages/python --frozen python tools/check_assessment.py
 ```
 
 Shared reviewed examples are development lookup checks, not unseen semantic quality measurements. The consuming application owns policy applicability and must include necessary qualifications in the reviewed anchor.
+
+
+## V3 post-packing orchestration
+
+The optional `cragkit.evidence` / `cragkit/evidence` entry point combines [EP-r1](../contracts/EVIDENCE_PIPELINE_V3.md) packing and reassessment. `pack_and_assess` uses only emitted spans and allows one explicitly configured rebalance. A trusted PostgreSQL constructor `evidence_options` enables this pipeline; the request must declare renderer `cragkit.context.v2`. Legacy constructor defaults retain V1/V2 behavior.
+
+```sh
+uv run --project packages/python --frozen pytest packages/python/tests/test_evidence.py packages/python/tests/test_retrieval_v3.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/evidence.test.mjs packages/typescript/tests/retrieval-v3.test.mjs
+uv run --project packages/python --frozen python tools/check_evidence_pipeline.py
+uv sync --project packages/python --frozen --extra postgres
+uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --hybrid --evidence --typescript
+```
+
+Constructor options are policy, counter, rebalance, surrounding_bytes, reranker, rerank_fallback and rerank_limit (1-40, default 40). Only the application binds these values. Strict requests need an issued cl100k counter and matching tokenizer identity. Optional reranking closes the first authorized source lease before dispatch and fetches fresh authorization afterward. Source reads share 16 MiB across both rounds. Token usage/live cost cannot be invented; strict live spend ceilings are unsupported at this boundary.

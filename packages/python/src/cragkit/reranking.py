@@ -89,6 +89,14 @@ class RerankingAdapter:
         self._inflight = False
         self._pending: asyncio.Task[bytes] | None = None
 
+    @property
+    def profile(self) -> RerankProfile:
+        """Return a validated immutable profile snapshot for request admission."""
+        try:
+            return RerankProfile.model_validate(self._profile.model_dump(warnings=False))
+        except Exception:
+            raise InvalidRequest() from None
+
     def _settled(self, task: asyncio.Task[bytes]) -> None:
         if not task.cancelled():
             task.exception()

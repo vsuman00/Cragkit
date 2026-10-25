@@ -1,26 +1,49 @@
 /** Internal HY-r1 configuration and bounded candidate orchestration. */
+import { createHash } from 'node:crypto';
+import { Cl100kCounter } from './context.js';
+import { RerankingAdapter } from './reranking.js';
+import { assess_evidence } from './assessment.js';
 import { isDeepStrictEqual } from 'node:util';
 import { EmbeddingAdapter, EmbeddingProfileSchema, FAKE_PROFILE, type EmbeddingBatch } from './embeddings.js';
 import { CandidateCleanupFailure, dense_batch, type PostgresSession, type LexicalCandidate, type DenseCandidate, type IdentifierCandidate } from './postgres-session.js';
 import { fuse } from './fusion.js';
 import { extract_identifiers } from './identifiers.js';
-import { valid_native_json } from './shared.js';
+import { deep_freeze, valid_native_json } from './shared.js';
 import { bounded, check_options, now, type LeaseOptions } from './postgres-pool.js';
 import type { RetrievalRequest, TrustedScope } from './contracts.js';
 import { EmbeddingProfileMismatch, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability } from './errors.js';
-export interface RetrieverOptions { mode?: 'lexical'|'dense'|'hybrid'; embedder?: EmbeddingAdapter; allow_degraded?: boolean; identifiers?: boolean }
-export function configuration(input: RetrieverOptions): Required<Omit<RetrieverOptions,'embedder'>> & {embedder?: EmbeddingAdapter} {
+export type EvidenceConfiguration = Readonly<{policy: unknown; counter: Cl100kCounter | null; rebalance: boolean; surrounding_bytes: number; reranker: RerankingAdapter | null; rerank_fallback: boolean; rerank_limit: number}>;
+export interface RetrieverOptions { mode?: 'lexical'|'dense'|'hybrid'; embedder?: EmbeddingAdapter; allow_degraded?: boolean; identifiers?: boolean; evidence_options?: Partial<EvidenceConfiguration> | null }
+function evidence_configuration(input: unknown): EvidenceConfiguration | null {
+  if (input === null) return null;
+  if (!input || typeof input !== 'object' || Object.getPrototypeOf(input) !== Object.prototype || Object.getOwnPropertySymbols(input).length) throw new InvalidRequest();
+  const fields = Object.getOwnPropertyDescriptors(input);
+  if (Object.entries(fields).some(([key, field]) => !['policy','counter','rebalance','surrounding_bytes','reranker','rerank_fallback','rerank_limit'].includes(key) || !('value' in field) || !field.enumerable || field.value === undefined)) throw new InvalidRequest();
+  const value = input as Partial<EvidenceConfiguration>;
+  const policy = value.policy ?? null, counter = value.counter ?? null, reranker = value.reranker ?? null;
+  if (!valid_native_json(policy) || counter !== null && !(counter instanceof Cl100kCounter) || reranker !== null && !(reranker instanceof RerankingAdapter)
+    || value.rebalance !== undefined && typeof value.rebalance !== 'boolean' || value.rerank_fallback !== undefined && typeof value.rerank_fallback !== 'boolean'
+    || value.rerank_limit !== undefined && (!Number.isSafeInteger(value.rerank_limit) || value.rerank_limit < 1 || value.rerank_limit > 40)
+    || value.surrounding_bytes !== undefined && (!Number.isSafeInteger(value.surrounding_bytes) || value.surrounding_bytes < 0 || value.surrounding_bytes > 4096)) throw new InvalidRequest();
+  const snapshot = structuredClone(policy) as Record<string,unknown> | null;
+  if (snapshot !== null) {
+    if (typeof snapshot !== 'object' || Array.isArray(snapshot) || typeof snapshot.query_sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(snapshot.query_sha256)) throw new InvalidRequest();
+    assess_evidence('configuration', [], {...snapshot, query_sha256:createHash('sha256').update('configuration').digest('hex')});
+  }
+  return Object.freeze({policy:deep_freeze(snapshot),counter,reranker,rebalance:value.rebalance ?? false,surrounding_bytes:value.surrounding_bytes ?? 256,rerank_fallback:value.rerank_fallback ?? false,rerank_limit:value.rerank_limit ?? 40});
+}
+export function configuration(input: RetrieverOptions): {mode:'lexical'|'dense'|'hybrid'; allow_degraded:boolean; identifiers:boolean; embedder?:EmbeddingAdapter; evidence_options:EvidenceConfiguration|null} {
   if (input === null || typeof input !== 'object' || Array.isArray(input) || ![Object.prototype,null].includes(Object.getPrototypeOf(input))) throw new InvalidRequest();
   const descriptors = Object.getOwnPropertyDescriptors(input);
-  if (Object.getOwnPropertySymbols(input).length || Object.entries(descriptors).some(([key,d]) => !['mode','embedder','allow_degraded','identifiers'].includes(key) || !('value' in d) || !d.enumerable)) throw new InvalidRequest();
-  const json = Object.fromEntries(Object.entries(descriptors).filter(([key])=>key!=='embedder').map(([key,d])=>[key,d.value]));
+  if (Object.getOwnPropertySymbols(input).length || Object.entries(descriptors).some(([key,d]) => !['mode','embedder','allow_degraded','identifiers','evidence_options'].includes(key) || !('value' in d) || !d.enumerable)) throw new InvalidRequest();
+  const json = Object.fromEntries(Object.entries(descriptors).filter(([key])=>key!=='embedder' && key!=='evidence_options').map(([key,d])=>[key,d.value]));
   if (!valid_native_json(json) || (Object.hasOwn(json,'mode') && typeof json.mode !== 'string') || ['allow_degraded','identifiers'].some(key=>Object.hasOwn(json,key) && typeof json[key] !== 'boolean')) throw new InvalidRequest();
   const mode = input.mode ?? 'lexical', allow_degraded = input.allow_degraded ?? false, identifiers = input.identifiers ?? true;
   if (!['lexical','dense','hybrid'].includes(mode) || typeof allow_degraded !== 'boolean' || typeof identifiers !== 'boolean'
     || (Object.hasOwn(input,'mode') && input.mode === undefined) || (Object.hasOwn(input,'embedder') && !(input.embedder instanceof EmbeddingAdapter))
     || (mode === 'lexical' ? input.embedder !== undefined || allow_degraded : !(input.embedder instanceof EmbeddingAdapter))
     || (mode === 'dense' && allow_degraded)) throw new InvalidRequest();
-  return Object.freeze({mode,allow_degraded,identifiers,embedder:input.embedder});
+  return Object.freeze({mode,allow_degraded,identifiers,embedder:input.embedder,evidence_options:Object.hasOwn(input,'evidence_options')?evidence_configuration(input.evidence_options):null});
 }
 export function profile_snapshot(embedder: EmbeddingAdapter) {
   let snapshot;

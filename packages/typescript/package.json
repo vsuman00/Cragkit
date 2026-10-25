@@ -42,6 +42,10 @@
     "./assessment": {
       "types": "./dist/assessment.d.ts",
       "import": "./dist/assessment.js"
+    },
+    "./evidence": {
+      "types": "./dist/evidence.d.ts",
+      "import": "./dist/evidence.js"
     }
   },
   "files": [
