@@ -1,0 +1,552 @@
+{
+  "revision": "CR-r1",
+  "rows": {
+    "a": {
+      "source": {
+        "collection": "c",
+        "document_id": "a",
+        "revision_id": "r",
+        "text": "first fact",
+        "source_sha256": "d4bf695591211cc2b646de180998b7c86d786b0f5d6fd55f33a326c3128d82db"
+      },
+      "evidence": {
+        "collection": "c",
+        "document_id": "a",
+        "revision_id": "r",
+        "text": "first fact",
+        "source_sha256": "d4bf695591211cc2b646de180998b7c86d786b0f5d6fd55f33a326c3128d82db",
+        "evidence_id": "a",
+        "chunk_id": "a",
+        "source_locator": "fixture",
+        "start_byte": 0,
+        "end_byte": 10,
+        "text_sha256": "d4bf695591211cc2b646de180998b7c86d786b0f5d6fd55f33a326c3128d82db"
+      },
+      "candidate": {
+        "tenant_id": "t",
+        "collection": "c",
+        "document_id": "a",
+        "revision_id": "r",
+        "generation_id": "g",
+        "chunk_id": "a",
+        "start_byte": 0,
+        "end_byte": 10,
+        "text_sha256": "d4bf695591211cc2b646de180998b7c86d786b0f5d6fd55f33a326c3128d82db",
+        "score": 1
+      }
+    },
+    "b": {
+      "source": {
+        "collection": "c",
+        "document_id": "b",
+        "revision_id": "r",
+        "text": "second fact",
+        "source_sha256": "f24529b7d2322863ca8e3c6a677b25adf0b136de8b600f9a2833428de00da082"
+      },
+      "evidence": {
+        "collection": "c",
+        "document_id": "b",
+        "revision_id": "r",
+        "text": "second fact",
+        "source_sha256": "f24529b7d2322863ca8e3c6a677b25adf0b136de8b600f9a2833428de00da082",
+        "evidence_id": "b",
+        "chunk_id": "b",
+        "source_locator": "fixture",
+        "start_byte": 0,
+        "end_byte": 11,
+        "text_sha256": "f24529b7d2322863ca8e3c6a677b25adf0b136de8b600f9a2833428de00da082"
+      },
+      "candidate": {
+        "tenant_id": "t",
+        "collection": "c",
+        "document_id": "b",
+        "revision_id": "r",
+        "generation_id": "g",
+        "chunk_id": "b",
+        "start_byte": 0,
+        "end_byte": 11,
+        "text_sha256": "f24529b7d2322863ca8e3c6a677b25adf0b136de8b600f9a2833428de00da082",
+        "score": 1
+      }
+    },
+    "c": {
+      "source": {
+        "collection": "c",
+        "document_id": "c",
+        "revision_id": "r",
+        "text": "other fact",
+        "source_sha256": "23ecec41d9779fa456fcdef68fee6ce1d7b71a15b6d26bf67f584e789da2be97"
+      },
+      "evidence": {
+        "collection": "c",
+        "document_id": "c",
+        "revision_id": "r",
+        "text": "other fact",
+        "source_sha256": "23ecec41d9779fa456fcdef68fee6ce1d7b71a15b6d26bf67f584e789da2be97",
+        "evidence_id": "c",
+        "chunk_id": "c",
+        "source_locator": "fixture",
+        "start_byte": 0,
+        "end_byte": 10,
+        "text_sha256": "23ecec41d9779fa456fcdef68fee6ce1d7b71a15b6d26bf67f584e789da2be97"
+      },
+      "candidate": {
+        "tenant_id": "t",
+        "collection": "c",
+        "document_id": "c",
+        "revision_id": "r",
+        "generation_id": "g",
+        "chunk_id": "c",
+        "start_byte": 0,
+        "end_byte": 10,
+        "text_sha256": "23ecec41d9779fa456fcdef68fee6ce1d7b71a15b6d26bf67f584e789da2be97",
+        "score": 1
+      }
+    }
+  },
+  "request": {
+    "request_id": "corrective-parity",
+    "query": "question",
+    "collection": "c",
+    "required_filters": [
+      {
+        "op": "in",
+        "field": "document_id",
+        "values": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    ],
+    "output_profile": {
+      "renderer": "cragkit.context.v2",
+      "envelope_reserve_tokens": 0
+    }
+  },
+  "scope": {
+    "tenant_id": "t",
+    "principal_id": "p",
+    "authorization_revision": "1"
+  },
+  "policy": {
+    "policy_id": "review",
+    "version": "1",
+    "query_sha256": "1f5087db919ced5c123c7f507d3fcce818cb0cf6e77c2f95a8a35e951e03fdb9",
+    "facets": [
+      {
+        "facet_id": "first",
+        "question": "first",
+        "required": true,
+        "absence": "missing",
+        "anchors": [
+          {
+            "claim_id": "first",
+            "collection": "c",
+            "document_id": "a",
+            "revision_id": "r",
+            "source_sha256": "d4bf695591211cc2b646de180998b7c86d786b0f5d6fd55f33a326c3128d82db",
+            "start_byte": 0,
+            "end_byte": 10,
+            "text": "first fact"
+          }
+        ]
+      },
+      {
+        "facet_id": "second",
+        "question": "second",
+        "required": true,
+        "absence": "missing",
+        "anchors": [
+          {
+            "claim_id": "second",
+            "collection": "c",
+            "document_id": "b",
+            "revision_id": "r",
+            "source_sha256": "f24529b7d2322863ca8e3c6a677b25adf0b136de8b600f9a2833428de00da082",
+            "start_byte": 0,
+            "end_byte": 11,
+            "text": "second fact"
+          }
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "targeted-recovery",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "initial-sufficient",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "expected_status": "sufficient"
+    },
+    {
+      "id": "no-plan-partial",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "none",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "expected_status": "partial"
+    },
+    {
+      "id": "empty-insufficient",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "none",
+      "searches": [
+        {
+          "ids": []
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "revoke-after-recovery",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "revoke_after_search": [
+        "a"
+      ],
+      "expected_status": "partial"
+    },
+    {
+      "id": "empty-plan-revocation",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "empty",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "revoke_on_plan": [
+        "a"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "fallback-plan-revocation",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "fallback",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "revoke_on_plan": [
+        "a"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "repeated-query-revocation",
+      "queries": [
+        " QUESTION "
+      ],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "revoke_on_plan": [
+        "a"
+      ],
+      "expected_status": "insufficient"
+    },
+    {
+      "id": "candidate-budget",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {
+        "max_candidates": 2
+      },
+      "expected_status": "partial"
+    },
+    {
+      "id": "attempt-budget",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {
+        "max_attempts": 1
+      },
+      "expected_status": "partial"
+    },
+    {
+      "id": "repeated-candidates",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "a"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "expected_status": "partial"
+    },
+    {
+      "id": "no-progress",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "c"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "expected_status": "partial"
+    },
+    {
+      "id": "transient-success",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "none",
+      "searches": [
+        {
+          "failure": "provider_unavailable",
+          "reserve_call": true
+        },
+        {
+          "ids": [
+            "a"
+          ],
+          "reserve_call": true
+        }
+      ],
+      "options": {
+        "max_retries": 1
+      },
+      "limits": {},
+      "expected_status": "partial"
+    },
+    {
+      "id": "transient-exhausted",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "none",
+      "searches": [
+        {
+          "failure": "provider_unavailable",
+          "reserve_call": true
+        },
+        {
+          "failure": "provider_unavailable",
+          "reserve_call": true
+        }
+      ],
+      "options": {
+        "max_retries": 1
+      },
+      "limits": {},
+      "expected_error": "provider_unavailable"
+    },
+    {
+      "id": "permanent-not-retried",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "none",
+      "searches": [
+        {
+          "failure": "unauthorized_scope"
+        }
+      ],
+      "options": {
+        "max_retries": 2
+      },
+      "limits": {},
+      "expected_error": "unauthorized_scope"
+    },
+    {
+      "id": "unknown-coverage",
+      "queries": [
+        "targeted question"
+      ],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "policy_none": true,
+      "expected_status": "partial"
+    },
+    {
+      "id": "empty-variants",
+      "queries": [],
+      "planner": "select",
+      "searches": [
+        {
+          "ids": [
+            "a"
+          ]
+        },
+        {
+          "ids": [
+            "b"
+          ]
+        }
+      ],
+      "options": {},
+      "limits": {},
+      "expected_status": "partial"
+    }
+  ]
+}

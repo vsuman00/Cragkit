@@ -70,7 +70,7 @@ def archive_files(path: Path) -> dict[str, bytes]:
 
 def inspect_wheel(path: Path) -> dict[str, bytes]:
     files = archive_files(path)
-    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py', 'cragkit/embeddings.py', 'cragkit/vector_ingestion.py', 'cragkit/reranking.py', 'cragkit/context.py', 'cragkit/packing.py', 'cragkit/assessment.py', 'cragkit/evidence.py'} <= files.keys(), 'wheel_missing_core')
+    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py', 'cragkit/embeddings.py', 'cragkit/vector_ingestion.py', 'cragkit/reranking.py', 'cragkit/context.py', 'cragkit/packing.py', 'cragkit/assessment.py', 'cragkit/evidence.py', 'cragkit/execution.py', 'cragkit/planning.py', 'cragkit/corrective.py', 'cragkit/events.py', 'cragkit/postgres_corrective.py'} <= files.keys(), 'wheel_missing_core')
     names = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(names) == 1, 'wheel_metadata')
     metadata = email.parser.BytesParser().parsebytes(files[names[0]])
@@ -89,7 +89,7 @@ def inspect_npm(path: Path) -> dict[str, bytes]:
     package = json.loads(files['package/package.json'])
     require(package['name'] == 'cragkit' and package['version'] == '0.0.0' and package.get('private') is True, 'npm_identity')
     require(package.get('dependencies') == {'zod': '4.6.7'}, 'npm_core_dependencies')
-    for name in ('.', './contracts', './errors', './postgres', './embeddings', './reranking', './context', './packing', './assessment', './evidence'):
+    for name in ('.', './contracts', './errors', './postgres', './embeddings', './reranking', './context', './packing', './assessment', './evidence', './execution', './planning', './corrective', './events', './postgres-corrective'):
         target = package.get('exports', {}).get(name, {})
         for kind, suffix in (('import', '.js'), ('types', '.d.ts')):
             value = target.get(kind)
@@ -118,14 +118,14 @@ def run(command: list[str], cwd: Path, commands: list[dict[str, Any]], timeout: 
 
 PYTHON_PROBE = r'''
 import importlib, importlib.metadata, importlib.util, json, pathlib, resource, sys, time
-optional = ('psycopg', 'psycopg_pool', 'torch', 'transformers', 'qdrant_client', 'langchain', 'mcp', 'tiktoken')
+optional = ('psycopg', 'psycopg_pool', 'torch', 'transformers', 'qdrant_client', 'langchain', 'langchain_core', 'mcp', 'tiktoken')
 assert all(importlib.util.find_spec(name) is None for name in optional)
 def audit(event, args):
     if event.startswith(('socket.', 'subprocess.')) or event in ('os.system', 'os.posix_spawn'):
         raise RuntimeError('Import attempted external I/O')
 sys.addaudithook(audit)
 start = time.perf_counter()
-modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres', 'cragkit.embeddings', 'cragkit.reranking', 'cragkit.context', 'cragkit.packing', 'cragkit.assessment', 'cragkit.evidence')]
+modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres', 'cragkit.embeddings', 'cragkit.reranking', 'cragkit.context', 'cragkit.packing', 'cragkit.assessment', 'cragkit.evidence', 'cragkit.execution', 'cragkit.planning', 'cragkit.corrective', 'cragkit.events', 'cragkit.postgres_corrective')]
 elapsed = time.perf_counter() - start
 assert modules[0].__version__ == '0.0.0'
 assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve()) for module in modules)
@@ -153,7 +153,7 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
 import http from 'node:http'; import https from 'node:https'; import net from 'node:net';
 import tls from 'node:tls'; import dns from 'node:dns'; import dgram from 'node:dgram'; import childProcess from 'node:child_process';
 const require = createRequire(import.meta.url);
-for (const name of ['pg', 'postgres', 'onnxruntime-node', '@qdrant/js-client-rest', 'langchain', '@modelcontextprotocol/sdk', 'tiktoken']) {
+for (const name of ['pg', 'postgres', 'onnxruntime-node', '@qdrant/js-client-rest', 'langchain', '@langchain/core', '@modelcontextprotocol/sdk', 'tiktoken']) {
   assert.throws(() => require.resolve(name));
 }
 const deny = () => { throw Error('Import attempted external I/O'); };
@@ -166,6 +166,7 @@ for (const [object, names] of [[http,['request','get','createServer']],[https,['
 syncBuiltinESMExports();
 const start = performance.now();
 const [core, contracts, errors, postgres, embeddings, reranking, context, packing, assessment, evidence] = await Promise.all([import('cragkit'), import('cragkit/contracts'), import('cragkit/errors'), import('cragkit/postgres'), import('cragkit/embeddings'), import('cragkit/reranking'), import('cragkit/context'), import('cragkit/packing'), import('cragkit/assessment'), import('cragkit/evidence')]);
+await Promise.all(['execution','planning','corrective','events','postgres-corrective'].map(name=>import('cragkit/'+name)));
 const importSeconds = (performance.now()-start)/1000;
 assert.equal(core.version,'0.0.0');
 assert.equal(contracts.parse_result({request_id:'smoke',status:'insufficient'}).usage.cost_usd,null);
@@ -228,6 +229,23 @@ def installed_evidence(root: Path, work: Path, python: Path, node_env: Path,
     return dict(state='passed', counts=counts, results=py_result, examples=py_example,
                 provenance='Installed wheel and npm product modules; copied probes and examples outside checkout; source fixtures use fakes, not a database.')
 
+
+
+def installed_execution(root: Path, work: Path, python: Path, node_env: Path,
+                        commands: list[dict[str, Any]]) -> dict[str, Any]:
+    """Run the shared V4 state machines through installed modules outside the checkout."""
+    harness = work / 'installed-execution'
+    for part in ('tools', 'contracts/fixtures', 'artifacts/V4', 'packages/typescript'):
+        (harness / part).mkdir(parents=True, exist_ok=True)
+    (harness / 'packages/typescript/dist').symlink_to(node_env / 'node_modules/cragkit/dist', target_is_directory=True)
+    checks = {}
+    for name in ('execution', 'planning', 'corrective', 'events'):
+        for filename in (f'check_{name}.py', f'check_typescript_{name}.mjs'):
+            shutil.copyfile(root / 'tools' / filename, harness / 'tools' / filename)
+        shutil.copyfile(root / 'contracts/fixtures' / f'{name}.json', harness / 'contracts/fixtures' / f'{name}.json')
+        checks[name] = json.loads(run([str(python), '-I', '-B', str(harness / 'tools' / f'check_{name}.py')], harness, commands))
+        require(checks[name].get('state') == 'passed', 'installed_execution_failed')
+    return dict(state='passed', checks=checks, provenance='Copied fixture consumers outside checkout; Python isolated installed wheel and Node installed npm modules; fake providers only.')
 
 def native_harness(root: Path, work: Path, python: Path, node_env: Path,
                    postgres_config: Path) -> tuple[list[str], Path, dict[str, str]]:
@@ -335,6 +353,7 @@ def accept_artifacts(root: Path, output: Path, postgres_config: Path | None = No
                  str(wheel) + '[tokenizers]'], work, commands)
             run(['npm', 'install', '--ignore-scripts', '--no-audit', '--no-fund', 'tiktoken@1.0.22'], node_env, commands)
             report['installed_evidence'] = installed_evidence(root, work, installed_python, node_env, commands)
+            report['installed_execution'] = installed_execution(root, work, installed_python, node_env, commands)
             if postgres_config is not None:
                 # Install optional drivers only after the driver-free import probes.
                 installed_python = work / 'wheel' / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')

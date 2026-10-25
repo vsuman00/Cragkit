@@ -148,8 +148,14 @@ async function run(config,fixture){
         checks.push('node_v3_six_query_full_packed_result_parity_and_strict_count');
       }
     } finally {PostgresSession.prototype.transaction=beforeTracking;}
+    let corrective_records=[];
+    if(fixture.corrective_cases?.length){
+      const {runCorrective}=await import('./check_typescript_corrective_native.mjs');
+      const extra=await runCorrective(resource,fixture.corrective_cases,embedder,owner);
+      checks.push(...extra.checks);corrective_records=extra.records;
+    }
     checks.push('node_development_ablation_18_requests_full_result_parity');
-    return {state:'passed',checks,latency_ms};
+    return {state:'passed',checks,latency_ms,corrective_records};
   }finally{await resource.close();}
 }
 if(process.argv[2]!=='--allow-hybrid-checks')throw Error('Explicit fixture authorization required');

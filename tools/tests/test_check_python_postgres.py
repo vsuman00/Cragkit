@@ -219,3 +219,15 @@ def test_supported_lexical_fixture_behavior_is_read_only():
     connection = SimpleNamespace(execute=AsyncMock(return_value=cursor))
     asyncio.run(PG.require_lexical_fixture_behavior(connection))
     assert connection.execute.await_count == 1
+
+
+def test_corrective_cli_requires_hybrid_and_explicit_writes(monkeypatch):
+    check = AsyncMock(return_value={'state': 'passed'})
+    monkeypatch.setattr(PG, 'check', check)
+    base = ['check_python_postgres', '--config', '/unused/private.json', '--corrective']
+    for extra in ([], ['--allow-test-writes'], ['--hybrid']):
+        monkeypatch.setattr(sys, 'argv', [*base, *extra])
+        assert PG.main() == 2
+    monkeypatch.setattr(sys, 'argv', [*base, '--hybrid', '--typescript', '--allow-test-writes'])
+    assert PG.main() == 0
+    assert check.call_args.kwargs['corrective'] is True

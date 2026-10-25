@@ -745,3 +745,17 @@ The second command temporarily changes catalog security settings in transactions
 The security gate checks effective global creator defaults and additive schema defaults. An absent global function/type ACL row implies PostgreSQL's PUBLIC default, not a denial. If it fails, review the identified creator's defaults and remediate explicitly; scoped deployment hardening does not silently change defaults in unrelated schemas. Managed Neon permits only verified extension primitives: nongrantable PUBLIC EXECUTE on cloud_admin-owned extension functions and PUBLIC USAGE on its three extension base types. PUBLIC schema/table access, ledger writes, disabled RLS and SECURITY DEFINER routines remain rejected. Omit the managed flag for strict validation.
 
 Native ingestion/lexical fixtures require the SQL FTS behavior that matches `Café` against `Café🙂` under `pg_catalog.simple`. The parent performs a read-only check before fixture writes and returns `lexical_fixture_locale_unsupported` when it fails. UTF8 encoding alone is insufficient. Disposable local databases should use a compatible UTF-8 ctype (for example the previously tested en_US.UTF-8 or C.UTF-8); plain C can tokenize the emoji as part of the word. Production search semantics still depend on the declared PostgreSQL configuration and locale. Canonical bytes and approved corpus inputs are unchanged.
+
+## V4 bounded corrective execution
+
+The optional `cragkit.corrective` / `cragkit/corrective` modules accept a trusted backend. `PostgresCorrectiveBackend` in `cragkit.postgres_corrective` / `cragkit/postgres-corrective` reuses caller-owned native sessions. Ledger, planner and event modules are explicit imports/subpaths. Importing them does not connect a service or load a model. Read [the execution contract](../contracts/EXECUTION_V4.md) and [V4-03 through V4-05 evidence](../evaluation/reports/V4/V4-03-05.md).
+
+Verified serial checkpoint:
+
+```sh
+python3 tools/check_v0.py --artifacts-dir artifacts/V4/checkpoint-core
+```
+
+It runs 27 stages, including complete execution, planning, corrective and event parity. Clean installed archives also run the 44 V4 shared state-machine cases outside the checkout. The optional framework packages have separate environments; they are not installed by this core command. Internal core archives retain version 0.0.0; V4 is an implementation milestone, and public alpha publication remains separate.
+
+Event exporters are cooperative async application callbacks. Retrieval only queues events; call `flush` explicitly outside its critical path with an absolute monotonic deadline. No implementation can make a synchronously blocking application callback cooperative. Shared sinks expose cumulative counters; generated trace IDs separate concurrent requests without storing request text. The final result's events snapshot is a point-in-time view of that shared queue, not a per-request delivery receipt.

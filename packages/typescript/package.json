@@ -54,6 +54,18 @@
     "./planning": {
       "types": "./dist/planning.d.ts",
       "import": "./dist/planning.js"
+    },
+    "./corrective": {
+      "types": "./dist/corrective.d.ts",
+      "import": "./dist/corrective.js"
+    },
+    "./postgres-corrective": {
+      "types": "./dist/postgres-corrective.d.ts",
+      "import": "./dist/postgres-corrective.js"
+    },
+    "./events": {
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.js"
     }
   },
   "files": [

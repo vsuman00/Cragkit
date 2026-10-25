@@ -36,7 +36,7 @@ def normalized(result):
     return value
 
 
-async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=False):
+async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=False, corrective=False):
     from psycopg import sql
     from cragkit._postgres_pool import PoolResource
     from cragkit._postgres_session import PostgresSession, _query
@@ -211,17 +211,29 @@ async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=
             cases.extend(extra_cases)
             checks.extend(extra_checks)
 
+        corrective_cases, corrective_evaluation = [], None
+        if corrective:
+            from check_corrective_native import run as run_corrective
+            async def corrective_tombstone(enabled):
+                await command('UPDATE cragkit.documents SET tombstoned=%s WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
+                              (enabled,scopes[0].tenant_id,collection,'retry-policy'))
+            corrective_cases,extra_checks,corrective_evaluation=await run_corrective(
+                resource,questions,receipts,scoped,collection,request,embedder,corrective_tombstone)
+            checks.extend(extra_checks)
+
         if typescript:
             await resource.close()
-            child = await run_node(config, dict(**fixture,cases=cases,fault_cases=spec['fault_cases'],neon=neon,evidence=evidence), admin)
+            child = await run_node(config, dict(**fixture,cases=cases,fault_cases=spec['fault_cases'],neon=neon,evidence=evidence,corrective_cases=corrective_cases), admin)
             checks.extend(child['checks'])
         else: child = dict(latency_ms={})
+        if corrective_evaluation is not None:
+            corrective_evaluation['node_records'] = child.get('corrective_records',[])
         summary = {mode: dict(aggregate(scores[mode]),
                     latency_ms=dict(python_median=statistics.median([row['latency_ms'] for row in records if row['mode']==mode]),
                                     node_median=statistics.median(child['latency_ms'][mode]) if typescript else None),
                     model_cost_usd=0, model_cost_kind='known') for mode in scores}
         return dict(state='passed', revision='HY-r1', checks=checks, maximum_connections=2, cleanup_verified=True,
-            evaluation=dict(kind='synthetic_mechanics_only', encoder=spec['evaluation']['synthetic_encoder'],
+            corrective_evaluation=corrective_evaluation, evaluation=dict(kind='synthetic_mechanics_only', encoder=spec['evaluation']['synthetic_encoder'],
                 manifest_sha256=sha256(manifest_bytes).hexdigest(), development_labels_sha256=sha256(labels_bytes).hexdigest(),
                 question_ids=spec['evaluation']['question_ids'], k=spec['evaluation']['k'],
                 max_candidates=spec['evaluation']['max_candidates'], modes=summary, records=records,

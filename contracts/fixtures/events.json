@@ -1,0 +1,186 @@
+{
+  "revision": "EV-r1",
+  "cases": [
+    {
+      "id": "ordered-overflow",
+      "capacity": 2,
+      "operations": [
+        [
+          "emit",
+          "start",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": null
+          }
+        ],
+        [
+          "emit",
+          "search",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": null
+          }
+        ],
+        [
+          "emit",
+          "capture",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": null
+          }
+        ],
+        [
+          "drain"
+        ],
+        [
+          "emit",
+          "stop",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": "no_plan"
+          }
+        ],
+        [
+          "snapshot"
+        ]
+      ]
+    },
+    {
+      "id": "privacy",
+      "capacity": 4,
+      "operations": [
+        [
+          "emit",
+          "start",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": null,
+            "query": "secret-canary"
+          }
+        ],
+        [
+          "emit",
+          "error",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": "raw-secret"
+          }
+        ],
+        [
+          "emit",
+          "error",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": "provider_unavailable"
+          }
+        ],
+        [
+          "emit",
+          "cancelled",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": "cancelled"
+          }
+        ],
+        [
+          "drain"
+        ]
+      ]
+    },
+    {
+      "id": "closed",
+      "capacity": 1,
+      "operations": [
+        [
+          "emit",
+          "start",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": null
+          }
+        ],
+        [
+          "close"
+        ],
+        [
+          "close"
+        ],
+        [
+          "emit",
+          "search",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": null
+          }
+        ],
+        [
+          "snapshot"
+        ]
+      ]
+    },
+    {
+      "id": "no-exporter",
+      "capacity": 4,
+      "operations": [
+        [
+          "emit",
+          "start",
+          {
+            "trace_id": "00000000-0000-4000-8000-000000000001",
+            "attempt": 1,
+            "elapsed_ms": 0,
+            "candidate_count": 2,
+            "provider_calls": 0,
+            "stop_reason": null
+          }
+        ],
+        [
+          "flush"
+        ],
+        [
+          "snapshot"
+        ]
+      ]
+    }
+  ]
+}
