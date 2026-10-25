@@ -36,7 +36,25 @@ def normalized(result):
     return value
 
 
-async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=False, corrective=False):
+def evaluation_profile(evaluation_deadline_seconds):
+    """Validate the explicit administrative budget without changing core defaults."""
+    require(type(evaluation_deadline_seconds) is int and evaluation_deadline_seconds in (25, 60),
+            'invalid_evaluation_deadline_seconds')
+    return 'default' if evaluation_deadline_seconds == 25 else 'high_latency_admin'
+
+
+def evaluation_limits(evaluation_deadline_seconds, limits=None):
+    """Copy trusted request limits and set the explicit high-profile deadline."""
+    evaluation_profile(evaluation_deadline_seconds)
+    result = dict(limits) if limits is not None else {}
+    if evaluation_deadline_seconds == 60:
+        result['deadline_ms'] = 60000
+    return result
+
+
+async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=False, corrective=False,
+              evaluation_deadline_seconds=25):
+    profile = evaluation_profile(evaluation_deadline_seconds)
     from psycopg import sql
     from cragkit._postgres_pool import PoolResource
     from cragkit._postgres_session import PostgresSession, _query
@@ -93,8 +111,9 @@ async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=
                 condition['value'] = candidates[0]['revision_id']
         return parse_request(dict(request_id='v2-eval-'+question['question_id']+'-'+mode,
             query=question['query'], collection=collection, required_filters=filters,
-            limits=dict(max_candidates=spec['evaluation']['max_candidates'],
-                        max_context_tokens=spec['evaluation']['max_context_tokens'])))
+            limits=evaluation_limits(evaluation_deadline_seconds,
+                dict(max_candidates=spec['evaluation']['max_candidates'],
+                     max_context_tokens=spec['evaluation']['max_context_tokens']))))
 
     def retriever(mode, *, degraded=False):
         return PostgresRetriever(resource) if mode == 'lexical' else PostgresRetriever(
@@ -175,7 +194,8 @@ async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=
         target._session = SourceBoundary()
         try:
             result = await target.retrieve(parse_request(dict(query='ERR-17',collection=collection,
-                required_filters=[dict(field='document_id',op='eq',value='retry-policy')])),scope=scopes[0],deadline=loop.time()+25)
+                required_filters=[dict(field='document_id',op='eq',value='retry-policy')],
+                limits=evaluation_limits(evaluation_deadline_seconds))),scope=scopes[0],deadline=loop.time()+evaluation_deadline_seconds)
             require(not result.evidence and result.status=='insufficient'
                     and any(item.code=='stale_evidence' for item in result.limitations),'hybrid_source_reauthorization')
         finally:
@@ -191,7 +211,7 @@ async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=
             for mode in spec['evaluation']['modes']:
                 parsed = request(question, mode)
                 started = time.perf_counter()
-                result = await retriever(mode).retrieve(parsed, scope=scoped[question['tenant_id']], deadline=loop.time()+25)
+                result = await retriever(mode).retrieve(parsed, scope=scoped[question['tenant_id']], deadline=loop.time()+evaluation_deadline_seconds)
                 duration = (time.perf_counter()-started)*1000
                 value = result.model_dump(mode='json')
                 metric_evidence = [dict(document_id=e.document_id,
@@ -207,7 +227,8 @@ async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=
             async def evidence_tombstone(enabled):
                 await command('UPDATE cragkit.documents SET tombstoned=%s WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
                               (enabled,scopes[0].tenant_id,collection,'retry-policy'))
-            extra_cases,extra_checks=await run_evidence(resource,questions,receipts,scoped,collection,request,embedder,evidence_tombstone)
+            extra_cases,extra_checks=await run_evidence(resource,questions,receipts,scoped,collection,request,embedder,evidence_tombstone,
+                                                       evaluation_deadline_seconds=evaluation_deadline_seconds)
             cases.extend(extra_cases)
             checks.extend(extra_checks)
 
@@ -218,12 +239,17 @@ async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=
                 await command('UPDATE cragkit.documents SET tombstoned=%s WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
                               (enabled,scopes[0].tenant_id,collection,'retry-policy'))
             corrective_cases,extra_checks,corrective_evaluation=await run_corrective(
-                resource,questions,receipts,scoped,collection,request,embedder,corrective_tombstone)
+                resource,questions,receipts,scoped,collection,request,embedder,corrective_tombstone,
+                evaluation_deadline_seconds=evaluation_deadline_seconds)
             checks.extend(extra_checks)
 
         if typescript:
             await resource.close()
-            child = await run_node(config, dict(**fixture,cases=cases,fault_cases=spec['fault_cases'],neon=neon,evidence=evidence,corrective_cases=corrective_cases), admin)
+            child_fixture = dict(fixture)
+            child_fixture.update(cases=cases, fault_cases=spec['fault_cases'], neon=neon, evidence=evidence,
+                                 corrective_cases=corrective_cases, evaluation_deadline_seconds=evaluation_deadline_seconds,
+                                 effective_evaluation_deadline_ms=60000 if evaluation_deadline_seconds == 60 else 10000)
+            child = await run_node(config, child_fixture, admin)
             checks.extend(child['checks'])
         else: child = dict(latency_ms={})
         if corrective_evaluation is not None:
@@ -233,6 +259,8 @@ async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=
                                     node_median=statistics.median(child['latency_ms'][mode]) if typescript else None),
                     model_cost_usd=0, model_cost_kind='known') for mode in scores}
         return dict(state='passed', revision='HY-r1', checks=checks, maximum_connections=2, cleanup_verified=True,
+            acceptance_profile=profile, evaluation_deadline_seconds=evaluation_deadline_seconds,
+            effective_evaluation_deadline_ms=60000 if evaluation_deadline_seconds == 60 else 10000,
             corrective_evaluation=corrective_evaluation, evaluation=dict(kind='synthetic_mechanics_only', encoder=spec['evaluation']['synthetic_encoder'],
                 manifest_sha256=sha256(manifest_bytes).hexdigest(), development_labels_sha256=sha256(labels_bytes).hexdigest(),
                 question_ids=spec['evaluation']['question_ids'], k=spec['evaluation']['k'],
@@ -246,6 +274,13 @@ async def run(config, fixture, admin, *, typescript=False, neon=False, evidence=
 
 
 async def run_node(config, fixture, admin):
+    evaluation_deadline_seconds = fixture.get('evaluation_deadline_seconds', 25)
+    profile = evaluation_profile(evaluation_deadline_seconds)
+    effective_evaluation_deadline_ms = 60000 if evaluation_deadline_seconds == 60 else 10000
+    if 'effective_evaluation_deadline_ms' in fixture:
+        require(type(fixture['effective_evaluation_deadline_ms']) is int
+                and fixture['effective_evaluation_deadline_ms'] == effective_evaluation_deadline_ms,
+                'node_evaluation_profile_mismatch')
     process = None
     key = (fixture['scopes'][0]['tenant_id'],fixture['collection'],'retry-policy')
     async def tombstone(enabled):
@@ -262,7 +297,7 @@ async def run_node(config, fixture, admin):
                 '--allow-hybrid-checks',*(str(path) for path in paths),stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL,limit=65536)
             result = None
-            async with asyncio.timeout(240):
+            async with asyncio.timeout(240 if evaluation_deadline_seconds == 25 else 960):
                 while line := await process.stdout.readline():
                     value=json.loads(line)
                     if value.get('type')=='owner':
@@ -272,6 +307,13 @@ async def run_node(config, fixture, admin):
                         await process.stdin.drain()
                     else:
                         require(result is None and value.get('state')=='passed','node_hybrid_failed')
+                        require(value.get('acceptance_profile') == profile
+                                and type(value.get('evaluation_deadline_seconds')) is int
+                                and value['evaluation_deadline_seconds'] == evaluation_deadline_seconds,
+                                'node_evaluation_profile_mismatch')
+                        require(type(value.get('effective_evaluation_deadline_ms')) is int
+                                and value['effective_evaluation_deadline_ms'] == effective_evaluation_deadline_ms,
+                                'node_evaluation_profile_mismatch')
                         result=value
                 require(await process.wait()==0 and result is not None,'node_hybrid_failed')
             return result

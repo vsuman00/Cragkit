@@ -9,7 +9,10 @@ import { Cl100kCounter } from '../packages/typescript/dist/context.js';
 import { parse_request, parse_scope } from '../packages/typescript/dist/contracts.js';
 import { now } from '../packages/typescript/dist/postgres-pool.js';
 const normalized=value=>{const copy=structuredClone(value);for(const stage of copy.result.usage.stage_durations)stage.duration_ms=0;return copy;};
-export async function runCorrective(resource,cases,embedder,tombstone){
+export async function runCorrective(resource,cases,embedder,tombstone,evaluation_deadline_seconds=25){
+  assert.ok(Number.isInteger(evaluation_deadline_seconds)&&[25,60].includes(evaluation_deadline_seconds));
+  const acceptance_profile=evaluation_deadline_seconds===60?'high_latency_admin':'default';
+  const effective_evaluation_deadline_ms=evaluation_deadline_seconds===60?60000:10000;
   assert.equal(cases.filter(entry=>entry.kind==='labelled').length,18);
   const base=new PostgresSession(resource);let active=0,expectedFilters=null;
   const tracked={transaction(request,options,body){if(expectedFilters!==null)assert.deepEqual(request.required_filters,expectedFilters);return base.transaction(request,options,async handle=>{active++;try{return await body(handle);}finally{active--;}});}};
@@ -18,6 +21,7 @@ export async function runCorrective(resource,cases,embedder,tombstone){
   const records=[],checks=[];
   for(const entry of cases){
     const config=entry.configuration,request=parse_request(entry.request),scope=parse_scope(entry.scope);
+    assert.equal(request.limits.deadline_ms,effective_evaluation_deadline_ms);
     const options={resource,mode:config.mode};if(config.mode!=='lexical')options.embedder=embedder();if(config.reranked)options.reranker=new RerankingAdapter(rank);
     const backend=new PostgresCorrectiveBackend(options);backend.session=tracked;
     let counter;
@@ -26,7 +30,7 @@ export async function runCorrective(resource,cases,embedder,tombstone){
       const target=new CorrectiveRetriever({backend,policy:config.policy,variants:config.variants,
         planner:config.corrective?new PlannerAdapter({transport:plan,cost_upper_usd:0}):null,batch_size:4,counter});
       expectedFilters=request.required_filters;
-      const start=now(),result=await target.retrieve(request,{scope,deadline:now()+25});
+      const start=now(),result=await target.retrieve(request,{scope,deadline:now()+evaluation_deadline_seconds});
       const elapsed=(now()-start)*1000;
       assert.deepEqual(normalized(result),entry.expected);
       assert.ok(result.diagnostics.candidate_work<=12&&result.result.usage.provider_calls<=8);
@@ -42,12 +46,13 @@ export async function runCorrective(resource,cases,embedder,tombstone){
   const revoke=async body=>{assert.equal(active,0);await tombstone(true);return rank(body);};
   const backend=new PostgresCorrectiveBackend({resource,mode:'hybrid',embedder:embedder(),reranker:new RerankingAdapter(revoke)});backend.session=tracked;
   const request=parse_request({query:'ERR-17',collection:first.request.collection,required_filters:[{field:'document_id',op:'eq',value:'retry-policy'}],
-    output_profile:{renderer:'cragkit.context.v2'},limits:{max_candidates:12,max_attempts:3,max_subqueries:3,max_provider_calls:8}});
+    output_profile:{renderer:'cragkit.context.v2'},limits:{max_candidates:12,max_attempts:3,max_subqueries:3,max_provider_calls:8,
+      ...(evaluation_deadline_seconds===60?{deadline_ms:60000}:{})}});
   expectedFilters=request.required_filters;
   try{
-    const result=await new CorrectiveRetriever({backend,batch_size:4}).retrieve(request,{scope:parse_scope(first.scope),deadline:now()+25});
+    const result=await new CorrectiveRetriever({backend,batch_size:4}).retrieve(request,{scope:parse_scope(first.scope),deadline:now()+evaluation_deadline_seconds});
     assert.equal(result.result.evidence.length,0);assert.ok(result.result.limitations.some(item=>item.code==='stale_evidence'));assert.equal(active,0);
   }finally{await tombstone(false);}
   checks.push('node_v4_18_development_ablation_results_exact_native_parity','node_v4_separate_weak_query_targeted_recovery_parity','node_v4_post_model_revocation_and_no_model_lease');
-  return {checks,records};
+  return {checks,records,acceptance_profile,evaluation_deadline_seconds,effective_evaluation_deadline_ms};
 }

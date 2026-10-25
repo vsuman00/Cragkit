@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'evaluation/runners'))
 from v2_metrics import aggregate, score_question
 from check_evidence_native import reviewed_policy
-from check_hybrid import require, normalized
+from check_hybrid import require, normalized, evaluation_profile, evaluation_limits
 
 
 def approved_variants(question):
@@ -32,7 +32,9 @@ def approved_variants(question):
     return variants[:16]
 
 
-async def run(resource, questions, receipts, scoped, collection, make_request, embedder, tombstone):
+async def run(resource, questions, receipts, scoped, collection, make_request, embedder, tombstone,
+              *, evaluation_deadline_seconds=25):
+    evaluation_profile(evaluation_deadline_seconds)
     from cragkit._postgres_session import PostgresSession
     from cragkit.context import Cl100kCounter
     from cragkit.contracts import parse_request
@@ -73,6 +75,7 @@ async def run(resource, questions, receipts, scoped, collection, make_request, e
     async def execute(question, mode, index, *, mechanics=False):
         nonlocal expected_filters
         value = make_request(question, 'hybrid').model_dump(mode='json')
+        value['limits'] = evaluation_limits(evaluation_deadline_seconds, value['limits'])
         value['request_id'] = 'v4-native-'+question['question_id']+'-'+mode
         value['limits'].update(max_candidates=12, max_attempts=3, max_subqueries=3, max_provider_calls=8)
         value['output_profile'] = dict(renderer='cragkit.context.v2', tokenizer='cl100k_base' if index == 0 else None,
@@ -90,7 +93,7 @@ async def run(resource, questions, receipts, scoped, collection, make_request, e
             batch_size=4, counter=counter)
         expected_filters = parse_request(value).required_filters
         started = time.perf_counter()
-        output = await target.retrieve(parse_request(value), scope=scoped[question['tenant_id']], deadline=loop.time()+25)
+        output = await target.retrieve(parse_request(value), scope=scoped[question['tenant_id']], deadline=loop.time()+evaluation_deadline_seconds)
         elapsed = (time.perf_counter()-started)*1000
         result = output['result']
         require(result['usage']['provider_calls'] <= 8, 'corrective_calls_exceeded')
@@ -135,11 +138,12 @@ async def run(resource, questions, receipts, scoped, collection, make_request, e
     backend._session = Tracked()
     parsed = parse_request(dict(query='ERR-17', collection=collection,
         required_filters=[dict(field='document_id',op='eq',value='retry-policy')],
-        output_profile=dict(renderer='cragkit.context.v2'), limits=dict(max_candidates=12,max_attempts=3,max_subqueries=3,max_provider_calls=8)))
+        output_profile=dict(renderer='cragkit.context.v2'), limits=evaluation_limits(evaluation_deadline_seconds,
+            dict(max_candidates=12,max_attempts=3,max_subqueries=3,max_provider_calls=8))))
     expected_filters = parsed.required_filters
     expected_filters = parsed.required_filters
     try:
-        output = await CorrectiveRetriever(backend,batch_size=4).retrieve(parsed,scope=scoped['tenant-a'],deadline=loop.time()+25)
+        output = await CorrectiveRetriever(backend,batch_size=4).retrieve(parsed,scope=scoped['tenant-a'],deadline=loop.time()+evaluation_deadline_seconds)
         require(not output['result']['evidence'] and any(x['code']=='stale_evidence' for x in output['result']['limitations']), 'corrective_post_model_tombstone_release')
     finally:
         await tombstone(False)

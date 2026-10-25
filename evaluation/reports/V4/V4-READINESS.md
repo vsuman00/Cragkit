@@ -1,5 +1,7 @@
 # V4 readiness recheck
 
+Historical snapshot of f91eb37. V4-AUD-01 and V4-AUD-02 were subsequently completed; see [current verification and timing-profile limits](V4-SECURITY-VERIFICATION.md). The original assessment below is preserved.
+
 ## Decision
 
 V5-01 can begin as a design task. V4's recorded internal native/synthetic feature milestone remains accepted, with two newer operational follow-ups open. Resolve them before V5 backend implementation and its next native database acceptance run. This sequencing recommendation does not turn an unproven cleanup cause into a confirmed product vulnerability.

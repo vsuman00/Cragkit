@@ -130,6 +130,12 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 | E80 | A managed host rejects pre-hashed SQL-role passwords | Use an explicit host-specific fixture mode, prove native TLS before the in-memory password statement, redact errors and remove temporary roles; keep existing host behavior unchanged. | DB-NEON-01-C, DB-NEON-01-E | U/I |
 | E81 | A credential import supplies a pooled/wrong target, unsafe URI options or an existing/symlink output | Pin the selected direct target, reject unsupported security options and control bytes, preserve existing files and write owner-only credentials outside Git through hidden input. | DB-NEON-01-C | U/I |
 
+## Native acceptance harness
+
+| ID | Trigger | Expected behavior | Owner | Layer |
+| --- | --- | --- | --- | --- |
+| E82 | Native acceptance is killed, its administrator connection is lost, or cleanup also fails | Persist private target-bound ownership before mutation, close old clients before bounded fresh recovery, retain the journal on refusal/failure, preserve histories and unrelated resources, and report original/cleanup errors separately without SQL, credentials or private text. Missing journal or mismatched role/history/policy/schema cannot authorize deletion. | V4-AUD-01, V4-AUD-02 | U/I/M |
+
 ## Evidence record
 
 When a case is exercised, record its ID, fixture/test path, language/backend/configuration, expected result, actual result, and command/report in the owning task's evidence. A case can be covered by several tests; one test can cover several cases. Conditional cases must be recorded as not applicable with a reason until that feature exists, rather than marked passed.

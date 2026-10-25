@@ -30,6 +30,13 @@ async function owner(enabled){
   const reply=await replies.next();assert.ok(!reply.done&&JSON.parse(reply.value).ok===true);
 }
 async function run(config,fixture){
+  const evaluation_deadline_seconds=fixture.evaluation_deadline_seconds===undefined?25:fixture.evaluation_deadline_seconds;
+  assert.ok(Number.isInteger(evaluation_deadline_seconds)&&[25,60].includes(evaluation_deadline_seconds));
+  const acceptance_profile=evaluation_deadline_seconds===60?'high_latency_admin':'default';
+  const effective_evaluation_deadline_ms=evaluation_deadline_seconds===60?60000:10000;
+  assert.equal(fixture.effective_evaluation_deadline_ms===undefined?effective_evaluation_deadline_ms:
+    fixture.effective_evaluation_deadline_ms,effective_evaluation_deadline_ms);
+  const evaluationLimits=evaluation_deadline_seconds===60?{deadline_ms:60000}:{};
   const resource=new PoolResource(parse_pool_config({...config,max_size:1}));
   if(fixture.neon)verifyNeonResource(resource,config.host);
   const checks=[],latency_ms={lexical:[],dense:[],hybrid:[]};
@@ -94,8 +101,9 @@ async function run(config,fixture){
     };
     try{
       const result=await new PostgresRetriever(resource,{mode:'hybrid',embedder:embedder()}).retrieve(
-        parse_request({query:'ERR-17',collection:fixture.collection,required_filters:[{field:'document_id',op:'eq',value:'retry-policy'}]}),
-        {scope:parse_scope(fixture.scopes[0]),deadline:now()+25});
+        parse_request({query:'ERR-17',collection:fixture.collection,required_filters:[{field:'document_id',op:'eq',value:'retry-policy'}],
+          limits:{...evaluationLimits}}),
+        {scope:parse_scope(fixture.scopes[0]),deadline:now()+evaluation_deadline_seconds});
       assert.equal(result.evidence.length,0);assert.equal(result.status,'insufficient');
       assert.ok(result.limitations.some(item=>item.code==='stale_evidence'));
       checks.push('node_hybrid_fresh_source_tombstone_denied');
@@ -125,9 +133,11 @@ async function run(config,fixture){
               options.evidence_options.counter=counter;
             }
           }
+          const request=parse_request(entry.request);
+          assert.equal(request.limits.deadline_ms,effective_evaluation_deadline_ms);
           const started=now();
-          const result=await new PostgresRetriever(resource,options).retrieve(parse_request(entry.request),
-            {scope:parse_scope(entry.scope),deadline:now()+25});
+          const result=await new PostgresRetriever(resource,options).retrieve(request,
+            {scope:parse_scope(entry.scope),deadline:now()+evaluation_deadline_seconds});
           if(!entry.evidence_options)latency_ms[entry.mode].push((now()-started)*1000);
           assert.deepEqual(normalized(result),entry.expected);
         } finally {counter?.close();}
@@ -139,8 +149,8 @@ async function run(config,fixture){
             evidence_options:{reranker:new RerankingAdapter(revoke)}}).retrieve(
               parse_request({query:'ERR-17',collection:fixture.collection,
                 required_filters:[{field:'document_id',op:'eq',value:'retry-policy'}],
-                output_profile:{renderer:'cragkit.context.v2'}}),
-              {scope:parse_scope(fixture.scopes[0]),deadline:now()+25});
+                output_profile:{renderer:'cragkit.context.v2'},limits:{...evaluationLimits}}),
+              {scope:parse_scope(fixture.scopes[0]),deadline:now()+evaluation_deadline_seconds});
           assert.equal(result.evidence.length,0);assert.equal(result.status,'insufficient');
           assert.ok(result.limitations.some(item=>item.code==='stale_evidence'));
           checks.push('node_v3_post_model_tombstone_and_no_model_lease');
@@ -151,11 +161,15 @@ async function run(config,fixture){
     let corrective_records=[];
     if(fixture.corrective_cases?.length){
       const {runCorrective}=await import('./check_typescript_corrective_native.mjs');
-      const extra=await runCorrective(resource,fixture.corrective_cases,embedder,owner);
+      const extra=await runCorrective(resource,fixture.corrective_cases,embedder,owner,evaluation_deadline_seconds);
+      assert.equal(extra.acceptance_profile,acceptance_profile);
+      assert.equal(extra.evaluation_deadline_seconds,evaluation_deadline_seconds);
+      assert.equal(extra.effective_evaluation_deadline_ms,effective_evaluation_deadline_ms);
       checks.push(...extra.checks);corrective_records=extra.records;
     }
     checks.push('node_development_ablation_18_requests_full_result_parity');
-    return {state:'passed',checks,latency_ms,corrective_records};
+    return {state:'passed',checks,latency_ms,corrective_records,acceptance_profile,evaluation_deadline_seconds,
+      effective_evaluation_deadline_ms};
   }finally{await resource.close();}
 }
 if(process.argv[2]!=='--allow-hybrid-checks')throw Error('Explicit fixture authorization required');

@@ -1,19 +1,14 @@
 """D-r1 diagnostics contract tests using synthetic exceptions only."""
 import asyncio
 from concurrent.futures import CancelledError as FutureCancelledError
-import importlib.util
 import json
 from pathlib import Path
 import sys
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location(
-    'runtime_diagnostics', Path(__file__).resolve().parents[1] / 'runtime_diagnostics.py')
-assert SPEC and SPEC.loader
-DIAGNOSTICS = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = DIAGNOSTICS
-SPEC.loader.exec_module(DIAGNOSTICS)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import runtime_diagnostics as DIAGNOSTICS
 
 OPERATIONS = (
     'primary', 'runtime_close', 'child_stop', 'admin_close', 'admin_connect',
@@ -293,3 +288,11 @@ def test_nonexception_class_descriptor_is_never_consulted_for_validation():
         with pytest.raises(ValueError) as caught:
             invoke()
         assert caught.value.args == ('invalid_cleanup_failures',)
+
+
+
+def test_recovery_and_parent_share_one_diagnostic_exception_class():
+    import runtime_recovery
+    import check_python_postgres
+    assert runtime_recovery.CleanupFailure is DIAGNOSTICS.CleanupFailure
+    assert check_python_postgres.CleanupFailure is DIAGNOSTICS.CleanupFailure

@@ -1,0 +1,365 @@
+{
+  "commands": [
+    "python3 tools/check_v4.py --artifacts-dir artifacts/V4/audit-verification/acceptance",
+    "uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_runtime_recovery.py --config \"$HOME/.config/cragkit/neon/admin-config.json\" --allow-test-writes --confirm-dedicated-target",
+    "uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config \"$HOME/.config/cragkit/neon/admin-config.json\" --allow-test-writes --neon --hybrid --corrective --evidence --typescript --evaluation-deadline-seconds 60",
+    "uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_neon_postgres.py --config \"$HOME/.config/cragkit/neon/admin-config.json\" --confirm-dedicated-target --check --vector --vector-storage --allow-managed-vector-primitives --integration --security --allow-test-writes",
+    "uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_security_remnants.py --config \"$HOME/.config/cragkit/neon/admin-config.json\" --confirm-dedicated-target --allow-test-writes --allow-managed-vector-primitives",
+    "uv audit --project packages/python --frozen",
+    "uv audit --project packages/langchain-python --frozen",
+    "npm --prefix packages/typescript audit --json",
+    "npm --prefix packages/langchain-typescript audit --json",
+    "npm --prefix packages/typescript audit signatures",
+    "npm --prefix packages/langchain-typescript audit signatures"
+  ],
+  "date": "2026-10-25",
+  "dependency_audits": {
+    "node_core": {
+      "dependency_entries": 39,
+      "known_advisories": 0,
+      "verified_attestations": 2,
+      "verified_registry_signatures": 20
+    },
+    "node_sdk": {
+      "dependency_entries": 38,
+      "known_advisories": 0,
+      "verified_attestations": 7,
+      "verified_registry_signatures": 37
+    },
+    "python_core": {
+      "known_advisories": 0,
+      "packages": 34
+    },
+    "python_sdk": {
+      "known_advisories": 0,
+      "packages": 47
+    }
+  },
+  "final_inventory": {
+    "fixture_rows": {
+      "chunk_lexical": 0,
+      "chunk_vectors_fake_1536": 0,
+      "chunks": 0,
+      "collections": 0,
+      "document_grants": 0,
+      "document_revisions": 0,
+      "documents": 0,
+      "index_generations": 0,
+      "ingestion_jobs": 0
+    },
+    "hidden_columns": 0,
+    "journals_remaining": 0,
+    "lock_available_and_released": true,
+    "migration_sha256": "8f8195fdd3bd48e35b16aef3d21c96c3db63e12bf93b990847d16ee2ae9f5de2",
+    "policies": 0,
+    "runtime_probe_roles": 0,
+    "state": "passed",
+    "vector_sha256": "33f341a76f55e61e82c71b3f01e5f46dccd6033a30e4fbc9771cee598a9bf8a4"
+  },
+  "live_model_calls": 0,
+  "local": {
+    "core_artifacts": {
+      "npm": {
+        "bytes": 80981,
+        "file_count": 59,
+        "filename": "cragkit-0.0.0.tgz",
+        "sha256": "6398014ee2b90b08befd2d99fb0e650d199de6659c68e6733360017675d0dc80",
+        "unpacked_bytes": 398219
+      },
+      "rebuilt_wheel": {
+        "bytes": 83023,
+        "file_count": 34,
+        "filename": "cragkit-0.0.0-py3-none-any.whl",
+        "sha256": "d094c142f2de0b35d639b218832df00102a2f0f35a480821bad405905966cadd",
+        "unpacked_bytes": 301646
+      },
+      "sdist": {
+        "bytes": 166073,
+        "file_count": 68,
+        "filename": "cragkit-0.0.0.tar.gz",
+        "sha256": "4daacbf2cc26625287e3372fd69714336454dd78b89d4c85ddeeda793f3bfb22",
+        "unpacked_bytes": 738698
+      },
+      "wheel": {
+        "bytes": 83023,
+        "file_count": 34,
+        "filename": "cragkit-0.0.0-py3-none-any.whl",
+        "sha256": "d094c142f2de0b35d639b218832df00102a2f0f35a480821bad405905966cadd",
+        "unpacked_bytes": 301646
+      }
+    },
+    "guarded_imports": 3,
+    "installed_evidence_cases": 216,
+    "installed_node_sdk": 69,
+    "installed_python_sdk": 72,
+    "installed_v4_cases": 44,
+    "node_core": 878,
+    "node_sdk": 69,
+    "optional_artifacts": {
+      "node": {
+        "npm": {
+          "bytes": 4073,
+          "file_count": 3,
+          "filename": "cragkit-langchain-0.0.0.tgz",
+          "sha256": "0133cb8937963c8f5d38fcc972a1a5c14976acfe0995a873f69113b7731714a9",
+          "unpacked_bytes": 13945
+        }
+      },
+      "python": {
+        "rebuilt_wheel": {
+          "bytes": 3868,
+          "file_count": 5,
+          "filename": "cragkit_langchain-0.0.0-py3-none-any.whl",
+          "sha256": "4b375afeec658aa67cb0b13152ca8d63605212f891609bc391a0701a5db59faf",
+          "unpacked_bytes": 10483
+        },
+        "sdist": {
+          "bytes": 59284,
+          "file_count": 7,
+          "filename": "cragkit_langchain-0.0.0.tar.gz",
+          "sha256": "1c12ef96620890b912a138e9a84d8f72f77f0cae5edaa4b5e4fc4a30a78516b6",
+          "unpacked_bytes": 196178
+        },
+        "wheel": {
+          "bytes": 3868,
+          "file_count": 5,
+          "filename": "cragkit_langchain-0.0.0-py3-none-any.whl",
+          "sha256": "4b375afeec658aa67cb0b13152ca8d63605212f891609bc391a0701a5db59faf",
+          "unpacked_bytes": 10483
+        }
+      }
+    },
+    "post_restore_isolated_import_tests": 1,
+    "python_core_tools": 1405,
+    "python_expected_serializer_warnings": 4,
+    "python_sdk": 72,
+    "sealed_hashes": 16,
+    "serial_stages": 34
+  },
+  "native": {
+    "acceptance_profile": "high_latency_admin",
+    "checks": [
+      "python_dense_default",
+      "python_dense_degraded",
+      "python_lexical_default",
+      "python_lexical_degraded",
+      "python_hybrid_fresh_source_tombstone_denied",
+      "python_development_ablation_18_requests_verified_sources",
+      "python_v3_six_query_packed_assessment_strict_budget_and_accounting",
+      "python_v3_no_model_lease_and_post_model_tombstone_denied",
+      "python_v4_18_development_ablation_requests_bounded_and_reassessed",
+      "python_v4_separate_weak_query_targeted_recovery",
+      "python_v4_post_model_revocation_and_no_model_lease",
+      "node_dense_default",
+      "node_dense_degraded",
+      "node_lexical_default",
+      "node_lexical_degraded",
+      "node_hybrid_fresh_source_tombstone_denied",
+      "node_v3_post_model_tombstone_and_no_model_lease",
+      "node_v3_six_query_full_packed_result_parity_and_strict_count",
+      "node_v4_18_development_ablation_results_exact_native_parity",
+      "node_v4_separate_weak_query_targeted_recovery_parity",
+      "node_v4_post_model_revocation_and_no_model_lease",
+      "node_development_ablation_18_requests_full_result_parity"
+    ],
+    "child_budget_seconds": 960,
+    "cleanup_budget_seconds": 25,
+    "cleanup_verified": true,
+    "corrective_modes": {
+      "corrective": {
+        "document_recall_at_k": 0.8,
+        "evidence_on_unanswerable_rate": 1.0,
+        "facet_support_recall_at_k": 0.8,
+        "latency_ms_python_median": 3947.2884374990826,
+        "ndcg_at_k": 0.8,
+        "positive_questions": 5,
+        "reciprocal_rank": 0.8,
+        "total_questions": 6,
+        "unanswerable_questions": 1
+      },
+      "hybrid": {
+        "document_recall_at_k": 0.8,
+        "evidence_on_unanswerable_rate": 1.0,
+        "facet_support_recall_at_k": 0.8,
+        "latency_ms_python_median": 2618.784999995114,
+        "ndcg_at_k": 0.8,
+        "positive_questions": 5,
+        "reciprocal_rank": 0.8,
+        "total_questions": 6,
+        "unanswerable_questions": 1
+      },
+      "reranked": {
+        "document_recall_at_k": 0.8,
+        "evidence_on_unanswerable_rate": 1.0,
+        "facet_support_recall_at_k": 0.8,
+        "latency_ms_python_median": 4030.2424374967813,
+        "ndcg_at_k": 0.8,
+        "positive_questions": 5,
+        "reciprocal_rank": 0.8,
+        "total_questions": 6,
+        "unanswerable_questions": 1
+      }
+    },
+    "default_request_policy_native_state": "failed",
+    "effective_evaluation_deadline_ms": 60000,
+    "external_evaluation_deadline_seconds": 60,
+    "groups": 22,
+    "labelled_questions_with_improved_facet_recall": 0,
+    "limitations": [
+      "six_reviewed_development_questions_only",
+      "oracle_assisted_label_derived_variants_not_generalization",
+      "synthetic_embeddings_reranking_and_planner_not_live_model_quality",
+      "held_out_not_evaluated",
+      "rss_is_process_high_water_not_request_peak",
+      "hosting_cost_unmeasured",
+      "weak_query_probe_excluded_from_labelled_scores"
+    ],
+    "maximum_connections": 2,
+    "node_corrective_cases": 20,
+    "parent_budget_seconds": 1800,
+    "python_corrective_cases": 20,
+    "state": "passed",
+    "stderr_bytes": 0,
+    "synthetic_labelled_calls": {
+      "corrective": 17,
+      "hybrid": 6,
+      "reranked": 11
+    },
+    "temporary_role_expiry_seconds": 1920
+  },
+  "outside_scope": [
+    "held_out_model_quality",
+    "sustained_load_targets",
+    "supported_platform_CI",
+    "V5 integrations",
+    "production",
+    "public_registry_publication"
+  ],
+  "production_ready": false,
+  "recovery": {
+    "checks": [
+      "sigkill_vector_fixture_recovered_from_private_journal",
+      "completed_journal_replay_refused_without_database_action",
+      "collection_fk_refused_before_mutation_with_canary_preserved",
+      "leaf_fk_refused_before_mutation_with_canary_preserved",
+      "optional_vector_trigger_refused_before_mutation_with_canary_preserved",
+      "closed_admin_bounded_recovery_and_primary_preservation",
+      "transient_connect_bounded_recovery_and_primary_preservation",
+      "broken_recovery_bounded_recovery_and_primary_preservation",
+      "unavailable_connect_bounded_recovery_and_primary_preservation",
+      "preexisting_roles_memberships_profiles_and_histories_unchanged"
+    ],
+    "cleanup_verified": true,
+    "live_model_calls": 0,
+    "maximum_connections": 2,
+    "state": "passed"
+  },
+  "residual_limitations": [
+    "Current effective10000ms full native attempts failed; high-latency profile pass is not a default-budget performance pass.",
+    "Historical audit cleanup cause remains unproven; controlled loss/interruption recovery and new diagnostics are validated.",
+    "Lifecycle unknown-purge relations and unexpected deletion graphs require operator inspection; no automatic unexpected-table deletion."
+  ],
+  "run_history": [
+    {
+      "disposition": "creator inbound-membership direction corrected; explicit exact journal recovery passed",
+      "outcome": "cleanup refused unsafe_role",
+      "run": "initial vector staging"
+    },
+    {
+      "cleanup_completed": true,
+      "outcome": "deadline_exceeded",
+      "run": "default external25/effective10000 combined native"
+    },
+    {
+      "cleanup_completed": true,
+      "outcome": "provider_unavailable",
+      "run": "default external25/effective10000 corrective native"
+    },
+    {
+      "cleanup_completed": true,
+      "outcome": "deadline_exceeded",
+      "run": "default redacted execute timing diagnostic",
+      "sample": "last32 execute observations over200ms or errors; not an unbiased latency distribution"
+    },
+    {
+      "disposition": "commands reserialized",
+      "outcome": "migration_lock_busy before mutation",
+      "run": "administrative overlap"
+    },
+    {
+      "disposition": "missing explicit request policy fixed in AP-r2",
+      "outcome": "deadline_exceeded",
+      "run": "AP-r1 external60/effective10000"
+    },
+    {
+      "disposition": "temporary role expiry aligned with bounded profile; no proven expiry failure",
+      "outcome": "root interrupted; exit130 with cleanup",
+      "run": "AP-r2 before expiry alignment"
+    },
+    {
+      "disposition": "test module reload split exception identity; shared imports plus regression; full34-stage rerun passed",
+      "outcome": "8 failed/1396 passed",
+      "run": "first comprehensive Python suite"
+    },
+    {
+      "outcome": "passed34 stages",
+      "run": "final full local/installed pipeline"
+    },
+    {
+      "outcome": "passed22 groups; cleanup verified; stderr empty",
+      "run": "final native high_latency_admin external60/effective60000"
+    },
+    {
+      "outcome": "passed",
+      "run": "final security/remnant/inventory"
+    }
+  ],
+  "scope": "internal V4 follow-ups and comprehensive verification",
+  "security_negative_probes": {
+    "cleanup_verified": true,
+    "negative_probes": [
+      "unexpected_vector_domain",
+      "unexpected_vector_function",
+      "implicit_global_function_default",
+      "public_default_table",
+      "public_vector_schema",
+      "vector_ledger_rls",
+      "vector_security_definer"
+    ],
+    "state": "passed"
+  },
+  "source_sha256": {
+    "tools/check_corrective_native.py": "a7cf88193641af6e3708cd179240ebc8fff14bd35d5f1c7cb3221b4752c8f4a6",
+    "tools/check_evidence_native.py": "3cb532ae45196b7e09cdd993a826ebc8fbf0b9acfd10c06eada7394a5149eb00",
+    "tools/check_hybrid.py": "bc577a5705c11f85bac2b6eea2a490b2d6074ea3569c959212ff2420020111bf",
+    "tools/check_python_postgres.py": "664d7a36a86334ed4afccf21624502d807a2af6e9fbe5afa3250dc8eccebf18a",
+    "tools/check_runtime_recovery.py": "521bc81ec7b33f7d2de0808bb77ba5a201ea62a91866a5d17ed2bb9416c8a69a",
+    "tools/check_typescript_corrective_native.mjs": "62521dd01794c0606ea81c2d775065cdd7b0ca9d67f807725d2501178396cd5a",
+    "tools/check_typescript_hybrid.mjs": "ab155ba555b7cedd88ccf705e4fa6216140dfa85af0d57a3051f2ad49bc99787",
+    "tools/runtime_diagnostics.py": "6a12749a5692def01846c5b7415c21b68945c0df1dc0ff012dc6e20686071e74",
+    "tools/runtime_recovery.py": "1384dccfdd983ff7882bb9472608767bbb763ff3c6b2a93a88c76f1d9d50300e",
+    "tools/runtime_recovery_postgres.py": "abb97319dad99a9b74c12ea1df0c1e5ed6425281ace4fbc16035281cf9753b97",
+    "tools/tests/test_check_python_postgres.py": "744d6a8455d1def98c38e6b6c3324a615a52293d99aa8ff20b5da9d98e1ccba7",
+    "tools/tests/test_native_evaluation_profile.py": "adb2aa9ea5af22293a0be5d316d5f22ca4f6a0d981aeceb28ce85dc13f4d3c4a",
+    "tools/tests/test_runtime_diagnostics.py": "1f11786418d2cba539a117cca294b1104764e05727803fb8b1067bc3a828d7a3",
+    "tools/tests/test_runtime_recovery.py": "bdaddd41ce2930f8875d6110bb34c88a907377968d14d545481c5ac8f0823479",
+    "tools/tests/test_runtime_recovery_postgres.py": "6cbeb872ba91f39198c71c77fee15a6adb147d05b74b1a670892eb75b236c3d2"
+  },
+  "state": "passed",
+  "unchanged_core_sdk_sha256": {
+    "packages/langchain-python/src/cragkit_langchain/__init__.py": "c0d56907d57806bfb7661153242c3580ba453f762fe02bf01194c280884a5fff",
+    "packages/langchain-python/uv.lock": "feb8d9e35e0f3fa3ed96803a6141c6e9e4855b549242f7b96a2bbd8419fccfa2",
+    "packages/langchain-typescript/package-lock.json": "6ca9464c71d329bb8b2abf4bad29a9e357b7d328f05c56eb72152c39f61846b6",
+    "packages/langchain-typescript/src/index.ts": "55068ebd6a90e1d4bcdb58bbf772deebf334608490ccf6202f66acc0a45d85c5",
+    "packages/python/src/cragkit/corrective.py": "9ee522fb3855c285b0f6ddc444e96d2d2d731a1ad9b3ede6f5126de4dbe394bc",
+    "packages/python/src/cragkit/events.py": "00f046244741719c382fd8c250922b2d0b535e7a5c8c2a4b644a47b60b9edfca",
+    "packages/python/src/cragkit/execution.py": "a64c8e2f48f1c0c2b4215c9d32c0176935577775b6c9afe96bb1e3ee5eb7bea4",
+    "packages/python/src/cragkit/planning.py": "b87a72a461c755e8bfae7c73627eeedd1311b04854ff05f86aef0f495df86d04",
+    "packages/python/src/cragkit/postgres_corrective.py": "67110dfba012dc9649173205651584587addfbd194518dfb9cd59962bb4f8eb1",
+    "packages/typescript/src/corrective.ts": "62f0fa95ec33963d47def59c4d28f9b552ac6bd1b57e3c54d104724f27f9ee28",
+    "packages/typescript/src/events.ts": "cdcd59ecc45bccf2917f6c787053a6096220a2ab7dd698b9b8777468b96b3ed3",
+    "packages/typescript/src/execution.ts": "9496900e883fe8f5b59033de3ecc046f993684269275e12c2cf02f527da64072",
+    "packages/typescript/src/planning.ts": "6ceb8a01753ec247e408caac1f05d010ad85b22ec1273731f3d43f0b8ee304a2",
+    "packages/typescript/src/postgres-corrective.ts": "526fcce776332948e0f79848d00ad10eaaf7a6183a2de6aa8269cfce57f5fd48"
+  }
+}

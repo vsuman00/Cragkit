@@ -778,3 +778,41 @@ npm --prefix packages/langchain-typescript test
 ```
 
 Clean framework verification builds Python wheel/source/rebuilt wheel and npm archive, installs those products in temporary environments, reruns the SDK tests there, verifies product import origins and checks SDK dependency versions/integrities. Original checkout files still exist; this proves isolated installed imports, not physical removal of the checkout. Environment payload sizes are logical file totals, not disk allocation or runtime memory. Core and optional reports live in separate subdirectories.
+
+
+### Recovering interrupted native fixtures
+
+For example, a killed V4 database check can leave its temporary role and synthetic rows even though ordinary tests pass. The parent writes a private, immutable ownership record before fixture mutation and uses a fresh verified connection for cleanup. It shares a 25-second budget across old-client closure and at most two serial recovery attempts. Failed cleanup emits bounded primary and cleanup diagnostics plus a random recovery ID; it retains the record outside Git. See [the harness contract](../contracts/HARNESS_RECOVERY_V4.md).
+
+With the optional PostgreSQL dependencies installed, recover only the ID reported by that failed run:
+
+```sh
+uv run --project packages/python --frozen --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --recover RUN_ID
+```
+
+If a process was killed before printing its recovery ID, inspect the JSON filenames in the private `~/.config/cragkit/runtime-recovery` directory; each filename stem is one run ID. The recovery command still validates its target and ownership before database action. Do not mix recovery with a new fixture mode. The exact target, private record, ownership marker, restricted role, policies, schema and history hashes must match before deletion. Successful cleanup removes the record. Repeating the CLI after that fails closed; a missing file does not prove a prior cleanup succeeded. Old failures without a journal require exact operator inspection. The lifecycle unknown-purge test relation is outside the automatic recovery inventory and triggers a schema refusal, never an automatic table drop. Role comments are ownership evidence against accidental misuse, not secrets or protection from a compromised database administrator.
+
+The native fault acceptance command creates and kills only its own child fixture, checks repeat cleanup, administrator loss, bounded retries and retained-journal recovery, and compares pre-existing roles/profiles/history:
+
+```sh
+uv run --project packages/python --frozen --extra postgres python tools/check_runtime_recovery.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --confirm-dedicated-target
+```
+
+Use the empty, dedicated development target and run this separately from other database checks. No model call is required. A hard termination cannot guarantee immediate cleanup; the durable record enables a later authorized recovery. Failure case: a forged ownership marker causes refusal before row deletion. Practice: explain why a role name alone is insufficient authority to delete it.
+
+
+### Native evaluation timing profiles
+
+The default hybrid/evidence/corrective administrative evaluation supplies an external 25-second deadline and retains the request policy default of 10,000 ms; the earlier deadline governs. An explicit higher-latency profile is available when the database round trips consume that budget:
+
+```sh
+uv run --project packages/python --frozen --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --hybrid --corrective --evidence --typescript --evaluation-deadline-seconds 60
+```
+
+The result records `acceptance_profile=high_latency_admin`, `evaluation_deadline_seconds=60` and `effective_evaluation_deadline_ms=60000`; default metadata records `default`, `25` and `10000`. The opt-in profile explicitly configures both the external deadline and request policy; all other limits are preserved. Both runtimes must report the same profile. The override is valid only for hybrid acceptance, has exact choices 25/60, and retains the fixed sample, candidate/call/attempt limits and authorization assertions. It changes no product default. Deliberate short fault probes and the shared 25-second recovery budget remain unchanged. The higher-latency run has separate bounded parent/child ceilings of 1,800/960 seconds and uses the same maximum two clients. Its temporary restricted LOGIN expires after 32 minutes to cover that bound; default expiry remains 10 minutes. Cleanup disables/removes the exact role immediately. Run it serially. Keep a failed default-profile result; a higher-budget pass does not establish the default budget or production latency. See [the current verification report](../evaluation/reports/V4/V4-SECURITY-VERIFICATION.md).
+
+Focused administrative regression tests require the frozen Python and Node development environments; the profile test builds the Node library before importing its native helper:
+
+```sh
+uv run --project packages/python --frozen pytest tools/tests/test_runtime_diagnostics.py tools/tests/test_runtime_recovery.py tools/tests/test_runtime_recovery_postgres.py tools/tests/test_check_python_postgres.py tools/tests/test_native_evaluation_profile.py -q
+```

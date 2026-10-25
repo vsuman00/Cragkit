@@ -277,3 +277,144 @@ def test_cli_cannot_report_success_when_only_cleanup_fails(monkeypatch, capsys):
     value = json.loads(capsys.readouterr().out)
     assert value['state'] == 'failed' and value['primary'] is None
     assert value['cleanup'][0]['category'] == 'connection'
+
+
+def test_recovery_cli_requires_explicit_writes_and_rejects_fixture_modes(monkeypatch, capsys):
+    recovery = AsyncMock(return_value={'state': 'passed', 'cleanup_verified': True})
+    monkeypatch.setattr(PG, 'recover_run', recovery)
+    base = ['check_python_postgres.py', '--config', '/unused/private.json', '--recover', 'a' * 16]
+    monkeypatch.setattr(sys, 'argv', base)
+    assert PG.main() == 2 and not recovery.called
+    for mode in ('--hybrid', '--typescript', '--lifecycle', '--corrective', '--evidence'):
+        monkeypatch.setattr(sys, 'argv', [*base, '--allow-test-writes', mode])
+        assert PG.main() == 2 and not recovery.called
+    monkeypatch.setattr(sys, 'argv', [*base, '--allow-test-writes', '--neon'])
+    assert PG.main() == 0
+    recovery.assert_awaited_once_with(Path('/unused/private.json'), 'a' * 16, neon=True)
+
+
+def test_recovery_refusal_cli_is_closed_and_has_no_false_success(monkeypatch, capsys):
+    monkeypatch.setattr(PG, 'recover_run', AsyncMock(side_effect=PG.RecoveryRefused('ownership_mismatch')))
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json',
+                                    '--recover', 'a' * 16, '--allow-test-writes'])
+    assert PG.main() == 1
+    assert __import__('json').loads(capsys.readouterr().out) == {
+        'state': 'failed', 'code': 'recovery_refused', 'reason': 'ownership_mismatch'}
+
+
+def test_cleanup_cli_exposes_only_validated_run_id_and_closed_refusal(monkeypatch, capsys):
+    error = PG.CleanupFailure([('admin_connect', ConnectionError('private credential'))])
+    error.recovery_id = 'a' * 16
+    error.refusal_reason = 'history_mismatch'
+    monkeypatch.setattr(PG, 'check', AsyncMock(side_effect=error))
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json',
+                                    '--allow-test-writes'])
+    assert PG.main() == 1
+    output = __import__('json').loads(capsys.readouterr().out)
+    assert output['recovery_id'] == 'a' * 16 and output['recovery_required'] is True
+    assert output['refusal_reason'] == 'history_mismatch'
+    assert 'private credential' not in str(output)
+
+
+def test_quiescence_closes_child_then_old_admin_then_runtime():
+    async def run():
+        seen = []
+        class Child:
+            returncode = None
+            def kill(self): seen.append('kill')
+            async def wait(self): seen.append('wait')
+        async def admin_close(): seen.append('admin')
+        async def runtime_close(): seen.append('runtime')
+        await PG.quiesce_clients(admin=SimpleNamespace(close=admin_close),
+                                 runtime=SimpleNamespace(close=runtime_close), child=Child(),
+                                 deadline=asyncio.get_running_loop().time() + 1)
+        assert seen == ['kill', 'wait', 'admin', 'runtime']
+    asyncio.run(run())
+
+
+def test_quiescence_failure_is_distinct_and_stops_before_fresh_recovery():
+    async def run():
+        runtime = AsyncMock()
+        admin = SimpleNamespace(close=AsyncMock(side_effect=ConnectionError('private credential')))
+        with pytest.raises(PG.CleanupFailure) as captured:
+            await PG.quiesce_clients(admin=admin, runtime=runtime, child=None,
+                                     deadline=asyncio.get_running_loop().time() + 1,
+                                     primary=ValueError('private query'), stage='fixture_setup')
+        detail = captured.value.to_dict()
+        assert detail['primary']['category'] == 'validation'
+        assert detail['cleanup'][0]['operation'] == 'admin_close'
+        assert 'private' not in str(detail)
+        runtime.close.assert_awaited_once()
+    asyncio.run(run())
+
+
+def test_quiescence_timeout_has_no_success_and_observes_cancelled_task():
+    async def run():
+        stopped = asyncio.Event()
+        async def close():
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.set()
+        with pytest.raises(PG.CleanupFailure) as captured:
+            await PG.quiesce_clients(admin=SimpleNamespace(close=close), runtime=None,
+                                     child=None, deadline=asyncio.get_running_loop().time() + .01)
+        assert captured.value.to_dict()['cleanup'][0]['category'] == 'timeout'
+        await asyncio.sleep(0)
+        assert stopped.is_set()
+    asyncio.run(run())
+
+
+
+def test_generic_cli_failure_does_not_read_hostile_error_text_or_class_name(monkeypatch, capsys):
+    class PrivateQueryName(Exception):
+        @property
+        def sqlstate(self): raise RuntimeError('private SQL text')
+        def __str__(self): raise RuntimeError('private credential')
+    monkeypatch.setattr(PG, 'check', AsyncMock(side_effect=PrivateQueryName()))
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json',
+                                    '--allow-test-writes'])
+    assert PG.main() == 1
+    output = capsys.readouterr().out
+    assert 'private' not in output and 'PrivateQueryName' not in output
+    assert __import__('json').loads(output)['error']['sqlstate'] is None
+
+
+
+@pytest.mark.parametrize('value', [True, False, 0, 24, 26, 60.0, '60', None, float('inf')])
+def test_evaluation_profile_exact_choices_only(value):
+    with pytest.raises(PG.RuntimeCheckError, match='invalid_evaluation_profile'):
+        PG.require_evaluation_profile(value, hybrid=True)
+
+
+def test_evaluation_profile_cannot_silently_change_other_modes():
+    PG.require_evaluation_profile(25, hybrid=False)
+    for value in (25, 60): PG.require_evaluation_profile(value, hybrid=True)
+    with pytest.raises(PG.RuntimeCheckError, match='evaluation_profile_requires_hybrid'):
+        PG.require_evaluation_profile(60, hybrid=False)
+
+
+def test_evaluation_cli_profile_is_explicit_forwarded_and_needs_writes(monkeypatch, capsys):
+    check = AsyncMock(return_value={'state': 'passed'})
+    monkeypatch.setattr(PG, 'check', check)
+    base = ['check_python_postgres.py', '--config', '/unused/private.json',
+            '--evaluation-deadline-seconds', '60']
+    for extra in ([], ['--allow-test-writes'], ['--hybrid']):
+        monkeypatch.setattr(sys, 'argv', [*base, *extra])
+        assert PG.main() == 2 and not check.called
+    monkeypatch.setattr(sys, 'argv', [*base, '--hybrid', '--allow-test-writes'])
+    assert PG.main() == 0
+    assert check.call_args.kwargs['evaluation_deadline_seconds'] == 60
+    monkeypatch.setattr(sys, 'argv', ['check_python_postgres.py', '--config', '/unused/private.json',
+                                    '--hybrid', '--allow-test-writes'])
+    assert PG.main() == 0
+    assert check.call_args.kwargs['evaluation_deadline_seconds'] == 25
+
+
+
+def test_temporary_role_expiry_covers_only_the_selected_bounded_admin_run():
+    assert PG.fixture_role_lifetime_seconds(25) == 600
+    assert PG.fixture_role_lifetime_seconds(60) == 1800 + 120
+    for value in (True, '60', 61):
+        with pytest.raises(PG.RuntimeCheckError, match='invalid_evaluation_profile'):
+            PG.fixture_role_lifetime_seconds(value)

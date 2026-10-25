@@ -41,3 +41,8 @@ The combined administrative command and regression commands are in [development.
 For example, a NUL-bearing tenant identifier must fail before application authorization, while a source excerpt must retain every byte to preserve its digest. Input validation and exact evidence storage have different jobs. A second failure case is a missing global default ACL row: PostgreSQL may still grant PUBLIC function execution, so a row-count-only audit misses it. Exercise: explain why revoking a schema-local default cannot subtract a global default grant.
 
 Implementation commits: `789e60f` (NUL-r1) and `86fc017` (PostgreSQL security gates/regressions), each pushed and verified synchronized. Locale preflight, runbooks and this evidence are committed separately. Final prose inspection found zero suspicious Unicode characters, low density and unchanged deterministic-cleaner output; 292 local Markdown file targets passed.
+
+
+## V4 follow-up verification
+
+The later V4 audit follow-ups are closed for the scoped internal milestone in [V4 security verification](V4/V4-SECURITY-VERIFICATION.md), with [machine results](V4/V4-SECURITY-RESULTS.json). The final 34-stage local/installed checkpoint, native 22-group evidence/corrective run, ten-group interruption/recovery probes and final seven remnant probes passed. Current full native default 10,000 ms attempts remain failed evidence; the native functionality pass used the explicit 60,000 ms administrative profile. Product defaults and the managed vector security policy are unchanged. V5/V6 production and release gates remain planned. The three original user-owned audit files are preserved, not rewritten as new passing reports.

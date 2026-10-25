@@ -14,7 +14,8 @@ import stat
 import sys
 import tempfile
 
-from runtime_diagnostics import CleanupFailure
+from runtime_diagnostics import CleanupFailure, describe_error
+from runtime_recovery import Journal, RecoveryRefused, recover, target_fingerprint
 
 
 CURRENT_STAGE = 'not_started'
@@ -105,10 +106,23 @@ def base_child_fixture(collection, tenants, principals, *, neon: bool) -> dict:
     }
 
 
+def require_evaluation_profile(seconds, *, hybrid):
+    if type(seconds) is not int or seconds not in (25, 60):
+        raise RuntimeCheckError('invalid_evaluation_profile')
+    if not hybrid and seconds != 25:
+        raise RuntimeCheckError('evaluation_profile_requires_hybrid')
+
+
+def fixture_role_lifetime_seconds(evaluation_deadline_seconds):
+    require_evaluation_profile(evaluation_deadline_seconds, hybrid=True)
+    return 1920 if evaluation_deadline_seconds == 60 else 600
+
+
 async def check(config_path: Path, *, typescript: bool = False, ingestion: bool = False,
-                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False, dense: bool = False, hybrid: bool = False, evidence: bool = False, corrective: bool = False) -> dict:
+                lexical: bool = False, results: bool = False, lifecycle: bool = False, neon: bool = False, vectors: bool = False, vector_stage_only: bool = False, dense: bool = False, hybrid: bool = False, evidence: bool = False, corrective: bool = False, evaluation_deadline_seconds: int = 25, _test_hook=None) -> dict:
     global CURRENT_STAGE
     CURRENT_STAGE = 'configuration'
+    require_evaluation_profile(evaluation_deadline_seconds, hybrid=hybrid)
     import cragkit
     require_installed_origin(os.environ.get('CRAGKIT_REQUIRE_INSTALLED_PREFIX'), cragkit.__file__, sys.prefix)
     # Optional dependencies are loaded only after explicit CLI authorization.
@@ -144,7 +158,8 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
     selected = tables + ('migration_history',) + (('embedding_profiles',) if vectors else ())
     policy = role + '_select'
     admin = runtime = node_process = None
-    locked = created_role = renamed = False
+    journal = None
+    renamed = False
     completed = []
     temporary = tempfile.TemporaryDirectory(prefix='cragkit-runtime-')
 
@@ -164,18 +179,12 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
             connect_timeout=5, autocommit=True, application_name='cragkit-runtime-check-admin',
             options='-c statement_timeout=5000 -c lock_timeout=2000 -c idle_in_transaction_session_timeout=10000')
         if neon:
-            try:
-                require_client_tls(admin)
-            except RuntimeCheckError:
-                rejected_admin, admin = admin, None
-                await rejected_admin.close()
-                raise
+            require_client_tls(admin)
         if ingestion or lexical:
             CURRENT_STAGE = 'lexical_fixture_locale'
             await require_lexical_fixture_behavior(admin)
         if await rows('SELECT pg_try_advisory_lock(1129464148,1)') != [(True,)]:
             raise RuntimeCheckError('migration_lock_busy')
-        locked = True
         if await rows("SELECT count(*) FROM pg_policies WHERE schemaname IN ('cragkit','cragkit_vector')") != [(0,)]:
             raise RuntimeCheckError('existing_policies')
         if await rows('SELECT 1 FROM pg_roles WHERE rolname=%s', (role,)):
@@ -184,11 +193,19 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
             if await rows(sql.SQL('SELECT count(*) FROM cragkit.{}').format(sql.Identifier(table))) != [(0,)]:
                 raise RuntimeCheckError('nonempty_target')
 
+        from runtime_recovery_postgres import snapshot_histories
+        migration_sha256, vector_sha256 = await snapshot_histories(admin, vectors=vectors)
+        journal = Journal.create(
+            run_id=token, target_sha256=target_fingerprint(config.host, config.port, config.dbname, config.user),
+            ingestion=ingestion, vectors=vectors, lifecycle=lifecycle, allow_schema_restore=not ingestion,
+            migration_sha256=migration_sha256, vector_sha256=vector_sha256)
         CURRENT_STAGE = 'fixture_setup'
         encrypted = fixture_password(admin, password, role, neon=neon)
-        expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+        expires = (datetime.now(timezone.utc) + timedelta(seconds=fixture_role_lifetime_seconds(evaluation_deadline_seconds))).isoformat()
         async with admin.transaction():
             await command(sql.SQL('CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS CONNECTION LIMIT 1 PASSWORD {} VALID UNTIL {}').format(sql.Identifier(role), sql.Literal(encrypted), sql.Literal(expires)))
+            await command(sql.SQL('COMMENT ON ROLE {} IS {}').format(
+                sql.Identifier(role), sql.Literal(journal.manifest.owner_marker)))
             await command(sql.SQL('GRANT USAGE ON SCHEMA cragkit TO {}').format(sql.Identifier(role)))
             await command(sql.SQL('GRANT USAGE ON DOMAIN cragkit.identity_text,cragkit.collection_text,cragkit.sha256_hex,cragkit.safe_count TO {}').format(sql.Identifier(role)))
             for table in selected:
@@ -217,8 +234,9 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 await command('UPDATE cragkit.documents SET active_generation_id=%s WHERE tenant_id=%s AND collection_id=%s', ('generation', tenant, collection))
                 await command('INSERT INTO cragkit.document_grants(tenant_id,collection_id,document_id,grant_id,principal_id,authorization_revision) VALUES (%s,%s,%s,%s,%s,%s)', (tenant, collection, document, 'read', principal, 'scope-rev'))
                 await command('INSERT INTO cragkit.document_grants(tenant_id,collection_id,document_id,grant_id,principal_id,authorization_revision) VALUES (%s,%s,%s,%s,NULL,%s)', (tenant, collection, document, 'trusted-grant', 'scope-rev'))
-        created_role = True
         completed.append('isolated_fixture')
+        if _test_hook is not None:
+            await _test_hook(journal, admin)
         passfile = Path(temporary.name) / 'runtime.pgpass'
         descriptor = os.open(passfile, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, 'w', encoding='utf-8') as destination:
@@ -238,7 +256,7 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 'scopes': [dict(tenant_id=tenant, principal_id=principal,
                     authorization_revision='scope-rev', grant_ids=[])
                     for tenant,principal in zip(tenants,principals)],
-                }, admin, typescript=typescript, neon=neon, **({'evidence': evidence, 'corrective': corrective} if hybrid else {} if dense else {'stage_only': vector_stage_only}))
+                }, admin, typescript=typescript, neon=neon, **({'evidence': evidence, 'corrective': corrective, 'evaluation_deadline_seconds': evaluation_deadline_seconds} if hybrid else {} if dense else {'stage_only': vector_stage_only}))
             except Exception as error:
                 from check_vectors import VectorCheckError
                 from check_dense import DenseCheckError
@@ -282,65 +300,58 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
             result = None
             lock_transaction = None
             lock_mode = None
-            try:
-                while line := await node_process.stdout.readline():
-                    message = json.loads(line)
-                    kind = message.get('type')
-                    response = None
-                    if (kind == 'lock_request' and lock_transaction is None
-                            and message.get('mode') in ('deadline', 'abort')):
-                        lock_mode = message['mode']
-                        lock_transaction = admin.transaction()
-                        await lock_transaction.__aenter__()
-                        await command('LOCK TABLE cragkit.documents IN ACCESS EXCLUSIVE MODE')
-                        response = {'type': 'locked'}
-                    elif kind == 'query_started' and lock_transaction is not None:
-                        until = asyncio.get_running_loop().time() + 3
-                        while True:
-                            if await rows("SELECT count(*) FROM pg_stat_activity WHERE usename=%s AND wait_event_type='Lock'", (role,)) == [(1,)]:
-                                break
-                            if asyncio.get_running_loop().time() >= until:
-                                raise RuntimeCheckError('typescript_lock_not_observed')
-                            await asyncio.sleep(0.02)
-                        response = {'type': 'abort' if lock_mode == 'abort' else 'observed'}
-                    elif kind == 'lock_done' and lock_transaction is not None:
-                        await lock_transaction.__aexit__(None, None, None)
-                        lock_transaction = None
-                        response = {'type': 'unlocked'}
-                    elif kind == 'schema_hide' and not renamed:
-                        await command('ALTER TABLE cragkit.documents RENAME COLUMN authorization_revision TO probe_hidden_authorization_revision')
-                        renamed = True
-                        response = {'type': 'schema_hidden'}
-                    elif kind == 'schema_restore' and renamed:
-                        await command('ALTER TABLE cragkit.documents RENAME COLUMN probe_hidden_authorization_revision TO authorization_revision')
-                        renamed = False
-                        response = {'type': 'schema_restored'}
-                    elif kind == 'result' and message.get('state') == 'passed':
-                        checks = message.get('checks')
-                        if (not isinstance(checks, list) or len(checks) > 32
-                                or any(not isinstance(item, str) or not re.fullmatch(r'[a-z_]+', item)
-                                       for item in checks)):
-                            raise RuntimeCheckError('typescript_result_shape')
-                        result = message
-                    elif ((kind == 'error' or (kind == 'result' and message.get('state') == 'failed'))
-                          and isinstance(message.get('code'), str)
-                          and re.fullmatch(r'[a-z_]+', message['code'])):
-                        raise RuntimeCheckError('typescript_' + message['code'])
-                    else:
-                        raise RuntimeCheckError('typescript_protocol_failed')
-                    if response is not None:
-                        node_process.stdin.write((json.dumps(response) + '\n').encode())
-                        await node_process.stdin.drain()
-                if await node_process.wait() != 0 or result is None:
-                    raise RuntimeCheckError('typescript_runtime_failed')
-                return {'state': 'passed', 'runtime': 'typescript', 'cleanup_verified': True,
-                        'maximum_connections': 2, 'checks': completed + result.get('checks', [])}
-            finally:
-                if node_process.returncode is None:
-                    node_process.kill()
-                    await node_process.wait()
-                if lock_transaction is not None:
+            while line := await node_process.stdout.readline():
+                message = json.loads(line)
+                kind = message.get('type')
+                response = None
+                if (kind == 'lock_request' and lock_transaction is None
+                        and message.get('mode') in ('deadline', 'abort')):
+                    lock_mode = message['mode']
+                    lock_transaction = admin.transaction()
+                    await lock_transaction.__aenter__()
+                    await command('LOCK TABLE cragkit.documents IN ACCESS EXCLUSIVE MODE')
+                    response = {'type': 'locked'}
+                elif kind == 'query_started' and lock_transaction is not None:
+                    until = asyncio.get_running_loop().time() + 3
+                    while True:
+                        if await rows("SELECT count(*) FROM pg_stat_activity WHERE usename=%s AND wait_event_type='Lock'", (role,)) == [(1,)]:
+                            break
+                        if asyncio.get_running_loop().time() >= until:
+                            raise RuntimeCheckError('typescript_lock_not_observed')
+                        await asyncio.sleep(0.02)
+                    response = {'type': 'abort' if lock_mode == 'abort' else 'observed'}
+                elif kind == 'lock_done' and lock_transaction is not None:
                     await lock_transaction.__aexit__(None, None, None)
+                    lock_transaction = None
+                    response = {'type': 'unlocked'}
+                elif kind == 'schema_hide' and not renamed:
+                    await command('ALTER TABLE cragkit.documents RENAME COLUMN authorization_revision TO probe_hidden_authorization_revision')
+                    renamed = True
+                    response = {'type': 'schema_hidden'}
+                elif kind == 'schema_restore' and renamed:
+                    await command('ALTER TABLE cragkit.documents RENAME COLUMN probe_hidden_authorization_revision TO authorization_revision')
+                    renamed = False
+                    response = {'type': 'schema_restored'}
+                elif kind == 'result' and message.get('state') == 'passed':
+                    checks = message.get('checks')
+                    if (not isinstance(checks, list) or len(checks) > 32
+                            or any(not isinstance(item, str) or not re.fullmatch(r'[a-z_]+', item)
+                                   for item in checks)):
+                        raise RuntimeCheckError('typescript_result_shape')
+                    result = message
+                elif ((kind == 'error' or (kind == 'result' and message.get('state') == 'failed'))
+                      and isinstance(message.get('code'), str)
+                      and re.fullmatch(r'[a-z_]+', message['code'])):
+                    raise RuntimeCheckError('typescript_' + message['code'])
+                else:
+                    raise RuntimeCheckError('typescript_protocol_failed')
+                if response is not None:
+                    node_process.stdin.write((json.dumps(response) + '\n').encode())
+                    await node_process.stdin.drain()
+            if await node_process.wait() != 0 or result is None:
+                raise RuntimeCheckError('typescript_runtime_failed')
+            return {'state': 'passed', 'runtime': 'typescript', 'cleanup_verified': True,
+                    'maximum_connections': 2, 'checks': completed + result.get('checks', [])}
         CURRENT_STAGE = 'runtime_login'
         runtime = PoolResource(runtime_config)
         await runtime.open()
@@ -496,15 +507,13 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
         await command('ALTER TABLE cragkit.documents RENAME COLUMN authorization_revision TO probe_hidden_authorization_revision')
         renamed = True
         try:
-            try:
-                await session.validate(deadline=loop.time() + 5)
-            except (UnsupportedCapability, IndexNotReady):
-                pass
-            else:
-                raise RuntimeCheckError('invalid_schema_accepted')
-        finally:
-            await command('ALTER TABLE cragkit.documents RENAME COLUMN probe_hidden_authorization_revision TO authorization_revision')
-            renamed = False
+            await session.validate(deadline=loop.time() + 5)
+        except (UnsupportedCapability, IndexNotReady):
+            pass
+        else:
+            raise RuntimeCheckError('invalid_schema_accepted')
+        await command('ALTER TABLE cragkit.documents RENAME COLUMN probe_hidden_authorization_revision TO authorization_revision')
+        renamed = False
         if await rows("SELECT count(*) FROM information_schema.columns WHERE table_schema='cragkit' AND table_name='documents' AND column_name='authorization_revision'") != [(1,)]:
             raise RuntimeCheckError('schema_restore_failed')
         completed.append('schema_rejection_and_restore')
@@ -512,90 +521,82 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
     finally:
         primary_failure = sys.exception()
         cleanup_stage = CURRENT_STAGE
-        async def cleanup():
-            nonlocal renamed
-            errors = []
-            operation = 'runtime_close'
-            if runtime is not None:
-                try:
-                    await asyncio.wait_for(runtime.close(), 3)
-                except Exception as error:
-                    errors.append(('runtime_close', error))
-            if admin is not None:
-                try:
-                    operation = 'schema_restore'
-                    if renamed:
-                        await command('ALTER TABLE cragkit.documents RENAME COLUMN probe_hidden_authorization_revision TO authorization_revision')
-                        renamed = False
-                    if await rows("SELECT count(*) FROM information_schema.columns WHERE table_schema='cragkit' AND table_name='documents' AND column_name='authorization_revision'") != [(1,)] or await rows("SELECT count(*) FROM information_schema.columns WHERE table_schema='cragkit' AND table_name='documents' AND column_name='probe_hidden_authorization_revision'") != [(0,)]:
-                        raise RuntimeCheckError('schema_restore_failed')
-                    if created_role:
-                        operation = 'fixture_transaction'
-                        async with admin.transaction():
-                            operation = 'privilege_revoke'
-                            if lifecycle:
-                                await command(sql.SQL('REVOKE UPDATE(created_at),DELETE ON cragkit.documents FROM {}').format(sql.Identifier(role)))
-                            operation = 'policy_drop'
-                            if ingestion:
-                                await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.index_generations').format(sql.Identifier(role + '_block_ready')))
-                            for table in selected:
-                                operation = 'policy_drop'
-                                await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.{}').format(sql.Identifier(policy), sql.Identifier(table)))
-                                operation = 'privilege_revoke'
-                                permissions = 'SELECT,INSERT,UPDATE' if ingestion and table not in ('migration_history','embedding_profiles') else 'SELECT'
-                                await command(sql.SQL('REVOKE ' + permissions + ' ON cragkit.{} FROM {}').format(sql.Identifier(table), sql.Identifier(role)))
-                            if vectors:
-                                operation = 'policy_drop'
-                                await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit_vector.setup_history').format(sql.Identifier(policy)))
-                                operation = 'privilege_revoke'
-                                await command(sql.SQL('REVOKE SELECT ON cragkit_vector.setup_history FROM {}').format(sql.Identifier(role)))
-                                await command(sql.SQL('REVOKE USAGE ON SCHEMA cragkit_vector FROM {}').format(sql.Identifier(role)))
-                            operation = 'row_delete'
-                            await command('DELETE FROM cragkit.documents WHERE tenant_id=ANY(%s) AND collection_id=%s', (tenants, collection))
-                            await command('DELETE FROM cragkit.collections WHERE tenant_id=ANY(%s) AND collection_id=%s', (tenants, collection))
-                            # CREATEROLE does not grant permission to DROP OWNED BY
-                            # the new role. Revoke only this fixture's exact grants.
-                            operation = 'privilege_revoke'
-                            await command(sql.SQL('REVOKE USAGE ON DOMAIN cragkit.identity_text,cragkit.collection_text,cragkit.sha256_hex,cragkit.safe_count FROM {}').format(sql.Identifier(role)))
-                            await command(sql.SQL('REVOKE USAGE ON SCHEMA cragkit FROM {}').format(sql.Identifier(role)))
-                            operation = 'role_drop'
-                            await command(sql.SQL('DROP ROLE {}').format(sql.Identifier(role)))
-                            operation = 'fixture_transaction'
-                        operation = 'verify_inventory'
-                        if await rows('SELECT 1 FROM pg_roles WHERE rolname=%s', (role,)):
-                            raise RuntimeCheckError('role_cleanup_failed')
-                        if await rows("SELECT count(*) FROM pg_policies WHERE schemaname IN ('cragkit','cragkit_vector')") != [(0,)]:
-                            raise RuntimeCheckError('policy_cleanup_failed')
-                        for table in tables:
-                            if await rows(sql.SQL('SELECT count(*) FROM cragkit.{}').format(sql.Identifier(table))) != [(0,)]:
-                                raise RuntimeCheckError('fixture_cleanup_failed')
-                    operation = 'lock_release'
-                    if locked:
-                        await command('SELECT pg_advisory_unlock(1129464148,1)')
-                except Exception as error:
-                    errors.append((operation, error))
-                finally:
-                    try:
-                        await asyncio.wait_for(admin.close(), 3)
-                    except Exception as error:
-                        errors.append(('admin_close', error))
-            if errors:
-                raise CleanupFailure(errors, primary=primary_failure, stage=cleanup_stage)
+        deadline = asyncio.get_running_loop().time() + 25
         try:
-            async with asyncio.timeout(25):
-                await cleanup()
-        except CleanupFailure:
+            # Quiesce existing clients before recovery opens a fresh connection.
+            # Closing the administrator also releases its session advisory lock.
+            await quiesce_clients(admin=admin, runtime=runtime, child=node_process,
+                                  deadline=deadline, primary=primary_failure, stage=cleanup_stage)
+            if journal is not None:
+                from runtime_recovery_postgres import connect_transport
+                await recover(journal, connect=lambda end: connect_transport(config, end),
+                              deadline=deadline, primary=primary_failure, stage=cleanup_stage)
+        except CleanupFailure as error:
+            if journal is not None:
+                error.recovery_id = journal.manifest.run_id
+                error.recovery_required = True
             raise
-        except BaseException as error:
-            raise CleanupFailure([('cleanup_budget', error)], primary=primary_failure, stage=cleanup_stage) from None
         finally:
             temporary.cleanup()
+
+
+async def quiesce_clients(*, admin, runtime, child, deadline, primary=None, stage='recovery'):
+    """Never open another client while an old client has unsettled closure."""
+    async def stop_child():
+        if child.returncode is None:
+            child.kill()
+        await child.wait()
+
+    errors = []
+    for operation, close in (
+        ('child_stop', stop_child if child is not None else None),
+        ('admin_close', admin.close if admin is not None else None),
+        ('runtime_close', runtime.close if runtime is not None else None),
+    ):
+        if close is None:
+            continue
+        task = asyncio.create_task(close())
+        try:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0 or not (await asyncio.wait({task}, timeout=remaining))[0]:
+                raise TimeoutError()
+            task.result()
+        except BaseException as error:
+            task.cancel()
+            def observe(done):
+                try:
+                    done.result()
+                except BaseException:
+                    pass
+            task.add_done_callback(observe)
+            errors.append((operation, error))
+    if errors:
+        raise CleanupFailure(errors, primary=primary, stage=stage) from None
+
+
+async def recover_run(config_path, run_id, *, neon=False):
+    from cragkit._postgres_pool import PoolResource, parse_pool_config
+    from runtime_recovery_postgres import connect_transport
+    config = parse_pool_config(load_config(config_path))
+    if neon:
+        require_neon_host(config.host)
+    PoolResource(config)._check_owned_configuration()
+    journal = Journal.load(run_id, target_sha256=target_fingerprint(
+        config.host, config.port, config.dbname, config.user))
+    try:
+        return await recover(journal, connect=lambda end: connect_transport(config, end),
+                             deadline=asyncio.get_running_loop().time() + 25)
+    except CleanupFailure as error:
+        error.recovery_id = journal.manifest.run_id
+        error.recovery_required = True
+        raise
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--allow-test-writes', action='store_true')
+    parser.add_argument('--recover', metavar='RUN_ID', help='Recover one validated private fixture journal')
     parser.add_argument('--typescript', action='store_true')
     parser.add_argument('--ingestion', action='store_true')
     parser.add_argument('--lexical', action='store_true')
@@ -604,11 +605,22 @@ def main() -> int:
     parser.add_argument('--vectors', action='store_true')
     parser.add_argument('--dense', action='store_true')
     parser.add_argument('--hybrid', action='store_true')
+    parser.add_argument('--evaluation-deadline-seconds', type=int, choices=(25, 60),
+                        help='Explicit hybrid evaluation profile; default 25 seconds')
     parser.add_argument('--corrective', action='store_true', help='Explicit V4 corrective checks within --hybrid')
     parser.add_argument('--evidence', action='store_true', help='Explicit V3 packed-assessment checks within --hybrid')
     parser.add_argument('--vector-stage-only', action='store_true')
     parser.add_argument('--neon', action='store_true', help='Explicit direct Neon fixture mode with client TLS proof')
     args = parser.parse_args()
+    if args.evaluation_deadline_seconds is not None and not args.hybrid:
+        print('The evaluation profile requires --hybrid.')
+        return 2
+    evaluation_deadline = args.evaluation_deadline_seconds or 25
+    if args.recover and any((args.typescript, args.ingestion, args.lexical, args.results,
+                             args.lifecycle, args.vectors, args.dense, args.hybrid,
+                             args.corrective, args.evidence, args.vector_stage_only)):
+        print('Recovery cannot be combined with fixture modes.')
+        return 2
     if args.corrective and not args.hybrid:
         print('Corrective checks require --hybrid.')
         return 2
@@ -629,8 +641,12 @@ def main() -> int:
         return 2
     try:
         async def bounded():
+            if args.recover:
+                return await recover_run(args.config, args.recover, neon=args.neon)
             timeout = (600 if args.vectors or args.dense or args.hybrid else 600 if args.lifecycle else 420 if args.results else 300 if args.lexical
                        else 180 if args.ingestion and args.typescript else 90)
+            if evaluation_deadline == 60:
+                timeout = 1800
             async with asyncio.timeout(timeout):
                 return await check(
                     args.config,
@@ -638,22 +654,34 @@ def main() -> int:
                     ingestion=args.ingestion or args.lexical or args.results or args.lifecycle,
                     lexical=args.lexical or args.results or args.lifecycle,
                     results=args.results or args.lifecycle, lifecycle=args.lifecycle, neon=args.neon, vectors=args.vectors, vector_stage_only=args.vector_stage_only, dense=args.dense, hybrid=args.hybrid, evidence=args.evidence, corrective=args.corrective,
+                    evaluation_deadline_seconds=evaluation_deadline,
                 )
         result = asyncio.run(bounded())
     except CleanupFailure as error:
-        print(json.dumps({'state': 'failed', **error.to_dict()}, sort_keys=True))
+        detail = {'state': 'failed', **error.to_dict()}
+        recovery_id = getattr(error, 'recovery_id', None)
+        if type(recovery_id) is str and re.fullmatch('[0-9a-f]{16}', recovery_id):
+            detail.update(recovery_id=recovery_id, recovery_required=True)
+        reason = getattr(error, 'refusal_reason', None)
+        if reason in ('invalid_manifest', 'unsafe_path', 'target_mismatch', 'ownership_mismatch',
+                      'unsafe_role', 'unexpected_policy', 'history_mismatch', 'schema_mismatch',
+                      'lock_busy', 'fixture_remaining'):
+            detail['refusal_reason'] = reason
+        print(json.dumps(detail, sort_keys=True))
+        return 1
+    except RecoveryRefused as error:
+        print(json.dumps({'state': 'failed', 'code': 'recovery_refused', 'reason': error.reason}, sort_keys=True))
         return 1
     except RuntimeCheckError as error:
         code = str(error) if re.fullmatch(r'[a-z_]+', str(error)) else 'runtime_check_failed'
         print(f'Runtime PostgreSQL checks failed: {code}; stage={CURRENT_STAGE}.')
         return 1
-    except Exception as error:
-        kind = type(error).__name__
-        kind = kind if re.fullmatch(r'[A-Za-z_]+', kind) else 'Exception'
-        state = getattr(error, 'sqlstate', None)
-        state = state if isinstance(state, str) and re.fullmatch(r'[A-Z0-9]{5}', state) else 'none'
-        print(f'Runtime PostgreSQL checks failed: {kind}; SQLSTATE={state}; stage={CURRENT_STAGE}.')
-        return 1
+    except (Exception, asyncio.CancelledError, KeyboardInterrupt) as error:
+        cancelled = issubclass(type(error), (asyncio.CancelledError, KeyboardInterrupt))
+        record = describe_error(asyncio.CancelledError() if cancelled else error,
+                                operation='primary', stage=CURRENT_STAGE)
+        print(json.dumps({'state': 'failed', 'code': 'runtime_check_failed', 'error': record}, sort_keys=True))
+        return 130 if cancelled else 1
     print(json.dumps(result, sort_keys=True))
     return 0
 
