@@ -1,11 +1,11 @@
 {
   "revision": "QS-r1",
-  "task": "V5-03A",
-  "status": "normative_design_data",
-  "executed": false,
+  "task": "V5-03B/C",
+  "status": "executed_with_fake_authority",
+  "executed": true,
   "rules": {
     "expansion": "Resolve $ref strings before assertions. Convert encoding=utf8 fixture objects to strict UTF-8 bytes without normalization; encoding=hex objects hold exact raw bytes. Copy the base row and nomination before applying dot-path set mutations. Digest expectations were computed from exact synthetic bytes by the final integrator.",
-    "authority": "Only synthetic immutable bytes and authoritative state are represented. A matching vector payload is not authorization. These scenarios are future adapter expectations, not executed observations.",
+    "authority": "Only synthetic immutable bytes and authoritative state are represented. A matching vector payload is not authorization. Both native reader facades execute these scenarios with fake authority; actual PostgreSQL/Qdrant disclosure acceptance remains V5-03D.",
     "binding": "An issued binding is an opaque object held by one live source request. Labels such as issued_binding are scenario references, never serialized capabilities.",
     "denial": "Unavailable reveals no distinction between missing, denied, tombstoned, unpublished or superseded new-search content. Operational failures are typed exceptions, never unavailable success."
   },
@@ -627,5 +627,10 @@
         "stale": false
       }
     }
-  ]
+  ],
+  "execution_scope": {
+    "python": "native reader facade with fake authority and driver",
+    "typescript": "native reader facade with fake authority and driver",
+    "real_reader_login_and_cross_store_disclosure": false
+  }
 }

@@ -245,7 +245,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [ ] V5-03: [Source resolution and authorization](versions/V5-integrations.md#v5-03-source-resolution-and-authorization) — source foundation accepted; runtime adapters and disclosure acceptance remain.
   - [x] V5-03A: QS-r1, 40 normative scenarios and isolated optional PostgreSQL schema; 20 focused tests, 1615 Python/tool regressions and six rolled-back native SQL groups passed. [Evidence](../evaluation/reports/V5/V5-03A.md).
-  - [ ] V5-03B/C: Native source readers, verification and private request bindings.
+  - [x] V5-03B/C: Native source readers, verification and private request bindings; 97 focused/1692 full Python-tool tests, strict types and 57 focused/975 full Node tests passed. [Evidence](../evaluation/reports/V5/V5-03BC.md).
   - [ ] V5-03D: Actual reader LOGIN, PostgreSQL/Qdrant provider/final-release and outage acceptance.
 
 - [ ] V5-C1: Demonstration, relevant regression checks, learning review and resource note through V5-03.
@@ -297,6 +297,22 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-03B/C: Native authoritative source readers
+
+State: COMPLETE for implementation/local reader-contract acceptance. Actual reader LOGIN/cross-store disclosure remains V5-03D. Dependency V5-03A accepted/pushed in 62d422c, synchronized 0/0. Shared outcome: native source-only readers implement frozen QS-r1 private request bindings, active published candidate admission, fresh provider/final release, exact complete-source UTF-8/byte/profile verification and bounded clean borrowed-pool work. No source migration/publication/coordinator compatibility is inferred.
+
+- Sol `v5_candidate_contract`, Python writer and named assembler, owns only new `packages/python/src/cragkit/qdrant_source.py`, `_qdrant_source.py`, `_qdrant_authority.py`, `packages/python/tests/test_qdrant_source.py`, `test_qdrant_authority.py`.
+- Sol `v5_candidate_fixtures`, Node writer, owns only new `packages/typescript/src/qdrant-source.ts`, `qdrant-source-contract.ts`, `qdrant-authority.ts`, `packages/typescript/tests/qdrant-source.test.mjs`, `qdrant-authority.test.mjs`.
+- Root owns shared QS-r1/scenarios/schema and native harnesses, package exports, manifests/locks, evidence/tracker, all check execution and Git. Peers coordinate row format/APIs/error/cancellation fixtures directly; no overlapping edits. Previous source foundation paths are transferred to root. Changes to protected contracts, outcome or another lane's ownership escalate before dependent edits; unresolved material decisions go to Astra through root.
+
+Frozen schema checksum: 3d75cd46eb32a10864f1097a7494b01f9759150911a7cd9a1e6aab60105c1f1a; QS-r1 with 40 normative scenarios. One store/one request handle/one in-flight operation, no queue; 64 fetch slots/bindings, two purpose-specific release attempts per binding, cumulative 16 MiB canonical reads, 32 KiB excerpts and original deadline. Validate native inputs/models and driver rows before disclosure; preserve unknown outages as operational errors. Read-only scoped transactions never stay open over providers; borrow existing bounded pools without closing them. Applied old and new migrations, E/EL/QD/QC and existing core/PostgreSQL/corrective source remain protected; no fake scalar score or duplicate ledger reservation is introduced to force old backend compatibility.
+
+Workers write owned implementation/tests only; no tests/processes/services, installs, network/database/provider calls or Git. Root starts with focused fake-connection tests and strict native types, serial runtimes and small fixtures. Source-reader acceptance against actual LOGIN/PostgreSQL/Qdrant follows V5-03D, after unit/type/fixture integration. No paid model, provider disclosure or persistent background service. Root is final integrator; learning: a genuine historical revision still needs current grants and a binding from the active selection. Next action: V5-03D actual restricted reader LOGIN and PostgreSQL/Qdrant disclosure acceptance.
+
+V5-03B/C final handoff: both Sol runtime lanes implemented and froze five owned files each, coordinated parity directly, and the Python peer assembled. Independent Sol security review found close-during-initialization and fresh-lease role gaps; both fixed with regressions. Assembly resolved denied-row buffer type/length parity. Root integrated the optional Node export and immutable whole-source verification, ran 97 focused Python/tool checks, strict types across 36 source files, 1692 full Python/tool regressions (four existing deliberate Pydantic warnings), strict TypeScript build, 57 focused Node checks and 975 full Node package tests. All 40 shared source scenarios execute with fake authority; no real LOGIN/provider-disclosure acceptance is inferred.
+
+Root froze the exact catalog query/reference manifest with hash 8104abeef00594e7bfa4b533a139767599b56b87d09062c0d6f52f6e2f5d0b48. Two successful fresh PostgreSQL 17.11 rollback-only probes reproduced it; eight final native groups include intentional policy/helper/constraint/PUBLIC ACL drift rejection and stable named reader grants. The initial empty ACL query failure (22023) was fixed and rerun; namespace/data/roles/memberships rolled back and existing histories/role graphs matched. All 16 sealed inputs and three user audit drafts preserved. No live provider, model install, persistent service, publication or hosted CI. Final snapshot: 39 GiB disk and 63 percent system memory free. Learning practice unassessed. Next: V5-03D; preinstalled local PostgreSQL 17.11 is available for an isolated TLS/SCRAM reference fixture alongside managed Qdrant, avoiding shared hosted fixture writes.
 
 ### V5-03A: Authoritative source foundation
 

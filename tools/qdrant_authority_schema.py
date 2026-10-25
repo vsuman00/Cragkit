@@ -108,3 +108,12 @@ def force_rls_sql():
     tables = ('documents', 'document_revisions', 'generations', 'members')
     return '\n'.join(['SET CONSTRAINTS ALL IMMEDIATE;'] +
                      [f'ALTER TABLE cragkit_qdrant.{table} FORCE ROW LEVEL SECURITY;' for table in tables])
+
+
+def catalog_queries():
+    query = (ROOT / 'contracts/QDRANT_AUTHORITY_CATALOG_V5.sql').read_text()
+    prefix, last = query.rsplit('\nSELECT ', 1)
+    expected = "encode(sha256(convert_to(payload::text,'UTF8')),'hex') AS schema_fingerprint FROM catalog;\n"
+    if last != expected:
+        raise ValueError('authority_catalog_query_shape')
+    return query, prefix + '\nSELECT payload::text FROM catalog;'

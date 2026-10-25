@@ -153,3 +153,22 @@ def test_hung_rollback_is_bounded_and_connection_owner_can_close():
         async with checker.rollback_only(Connection(), failures, cleanup_timeout=0.01): pass
     with pytest.raises(checker._RollbackIncomplete): asyncio.run(run())
     assert len(failures) == 1 and isinstance(failures[0][1], TimeoutError)
+
+
+def test_catalog_reference_binds_query_migration_and_normalized_payload():
+    manifest = json.loads((schema.ROOT / 'contracts/fixtures/qdrant_authority_catalog.json').read_text())
+    query, payload_query = schema.catalog_queries()
+    assert manifest['revision'] == 'QS-r1-catalog'
+    assert manifest['server_major'] == 17
+    assert manifest['migration_sha256'] == schema.migration().checksum
+    assert manifest['query_sha256'] == sha256(query.encode()).hexdigest()
+    # The captured jsonb text already has PostgreSQL's canonical key order.
+    normalized = json.dumps(manifest['catalog'], ensure_ascii=False, separators=(', ', ': '))
+    assert manifest['catalog_fingerprint'] == sha256(normalized.encode()).hexdigest()
+    assert payload_query.endswith('SELECT payload::text FROM catalog;')
+    assert 'aclexplode(a.attacl)' in query
+    assert "COALESCE(a.attacl,'{}'" not in query  # Empty ACL arrays raise SQLSTATE 22023.
+    assert set(manifest['catalog']) == {
+        'namespace_public', 'relations', 'columns', 'types', 'constraints',
+        'indexes', 'triggers', 'policies', 'functions',
+    }

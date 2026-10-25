@@ -70,6 +70,10 @@
     "./events": {
       "types": "./dist/events.d.ts",
       "import": "./dist/events.js"
+    },
+    "./qdrant-source": {
+      "types": "./dist/qdrant-source.d.ts",
+      "import": "./dist/qdrant-source.js"
     }
   },
   "files": [

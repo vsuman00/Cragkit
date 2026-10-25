@@ -861,3 +861,10 @@ Focused administrative regression tests require the frozen Python and Node devel
 ```sh
 uv run --project packages/python --frozen pytest tools/tests/test_runtime_diagnostics.py tools/tests/test_runtime_recovery.py tools/tests/test_runtime_recovery_postgres.py tools/tests/test_check_python_postgres.py tools/tests/test_native_evaluation_profile.py -q
 ```
+
+
+## V5-03B/C authoritative source reader checks
+
+The optional native readers borrow existing PostgreSQL pools. Import Python `cragkit.qdrant_source` or Node `cragkit/qdrant-source`; core imports remain unchanged. [V5-03B/C evidence](../evaluation/reports/V5/V5-03BC.md) records the verified focused/full-suite commands, type checks, exact catalog query/manifest and negative-case coverage. Use `--no-sync --extra qdrant --extra postgres` with the existing frozen Python environment to preserve both optional drivers. Run one language suite at a time.
+
+Both facades execute all 40 source scenarios with fake authority/drivers. The rollback-only native catalog probe also checks deliberate policy/function/constraint/PUBLIC-privilege drift. These checks do not replace V5-03D actual restricted LOGIN, PostgreSQL/Qdrant and provider/final-release acceptance. No persistent source schema is installed by the probe or the reader.

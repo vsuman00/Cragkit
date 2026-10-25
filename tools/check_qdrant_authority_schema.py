@@ -11,7 +11,7 @@ from copy import deepcopy
 from contextlib import asynccontextmanager
 
 from check_python_postgres import load_config, require_client_tls, require_neon_host
-from qdrant_authority_schema import ROOT, assert_sql, fixture_row, literal, migration, seed_sql, seed_statements, force_rls_sql
+from qdrant_authority_schema import ROOT, assert_sql, fixture_row, literal, migration, seed_sql, seed_statements, force_rls_sql, catalog_queries
 from qdrant_native import point_identity
 from runtime_diagnostics import CleanupFailure, describe_error
 
@@ -99,6 +99,26 @@ async def check(config_path, artifacts):
             await command(item.sql)
             await command('INSERT INTO cragkit_qdrant.schema_migrations(version,checksum_sha256) VALUES(%s,%s)', (item.version, item.checksum))
             checks.append('isolated_source_schema_and_exact_checksum_ledger')
+            fingerprint_sql, payload_sql = catalog_queries()
+            fingerprint_rows = await command(fingerprint_sql)
+            catalog_fingerprint = fingerprint_rows[0][0]
+            catalog_payload = json.loads((await command(payload_sql))[0][0])
+            STAGE = 'catalog_drift_detection'
+            # Each intentional drift is confined to a rolled-back savepoint.
+            for statement in (
+                'ALTER POLICY scoped_document_read ON cragkit_qdrant.documents USING (true)',
+                'ALTER FUNCTION cragkit_qdrant.valid_identity_array(text[]) VOLATILE',
+                'ALTER TABLE cragkit_qdrant.documents ADD CONSTRAINT probe_extra_check CHECK (true)',
+                'GRANT SELECT ON cragkit_qdrant.documents TO PUBLIC',
+            ):
+                async with connection.transaction(force_rollback=True):
+                    await command(statement)
+                    if await command(fingerprint_sql) == [(catalog_fingerprint,)]:
+                        raise RuntimeError('authority_catalog_drift_not_detected')
+                if await command(fingerprint_sql) != [(catalog_fingerprint,)]:
+                    raise RuntimeError('authority_catalog_drift_rollback_failed')
+            checks.append('catalog_rejects_policy_function_constraint_and_public_acl_drift')
+
             # The fixture administrator temporarily bypasses only its own new RLS
             # tables for setup. Runtime policy assertions below run with FORCE.
             for table in TABLES:
@@ -173,6 +193,10 @@ async def check(config_path, artifacts):
             await command(assert_sql('(SELECT count(*)=1 FROM cragkit_qdrant.members)', 'authority_grant_only_allowed'))
             await set_scope({'grant_ids': '[]'})
             await command(assert_sql('(SELECT count(*)=1 FROM cragkit_qdrant.members)', 'authority_principal_only_allowed'))
+            if await command(fingerprint_sql) != [(catalog_fingerprint,)]:
+                raise RuntimeError('authority_catalog_not_stable_across_role_grants')
+            checks.append('catalog_fingerprint_stable_across_nonowner_reader_grants')
+
             await command(assert_sql("NOT has_table_privilege(current_user,'cragkit_qdrant.documents','INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')", 'authority_reader_has_no_mutation_privilege'))
             await command('''DO $qdauth_probe$ BEGIN
               BEGIN UPDATE cragkit_qdrant.documents SET tag='attempted-reader-write';
@@ -234,7 +258,7 @@ async def check(config_path, artifacts):
         if before != after:
             raise RuntimeError('authority_existing_history_or_role_state_changed')
         checks.append('rollback_removed_schema_role_and_preserved_histories_roles_memberships')
-        report = {'task': 'V5-03A', 'state': 'source_schema_probe_passed', 'migration_sha256': item.checksum,
+        report = {'task': 'V5-03A', 'state': 'source_schema_probe_passed', 'migration_sha256': item.checksum, 'catalog_fingerprint': catalog_fingerprint,
                   'checks': checks, 'native_source_adapters_tested': False, 'publication_tested': False,
                   'runtime_login_tested': False, 'transaction_rolled_back': True}
     except BaseException as error:
@@ -250,6 +274,11 @@ async def check(config_path, artifacts):
             raise CleanupFailure(failures, primary=primary) from None
     artifacts.mkdir(parents=True, exist_ok=True)
     (artifacts / 'schema-results.json').write_text(json.dumps(report, indent=2) + '\n')
+    (artifacts / 'catalog-reference.json').write_text(json.dumps({
+        'revision': 'QS-r1-catalog', 'server_major': 17, 'server_reference': '17.11',
+        'migration_version': item.version, 'migration_sha256': item.checksum,
+        'query_sha256': sha256(fingerprint_sql.encode()).hexdigest(),
+        'catalog_fingerprint': catalog_fingerprint, 'catalog': catalog_payload}, indent=2) + '\n')
     return report
 
 
