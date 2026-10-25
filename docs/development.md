@@ -642,3 +642,22 @@ Two separately configured Python attempts returned 401; Node was not dispatched.
 
 
 The later configured [Cohere comparison](../evaluation/reports/V3/V3-02D.md) passed in Python and Node, completing V3-02. Earlier failed attempts above remain historical evidence. No more model calls are needed for routine tests.
+
+
+## V3 exact context counting
+
+For example, counting only a quotation misses the citation fields and JSON escaping. The optional [TK-r1 renderer](../contracts/TOKEN_CONTEXT_V3.md) counts the full Evidence array and a declared wrapper reserve. It is separate from the legacy PostgreSQL retrieval default until V3-06 integration.
+
+Provision the public pinned tokenizer table explicitly, then use the focused checks:
+
+```sh
+python3 tools/fetch_tokenizer.py
+uv run --project packages/python --frozen pytest packages/python/tests/test_context.py tools/tests/test_fetch_tokenizer.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/context.test.mjs
+uv run --project packages/python --frozen python tools/check_context.py
+```
+
+Python applications install the optional `tokenizers` extra and call `Cl100kCounter.from_file(path)`. Node applications supply optional `tiktoken@1.0.22`, call `await Cl100kCounter.create(path)` and close the counter after use. Both factories require the same verified local asset; imports never acquire it. The development lock includes these dependencies for regression checks, while default built installations omit them. No embedding model is installed.
+
+Strict mode counts `cragkit.context.v2` with cl100k; estimated mode reports the ceiling of UTF-8 bytes divided by four. The wrapper reserve is an allowance, not a measurement of an arbitrary downstream tool response. A too-small mandatory `[]` envelope raises `ContextBudgetTooSmall`.

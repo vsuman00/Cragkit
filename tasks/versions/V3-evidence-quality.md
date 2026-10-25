@@ -1,6 +1,6 @@
 # V3: Evidence selection and honest coverage
 
-Status: in progress. V3-01 defines the reranker contract and shortlist. V3-02 native injectable adapters pass synthetic checks; its required real-model comparison is pending configuration. Later evidence-selection tasks have not started. Progress is tracked only in [todo.md](../todo.md).
+Status: in progress. V3-01 defines the reranker contract and shortlist. V3-02 native injectable adapters and its bounded real-model comparison are recorded in the tracker. Tokenizer and packing work is in progress; later gates remain open. Progress is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 

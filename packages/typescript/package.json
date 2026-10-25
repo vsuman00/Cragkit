@@ -30,6 +30,10 @@
     "./reranking": {
       "types": "./dist/reranking.d.ts",
       "import": "./dist/reranking.js"
+    },
+    "./context": {
+      "types": "./dist/context.d.ts",
+      "import": "./dist/context.js"
     }
   },
   "files": [
@@ -45,14 +49,19 @@
   },
   "devDependencies": {
     "@types/node": "26.6.5",
-    "typescript": "7.0.2",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "tiktoken": "1.0.22",
+    "typescript": "7.0.2"
   },
   "peerDependencies": {
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "tiktoken": "1.0.22"
   },
   "peerDependenciesMeta": {
     "pg": {
+      "optional": true
+    },
+    "tiktoken": {
       "optional": true
     }
   }

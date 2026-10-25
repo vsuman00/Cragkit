@@ -1,0 +1,767 @@
+{
+  "revision": "TK-r1",
+  "cases": [
+    {
+      "id": "unicode_strict",
+      "evidence": [
+        {
+          "evidence_id": "context-e1",
+          "collection": "manuals",
+          "document_id": "context-doc",
+          "revision_id": "r1",
+          "chunk_id": "c1",
+          "source_locator": "fixture/context",
+          "start_byte": 0,
+          "end_byte": 40,
+          "text": "Caf\u00e9\ud83d\ude42\\n\"quoted\"\n<|endoftext|> \u4e2d\u6587",
+          "source_sha256": "6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6",
+          "text_sha256": "6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6"
+        }
+      ],
+      "max_tokens": 10000,
+      "reserve": 9,
+      "counting_mode": "strict",
+      "expected_context": "[{\"evidence_id\":\"context-e1\",\"collection\":\"manuals\",\"document_id\":\"context-doc\",\"revision_id\":\"r1\",\"chunk_id\":\"c1\",\"source_locator\":\"fixture/context\",\"start_byte\":0,\"end_byte\":40,\"text\":\"Caf\u00e9\ud83d\ude42\\\\n\\\"quoted\\\"\\n<|endoftext|> \u4e2d\u6587\",\"source_sha256\":\"6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6\",\"text_sha256\":\"6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6\"}]",
+      "expected_context_tokens": 153
+    },
+    {
+      "id": "unicode_estimated",
+      "evidence": [
+        {
+          "evidence_id": "context-e1",
+          "collection": "manuals",
+          "document_id": "context-doc",
+          "revision_id": "r1",
+          "chunk_id": "c1",
+          "source_locator": "fixture/context",
+          "start_byte": 0,
+          "end_byte": 40,
+          "text": "Caf\u00e9\ud83d\ude42\\n\"quoted\"\n<|endoftext|> \u4e2d\u6587",
+          "source_sha256": "6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6",
+          "text_sha256": "6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6"
+        }
+      ],
+      "max_tokens": 10000,
+      "reserve": 9,
+      "counting_mode": "estimated",
+      "expected_context": "[{\"evidence_id\":\"context-e1\",\"collection\":\"manuals\",\"document_id\":\"context-doc\",\"revision_id\":\"r1\",\"chunk_id\":\"c1\",\"source_locator\":\"fixture/context\",\"start_byte\":0,\"end_byte\":40,\"text\":\"Caf\u00e9\ud83d\ude42\\\\n\\\"quoted\\\"\\n<|endoftext|> \u4e2d\u6587\",\"source_sha256\":\"6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6\",\"text_sha256\":\"6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6\"}]",
+      "expected_context_tokens": 100
+    },
+    {
+      "id": "strict_empty_fit",
+      "evidence": [],
+      "max_tokens": 1,
+      "reserve": 0,
+      "counting_mode": "strict",
+      "expected_context": "[]",
+      "expected_context_tokens": 1
+    },
+    {
+      "id": "estimated_empty_fit",
+      "evidence": [],
+      "max_tokens": 1,
+      "reserve": 0,
+      "counting_mode": "estimated",
+      "expected_context": "[]",
+      "expected_context_tokens": 1
+    },
+    {
+      "id": "mandatory_envelope",
+      "evidence": [],
+      "max_tokens": 1,
+      "reserve": 1,
+      "counting_mode": "strict",
+      "expected_error": "context_budget_too_small"
+    },
+    {
+      "id": "content_overflow",
+      "evidence": [
+        {
+          "evidence_id": "context-e1",
+          "collection": "manuals",
+          "document_id": "context-doc",
+          "revision_id": "r1",
+          "chunk_id": "c1",
+          "source_locator": "fixture/context",
+          "start_byte": 0,
+          "end_byte": 40,
+          "text": "Caf\u00e9\ud83d\ude42\\n\"quoted\"\n<|endoftext|> \u4e2d\u6587",
+          "source_sha256": "6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6",
+          "text_sha256": "6e07872a9dcc23e3e598ef12c2a60285458eda7f318eeeea2741dd768f5596d6"
+        }
+      ],
+      "max_tokens": 2,
+      "reserve": 0,
+      "counting_mode": "strict",
+      "expected_error": "context_budget_too_small"
+    },
+    {
+      "id": "unknown_mode",
+      "evidence": [],
+      "max_tokens": 1000,
+      "reserve": 0,
+      "counting_mode": "unknown",
+      "expected_error": "invalid_request"
+    },
+    {
+      "id": "unicode_whitespace_strict",
+      "evidence": [
+        {
+          "evidence_id": "context-space",
+          "collection": "manuals",
+          "document_id": "context-doc",
+          "revision_id": "r1",
+          "chunk_id": "c1",
+          "source_locator": "fixture/context",
+          "start_byte": 0,
+          "end_byte": 21,
+          "text": " \u0085x \ufeffx\n\u00a0\u2003\u2028\u2029",
+          "source_sha256": "68555e7c530a37c63869d1d9f9822ea0cd99aa0a164d27ae5a9747eb1f7dfa16",
+          "text_sha256": "68555e7c530a37c63869d1d9f9822ea0cd99aa0a164d27ae5a9747eb1f7dfa16"
+        }
+      ],
+      "max_tokens": 10000,
+      "reserve": 9,
+      "counting_mode": "strict",
+      "expected_context": "[{\"evidence_id\":\"context-space\",\"collection\":\"manuals\",\"document_id\":\"context-doc\",\"revision_id\":\"r1\",\"chunk_id\":\"c1\",\"source_locator\":\"fixture/context\",\"start_byte\":0,\"end_byte\":21,\"text\":\" \u0085x \ufeffx\\n\u00a0\u2003\u2028\u2029\",\"source_sha256\":\"68555e7c530a37c63869d1d9f9822ea0cd99aa0a164d27ae5a9747eb1f7dfa16\",\"text_sha256\":\"68555e7c530a37c63869d1d9f9822ea0cd99aa0a164d27ae5a9747eb1f7dfa16\"}]",
+      "expected_context_tokens": 154
+    }
+  ],
+  "token_cases": [
+    {
+      "id": "whitespace_0009_prefix",
+      "text": " \tx",
+      "expected_tokens": 2
+    },
+    {
+      "id": "whitespace_0009_suffix",
+      "text": "x\t ",
+      "expected_tokens": 2
+    },
+    {
+      "id": "whitespace_0009_line",
+      "text": "a\t\nb",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000a_prefix",
+      "text": " \nx",
+      "expected_tokens": 2
+    },
+    {
+      "id": "whitespace_000a_suffix",
+      "text": "x\n ",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000a_line",
+      "text": "a\n\nb",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000b_prefix",
+      "text": " \u000bx",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000b_suffix",
+      "text": "x\u000b ",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000b_line",
+      "text": "a\u000b\nb",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_000c_prefix",
+      "text": " \fx",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000c_suffix",
+      "text": "x\f ",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000c_line",
+      "text": "a\f\nb",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000d_prefix",
+      "text": " \rx",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000d_suffix",
+      "text": "x\r ",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_000d_line",
+      "text": "a\r\nb",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_0020_prefix",
+      "text": "  x",
+      "expected_tokens": 2
+    },
+    {
+      "id": "whitespace_0020_suffix",
+      "text": "x  ",
+      "expected_tokens": 2
+    },
+    {
+      "id": "whitespace_0020_line",
+      "text": "a \nb",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_0085_prefix",
+      "text": " \u0085x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_0085_suffix",
+      "text": "x\u0085 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_0085_line",
+      "text": "a\u0085\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_00a0_prefix",
+      "text": " \u00a0x",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_00a0_suffix",
+      "text": "x\u00a0 ",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_00a0_line",
+      "text": "a\u00a0\nb",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_1680_prefix",
+      "text": " \u1680x",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_1680_suffix",
+      "text": "x\u1680 ",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_1680_line",
+      "text": "a\u1680\nb",
+      "expected_tokens": 6
+    },
+    {
+      "id": "whitespace_2000_prefix",
+      "text": " \u2000x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2000_suffix",
+      "text": "x\u2000 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2000_line",
+      "text": "a\u2000\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2001_prefix",
+      "text": " \u2001x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2001_suffix",
+      "text": "x\u2001 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2001_line",
+      "text": "a\u2001\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2002_prefix",
+      "text": " \u2002x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2002_suffix",
+      "text": "x\u2002 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2002_line",
+      "text": "a\u2002\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2003_prefix",
+      "text": " \u2003x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2003_suffix",
+      "text": "x\u2003 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2003_line",
+      "text": "a\u2003\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2004_prefix",
+      "text": " \u2004x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2004_suffix",
+      "text": "x\u2004 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2004_line",
+      "text": "a\u2004\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2005_prefix",
+      "text": " \u2005x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2005_suffix",
+      "text": "x\u2005 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2005_line",
+      "text": "a\u2005\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2006_prefix",
+      "text": " \u2006x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2006_suffix",
+      "text": "x\u2006 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2006_line",
+      "text": "a\u2006\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2007_prefix",
+      "text": " \u2007x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2007_suffix",
+      "text": "x\u2007 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2007_line",
+      "text": "a\u2007\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2008_prefix",
+      "text": " \u2008x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2008_suffix",
+      "text": "x\u2008 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2008_line",
+      "text": "a\u2008\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2009_prefix",
+      "text": " \u2009x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2009_suffix",
+      "text": "x\u2009 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2009_line",
+      "text": "a\u2009\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_200a_prefix",
+      "text": " \u200ax",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_200a_suffix",
+      "text": "x\u200a ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_200a_line",
+      "text": "a\u200a\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2028_prefix",
+      "text": " \u2028x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2028_suffix",
+      "text": "x\u2028 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2028_line",
+      "text": "a\u2028\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_2029_prefix",
+      "text": " \u2029x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2029_suffix",
+      "text": "x\u2029 ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_2029_line",
+      "text": "a\u2029\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_202f_prefix",
+      "text": " \u202fx",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_202f_suffix",
+      "text": "x\u202f ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_202f_line",
+      "text": "a\u202f\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_205f_prefix",
+      "text": " \u205fx",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_205f_suffix",
+      "text": "x\u205f ",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_205f_line",
+      "text": "a\u205f\nb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_3000_prefix",
+      "text": " \u3000x",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_3000_suffix",
+      "text": "x\u3000 ",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_3000_line",
+      "text": "a\u3000\nb",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_feff_prefix",
+      "text": " \ufeffx",
+      "expected_tokens": 2
+    },
+    {
+      "id": "whitespace_feff_suffix",
+      "text": "x\ufeff ",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_feff_line",
+      "text": "a\ufeff\nb",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_180e_prefix",
+      "text": " \u180ex",
+      "expected_tokens": 4
+    },
+    {
+      "id": "whitespace_180e_suffix",
+      "text": "x\u180e ",
+      "expected_tokens": 5
+    },
+    {
+      "id": "whitespace_180e_line",
+      "text": "a\u180e\nb",
+      "expected_tokens": 6
+    },
+    {
+      "id": "whitespace_200b_prefix",
+      "text": " \u200bx",
+      "expected_tokens": 2
+    },
+    {
+      "id": "whitespace_200b_suffix",
+      "text": "x\u200b ",
+      "expected_tokens": 3
+    },
+    {
+      "id": "whitespace_200b_line",
+      "text": "a\u200b\nb",
+      "expected_tokens": 4
+    },
+    {
+      "id": "unicode16_01c89_joined",
+      "text": "a\u1c89b",
+      "expected_tokens": 5
+    },
+    {
+      "id": "unicode16_01c89_spaced",
+      "text": " \u1c89x",
+      "expected_tokens": 4
+    },
+    {
+      "id": "unicode16_01c89_number",
+      "text": "1\u1c8923",
+      "expected_tokens": 5
+    },
+    {
+      "id": "unicode16_0a7cb_joined",
+      "text": "a\ua7cbb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "unicode16_0a7cb_spaced",
+      "text": " \ua7cbx",
+      "expected_tokens": 4
+    },
+    {
+      "id": "unicode16_0a7cb_number",
+      "text": "1\ua7cb23",
+      "expected_tokens": 5
+    },
+    {
+      "id": "unicode16_0a7cc_joined",
+      "text": "a\ua7ccb",
+      "expected_tokens": 5
+    },
+    {
+      "id": "unicode16_0a7cc_spaced",
+      "text": " \ua7ccx",
+      "expected_tokens": 4
+    },
+    {
+      "id": "unicode16_0a7cc_number",
+      "text": "1\ua7cc23",
+      "expected_tokens": 5
+    },
+    {
+      "id": "unicode16_105c0_joined",
+      "text": "a\ud801\uddc0b",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_105c0_spaced",
+      "text": " \ud801\uddc0x",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_105c0_number",
+      "text": "1\ud801\uddc023",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_10d40_joined",
+      "text": "a\ud803\udd40b",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_10d40_spaced",
+      "text": " \ud803\udd40x",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_10d40_number",
+      "text": "1\ud803\udd4023",
+      "expected_tokens": 7
+    },
+    {
+      "id": "unicode16_10d50_joined",
+      "text": "a\ud803\udd50b",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_10d50_spaced",
+      "text": " \ud803\udd50x",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_10d50_number",
+      "text": "1\ud803\udd5023",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_11380_joined",
+      "text": "a\ud804\udf80b",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_11380_spaced",
+      "text": " \ud804\udf80x",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_11380_number",
+      "text": "1\ud804\udf8023",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_16100_joined",
+      "text": "a\ud818\udd00b",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_16100_spaced",
+      "text": " \ud818\udd00x",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_16100_number",
+      "text": "1\ud818\udd0023",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_16d40_joined",
+      "text": "a\ud81b\udd40b",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_16d40_spaced",
+      "text": " \ud81b\udd40x",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_16d40_number",
+      "text": "1\ud81b\udd4023",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_1e5d0_joined",
+      "text": "a\ud839\uddd0b",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_1e5d0_spaced",
+      "text": " \ud839\uddd0x",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_1e5d0_number",
+      "text": "1\ud839\uddd023",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_1e5f1_joined",
+      "text": "a\ud839\uddf1b",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_1e5f1_spaced",
+      "text": " \ud839\uddf1x",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_1e5f1_number",
+      "text": "1\ud839\uddf123",
+      "expected_tokens": 7
+    },
+    {
+      "id": "unicode16_1cc00_joined",
+      "text": "a\ud833\udc00b",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_1cc00_spaced",
+      "text": " \ud833\udc00x",
+      "expected_tokens": 6
+    },
+    {
+      "id": "unicode16_1cc00_number",
+      "text": "1\ud833\udc0023",
+      "expected_tokens": 6
+    },
+    {
+      "id": "empty",
+      "text": "",
+      "expected_tokens": 0
+    },
+    {
+      "id": "ascii",
+      "text": "hello world",
+      "expected_tokens": 2
+    },
+    {
+      "id": "contractions",
+      "text": "I'm we'd YOU'LL can't",
+      "expected_tokens": 9
+    },
+    {
+      "id": "special_literal",
+      "text": "<|endoftext|>",
+      "expected_tokens": 7
+    },
+    {
+      "id": "emoji",
+      "text": "\ud83d\ude42\ud83d\udc69\u200d\ud83d\udcbb",
+      "expected_tokens": 9
+    },
+    {
+      "id": "combining",
+      "text": "e\u0301 caf\u00e9 \u4e2d\u6587",
+      "expected_tokens": 5
+    },
+    {
+      "id": "digits",
+      "text": "1234567890",
+      "expected_tokens": 4
+    }
+  ]
+}

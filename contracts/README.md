@@ -68,3 +68,8 @@ The unchanged 0.1 wire schemas also carry explicitly degraded execution from the
 ## V3 reranker design boundary
 
 [RK-r1](RERANKER_V3.md) defines the next optional reranker boundary and its [recorded examples](fixtures/reranking.json). The [shortlist decision](../docs/decisions/0002-reranker-policy.md) separates synthetic mechanics from real-model evaluation. V3-01 documents this design; executable adapters and their failure tests belong to V3-02. No public wire-schema change follows from the design record.
+
+
+## V3 context representation
+
+[TK-r1](TOKEN_CONTEXT_V3.md) defines the optional exact Evidence renderer and pinned local cl100k tokenizer pair. Strict context counting includes citations and the declared wrapper reserve; estimated mode remains labelled. This standalone boundary does not change the legacy PostgreSQL retrieval default.

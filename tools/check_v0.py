@@ -30,6 +30,7 @@ def pipeline(root: Path, artifacts_dir: Path) -> tuple[Step, ...]:
     return (
         Step("python-frozen-install", ("uv", "sync", "--project", "packages/python", "--frozen"), root, 300),
         Step("typescript-frozen-install", ("npm", "ci", "--ignore-scripts"), typescript, 300),
+        Step("pinned-tokenizer-asset", (sys.executable, "tools/fetch_tokenizer.py"), root, 60),
         Step("python-types", uv + ("mypy", "--config-file", "packages/python/pyproject.toml", "packages/python/src"), root, 120),
         Step("typescript-types", ("npm", "run", "typecheck"), typescript, 120),
         Step("python-tests", uv + ("pytest", "packages/python/tests", "tools/tests", "-q"), root, 120),
@@ -43,6 +44,7 @@ def pipeline(root: Path, artifacts_dir: Path) -> tuple[Step, ...]:
         Step("identifier-fusion-parity", uv + ("python", "tools/check_identifier_fusion.py"), root, 60),
         Step("hybrid-parity", uv + ("python", "tools/check_hybrid_contract.py"), root, 60),
         Step("reranking-parity", uv + ("python", "tools/check_reranking.py"), root, 60),
+        Step("context-parity", uv + ("python", "tools/check_context.py"), root, 60),
         Step("development-corpus", (sys.executable, "tools/check_corpus.py", "--require-human-review"), root, 60),
         Step("sealed-input-integrity", (sys.executable, "tools/check_seal.py"), root, 60),
         Step("clean-package-artifacts", (sys.executable, "tools/check_artifacts.py", "--output-dir", str(artifacts_dir)), root, 600),

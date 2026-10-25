@@ -10,9 +10,18 @@ dependencies = ["pydantic==2.14.1"]
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]==3.3.6", "psycopg-pool==3.3.3"]
+tokenizers = [
+    "tiktoken==0.14.0",
+]
 
 [dependency-groups]
-dev = ["pytest==9.1.1", "mypy==2.4.0", "build==1.6.1", "jsonschema==4.26.0"]
+dev = [
+    "pytest==9.1.1",
+    "mypy==2.4.0",
+    "build==1.6.1",
+    "jsonschema==4.26.0",
+    "tiktoken==0.14.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
