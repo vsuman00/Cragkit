@@ -875,3 +875,18 @@ Both facades execute all 40 source scenarios with fake authority/drivers. The ro
 [V5-03D/C1](../evaluation/reports/V5/V5-03D.md) records the exact opt-in command for preinstalled PostgreSQL 17.11 and the checksummed Qdrant 1.20.0 binary. It creates isolated local TLS/SCRAM PostgreSQL and loopback Qdrant fixtures, runs 14 source cases per runtime serially, checks wrong-hostname/untrusted-certificate rejection in Node, then shuts down and removes its private data. It uses no hosted configuration or live models. Do not run this tool as a watcher or point it at an unrelated server.
 
 Focused lifecycle/protocol checks are `uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_source_native.py tools/tests/test_check_qdrant_source.py -q`. After the strict Node build, run `node --test --test-concurrency=1 packages/typescript/tests/postgres-pool.test.mjs packages/typescript/tests/qdrant-source.test.mjs packages/typescript/tests/qdrant-authority.test.mjs`. D-F1 keeps certificate verification enabled and omits IP SNI, as required by Node 26.5. V5-04 publication and repair acceptance remain separate.
+
+## V5-04B1 pure vector codec
+
+The internal native codecs implement [QW-r1 vector identity](../contracts/QDRANT_PUBLICATION_V5.md#b1-float32-codec-and-seal). They require no running service or provider. [V5-04B1 evidence](../evaluation/reports/V5/V5-04B1.md) records exact input seals, the fixed dense readback equivalence, exact sparse checks and remaining native storage gates. Package exports and existing candidate/source contracts are unchanged.
+
+Run the runtimes serially from the repository root:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_vectors.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres mypy --config-file packages/python/pyproject.toml packages/python/src
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-vectors.test.mjs
+```
+
+The complete regression commands remain the existing Python/tool pytest suite and `npm --prefix packages/typescript test`. These checks prove pure codec behavior; they do not complete Qdrant publication or crash recovery. Durable replay must preserve admitted original numeric input as well as the canonical seal, because rounding can move a valid norm beyond the original E-r1 admission boundary.

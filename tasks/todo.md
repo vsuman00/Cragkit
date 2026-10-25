@@ -252,7 +252,8 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [ ] V5-04: [Publication and repair](versions/V5-integrations.md#v5-04-publication-and-repair) — implementation and native fault acceptance pending.
   - [x] V5-04A: QW-r1 publication/recovery boundary, 43 fault scenarios, 14 numeric cases and computed cross-runtime goldens; [design acceptance](../evaluation/reports/V5/V5-04A.md).
-  - [ ] V5-04B1: Pure native vector encoders and readback validators; implementation running.
+  - [x] V5-04B1: Pure native vector encoders and readback validators; 71 focused Python/25 Node cases, 1796 Python/tool and 1005 Node regressions, strict types and 21 cross-runtime comparisons passed. [Evidence](../evaluation/reports/V5/V5-04B1.md).
+  - [ ] V5-04B2: Immutable generation/intent manifests and portable replay serialization; next smallest task.
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
 
@@ -314,13 +315,13 @@ Final handoff: both substantive Sol peers coordinated directly; the contract pee
 
 ### V5-04B1: Native vector identity and readback validation
 
-State: RUNNING. Concrete shared outcome: implement QW-r1's pure exact Float32LE input encoders, full-profile seals and bounded dense/exact sparse readback checks in native Python and TypeScript. No public ingestion export or publication capability is introduced.
+State: COMPLETE for pure native codec acceptance. V5-04A was committed/pushed in 0cacb48 and synchronized 0/0 before this implementation. Concrete shared outcome: implement QW-r1's pure exact Float32LE input encoders, full-profile seals and bounded dense/exact sparse readback checks in native Python and TypeScript. No public ingestion export or publication capability is introduced.
 
 - Sol v5_candidate_contract owns only new packages/python/src/cragkit/_qdrant_vectors.py and packages/python/tests/test_qdrant_vectors.py; Python implementation/tests and named assembler.
 - Sol v5_candidate_fixtures owns only new packages/typescript/src/qdrant-vectors.ts and packages/typescript/tests/qdrant-vectors.test.mjs; complementary TypeScript implementation/tests.
 - Root owns frozen shared QW-r1/fixture revisions, reports/tracker, all commands and Git. Existing runtime files, migrations, manifests/locks, core exports and user drafts remain protected. Peers resolve routine dependencies directly and transfer any file before another writer edits; outcome/protected boundary/ownership changes go to root and unresolved material decisions to Astra.
 
-Workers write tests first and notify root before implementation. Root checks expected missing-module failures, then authorizes implementation, runs focused checks, strict types and affected regressions serially. Workers run no tests/processes, network/provider/database calls, services, installations or Git. Use small synthetic data and one test process. Acceptance includes shared seals, all 14 numeric cases, ties/subnormal/underflow/overflow/profile/container/immutability failures, closest representable tolerance bounds and exact sparse mapping. No model or service is needed. Root is final integrator; next action is the tests-first check and implementation against the frozen codec.
+Final handoff: both peers wrote substantive tests first; root observed the expected missing-module failures before authorizing implementation. Peers coordinated directly; the Python peer assembled, both froze their files and root reviewed/integrated. Sparse negative-zero index canonicalization, operational error classification and Node readability findings were corrected with regressions. Root passed 71 focused Python/25 Node cases, strict Python37files and Node build, 1796 Python/tool regressions (four existing deliberate Pydantic warnings), 1005 Node package tests and 21 serial native codec hash/outcome comparisons including four spread 1536-component vectors. All 14 shared numeric cases and four vector goldens pass in both runtimes. No native datastore/model/provider, install or service ran. All 16 sealed inputs, migration 0001 and three user audits remain unchanged. Prose skill found no suspicious carriers and low density, with unchanged deterministic output. Resource snapshot: 39 GiB disk, 66 percent system memory free; no task-owned service. Learning practice unassessed. Next: B2 must preserve original admitted numeric inputs plus canonical seals for portable replay; re-admitting only rounded values can reject a valid boundary input. Then C-H authority, supervision, publication, repair and actual fault acceptance remain required. Full V5 stays active.
 
 ### V5-03D: Real local PostgreSQL/Qdrant disclosure acceptance
 
