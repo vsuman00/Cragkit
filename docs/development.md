@@ -366,7 +366,7 @@ Run the existing native fixture command with `--ingestion --typescript --allow-t
 
 ## V1-H1 PostgreSQL adapter hardening
 
-Read/write adapters map SQLSTATE class 23 constraint failures to IntegrityViolation. Read adapters reject NUL in the query, collection, trusted scope and supported identifier-filter values before leasing; ingestion already rejects those inputs. Backend-neutral request/scope schemas are unchanged. [H1 evidence](../evaluation/reports/V1/V1-H1.md) records 97 Python/135 Node focused cases, 348 Python-tool/285 full Node regressions, both typechecks/build, 66 wire cases and 16 sealed hashes. These checks used fake drivers and no hosted database.
+Read/write adapters map SQLSTATE class 23 constraint failures to IntegrityViolation. Read adapters reject NUL in the query, collection, trusted scope and supported identifier-filter values before leasing; ingestion already rejects those inputs. H1 retained the backend-neutral request/scope schemas; NUL-r1 now rejects NUL in public input identities, queries, collections, hints and string filters, while preserving exact evidence text. [H1 evidence](../evaluation/reports/V1/V1-H1.md) records 97 Python/135 Node focused cases, 348 Python-tool/285 full Node regressions, both typechecks/build, 66 wire cases and 16 sealed hashes. These checks used fake drivers and no hosted database.
 
 ## V1-07 scoped lexical candidates
 
@@ -729,3 +729,19 @@ python3 tools/check_artifacts.py --output-dir artifacts/V3/V3-installed-native -
 The second command is an explicit synthetic-write check on the dedicated development target. It copies the harness, links only fixture/storage/evaluation data, and loads Python product code from the installed wheel and Node product code from the installed npm package. No checkout Python product path is available. Provenance guards fail if those paths or the Python interpreter prefix disagree. The existing least-privilege runtime child and maximum two-client boundary remain in effect. An outer 720-second bound leaves time for cleanup after the native 600-second workload limit. Temporary environments and fixture state must both report cleaned.
 
 The examples require the optional tokenizer and explicit local asset. Copy the relevant example into the application's package environment before running it with `--tokenizer`; the artifact verifier performs that setup automatically. Python uses the tokenizers extra; Node uses tiktoken 1.0.22. Generated archives retain the internal 0.0.0 package identity; V3 is an implementation milestone, not a registry release. Hosted CI, production and cross-platform checks remain separate.
+
+
+## Security remediation checkpoint
+
+Use [the remediation ledger](../evaluation/reports/SECURITY-REMEDIATION.md) for current status; historical audit checkboxes are snapshots. Migration success alone is not deployment acceptance. After explicit host hardening, run the migration, vector (if installed), invariant and security gates together. On the dedicated Neon managed profile:
+
+```sh
+uv run --project packages/python --frozen --extra postgres python tools/check_neon_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --confirm-dedicated-target --check --vector --vector-storage --allow-managed-vector-primitives --integration --security --allow-test-writes
+uv run --project packages/python --frozen --extra postgres python tools/check_security_remnants.py --config "$HOME/.config/cragkit/neon/admin-config.json" --confirm-dedicated-target --allow-test-writes --allow-managed-vector-primitives
+```
+
+The second command temporarily changes catalog security settings in transactions, requires the empty dedicated development baseline and checks exact rejection diagnostics, rollback and both history ledgers. Use one administrative run at a time. It does not grant server-file/program roles. Keep raw errors and credentials out of reports. For generic PostgreSQL, `tools/check_postgres.py --check --confirm-dedicated-target --security --allow-test-writes` runs the separate strict security gate after host-specific hardening; configure the connection as documented above.
+
+The security gate checks effective global creator defaults and additive schema defaults. An absent global function/type ACL row implies PostgreSQL's PUBLIC default, not a denial. If it fails, review the identified creator's defaults and remediate explicitly; scoped deployment hardening does not silently change defaults in unrelated schemas. Managed Neon permits only verified extension primitives: nongrantable PUBLIC EXECUTE on cloud_admin-owned extension functions and PUBLIC USAGE on its three extension base types. PUBLIC schema/table access, ledger writes, disabled RLS and SECURITY DEFINER routines remain rejected. Omit the managed flag for strict validation.
+
+Native ingestion/lexical fixtures require the SQL FTS behavior that matches `Café` against `Café🙂` under `pg_catalog.simple`. The parent performs a read-only check before fixture writes and returns `lexical_fixture_locale_unsupported` when it fails. UTF8 encoding alone is insufficient. Disposable local databases should use a compatible UTF-8 ctype (for example the previously tested en_US.UTF-8 or C.UTF-8); plain C can tokenize the emoji as part of the word. Production search semantics still depend on the declared PostgreSQL configuration and locale. Canonical bytes and approved corpus inputs are unchanged.

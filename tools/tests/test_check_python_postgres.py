@@ -201,3 +201,21 @@ def test_installed_origin_guard_rejects_checkout_and_wrong_interpreter(tmp_path)
         PG.require_installed_origin(str(prefix),str(tmp_path/'checkout/cragkit.py'),str(prefix))
     with pytest.raises(PG.RuntimeCheckError,match='installed_product_origin_required'):
         PG.require_installed_origin(str(prefix),str(module),str(tmp_path/'other'))
+
+
+@pytest.mark.parametrize('rows', [[(False,)], [], [(True,), (True,)]])
+def test_unsupported_lexical_fixture_behavior_fails_before_mutation(rows):
+    cursor = SimpleNamespace(fetchall=AsyncMock(return_value=rows))
+    connection = SimpleNamespace(execute=AsyncMock(return_value=cursor))
+    with pytest.raises(PG.RuntimeCheckError, match='lexical_fixture_locale_unsupported'):
+        asyncio.run(PG.require_lexical_fixture_behavior(connection))
+    connection.execute.assert_awaited_once_with(
+        "SELECT to_tsvector('pg_catalog.simple', %s) @@ websearch_to_tsquery('pg_catalog.simple', %s)",
+        ('Café🙂', 'Café'))
+
+
+def test_supported_lexical_fixture_behavior_is_read_only():
+    cursor = SimpleNamespace(fetchall=AsyncMock(return_value=[(True,)]))
+    connection = SimpleNamespace(execute=AsyncMock(return_value=cursor))
+    asyncio.run(PG.require_lexical_fixture_behavior(connection))
+    assert connection.execute.await_count == 1

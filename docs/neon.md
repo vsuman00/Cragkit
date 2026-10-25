@@ -107,3 +107,8 @@ Use `--allow-managed-vector-primitives` only with the documented managed profile
 ## V2 exit runtime and fixture hardening
 
 Both runtime reader/writer guards reject direct/transitive MEMBER access to pg_read_all_data, pg_write_all_data, pg_read_server_files, pg_write_server_files and pg_execute_server_program, including NOINHERIT logins. The base Node test child receives only restricted runtime configuration; its administrator-negative check now runs on the Python parent's existing connection. This removes the previous administrator-path handoff without claiming an OS sandbox for same-user processes. [V2 exit evidence](../evaluation/reports/V2/V2-07-08-exit.md) records checks and remaining audit limits. No dangerous role is granted as a negative fixture.
+
+
+## Security acceptance after optional vector setup
+
+The earlier migration-only commands do not establish deployment security. Require the combined gate and rolled-back regressions in [development.md](development.md#security-remediation-checkpoint) before accepting a deployment. `--security` checks creator default ACLs and the optional private vector schema even without `--vector`. Select `--allow-managed-vector-primitives` explicitly for the accepted Neon computational-primitive profile; the strict default rejects PUBLIC function/type privileges. The exception does not grant access to the private schema or application rows. The gate reports unsafe defaults without changing creator defaults globally or editing checksummed migrations.

@@ -76,6 +76,15 @@ def pgpass_field(value: str) -> str:
     return value.replace('\\', '\\\\').replace(':', '\\:')
 
 
+async def require_lexical_fixture_behavior(connection) -> None:
+    # UTF8 encoding alone does not determine emoji-adjacent FTS tokenization.
+    cursor = await connection.execute(
+        "SELECT to_tsvector('pg_catalog.simple', %s) @@ websearch_to_tsquery('pg_catalog.simple', %s)",
+        ('Café🙂', 'Café'))
+    if await cursor.fetchall() != [(True,)]:
+        raise RuntimeCheckError('lexical_fixture_locale_unsupported')
+
+
 async def require_parent_admin_role_rejected(connection, role_sql: str) -> None:
     # Reuse the parent's administrator connection; never disclose it to a child.
     cursor = await connection.execute(role_sql)
@@ -159,6 +168,9 @@ async def check(config_path: Path, *, typescript: bool = False, ingestion: bool 
                 rejected_admin, admin = admin, None
                 await rejected_admin.close()
                 raise
+        if ingestion or lexical:
+            CURRENT_STAGE = 'lexical_fixture_locale'
+            await require_lexical_fixture_behavior(admin)
         if await rows('SELECT pg_try_advisory_lock(1129464148,1)') != [(True,)]:
             raise RuntimeCheckError('migration_lock_busy')
         locked = True
