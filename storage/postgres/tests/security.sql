@@ -12,6 +12,8 @@ DECLARE
     item record;
     schema_id oid;
     table_count integer;
+    vector_schema_id oid;
+    creator record;
     vector_table_count integer;
 BEGIN
     SELECT oid INTO STRICT schema_id FROM pg_namespace WHERE nspname = 'cragkit';
@@ -85,6 +87,104 @@ BEGIN
             RAISE EXCEPTION 'API role retains cragkit domain privileges';
         END IF;
     END LOOP;
+    -- A schema-local REVOKE cannot remove an implicit/global PUBLIC default.
+    -- Check both effective global defaults and additive schema-local grants for
+    -- application object creators. Platform extension owners are checked below.
+    FOR creator IN
+        SELECT nspowner AS owner FROM pg_namespace WHERE nspname IN ('cragkit','cragkit_vector')
+        UNION SELECT relowner FROM pg_class WHERE relnamespace = schema_id AND relkind = 'r'
+        UNION SELECT proowner FROM pg_proc WHERE pronamespace = schema_id
+        UNION SELECT typowner FROM pg_type WHERE typnamespace = schema_id AND typtype = 'd'
+    LOOP
+        IF EXISTS (
+            SELECT 1 FROM (VALUES ('f'::"char"), ('T'::"char")) kind(object_type)
+            LEFT JOIN pg_default_acl defaults ON defaults.defaclrole = creator.owner
+                AND defaults.defaclnamespace = 0 AND defaults.defaclobjtype = kind.object_type
+            CROSS JOIN LATERAL aclexplode(coalesce(defaults.defaclacl,
+                acldefault(kind.object_type, creator.owner))) acl
+            WHERE acl.grantee = 0 OR acl.grantee IN (
+                SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role'))
+        ) OR EXISTS (
+            SELECT 1 FROM pg_default_acl defaults
+            CROSS JOIN LATERAL aclexplode(defaults.defaclacl) acl
+            WHERE defaults.defaclrole = creator.owner
+                AND (defaults.defaclnamespace = 0 OR defaults.defaclnamespace IN (
+                    SELECT oid FROM pg_namespace WHERE nspname IN ('cragkit','cragkit_vector')))
+                AND (acl.grantee = 0 OR acl.grantee IN (
+                    SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))
+        ) THEN
+            RAISE EXCEPTION 'unsafe application creator default privileges';
+        END IF;
+    END LOOP;
+
+    SELECT oid INTO vector_schema_id FROM pg_namespace WHERE nspname = 'cragkit_vector';
+    IF vector_schema_id IS NULL AND vector_table_count <> 0 THEN
+        RAISE EXCEPTION 'vector storage requires private extension schema';
+    END IF;
+    IF vector_schema_id IS NOT NULL THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace
+            WHERE e.extname='vector' AND e.extversion='0.8.0' AND n.oid=vector_schema_id
+                AND e.extowner=n.nspowner)
+            OR NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                WHERE n.oid=vector_schema_id AND c.relname='setup_history' AND c.relkind='r'
+                    AND c.relrowsecurity AND c.relowner=n.nspowner)
+            OR EXISTS (SELECT 1 FROM pg_policy policy JOIN pg_class c ON c.oid=policy.polrelid
+                WHERE c.relnamespace=vector_schema_id)
+            OR EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace=vector_schema_id AND prosecdef)
+        THEN RAISE EXCEPTION 'unsafe vector extension or setup ledger'; END IF;
+        -- Only extension primitives and the administrator's setup ledger belong here.
+        IF EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace=vector_schema_id
+            AND c.oid<>'cragkit_vector.setup_history'::regclass
+            AND NOT (c.relkind='i' AND EXISTS (SELECT 1 FROM pg_index i
+                WHERE i.indexrelid=c.oid AND i.indrelid='cragkit_vector.setup_history'::regclass)))
+            OR EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace=vector_schema_id
+                AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid
+                    WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid
+                        AND d.refclassid='pg_extension'::regclass AND d.deptype='e' AND e.extname='vector'))
+            OR EXISTS (SELECT 1 FROM pg_type t WHERE t.typnamespace=vector_schema_id
+                AND NOT (t.typtype='c' AND t.typrelid='cragkit_vector.setup_history'::regclass)
+                AND NOT (t.typtype='b' AND t.typname IN ('vector','halfvec','sparsevec')
+                    AND EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid
+                        WHERE d.classid='pg_type'::regclass AND d.objid=t.oid
+                            AND d.refclassid='pg_extension'::regclass AND d.deptype='e' AND e.extname='vector'))
+                AND NOT (t.typelem<>0 AND EXISTS (SELECT 1 FROM pg_type element
+                    WHERE element.oid=t.typelem AND element.typnamespace=vector_schema_id
+                        AND ((element.typtype='c' AND element.typrelid='cragkit_vector.setup_history'::regclass)
+                            OR (element.typtype='b' AND element.typname IN ('vector','halfvec','sparsevec')
+                                AND EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid
+                                    WHERE d.classid='pg_type'::regclass AND d.objid=element.oid
+                                        AND d.refclassid='pg_extension'::regclass AND d.deptype='e' AND e.extname='vector'))))))
+        THEN RAISE EXCEPTION 'unexpected vector object inventory'; END IF;
+        IF EXISTS (SELECT 1 FROM pg_namespace n,
+            LATERAL aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) acl
+            WHERE n.oid=vector_schema_id AND acl.grantee<>n.nspowner)
+            OR EXISTS (SELECT 1 FROM pg_class c,
+                LATERAL aclexplode(coalesce(c.relacl,
+                    acldefault(CASE WHEN c.relkind='S' THEN 'S'::"char" ELSE 'r'::"char" END,c.relowner))) acl
+                WHERE c.relnamespace=vector_schema_id AND c.relkind IN ('r','S') AND acl.grantee<>c.relowner)
+            OR EXISTS (SELECT 1 FROM pg_type t,
+                LATERAL aclexplode(coalesce(t.typacl,acldefault('T',t.typowner))) acl
+                WHERE t.typnamespace=vector_schema_id AND t.typname IN ('vector','halfvec','sparsevec')
+                    AND acl.grantee<>t.typowner
+                    AND NOT (coalesce(current_setting('cragkit.security_vector_profile',true),'strict')='neon-managed'
+                        AND acl.grantee=0 AND acl.privilege_type='USAGE' AND NOT acl.is_grantable
+                        AND t.typtype='b'
+                        AND EXISTS (SELECT 1 FROM pg_roles r WHERE r.oid=t.typowner AND r.rolname='cloud_admin')
+                        AND EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid
+                            WHERE d.classid='pg_type'::regclass AND d.objid=t.oid
+                                AND d.refclassid='pg_extension'::regclass AND d.deptype='e' AND e.extname='vector')))
+        THEN RAISE EXCEPTION 'unexpected vector schema table or type privileges'; END IF;
+        IF EXISTS (SELECT 1 FROM pg_proc p,
+            LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+            WHERE p.pronamespace=vector_schema_id AND acl.grantee<>p.proowner
+                AND NOT (coalesce(current_setting('cragkit.security_vector_profile',true),'strict')='neon-managed'
+                    AND acl.grantee=0 AND acl.privilege_type='EXECUTE' AND NOT acl.is_grantable
+                    AND EXISTS (SELECT 1 FROM pg_roles r WHERE r.oid=p.proowner AND r.rolname='cloud_admin')
+                    AND EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid
+                        WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid
+                            AND d.refclassid='pg_extension'::regclass AND d.deptype='e' AND e.extname='vector')))
+        THEN RAISE EXCEPTION 'unexpected vector function privileges'; END IF;
+    END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cragkit_security_probe') THEN
         RAISE EXCEPTION 'security probe role already exists';
     END IF;

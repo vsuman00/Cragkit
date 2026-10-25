@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import re
 
-from check_postgres import (migrations, migration_script, VECTOR_SETUP_DIRECTORY,
+from check_postgres import (migrations, migration_script, security_script, VECTOR_SETUP_DIRECTORY,
                             VectorCompatibilityError, vector_compatibility_error,
                             vector_inspection_script, parse_vector_inspection, vector_setup_script, vector_storage_script)
 from check_python_postgres import load_config, require_client_tls, require_neon_host
@@ -51,7 +51,7 @@ async def check(config_path: Path, *, apply: bool, harden: bool = False,
                 vector: bool = False, install_vector: bool = False,
                 allow_managed_primitives: bool = False, vector_storage: bool = False) -> None:
     global CURRENT_STAGE
-    if allow_managed_primitives and not (vector or install_vector or vector_storage):
+    if allow_managed_primitives and not (vector or install_vector or vector_storage or security):
         raise NeonCheckError('managed_primitives_require_vector')
     if install_vector and not apply:
         raise NeonCheckError('vector_install_requires_apply')
@@ -77,7 +77,7 @@ async def check(config_path: Path, *, apply: bool, harden: bool = False,
         if vector_storage:
             scripts.append(('vector-integration', (ROOT / 'storage/postgres/tests/vectors.sql').read_text(), 'cragkit_vector_storage_ok'))
     if security:
-        scripts.append(('security', (ROOT / 'storage/postgres/tests/security.sql').read_text(), 'cragkit_security_probe_ok'))
+        scripts.append(('security', security_script(allow_managed_primitives=allow_managed_primitives), 'cragkit_security_probe_ok'))
     connection = None
     try:
         CURRENT_STAGE = 'connection'
@@ -114,7 +114,7 @@ def main() -> int:
     parser.add_argument('--install-vector', action='store_true')
     parser.add_argument('--allow-managed-vector-primitives', action='store_true')
     args = parser.parse_args()
-    if args.allow_managed_vector_primitives and not (args.vector or args.install_vector or args.vector_storage):
+    if args.allow_managed_vector_primitives and not (args.vector or args.install_vector or args.vector_storage or args.security):
         print('Managed vector primitives require --vector or --install-vector.')
         return 2
     if args.install_vector and not args.apply:
@@ -138,7 +138,7 @@ def main() -> int:
         state = state if isinstance(state, str) and re.fullmatch(r'[A-Z0-9]{5}', state) else 'none'
         print(f'Neon administrative checks failed: {kind}; SQLSTATE={state}; stage={CURRENT_STAGE}.')
         return 1
-    print('Neon administrative checks passed.')
+    print(f'Neon administrative checks passed: security={int(args.security)}.')
     return 0
 
 

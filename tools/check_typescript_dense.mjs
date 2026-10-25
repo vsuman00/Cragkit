@@ -119,6 +119,13 @@ async function run(config,fixture){
       await session.transaction(request(),{scope:scopes[0],deadline:now()+12},async handle=>{requireCheck((await handle.lexical_candidates()).length>0,'missing_profile_broke_lexical');requireCheck((await handle.identifier_candidates(ids.token)).length>0,'missing_profile_broke_identifier');});
     }finally{await owner('hide_profile',false);}
     checks.push('node_missing_profile_typed_failure_keeps_lexical_available');
+    await owner('vector_create',true);
+    try{
+      let denied=false;
+      try{await read();}catch(error){denied=error instanceof UnsupportedCapability;}
+      requireCheck(denied,'vector_create_privilege_accepted');
+    }finally{await owner('vector_create',false);}
+    checks.push('node_dense_rejects_vector_schema_create');
     let before, identifiersBefore;
     try{
       await session.transaction(request(),{scope:scopes[0],deadline:now()+12},async handle=>{

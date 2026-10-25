@@ -378,6 +378,13 @@ def execute(script: str, environment: Mapping[str, str], *, executable: str = 'p
     return lines
 
 
+def security_script(*, allow_managed_primitives: bool = False) -> str:
+    """Validate deployment security independently of migration success."""
+    script = (ROOT / 'storage/postgres/tests/security.sql').read_text(encoding='utf-8')
+    profile = 'neon-managed' if allow_managed_primitives else 'strict'
+    return script.replace('BEGIN;', f"BEGIN;\nSET LOCAL cragkit.security_vector_profile = '{profile}';", 1)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group(required=True)
@@ -386,16 +393,21 @@ def main() -> int:
     parser.add_argument('--confirm-dedicated-target', action='store_true')
     parser.add_argument('--local-socket', type=Path)
     parser.add_argument('--integration', action='store_true')
+    parser.add_argument('--security', action='store_true')
+    parser.add_argument('--allow-test-writes', action='store_true')
     parser.add_argument('--vector', action='store_true')
     parser.add_argument('--vector-storage', action='store_true')
     parser.add_argument('--install-vector', action='store_true')
     parser.add_argument('--allow-managed-vector-primitives', action='store_true')
     args = parser.parse_args()
-    if args.allow_managed_vector_primitives and not (args.vector or args.install_vector or args.vector_storage):
+    if args.allow_managed_vector_primitives and not (args.vector or args.install_vector or args.vector_storage or args.security):
         print('Managed vector primitives require --vector or --install-vector.')
         return 2
     if args.install_vector and not args.apply:
         print('PostgreSQL vector installation requires --apply.')
+        return 2
+    if args.security and not args.allow_test_writes:
+        print('Security probes require explicit test-write authorization.')
         return 2
     try:
         environment = connection_environment(os.environ, confirmed=args.confirm_dedicated_target, local_socket=args.local_socket)
@@ -416,7 +428,10 @@ def main() -> int:
             execute(probe, environment)
             if args.vector_storage:
                 execute((ROOT / 'storage/postgres/tests/vectors.sql').read_text(), environment, marker='cragkit_vector_storage_ok')
-        print(f'PostgreSQL checks passed: migrations={len(items)}, integration={int(args.integration)}.')
+        if args.security:
+            execute(security_script(allow_managed_primitives=args.allow_managed_vector_primitives),
+                    environment, marker='cragkit_security_probe_ok')
+        print(f'PostgreSQL checks passed: migrations={len(items)}, integration={int(args.integration)}, security={int(args.security)}.')
     except (PostgresCheckError, OSError, UnicodeError) as error:
         code = str(error) if isinstance(error, PostgresCheckError) else 'local_input_unavailable'
         print(f'PostgreSQL checks failed: {code}.')

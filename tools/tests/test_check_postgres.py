@@ -273,3 +273,39 @@ def test_vector_capability_accepts_only_known_optional_history_prefix():
     script = PG.vector_setup_script(items[0], apply=False, storage=items[1])
     assert 'NOT BETWEEN 1 AND 2' in script
     assert items[1].checksum in script and 'e.version IS NULL OR e.checksum<>h.checksum' in script
+
+
+@pytest.mark.parametrize('managed', [False, True])
+def test_security_script_checks_effective_defaults_and_optional_vector_surfaces(managed):
+    script = PG.security_script(allow_managed_primitives=managed)
+    profile = 'neon-managed' if managed else 'strict'
+    assert f"SET LOCAL cragkit.security_vector_profile = '{profile}';" in script
+    assert 'pg_default_acl' in script and 'acldefault(kind.object_type, creator.owner)' in script
+    assert 'defaults.defaclnamespace = 0' in script
+    assert 'vector_schema_id' in script and 'setup_history' in script
+    assert "e.extowner=n.nspowner" in script and 'relrowsecurity' in script
+    assert "acl.privilege_type='EXECUTE' AND NOT acl.is_grantable" in script
+    assert "r.rolname='cloud_admin'" in script and "d.deptype='e'" in script
+    assert "coalesce(current_setting('cragkit.security_vector_profile',true),'strict')" in script
+    assert 'ALTER DEFAULT PRIVILEGES' not in script
+    assert script.count('BEGIN;') == 1 and script.count('ROLLBACK;') == 1
+
+
+def test_security_cli_requires_explicit_probe_authorization(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['check_postgres', '--check', '--confirm-dedicated-target', '--security'])
+    monkeypatch.setattr(PG, 'connection_environment', lambda *a, **kw: pytest.fail('must not connect'))
+    assert PG.main() == 2
+
+
+@pytest.mark.parametrize('managed', [False, True])
+def test_security_cli_runs_separate_gate_and_explicit_vector_exception(monkeypatch, managed):
+    argv = ['check_postgres', '--check', '--confirm-dedicated-target', '--security', '--allow-test-writes']
+    if managed:
+        argv.append('--allow-managed-vector-primitives')
+    monkeypatch.setattr(sys, 'argv', argv)
+    monkeypatch.setattr(PG, 'connection_environment', lambda *a, **kw: {})
+    calls = []
+    monkeypatch.setattr(PG, 'execute', lambda script, env, **kw: calls.append((script, kw)))
+    assert PG.main() == 0
+    assert len(calls) == 2
+    assert calls[-1] == (PG.security_script(allow_managed_primitives=managed), {'marker': 'cragkit_security_probe_ok'})

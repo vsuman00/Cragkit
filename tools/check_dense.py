@@ -85,6 +85,9 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
                     await command("UPDATE cragkit.ingestion_jobs SET state='succeeded' WHERE tenant_id=%s AND collection_id=%s AND intent_id='dense-shadow'", key[:2])
                 await command('UPDATE cragkit.documents SET active_generation_id=%s WHERE tenant_id=%s AND collection_id=%s AND document_id=%s',
                               (receipts['shadow' if enabled else 'dense-a']['generation_id'], *key))
+        elif action == 'vector_create':
+            statement = 'GRANT CREATE ON SCHEMA cragkit_vector TO {}' if enabled else 'REVOKE CREATE ON SCHEMA cragkit_vector FROM {}'
+            await command(sql.SQL(statement).format(sql.Identifier(config.user)))
         elif action == 'hide_profile':
             if enabled:
                 await command(sql.SQL('CREATE POLICY {} ON cragkit.embedding_profiles AS RESTRICTIVE FOR SELECT TO {} USING(false)').format(sql.Identifier(profile_policy), sql.Identifier(config.user)))
@@ -230,6 +233,17 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
         finally:
             await mutate('hide_profile', False)
         checks.append('python_missing_profile_typed_failure_keeps_lexical_available')
+        await mutate('vector_create', True)
+        try:
+            try:
+                await read()
+            except UnsupportedCapability:
+                pass
+            else:
+                raise DenseCheckError('vector_create_privilege_accepted')
+        finally:
+            await mutate('vector_create', False)
+        checks.append('python_dense_rejects_vector_schema_create')
         stage = 'snapshot'
         advanced = False
         try:
@@ -262,8 +276,13 @@ async def run(config, fixture, admin, *, typescript=False, neon=False):
     except CragkitError as error:
         raise DenseCheckError(stage+'_'+error.code) from None
     finally:
-        await resource.close()
-        await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.embedding_profiles').format(sql.Identifier(profile_policy)))
+        try:
+            await resource.close()
+        finally:
+            try:
+                await mutate('vector_create', False)
+            finally:
+                await command(sql.SQL('DROP POLICY IF EXISTS {} ON cragkit.embedding_profiles').format(sql.Identifier(profile_policy)))
 
 
 async def run_node(config, fixture, mutate):
@@ -284,7 +303,7 @@ async def run_node(config, fixture, mutate):
                 while line := await process.stdout.readline():
                     value = json.loads(line)
                     if value.get('type') == 'owner':
-                        require(value.get('action') in ('advance', 'revoke', 'tombstone', 'hide_profile')
+                        require(value.get('action') in ('advance', 'revoke', 'tombstone', 'hide_profile', 'vector_create')
                                 and type(value.get('enabled')) is bool, 'node_owner_action_invalid')
                         await mutate(value['action'], value['enabled'])
                         process.stdin.write(b'{"ok":true}\n')
@@ -301,8 +320,13 @@ async def run_node(config, fixture, mutate):
                 require(await process.wait() == 0 and result is not None, 'node_result_missing')
                 return result
     finally:
-        if process is not None and process.returncode is None:
-            process.kill()
-            await asyncio.wait_for(process.wait(), 5)
-        for action in ('revoke', 'tombstone', 'advance'):
-            await mutate(action, False)
+        try:
+            if process is not None and process.returncode is None:
+                process.kill()
+                await asyncio.wait_for(process.wait(), 5)
+        finally:
+            try:
+                for action in ('revoke', 'tombstone', 'advance'):
+                    await mutate(action, False)
+            finally:
+                await mutate('vector_create', False)
