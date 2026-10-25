@@ -1,0 +1,94 @@
+# Qdrant candidate contract
+
+Revision `QC-r1`; V5-02A design boundary, subordinate to [QD-r1](QDRANT_V5.md), [wire validation](README.md), [E-r1](EMBEDDINGS_V2.md) and [EL-r1](EXECUTION_V4.md). The [fixtures](fixtures/qdrant_candidates.json) are normative synthetic expectations. No native adapter or public API is implemented by this document.
+
+For example, a point carrying yesterday's grant can nominate a document identity. It cannot supply authorized text: V5-03 must check the active published generation and today's authoritative grants before any provider sees bytes.
+
+## Reference profile and ownership
+
+The selected baseline is Qdrant server `1.20.0`, optional Python `httpx==0.28.1` on Python `3.14.6`, and Node `26.5.0` built-in `fetch`. These access the same REST API natively. The first isolated target is one loopback-only single-node server on macOS arm64. [V5-02A evidence](../evaluation/reports/V5/V5-02A.md) separates version selection, transport prototypes and server readiness from later adapter acceptance. Reject an unverified server/client or distributed profile with `UnsupportedCapability`; do not auto-upgrade or create services.
+
+Official `qdrant-client==1.20.0` and `@qdrant/js-client-rest@1.20.0` archives were inspected as alternatives. They are not the selected runtime dependency profile: their default request paths do not establish this contract's streaming byte bound and request cancellation together. A later SDK binding must demonstrate those guarantees before acceptance. This choice also avoids adding the Python SDK's NumPy and gRPC dependencies for a REST-only adapter. No SDK package is installed by QC-r1.
+
+Trusted application configuration binds endpoint, physical collection, backend namespace, collection incarnation, named vector configuration, profile descriptors and limits. Caller-owned clients remain caller-owned. Construction/import does not connect, create collections, apply migrations, discover credentials, download models or call providers. Query input cannot change this configuration or trusted scope.
+
+The candidate boundary receives already encoded dense and/or sparse vectors, the validated request, trusted scope, shared deadline and ledger. It never encodes text. Snapshot native JSON input, scope, vectors, filters and trusted descriptors before any await; reject unknown fields, invalid native values, cycles and unchecked model instances. Follow wire identity/NUL and complexity limits without coercing booleans to numbers.
+
+Dense name `dense` uses Qdrant `Cosine`, 1536 dimensions and the exact E-r1 `fake_embedding_1536_v1` descriptor. Values are finite and nonzero with L2 norm within `0.001` of one. This initial candidate profile supports synthetic vectors only; adding a hosted profile requires an explicit compatible configuration and acceptance slice.
+
+Sparse name `sparse` uses explicit caller-supplied vectors and this exact synthetic descriptor:
+
+```json
+{"profile_id":"fake_manual_sparse_v1","encoder":"caller_supplied_fixture","model":"none","revision":"1","vocabulary":"fixture_uint32_v1","preprocessing":"none","weighting":"caller_supplied","corpus_statistics_revision":"none"}
+```
+
+These tiny bounds define the synthetic reference profile, not general Qdrant limits. Sparse vectors have parallel `indices`/`values` arrays with 1-16 entries, strictly increasing unique unsigned 32-bit indices, and finite strictly positive numeric values that remain finite and positive when represented as float32. Reject overflow or underflow to zero; do not silently replace values. No automatic inference, IDF modifier, BM25 claim, model runtime or corpus-statistics discovery is permitted. Dense-only configuration represents absent `sparse_profile` as null and `sparse_profile_id` as the empty string. A requested branch absent from the configured collection fails before query dispatch.
+
+## Physical identity and payload
+
+Derive a lowercase UUIDv5 using RFC URL namespace `6ba7b811-9dad-11d1-80b4-00c04fd430c8`. Its name is compact UTF-8 JSON of this ordered, all-string array; preserve Unicode exactly, with no whitespace, normalization or ASCII-only escaping:
+
+```text
+["cragkit.qdrant.point.v1",backend_namespace,physical_collection,collection_incarnation,tenant_id,collection,document_id,revision_id,generation_id,chunk_id,dense_profile_id,sparse_profile_id]
+```
+
+Use standard JSON escaping for quotes, backslashes and controls; reject unpaired surrogates. This contains no floats. A raw digest or an integer point ID is not a compatible identity. UUID derivation does not guarantee collision freedom. QD-r1's shared atomic physical ownership registry must reserve the ID before any point write, compare the complete identity/profile claim and preserve fencing across ambiguous writes and collection recreation. This document does not implement that registry or publication.
+
+Each point payload contains these fields:
+
+| Fields | Meaning and validation |
+| --- | --- |
+| `backend_namespace`, `physical_collection`, `collection_incarnation` | Exact trusted physical namespace; never accepted from query input. |
+| `tenant_id`, `collection`, `document_id`, `revision_id`, `generation_id`, `chunk_id` | Full scoped immutable identity; wire identity limits. |
+| `dense_profile_id`, `sparse_profile_id`, `dense_profile`, `sparse_profile` | IDs and full exact descriptors must agree with trusted configuration. An ID match alone is insufficient. |
+| `start_byte`, `end_byte` | Safe integers, `0 <= start_byte < end_byte`, canonical UTF-8 half-open span. |
+| `source_sha256`, `text_sha256` | Lowercase 64-hex digests of canonical UTF-8 source and exact excerpt respectively; these remain unverified until authoritative source resolution. |
+| `principal_ids`, `grant_ids`, `authorization_revision` | Bounded wire identity replicas; arrays have at most 64 entries each. The revision is carried, never used to grant authority. |
+| `language`, `kind`, `tag` | Optional scalar strings following wire string-value limits; absent means no match. Arrays, numbers, booleans and null are incompatible. |
+
+No source text, query text, excerpt or provider output is part of a candidate payload/projection. Request only the declared payload fields and no vectors in search responses. Reject unexpected response payload fields rather than releasing them. Recompute the UUID from every returned full tuple and compare the Qdrant point ID. Validate replicas and profiles even when the backend reports success. Mutable ACL/filter fields do not alter the immutable UUID or manifest identity.
+
+## Scope and required filters
+
+Every branch applies `tenant_id == scope.tenant_id AND collection == request.collection AND (principal_ids contains scope.principal_id OR grant_ids intersects scope.grant_ids) AND required_filters`. Empty grants leave only the principal arm. Never let a required-filter OR group escape the outer scope conjunction. Do not compare payload `authorization_revision` as proof of current permission. A stale replica may suppress new grants; report this limitation without broadening the search.
+
+QC-r1 supports string `eq` and `in` on `document_id`, `revision_id`, `language`, `kind`, `tag`; nonempty nested `and`/`or` groups retain wire node/depth/value limits. Multiple roots form AND. Missing scalar fields match neither equality nor membership. No string case folding, coercion or array semantics are added.
+
+| Cragkit condition | Qdrant filter mapping |
+| --- | --- |
+| String equality | Field condition `match: {value: string}`. |
+| String membership | Field condition `match: {any: [strings]}`. |
+| AND group / required roots | Nested filter `must: [conditions]`. |
+| OR group | Nested filter `should: [conditions]`, at least one match; remains inside outer `must`. |
+| Principal / grant replica | `match.value` for principal membership, `match.any` for nonempty grants, inside the scope OR. |
+
+Well-formed wire `ne`, order operators, `not`, numeric/boolean leaves and unsupported vector/profile capabilities raise `UnsupportedCapability` before any network request. Malformed ASTs, unknown fields, invalid types or excess complexity raise `InvalidRequest`. No raw backend expressions, filter dropping, lexical fallback, unfiltered retry or client-side postfilter as a substitute for backend filtering is allowed. Defensive response checks supplement backend filtering.
+
+## Query and result boundary
+
+Use the universal point query endpoint with the explicit named vector (`using`), caller vector (`query`), complete `filter`, positive bounded `limit`, declared payload projection and `with_vector: false`. Dense and sparse are separate branch queries; QC-r1 specifies no native fusion, prefetch, reranking, identifier branch or score comparability. Keep deterministic branch order dense then sparse when both are requested. The orchestrator may later fuse validated nominations under a separately declared contract.
+
+Before dispatch, allocate a positive integer limit to each requested branch. Their sum is at most the minimum of 64, request `max_candidates` and the admitted remaining candidate-work allowance. The 64-item ceiling belongs to QC-r1; the wire permits `max_candidates` up to 10000. Insufficient allowance for all requested branches fails admission before the first dispatch; never silently omit a branch. Reserve cumulative candidate work for allocated limits, not returned hits; avoid double reservation when the outer coordinator already owns that allocation. Serial queries are sufficient. At most one backend query per branch, zero transport retries, bounded in-flight work and no unbounded queue. Backend queries are not model/provider calls; account any separately configured transport attempt honestly.
+
+Bound the compact query body to 262144 UTF-8 bytes and each raw response to 1048576 bytes before full materialization. Input follows wire limits of 4096 value nodes and depth 32; response parsing rejects duplicate object keys, invalid UTF-8, nonfinite numbers, depth above 32 and more than 32768 value nodes. Check result count against the allocated branch limit. Reject a transport/client integration that cannot enforce response-byte bounds before unbounded buffering. There is no pagination or candidate expansion in QC-r1.
+
+The reference transport uses Python `AsyncClient.stream` with bounded raw chunk accumulation and response closure, or a Node `Response.body` reader with bounded accumulation and reader cancellation. An outer monotonic deadline covers headers, body and parsing. Set `Accept-Encoding: identity` and reject other content encodings; disable redirects, ambient proxy/credential discovery and automatic retries. A borrowed transport must declare and meet the same behavior. HTTPS requires certificate and hostname verification; plaintext HTTP is confined to an explicitly configured loopback development target. Never install a process-global fetch hook, disable certificate checks or change unrelated client settings. Transport prototypes and their adversarial checks do not implement the candidate adapter. [HTTPX async streaming](https://www.python-httpx.org/async/), [Node 26.5 fetch](https://nodejs.org/download/release/v26.5.0/docs/api/globals.html#fetch).
+
+Both branches use the same effective monotonic deadline and cancellation scope. Derive each backend timeout from the remaining deadline and also bound the outer await; a rounded server timeout cannot extend the request. Recheck deadline/cancellation after parsing. Propagate native cancellation, observe late failures, and do not dispatch another branch after termination. Do not close caller-owned resources. Any retry requires a later explicit contract and fresh ledger admission; hidden SDK retries are forbidden.
+
+The future result is a text-free list of `UNVERIFIED` nominations, with full validated payload, point ID, branch and raw score semantics. Dense raw score is finite cosine similarity, higher is better. Accept `[-1.000001,1.000001]` to allow float32 roundoff around the mathematical `[-1,1]` range; preserve the raw score without clamping. Sparse raw score is finite dot-product similarity, higher is better. Do not put these scores into the existing `DenseCandidate` cosine-distance field. The same identity may occur once per branch; reject duplicate IDs or scoped chunk identities within a branch and contradictory cross-branch payloads. Preserve both branch scores without inventing extra votes or fusion.
+
+Response validation rejects excess rows, missing identities, mismatched scope/required-filter fields, full-profile mismatch, invalid digest/span/UUID, malformed score, nonfinite values or incompatible response shape with `IntegrityViolation`. A structurally valid empty response means zero nominations, not insufficient coverage or a completed source search. Qdrant omissions or approximate ranking establish neither source completeness nor relevance.
+
+## Failures and later gates
+
+| Condition | Outcome |
+| --- | --- |
+| Malformed native input/configuration or request | Redacted `InvalidRequest`, no dispatch. |
+| Valid but unsupported operator/profile/version/consistency or missing transport bound | Redacted `UnsupportedCapability`, no query dispatch. |
+| Shared admission exhausted | Existing private `BudgetExhausted` transition; coordinator reports budget limitation, no omitted mandatory branch. |
+| Deadline / caller cancellation | `DeadlineExceeded` / native cancellation; never evidence insufficiency. |
+| Backend unavailable, connection failure, non-success transport response | Redacted `ProviderUnavailable`; no implicit retry or empty-success conversion. |
+| Invalid successful backend response or identity/profile contradiction | Redacted `IntegrityViolation`; discard the batch. |
+
+Never expose backend exception text, endpoint credentials, raw query/body/response or scope in logs/errors. No candidate establishes authoritative source availability or authorization. V5-03 must resolve active published generation, tombstone, current grants, current required metadata, exact canonical bytes/spans/digests and profiles before any provider disclosure, then freshly authorize final release. Source authority unavailability is operational failure. V5-04 owns registry-backed ingestion, publication and repair. V5-02B/C own native adapters; V5-02D must demonstrate this contract against the isolated server serially before candidate-adapter acceptance.

@@ -1,0 +1,89 @@
+{
+  "revision": "QC-r1",
+  "task": "V5-02A",
+  "status": "normative_design_data",
+  "executed": false,
+  "reference_versions": {"qdrant": "1.20.0", "python": "3.14.6", "httpx": "0.28.1", "node_fetch_runtime": "26.5.0", "verification_owner": "root", "official_sdk_alternatives_inspected_not_selected": "Python and Node 1.20.0"},
+  "rules": {
+    "purpose": "Future native adapter assertions; no public API or executed security acceptance is established.",
+    "expansion": "Resolve $ref strings to the named fixture value before executing. Apply set mutations to copied base objects; dot paths address object keys. Unit vectors expand to dimensions zeros with component index set to value. They are synthetic, not model output.",
+    "point_identity": "UUIDv5 with RFC URL namespace over compact UTF-8 JSON of the all-string tuple. Keep Unicode literal, escape JSON quotes, backslashes and controls, use no whitespace or Unicode normalization. Expected UUIDs are populated by the final integrator.",
+    "response_policy": "Validate the complete response before returning any candidate. Candidates remain text-free and UNVERIFIED; SourceStore authorization, active-generation checks and canonical-byte verification remain V5-03.",
+    "digests": "Base digests are shape-only synthetic labels; matching replicas never prove authoritative source integrity.",
+    "writes": "Point derivation does not replace QD-r1 atomic physical point ownership reservation. No writes are exercised here."
+  },
+  "profiles": {
+    "dense": {"profile_id": "fake_embedding_1536_v1", "provider": "fake", "model": "fake_embedding_model_v1", "dimensions": 1536, "tokenizer": "fake-byte-v1", "normalization": "l2"},
+    "sparse": {"profile_id": "fake_manual_sparse_v1", "encoder": "caller_supplied_fixture", "model": "none", "revision": "1", "vocabulary": "fixture_uint32_v1", "preprocessing": "none", "weighting": "caller_supplied", "corpus_statistics_revision": "none"}
+  },
+  "vectors": {
+    "dense_unit": {"encoding": "unit_vector", "dimensions": 1536, "index": 0, "value": 1.0},
+    "sparse_manual": {"indices": [2, 7], "values": [1.0, 0.5]}
+  },
+  "vector_validation": {"dense_l2_tolerance": 0.001, "sparse_max_entries": 16, "sparse_values": "finite_strictly_positive_in_float32", "cosine_score_roundoff_tolerance": 0.000001},
+  "bounds": {"candidate_work_per_operation": 64, "request_bytes": 262144, "response_bytes": 1048576, "input_value_nodes": 4096, "response_value_nodes": 32768, "max_depth": 32, "transport_retries": 0},
+  "trusted_scope": {"tenant_id": "tenant-a", "principal_id": "reader-a", "grant_ids": ["grant-a", "grant-b"], "authorization_revision": "auth-1"},
+  "request_collection": "docs",
+  "payload_projection": ["backend_namespace", "physical_collection", "collection_incarnation", "tenant_id", "collection", "document_id", "revision_id", "generation_id", "chunk_id", "start_byte", "end_byte", "source_sha256", "text_sha256", "dense_profile_id", "sparse_profile_id", "dense_profile", "sparse_profile", "authorization_revision", "principal_ids", "grant_ids", "language", "kind", "tag"],
+  "point_id_cases": [
+    {"id": "base", "tuple": ["cragkit.qdrant.point.v1", "fixture-local", "cragkit_qc_r1", "inc-1", "tenant-a", "docs", "doc-1", "rev-1", "gen-1", "chunk-1", "fake_embedding_1536_v1", "fake_manual_sparse_v1"], "expected_uuid": "45c24a7e-d460-5846-8dae-39569ac502e8"},
+    {"id": "dense_only", "tuple": ["cragkit.qdrant.point.v1", "fixture-local", "cragkit_qc_r1", "inc-1", "tenant-a", "docs", "doc-1", "rev-1", "gen-1", "chunk-1", "fake_embedding_1536_v1", ""], "expected_uuid": "29d7a23a-8cc1-5748-ba22-cd417418ec75"},
+    {"id": "unicode_escape", "tuple": ["cragkit.qdrant.point.v1", "fixture-local", "cragkit_qc_r1", "inc-1", "tenant-a", "docs", "café/雪\"\\\n", "rev-1", "gen-1", "chunk-1", "fake_embedding_1536_v1", "fake_manual_sparse_v1"], "expected_uuid": "1ca850c0-6507-502e-bd17-e3bae15f5a29"},
+    {"id": "decomposed_unicode", "tuple": ["cragkit.qdrant.point.v1", "fixture-local", "cragkit_qc_r1", "inc-1", "tenant-a", "docs", "café/雪\"\\\n", "rev-1", "gen-1", "chunk-1", "fake_embedding_1536_v1", "fake_manual_sparse_v1"], "expected_uuid": "a0708fbc-7d32-55b6-a5d7-e2de5f41610a"}
+  ],
+  "scope_filter": {"must": [{"key": "tenant_id", "match": {"value": "tenant-a"}}, {"key": "collection", "match": {"value": "docs"}}, {"should": [{"key": "principal_ids", "match": {"value": "reader-a"}}, {"key": "grant_ids", "match": {"any": ["grant-a", "grant-b"]}}]}]},
+  "empty_grants_filter": {"must": [{"key": "tenant_id", "match": {"value": "tenant-a"}}, {"key": "collection", "match": {"value": "docs"}}, {"should": [{"key": "principal_ids", "match": {"value": "reader-a"}}]}]},
+  "filter_cases": [
+    {"id": "eq", "input": {"op": "eq", "field": "language", "value": "en"}, "expected": {"key": "language", "match": {"value": "en"}}},
+    {"id": "in", "input": {"op": "in", "field": "tag", "values": ["guide", "reference"]}, "expected": {"key": "tag", "match": {"any": ["guide", "reference"]}}},
+    {"id": "and_or", "input": {"op": "and", "filters": [{"op": "eq", "field": "document_id", "value": "doc-1"}, {"op": "or", "filters": [{"op": "eq", "field": "revision_id", "value": "rev-1"}, {"op": "eq", "field": "kind", "value": "guide"}]}]}, "expected": {"must": [{"key": "document_id", "match": {"value": "doc-1"}}, {"should": [{"key": "revision_id", "match": {"value": "rev-1"}}, {"key": "kind", "match": {"value": "guide"}}]}]}},
+    {"id": "missing_scalar", "input": {"op": "eq", "field": "tag", "value": "guide"}, "payload": {}, "expected_match": false},
+    {"id": "unsupported", "variants": ["ne", "not", "lt", "lte", "gt", "gte", "numeric_value", "boolean_value"], "expected_error": "UnsupportedCapability", "expected_io_calls": 0},
+    {"id": "unknown_field", "input": {"op": "eq", "field": "unknown", "value": "x"}, "expected_error": "InvalidRequest", "expected_io_calls": 0}
+  ],
+  "query_body_templates": {
+    "dense": {"query": "$ref:vectors.dense_unit", "using": "dense", "filter": "$ref:scope_filter", "limit": 2, "with_payload": "$ref:payload_projection", "with_vector": false},
+    "sparse": {"query": "$ref:vectors.sparse_manual", "using": "sparse", "filter": "$ref:scope_filter", "limit": 1, "with_payload": "$ref:payload_projection", "with_vector": false},
+    "required_filter_rule": "When present, append the translated required-filter object to scope_filter.must in every branch, before ranking/limit. Never merge it into the ACL should alternatives."
+  },
+  "base_payload": {
+    "backend_namespace": "fixture-local", "physical_collection": "cragkit_qc_r1", "collection_incarnation": "inc-1",
+    "tenant_id": "tenant-a", "collection": "docs", "document_id": "doc-1", "revision_id": "rev-1", "generation_id": "gen-1", "chunk_id": "chunk-1",
+    "start_byte": 0, "end_byte": 4,
+    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "text_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "dense_profile_id": "fake_embedding_1536_v1", "sparse_profile_id": "fake_manual_sparse_v1", "dense_profile": "$ref:profiles.dense", "sparse_profile": "$ref:profiles.sparse",
+    "authorization_revision": "auth-1", "principal_ids": ["reader-a"], "grant_ids": ["grant-a"], "language": "en", "kind": "guide", "tag": "reference"
+  },
+  "base_point": {"id": "$ref:point_id_cases.base.expected_uuid", "score": 0.75, "payload": "$ref:base_payload"},
+  "response_cases": [
+    {"id": "valid_dense", "points": ["$ref:base_point"], "expected_candidates": 1, "expected_verification": "UNVERIFIED", "provider_text_bytes": 0},
+    {"id": "valid_empty", "points": [], "expected_candidates": 0, "coverage_inferred": false},
+    {"id": "stale_acl_nomination", "set": {"payload.authorization_revision": "auth-0"}, "expected_candidates": 1, "expected_verification": "UNVERIFIED", "provider_text_bytes": 0},
+    {"id": "duplicate_point", "points": ["$ref:base_point", "$ref:base_point"], "expected_error": "IntegrityViolation"},
+    {"id": "foreign_scope", "set": {"payload.tenant_id": "tenant-b"}, "expected_error": "IntegrityViolation"},
+    {"id": "wrong_collection", "set": {"payload.collection": "other"}, "expected_error": "IntegrityViolation"},
+    {"id": "bad_span", "set": {"payload.start_byte": 5, "payload.end_byte": 4}, "expected_error": "IntegrityViolation"},
+    {"id": "bad_digest", "set": {"payload.source_sha256": "bad"}, "expected_error": "IntegrityViolation"},
+    {"id": "wrong_profile_id", "set": {"payload.dense_profile_id": "other"}, "expected_error": "IntegrityViolation"},
+    {"id": "same_id_wrong_model", "set": {"payload.dense_profile.model": "other"}, "expected_error": "IntegrityViolation"},
+    {"id": "wrong_sparse_profile", "set": {"payload.sparse_profile.revision": "2"}, "expected_error": "IntegrityViolation"},
+    {"id": "wrong_uuid", "set": {"id": "00000000-0000-5000-8000-000000000000"}, "expected_error": "IntegrityViolation"},
+    {"id": "cosine_outside_range", "set": {"score": 1.01}, "expected_error": "IntegrityViolation"},
+    {"id": "cosine_float32_roundoff", "set": {"score": 1.0000001}, "expected_candidates": 1, "clamp_score": false},
+    {"id": "sparse_dot_above_one", "branch": "sparse", "set": {"score": 2.5}, "expected_candidates": 1},
+    {"id": "nonfinite_score", "raw_numeric_token": "1e9999", "expected_error": "IntegrityViolation"},
+    {"id": "overresponse", "requested_limit": 1, "response_point_count": 2, "expected_error": "IntegrityViolation", "truncate_silently": false},
+    {"id": "payload_text_injection", "set": {"payload.text": "SYNTHETIC INJECTION", "payload.source_locator": "https://invalid.example/source"}, "provider_text_bytes": 0, "follow_locator": false, "expected_error": "IntegrityViolation"},
+    {"id": "deadline_before_io", "deadline_state": "expired", "expected_error": "DeadlineExceeded", "expected_io_calls": 0},
+    {"id": "deadline_during_io", "deadline_state": "expires_while_awaiting", "expected_error": "DeadlineExceeded", "cooperative_call_settled_before_reuse": true},
+    {"id": "cancellation", "cancel_state": "during_io", "expected_python": "CancelledError", "expected_node": "AbortError", "cooperative_call_settled_before_reuse": true}
+  ],
+  "admission_cases": [
+    {"id": "bounded_branch_sum", "max_candidates": 3, "branch_limits": {"dense": 2, "sparse": 1}, "expected_candidate_work_reserved": 3},
+    {"id": "sum_over_budget", "max_candidates": 3, "branch_limits": {"dense": 2, "sparse": 2}, "expected_error": "InvalidRequest", "expected_io_calls": 0},
+    {"id": "remaining_budget_exhausted", "max_candidates": 3, "remaining_candidate_work": 1, "branch_limits": {"dense": 2, "sparse": 1}, "expected_error": "BudgetExhausted", "expected_io_calls": 0},
+    {"id": "identifier_unsupported", "capability": "identifier", "expected_error": "UnsupportedCapability", "expected_io_calls": 0},
+    {"id": "native_fusion_unsupported", "capability": "native_fusion", "expected_error": "UnsupportedCapability", "expected_io_calls": 0},
+    {"id": "sparse_invalid", "variants": [{"indices": [7, 2], "values": [1, 1]}, {"indices": [2, 2], "values": [1, 1]}, {"indices": [4294967296], "values": [1]}, {"indices": [2], "values": [0]}, {"indices": [2], "values": [-1]}, {"indices": [2], "values": []}, {"indices": [2], "values": [1e39]}, {"indices": [2], "values": [1e-50]}], "expected_error": "InvalidRequest", "expected_io_calls": 0}
+  ]
+}

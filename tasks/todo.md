@@ -237,6 +237,11 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [ ] V5-02: [Qdrant scoped candidate adapter](versions/V5-integrations.md#v5-02-qdrant-scoped-candidate-adapter) — evidence: pending.
 
+  - [x] V5-02A: Candidate/filter/profile contract, deterministic identity and isolated reference target selected and verified. [QC-r1](../contracts/QDRANT_CANDIDATES_V5.md), [fixtures](../contracts/fixtures/qdrant_candidates.json), [version/target/prototype evidence](../evaluation/reports/V5/V5-02A.md). Native candidate implementation and full adapter integration remain B/C/D.
+  - [ ] V5-02B: Native Python candidate adapter and focused negative cases.
+  - [ ] V5-02C: Native TypeScript candidate adapter and focused negative cases.
+  - [ ] V5-02D: Serial isolated Qdrant adapter acceptance and final resource shutdown.
+
 - [ ] V5-03: [Source resolution and authorization](versions/V5-integrations.md#v5-03-source-resolution-and-authorization) — evidence: pending.
 
 - [ ] V5-C1: Demonstration, relevant regression checks, learning review and resource note through V5-03.
@@ -288,6 +293,18 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-02A: Native candidate contract and reference target
+
+State: COMPLETE for V5-02A. Outcome: freeze QC-r1 candidate/filter/profile/point identity mappings and select exact optional client/server versions plus an isolated reference target before dependent runtime edits. QD-r1 is the protected consistency dependency; no SourceStore authorization/publication implementation is claimed here.
+
+- `/root/v5_candidate_contract`, gpt-6.1-sol, implementation mode and pair assembler: owns only `contracts/QDRANT_CANDIDATES_V5.md`, covering planned native boundary, capabilities, filter semantics, profiles, identities and fail-closed validation. Read-only dependencies: QD-r1, architecture, wire/embedding/execution contracts and peer fixtures.
+- `/root/v5_candidate_fixtures`, gpt-6.1-sol, implementation mode: owns only `contracts/fixtures/qdrant_candidates.json`, covering deterministic point-ID examples, bounded filter translations and hostile response/profile cases. Coordinates concrete dependencies directly with the contract peer against QC-r1.
+- Root owns tracker, contract index, exact version/target verification, check evidence and final Git integration. All product modules, package/lock files, storage/migrations, sealed inputs and existing user audits remain protected. Peers make no overlapping edits; transfers require a stopped previous writer and root notification. Outcome/boundary changes and unresolved decisions go to root, then Astra only if necessary.
+
+Checks/resources: workers use local reads and owned writes only, no tests, services, installs, providers, databases or Git. Root may inspect official metadata/archives and run one task-owned native Qdrant reference process against synthetic data only, on loopback with explicit limits; no model/provider or cloud account. Root serializes checks, validates documentation/fixture mappings and cleans prose before acceptance. Current headroom snapshot: 39 GiB disk and 55 percent free system memory. Next: freeze QC-r1 and verify the target, then V5-02B/C native implementation on separate paths; V5-02D retains adapter integration acceptance.
+
+25 October 2026 handoff: two Sol peers delivered QC-r1 and fixtures on separate paths, coordinated directly, assembled and transferred ownership. Root inspected exact SDK archives and selected streaming REST instead: optional HTTPX 0.28.1/Python 3.14.6 and Node 26.5.0 built-in fetch, Qdrant 1.20.0. Independent Sol review found no remaining material contradiction. Root verified eight isolated server-readiness groups, five Python and four Node transport prototype checks, and independent Python/Node UUID agreement for four identities. Strict fixture checks cover 4 point-ID, 6 filter, 21 response and 6 admission scenario records; these are design expectations, not executed adapter assertions. Local links and prose checked before commit. Server/data/private key/config and isolated HTTPX environment are closed/removed; no provider or hosted database call, project dependency change or user-audit edit. The 38464 KiB server RSS is a snapshot, not peak or performance evidence. [Evidence](../evaluation/reports/V5/V5-02A.md). V5-02 remains incomplete; next B/C implement the native adapters, then D validates them against the isolated backend. The full V5 goal remains active through source authority, repair, existing-index/MCP, parity and artifact gates.
 
 ### V5-01: Consistency specification assignment
 
