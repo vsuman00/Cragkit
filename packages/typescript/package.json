@@ -46,6 +46,14 @@
     "./evidence": {
       "types": "./dist/evidence.d.ts",
       "import": "./dist/evidence.js"
+    },
+    "./execution": {
+      "types": "./dist/execution.d.ts",
+      "import": "./dist/execution.js"
+    },
+    "./planning": {
+      "types": "./dist/planning.d.ts",
+      "import": "./dist/planning.js"
     }
   },
   "files": [

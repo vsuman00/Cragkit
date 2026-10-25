@@ -1,0 +1,264 @@
+{
+  "revision": "EL-r1",
+  "cases": [
+    {
+      "id": "known",
+      "limits": {},
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "provider_calls": 1,
+            "candidates": 2,
+            "attempts": 1
+          }
+        ],
+        [
+          "dispatch",
+          "a"
+        ],
+        [
+          "reconcile",
+          "a",
+          {
+            "input_tokens": 3,
+            "output_tokens": 1,
+            "cost_usd": 0
+          }
+        ]
+      ]
+    },
+    {
+      "id": "refund",
+      "limits": {},
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "provider_calls": 1
+          }
+        ],
+        [
+          "abandon",
+          "a"
+        ]
+      ]
+    },
+    {
+      "id": "cancel-after-dispatch",
+      "limits": {},
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "provider_calls": 1
+          }
+        ],
+        [
+          "dispatch",
+          "a"
+        ],
+        [
+          "abandon",
+          "a"
+        ]
+      ]
+    },
+    {
+      "id": "last-call",
+      "limits": {
+        "max_provider_calls": 1
+      },
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "provider_calls": 1
+          }
+        ],
+        [
+          "reserve",
+          "b",
+          {
+            "provider_calls": 1
+          }
+        ]
+      ]
+    },
+    {
+      "id": "strict-unsupported",
+      "limits": {
+        "max_spend_usd": 1
+      },
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "provider_calls": 1
+          }
+        ]
+      ]
+    },
+    {
+      "id": "strict-bound",
+      "limits": {
+        "max_spend_usd": 1
+      },
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "provider_calls": 1,
+            "cost_upper_usd": 1
+          }
+        ],
+        [
+          "reserve",
+          "b",
+          {
+            "provider_calls": 1,
+            "cost_upper_usd": 0.1
+          }
+        ]
+      ]
+    },
+    {
+      "id": "overrun-poison",
+      "limits": {},
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "provider_calls": 1,
+            "cost_upper_usd": 0
+          }
+        ],
+        [
+          "dispatch",
+          "a"
+        ],
+        [
+          "reconcile",
+          "a",
+          {
+            "cost_usd": 0.1
+          }
+        ],
+        [
+          "reserve",
+          "b",
+          {
+            "attempts": 1
+          }
+        ]
+      ]
+    },
+    {
+      "id": "candidate-budget",
+      "limits": {
+        "max_candidates": 2
+      },
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "candidates": 2
+          }
+        ],
+        [
+          "dispatch",
+          "a"
+        ],
+        [
+          "reconcile",
+          "a",
+          {}
+        ],
+        [
+          "reserve",
+          "b",
+          {
+            "candidates": 1
+          }
+        ]
+      ]
+    },
+    {
+      "id": "unknown-sticky",
+      "limits": {},
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "provider_calls": 1
+          }
+        ],
+        [
+          "dispatch",
+          "a"
+        ],
+        [
+          "reconcile",
+          "a",
+          {}
+        ],
+        [
+          "reserve",
+          "b",
+          {
+            "provider_calls": 1
+          }
+        ],
+        [
+          "dispatch",
+          "b"
+        ],
+        [
+          "reconcile",
+          "b",
+          {
+            "input_tokens": 1,
+            "output_tokens": 2,
+            "cost_usd": 0
+          }
+        ]
+      ]
+    },
+    {
+      "id": "integer-valued-json",
+      "limits": {},
+      "operations": [
+        [
+          "reserve",
+          "a",
+          {
+            "provider_calls": 1.0,
+            "candidates": 2.0
+          }
+        ],
+        [
+          "dispatch",
+          "a"
+        ],
+        [
+          "reconcile",
+          "a",
+          {
+            "input_tokens": 3.0,
+            "output_tokens": 1.0,
+            "cost_usd": 0
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # V4: Corrective retrieval alpha
 
-Status: planned, not implemented. Progress is tracked only in [todo.md](../todo.md).
+Status: in progress; ledger/planning and focused corrective paths have local evidence. Full-version acceptance is pending. Progress is tracked only in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 

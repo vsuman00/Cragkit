@@ -38,6 +38,8 @@ def pipeline(root: Path, artifacts_dir: Path) -> tuple[Step, ...]:
         Step("schema-drift", uv + ("python", "tools/export_schemas.py", "--check"), root, 60),
         Step("request-parity", uv + ("python", "tools/check_contracts.py", "--fixtures", "requests"), root, 60),
         Step("result-parity", uv + ("python", "tools/check_contracts.py", "--fixtures", "results"), root, 60),
+        Step("execution-parity", uv + ("python", "tools/check_execution.py"), root, 60),
+        Step("planning-parity", uv + ("python", "tools/check_planning.py"), root, 60),
         Step("embedding-parity", uv + ("python", "tools/check_embeddings.py"), root, 60),
         Step("vector-generation-parity", uv + ("python", "tools/check_vector_contract.py"), root, 60),
         Step("dense-parity", uv + ("python", "tools/check_dense_contract.py"), root, 60),

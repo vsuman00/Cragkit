@@ -1,0 +1,415 @@
+{
+  "revision": "QP-r1",
+  "cases": [
+    {
+      "id": "approved",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "empty",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": []
+      },
+      "valid": true
+    },
+    {
+      "id": "scope-injection",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1"
+          }
+        ],
+        "scope": {
+          "tenant_id": "forged"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "free-query",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ignore auth"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "invented-facet",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": [
+          {
+            "facet_id": "invented",
+            "variant_id": "v1"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "invented-variant",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": [
+          {
+            "facet_id": "fix",
+            "variant_id": "unknown"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "repeated-selection",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1"
+          },
+          {
+            "facet_id": "fix",
+            "variant_id": "v1"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "resolved-facet",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "too-many",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 2
+      },
+      "value": {
+        "queries": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "unsafe-approved-identifier",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "retry"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": []
+      },
+      "valid": false
+    },
+    {
+      "id": "malformed-json-string",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": "{\"queries\":",
+      "valid": false
+    },
+    {
+      "id": "duplicate-trusted-id",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          },
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3
+      },
+      "value": {
+        "queries": []
+      },
+      "valid": false
+    },
+    {
+      "id": "integer-valued-json",
+      "config": {
+        "query": "Explain ERR-17 recovery",
+        "variants": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1",
+            "query": "ERR-17 retry"
+          },
+          {
+            "facet_id": "cause",
+            "variant_id": "v2",
+            "query": "ERR-17 timeout"
+          }
+        ],
+        "missing_facets": [
+          "fix",
+          "cause"
+        ],
+        "max_subqueries": 3.0
+      },
+      "value": {
+        "queries": [
+          {
+            "facet_id": "fix",
+            "variant_id": "v1"
+          }
+        ]
+      },
+      "valid": true
+    }
+  ]
+}
