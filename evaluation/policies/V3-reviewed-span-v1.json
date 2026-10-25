@@ -1,0 +1,17 @@
+{
+  "revision": "V3-calibration-r1",
+  "state": "frozen_before_live_measurement",
+  "question_ids": ["q01", "q03", "q05", "q08", "q19", "q20"],
+  "search": {"mode": "hybrid", "encoder": "sha256-ascii-word-count.v1", "max_candidates": 15},
+  "shortlist": 2,
+  "ranking_metric_k": 5,
+  "context": {"renderer": "cragkit.context.v2", "tokenizer": "cl100k_base", "max_tokens": 20000, "reserve": 256, "surrounding_bytes": 256, "rebalance": true},
+  "assessor": {"method": "reviewed-span.v1", "policy": "reviewed-development:1", "threshold": "whole_reviewed_anchor_containment", "known_conflict_single_projection": "unknown"},
+  "reranker": {"provider": "cohere", "model": "rerank-v5.0-fast", "model_revision": "mutable_alias:rerank-v5.0-fast", "api": "v2", "score_direction": "higher_is_better", "cutoff": "rank_only_no_score_probability_threshold", "max_tokens_per_doc": 4096},
+  "live_limits": {"max_calls": 6, "max_documents": 12, "concurrency": 1, "retries": 0, "response_bytes": 65536, "admission_tokens_per_document": 32768, "dated_usd_per_million_tokens": 0.02, "admission_estimate_usd": 0.00786432, "budget_usd": 0.01},
+  "comparisons": ["same_native_hybrid_shortlist_before_rerank", "cohere_reranked_same_shortlist", "historical_V2_full_candidate_baseline_separate"],
+  "denominators": {"false_sufficient": "all_evaluated_questions", "abstention": "all_evaluated_questions", "answerable_abstention": "answerable_questions", "conflict_error": "reviewed_conflict_questions"},
+  "data": "approved_public_synthetic_development_only",
+  "held_out": "not_read_or_scored",
+  "limitations": ["curated_assessment_in_sample", "six_question_small_ranking_subset", "no_two_facet_question_in_live_subset", "synthetic_embedding_not_live_embedding_quality", "mutable_model_alias", "actual_billing_unknown", "provider_truncation_independently_unknown"]
+}

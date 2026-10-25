@@ -705,3 +705,14 @@ uv run --project packages/python --frozen --no-sync --extra postgres python tool
 ```
 
 Constructor options are policy, counter, rebalance, surrounding_bytes, reranker, rerank_fallback and rerank_limit (1-40, default 40). Only the application binds these values. Strict requests need an issued cl100k counter and matching tokenizer identity. Optional reranking closes the first authorized source lease before dispatch and fetches fresh authorization afterward. Source reads share 16 MiB across both rounds. Token usage/live cost cannot be invented; strict live spend ceilings are unsupported at this boundary.
+
+## V3 frozen calibration and replay
+
+The [frozen protocol](../evaluation/policies/V3-reviewed-span-v1.json) compares the same two authorized development candidates before and after reranking. [Observed results](../evaluation/reports/V3/V3-07.md) include raw-score recordings, independent label-based false-sufficient checks and separate pre-packing/packed metrics. The five hosted calls already completed; routine work must replay them rather than redispatch.
+
+```sh
+uv run --project packages/python --frozen pytest tools/tests/test_v3_calibration.py tools/tests/test_run_v3_calibration.py -q
+node --test --test-concurrency=1 packages/typescript/tests/calibration-replay.test.mjs
+```
+
+`tools/run_v3_calibration.py` refuses dispatch without `--allow-live`. Its explicit baseline/output arguments select a verified native baseline and task-owned report. A new live run requires its own recorded budget/rationale; it is not part of routine acceptance. Parent-bounded serial children read the private Cohere key, retain redacted call/failure accounting and never retry automatically. Node replay takes an explicit `--replay` local public JSON payload and never accesses credentials or the network.
