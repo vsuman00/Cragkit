@@ -116,3 +116,10 @@ console.log('guarded');
     child = subprocess.run(['node', '--input-type=module', '-e', script],
                            capture_output=True, text=True, timeout=5)
     assert child.returncode == 0 and child.stdout.strip() == 'guarded'
+
+
+def test_dense_only_fixture_cases_keep_scope_failures_and_single_branch_counts():
+    cases = native.native_cases(dense_only=True)
+    assert len(cases) == 12
+    assert all(case.get('count') in (None, 0, 1) for case in cases)
+    assert {case['id'] for case in cases} == {case['id'] for case in native.native_cases()}

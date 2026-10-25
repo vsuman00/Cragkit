@@ -754,11 +754,11 @@ Verified focused commands from the repository root, one suite at a time:
 
 ```sh
 uv sync --project packages/python --frozen --extra qdrant
-uv run --project packages/python --frozen --no-sync --extra qdrant pytest packages/python/tests/test_qdrant.py packages/python/tests/test_qdrant_transport.py tools/tests/test_check_qdrant.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant pytest packages/python/tests/test_qdrant.py packages/python/tests/test_qdrant_transport.py packages/python/tests/test_qdrant_embeddings.py tools/tests/test_check_qdrant.py tools/tests/test_qdrant_dense_example.py -q
 uv run --project packages/python --frozen --no-sync --extra qdrant mypy --config-file packages/python/pyproject.toml packages/python/src
 ```
 
-In `packages/typescript`, run `npm run build`, then `node --test --test-concurrency=1 tests/qdrant.test.mjs tests/qdrant-transport.test.mjs`. The optional Python extra pins HTTPX 0.28.1. Node uses its built-in fetch; no Qdrant SDK or model runtime is installed. Neither module import starts a service or connects to a database.
+In `packages/typescript`, run `npm run build`, then `node --test --test-concurrency=1 tests/qdrant.test.mjs tests/qdrant-transport.test.mjs tests/qdrant-embeddings.test.mjs`. The optional Python extra pins HTTPX 0.28.1. Node uses its built-in fetch; no Qdrant SDK or model runtime is installed. Neither module import starts a service or connects to a database.
 
 An administrator explicitly acquires and verifies a supported Qdrant server binary. The current macOS arm64 reference is 1.20.0; acquisition evidence is in [V5-02A](../evaluation/reports/V5/V5-02A.md). No library import or native checker downloads it. After building Node and installing the Python extra, the verified isolated integration command is:
 
@@ -767,6 +767,10 @@ uv run --project packages/python --frozen --no-sync --extra qdrant python tools/
 ```
 
 The checker creates one owned loopback process, private administrative/read-only keys and eight synthetic points. It runs the native runtimes serially and compares all returned nominations and ledger snapshots. It verifies write denial for the read-only key, deletes its collection, confirms an empty inventory, terminates the process and removes private config/data. Generated artifacts contain synthetic records only. Explicit clients must close the store and then their owned transport; borrowed resources are not closed by the store. Remote endpoints require verified HTTPS. Plain HTTP is allowed only for explicitly configured `127.0.0.1` or `::1` development endpoints; proxy/TLS bypass settings are unsupported.
+
+The [dense composition examples](../examples/qdrant_dense.md) connect E-r1 batch output to candidate search and preserve separate provider/candidate work. After Node build, the root command `node --test --test-concurrency=1 tools/test_qdrant_dense_example.mjs` checks their accounting and cancellation. The Python example checks are included in the focused command above. Real-profile tests inject routing spies; they make no paid calls or real-profile writes.
+
+Add `--dense-only` to the native checker and select a separate artifact directory, such as `--artifacts-dir artifacts/V5/native-dense-only`, to verify a genuine dense-only collection. This mode uses fake E-r1 inference and batch binding before each actual scoped backend query. The accepted OpenAI configuration exposes dense only; no sparse model is required. [V5-02E evidence](../evaluation/reports/V5/V5-02E.md) records both deployment modes and their limits.
 
 ## V4 bounded corrective execution
 

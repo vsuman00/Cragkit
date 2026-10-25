@@ -30,8 +30,8 @@ def point_identity(payload: dict[str, Any]) -> str:
     return str(uuid5(NAMESPACE_URL, json.dumps(value, ensure_ascii=False, separators=(',', ':'))))
 
 
-def native_cases() -> list[dict[str, Any]]:
-    return [
+def native_cases(*, dense_only: bool = False) -> list[dict[str, Any]]:
+    cases = [
         {'id': 'dual-scoped', 'document': 'doc-1', 'count': 2},
         {'id': 'missing', 'document': 'missing', 'count': 0},
         {'id': 'foreign-tenant', 'document': 'foreign-tenant', 'count': 0},
@@ -46,12 +46,18 @@ def native_cases() -> list[dict[str, Any]]:
         {'id': 'array-metadata-integrity', 'document': 'bad-tag', 'tag': 'reference',
          'error': 'integrity_violation'},
     ]
+    if dense_only:
+        for case in cases:
+            if case.get('count') == 2:
+                case['count'] = 1
+    return cases
 
 
 class QdrantFixture:
     """Own only a verified local process, private config and temporary data directory."""
 
-    def __init__(self, binary: Path, artifacts: Path, expected_sha256: str) -> None:
+    def __init__(self, binary: Path, artifacts: Path, expected_sha256: str, *, dense_only: bool = False) -> None:
+        self.dense_only = dense_only
         binary = binary.resolve(strict=True)
         if not binary.is_file() or sha256(binary.read_bytes()).hexdigest() != expected_sha256:
             raise ValueError('qdrant_binary_identity')
@@ -144,14 +150,16 @@ class QdrantFixture:
         fixture = json.loads((ROOT / 'contracts/fixtures/qdrant_candidates.json').read_text())
         self.config = {'backend_namespace': 'fixture-local', 'physical_collection': 'cragkit_qc_r1',
                        'collection_incarnation': 'inc-1', 'dense_profile': fixture['profiles']['dense'],
-                       'sparse_profile': fixture['profiles']['sparse']}
+                       'sparse_profile': None if self.dense_only else fixture['profiles']['sparse']}
         self.scope = fixture['trusted_scope']
         self.dense = [1.0] + [0.0] * 1535
-        self.sparse = fixture['vectors']['sparse_manual']
+        self.sparse = None if self.dense_only else fixture['vectors']['sparse_manual']
         self.collection_path = '/collections/' + self.config['physical_collection']
-        self.request('PUT', self.collection_path, {
-            'vectors': {'dense': {'size': 1536, 'distance': 'Cosine'}}, 'sparse_vectors': {'sparse': {}},
-            'replication_factor': 1, 'write_consistency_factor': 1, 'hnsw_config': {'m': 0}})
+        metadata = {'vectors': {'dense': {'size': 1536, 'distance': 'Cosine'}},
+                    'replication_factor': 1, 'write_consistency_factor': 1, 'hnsw_config': {'m': 0}}
+        if not self.dense_only:
+            metadata['sparse_vectors'] = {'sparse': {}}
+        self.request('PUT', self.collection_path, metadata)
         self._created = True
         points = []
         for document in ('doc-1', 'foreign-tenant', 'foreign-collection', 'denied-grant',
@@ -159,7 +167,9 @@ class QdrantFixture:
             payload = deepcopy(fixture['base_payload'])
             payload['document_id'] = document
             payload['dense_profile'] = deepcopy(fixture['profiles']['dense'])
-            payload['sparse_profile'] = deepcopy(fixture['profiles']['sparse'])
+            payload['sparse_profile'] = deepcopy(self.config['sparse_profile'])
+            if self.dense_only:
+                payload['sparse_profile_id'] = ''
             if document == 'foreign-tenant': payload['tenant_id'] = 'tenant-b'
             if document == 'foreign-collection': payload['collection'] = 'other'
             if document == 'denied-grant': payload.update(principal_ids=[], grant_ids=['other'])
@@ -168,8 +178,10 @@ class QdrantFixture:
             if document == 'bad-profile': payload['dense_profile']['model'] = 'wrong-model'
             if document == 'bad-tag': payload['tag'] = ['reference']
             self.payloads[document] = payload
-            points.append({'id': point_identity(payload), 'payload': payload,
-                           'vector': {'dense': self.dense, 'sparse': self.sparse}})
+            vectors = {'dense': self.dense}
+            if not self.dense_only:
+                vectors['sparse'] = self.sparse
+            points.append({'id': point_identity(payload), 'payload': payload, 'vector': vectors})
         result = self.request('PUT', self.collection_path + '/points?wait=true&ordering=strong', {'points': points})
         if result['result']['status'] != 'completed':
             raise ValueError('fixture_write_incomplete')
@@ -193,7 +205,8 @@ class QdrantFixture:
 
     def child_input(self) -> dict[str, Any]:
         return {'endpoint': self.endpoint, 'api_key': self._reader_key, 'config': self.config,
-                'scope': self.scope, 'dense': self.dense, 'sparse': self.sparse, 'cases': native_cases()}
+                'scope': self.scope, 'dense': self.dense, 'sparse': self.sparse,
+                'dense_only': self.dense_only, 'cases': native_cases(dense_only=self.dense_only)}
 
     def close(self) -> None:
         process, self.process = self.process, None

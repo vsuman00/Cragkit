@@ -1,0 +1,208 @@
+{
+  "contract_revision": "QC-r1-E",
+  "vector": {
+    "dimensions": 1536,
+    "basis_index": 0
+  },
+  "profiles": {
+    "fake": {
+      "profile_id": "fake_embedding_1536_v1",
+      "provider": "fake",
+      "model": "fake_embedding_model_v1",
+      "dimensions": 1536,
+      "tokenizer": "fake-byte-v1",
+      "normalization": "l2"
+    },
+    "openai": {
+      "profile_id": "openai_te3small_1536_r1",
+      "provider": "openai",
+      "model": "text-embedding-3-small",
+      "dimensions": 1536,
+      "tokenizer": "cl100k_base",
+      "normalization": "l2"
+    }
+  },
+  "cases": [
+    {
+      "id": "fake-valid",
+      "profile": "fake",
+      "patches": [],
+      "expected_items": 1
+    },
+    {
+      "id": "openai-valid",
+      "profile": "openai",
+      "patches": [],
+      "expected_items": 1
+    },
+    {
+      "id": "equal-dimensions-wrong-model",
+      "profile": "openai",
+      "patches": [
+        {
+          "path": [
+            "profile",
+            "model"
+          ],
+          "value": "other-model"
+        }
+      ],
+      "expected_items": 1,
+      "error": "embedding_profile_mismatch"
+    },
+    {
+      "id": "wrong-tokenizer",
+      "profile": "openai",
+      "patches": [
+        {
+          "path": [
+            "profile",
+            "tokenizer"
+          ],
+          "value": "fake-byte-v1"
+        }
+      ],
+      "expected_items": 1,
+      "error": "embedding_profile_mismatch"
+    },
+    {
+      "id": "fake-flag-under-real-identity",
+      "profile": "openai",
+      "patches": [
+        {
+          "path": [
+            "synthetic"
+          ],
+          "value": true
+        }
+      ],
+      "expected_items": 1,
+      "error": "embedding_profile_mismatch"
+    },
+    {
+      "id": "unknown-real-usage",
+      "profile": "openai",
+      "patches": [
+        {
+          "path": [
+            "usage"
+          ],
+          "value": {
+            "prompt_tokens": null,
+            "total_tokens": null,
+            "cost_usd": null,
+            "cost_kind": "unknown"
+          }
+        }
+      ],
+      "expected_items": 1
+    },
+    {
+      "id": "known-real-billing-rejected",
+      "profile": "openai",
+      "patches": [
+        {
+          "path": [
+            "usage",
+            "cost_kind"
+          ],
+          "value": "known"
+        }
+      ],
+      "expected_items": 1,
+      "error": "invalid_request"
+    },
+    {
+      "id": "one-missing-token-count",
+      "profile": "fake",
+      "patches": [
+        {
+          "path": [
+            "usage",
+            "prompt_tokens"
+          ],
+          "value": null
+        }
+      ],
+      "expected_items": 1,
+      "error": "invalid_request"
+    },
+    {
+      "id": "negative-cost",
+      "profile": "openai",
+      "patches": [
+        {
+          "path": [
+            "usage",
+            "cost_usd"
+          ],
+          "value": -1
+        }
+      ],
+      "expected_items": 1,
+      "error": "invalid_request"
+    },
+    {
+      "id": "fractional-tokens",
+      "profile": "fake",
+      "patches": [
+        {
+          "path": [
+            "usage",
+            "prompt_tokens"
+          ],
+          "value": 1.5
+        }
+      ],
+      "expected_items": 1,
+      "error": "invalid_request"
+    },
+    {
+      "id": "bool-provider-count",
+      "profile": "fake",
+      "patches": [
+        {
+          "path": [
+            "provider_calls"
+          ],
+          "value": true
+        }
+      ],
+      "expected_items": 1,
+      "error": "invalid_request"
+    },
+    {
+      "id": "wrong-dimension",
+      "profile": "fake",
+      "patches": [
+        {
+          "path": [
+            "vectors"
+          ],
+          "value": [
+            [
+              1
+            ]
+          ]
+        }
+      ],
+      "expected_items": 1,
+      "error": "embedding_profile_mismatch"
+    },
+    {
+      "id": "oversized-usage-string",
+      "profile": "fake",
+      "patches": [
+        {
+          "path": [
+            "usage",
+            "cost_kind"
+          ],
+          "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      ],
+      "expected_items": 1,
+      "error": "invalid_request"
+    }
+  ]
+}

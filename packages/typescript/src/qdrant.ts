@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { ExecutionLedger, type Reservation } from './execution.js';
 import { parse_request, parse_scope } from './requests.js';
 import { deep_freeze, valid_native_json } from './shared.js';
-import { DeadlineExceeded, IndexNotReady, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability } from './errors.js';
-import { compile_filter, dense_vector, sparse_vector, parse_config, parse_response, validate_payload, same, PAYLOAD_FIELDS, type QdrantConfig, type QdrantNomination, type Branch } from './qdrant-contract.js';
+import { DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability } from './errors.js';
+import { bind_embedding_batch, compile_filter, dense_vector, sparse_vector, parse_config, parse_response, validate_payload, same, PAYLOAD_FIELDS, type QdrantConfig, type QdrantNomination, type Branch } from './qdrant-contract.js';
 import { abort_error, abortable, check_deadline, drain, type QdrantTransport } from './qdrant-transport.js';
 export { FetchQdrantTransport } from './qdrant-transport.js';
 export type { QdrantTransport, QdrantTransportOptions } from './qdrant-transport.js';
-export { point_id, compile_filter, SPARSE_PROFILE, QdrantConfigSchema, QdrantPayloadSchema } from './qdrant-contract.js';
+export { bind_embedding_batch, point_id, compile_filter, SPARSE_PROFILE, QdrantConfigSchema, QdrantPayloadSchema } from './qdrant-contract.js';
 export type { QdrantConfig, QdrantPayload, QdrantNomination } from './qdrant-contract.js';
 
 type OperationOptions={deadline:number;signal?:AbortSignal};
@@ -87,7 +87,13 @@ export class QdrantSearchStore {
     options_shape(options,['scope','dense','sparse','branch_limits','ledger','deadline','signal']);
     const request=parse_request(input),scope=parse_scope(options.scope);
     const filter=compile_filter(request,scope);
-    const dense=options.dense===undefined||options.dense===null?undefined:dense_vector(options.dense);
+    let dense:readonly number[]|undefined;
+    if(options.dense!==undefined&&options.dense!==null){
+      if(Array.isArray(options.dense)){
+        if(this.config.dense_profile.provider!=='fake')throw new EmbeddingProfileMismatch();
+        dense=dense_vector(options.dense);
+      }else dense=bind_embedding_batch(options.dense,this.config.dense_profile,{expected_items:1}).vectors[0];
+    }
     const sparse=options.sparse===undefined||options.sparse===null?undefined:sparse_vector(options.sparse);
     if(!dense&&!sparse)throw new InvalidRequest();if(sparse&&!this.config.sparse_profile)throw new UnsupportedCapability();
     let limits:Partial<Record<Branch,number>>;

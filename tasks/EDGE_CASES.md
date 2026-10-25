@@ -134,6 +134,7 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 
 | ID | Trigger | Expected behavior | Owner | Layer |
 | --- | --- | --- | --- | --- |
+| E84 | Equal-dimensional embedding batches name another model, hide synthetic execution or lose usage | Require the full supported profile, immutable validated batch and provider flag before query dispatch; preserve estimated/unknown billing and charge only actually dispatched inference. | V5-02E | U/I |
 | E83 | Node enables ambient proxies through `NODE_OPTIONS`, rather than `execArgv` | Reject the unsupported transport configuration before dispatch, including quoted startup flag forms; keep credentials and startup-option contents out of errors. | V5-02C | U/I |
 
 ## Native acceptance harness

@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { FAKE_PROFILE } from './embeddings.js';
+import { FAKE_PROFILE, OPENAI_PROFILE, EmbeddingBatchSchema, type EmbeddingBatch } from './embeddings.js';
 import { parse_request, parse_scope, type Filter, type RetrievalRequest, type TrustedScope } from './requests.js';
 import { deep_freeze, identity, input_text, integer, valid_native_json, type DeepReadonly } from './shared.js';
-import { IntegrityViolation, InvalidRequest, UnsupportedCapability } from './errors.js';
+import { EmbeddingProfileMismatch, IntegrityViolation, InvalidRequest, UnsupportedCapability } from './errors.js';
 
 export const SPARSE_PROFILE = deep_freeze({profile_id:'fake_manual_sparse_v1', encoder:'caller_supplied_fixture', model:'none', revision:'1', vocabulary:'fixture_uint32_v1', preprocessing:'none', weighting:'caller_supplied', corpus_statistics_revision:'none'});
 const SparseProfileSchema = z.strictObject({profile_id:identity, encoder:identity, model:identity, revision:identity, vocabulary:identity, preprocessing:identity, weighting:identity, corpus_statistics_revision:identity});
@@ -20,8 +20,56 @@ export function same(a: unknown,b: unknown): boolean {
 export function parse_config(value: unknown): QdrantConfig {
   let config:QdrantConfig;
   try { if (!valid_native_json(value)) throw new Error(); config=QdrantConfigSchema.parse(value); } catch { throw new InvalidRequest(); }
-  if (!same(config.dense_profile,FAKE_PROFILE) || (config.sparse_profile !== null && !same(config.sparse_profile,SPARSE_PROFILE))) throw new UnsupportedCapability();
+  if ((!same(config.dense_profile,FAKE_PROFILE)&&!same(config.dense_profile,OPENAI_PROFILE)) || (config.sparse_profile !== null && (!same(config.sparse_profile,SPARSE_PROFILE)||same(config.dense_profile,OPENAI_PROFILE)))) throw new UnsupportedCapability();
   return config;
+}
+
+// This admission guard is local to E batches; core wire admission stays at 4096 nodes.
+function bounded_batch(value:unknown):boolean {
+  let nodes=0;const ancestors=new Set<object>();
+  function visit(v:unknown,depth:number):boolean {
+    if(++nodes>16384||depth>8)return false;
+    if(v===null||typeof v==='boolean')return true;
+    if(typeof v==='number')return Number.isFinite(v);
+    if(typeof v==='string')return v.length<=1024&&!/[\uD800-\uDFFF]/u.test(v)&&Buffer.byteLength(v,'utf8')<=1024;
+    if(typeof v!=='object'||ancestors.has(v)||Object.getOwnPropertySymbols(v).length)return false;
+    if(Array.isArray(v)&&Object.getPrototypeOf(v)!==Array.prototype&&Object.getPrototypeOf(v)!==null)return false;
+    if(!Array.isArray(v)&&Object.getPrototypeOf(v)!==Object.prototype&&Object.getPrototypeOf(v)!==null)return false;
+    if(Array.isArray(v)&&v.length>16384)return false;
+    const keys=Object.getOwnPropertyNames(v);
+    if(keys.length>16385||(Array.isArray(v)&&keys.length!==v.length+1))return false;
+    ancestors.add(v);
+    try{
+      for(const key of keys){
+        if(key.length>256||/[\uD800-\uDFFF]/u.test(key)||Buffer.byteLength(key,'utf8')>256)return false;
+        if(Array.isArray(v)&&key==='length')continue;
+        if(Array.isArray(v)&&(!/^(?:0|[1-9][0-9]*)$/.test(key)||Number(key)>=v.length))return false;
+        const d=Object.getOwnPropertyDescriptor(v,key)!;
+        if(!('value'in d)||!d.enumerable||!visit(d.value,depth+1))return false;
+      }
+      return true;
+    }finally{ancestors.delete(v);}
+  }
+  try{return visit(value,0);}catch{return false;}
+}
+const BatchBindingSchema=z.strictObject({profile:DenseProfileSchema,vectors:z.array(z.array(z.unknown())).min(1).max(8),usage:z.strictObject({prompt_tokens:integer(0,2147483647).nullable(),total_tokens:integer(0,2147483647).nullable(),cost_usd:z.number().finite().nonnegative().nullable(),cost_kind:z.enum(['known','estimated','unknown'])}),provider_calls:z.literal(1),synthetic:z.boolean()});
+export function bind_embedding_batch(batch:unknown,profile:unknown,options:{expected_items?:number}={}):EmbeddingBatch {
+  let expected:z.infer<typeof DenseProfileSchema>,value:z.infer<typeof BatchBindingSchema>,count:number|undefined;
+  try{
+    if(!bounded_batch(profile)||!bounded_batch(options)||!bounded_batch(batch)||!valid_native_json(profile)||!valid_native_json(options))throw new Error();
+    expected=DenseProfileSchema.parse(profile);
+    count=z.strictObject({expected_items:integer(1,8).optional()}).parse(options).expected_items;
+    value=BatchBindingSchema.parse(batch);
+    if(count!==undefined&&value.vectors.length!==count)throw new Error();
+  }catch{throw new InvalidRequest();}
+  if((!same(expected,FAKE_PROFILE)&&!same(expected,OPENAI_PROFILE))||!same(value.profile,expected)||value.synthetic!==(expected.provider==='fake'))throw new EmbeddingProfileMismatch();
+  const vectors=value.vectors.map(v=>{if(v.length!==1536)throw new EmbeddingProfileMismatch();return dense_vector(v);});
+  const usage=value.usage;
+  if((usage.prompt_tokens===null)!==(usage.total_tokens===null)||(usage.prompt_tokens!==null&&usage.total_tokens!==null&&usage.total_tokens<usage.prompt_tokens))throw new InvalidRequest();
+  if(expected.provider==='fake'){
+    if(usage.cost_kind!=='known'||usage.cost_usd!==0)throw new InvalidRequest();
+  }else if(!((usage.cost_kind==='estimated'&&usage.cost_usd!==null&&usage.cost_usd<=1000000)||(usage.cost_kind==='unknown'&&usage.cost_usd===null)))throw new InvalidRequest();
+  try{return EmbeddingBatchSchema.parse({...value,vectors});}catch{throw new InvalidRequest();}
 }
 export const PAYLOAD_FIELDS = Object.freeze(['backend_namespace','physical_collection','collection_incarnation','tenant_id','collection','document_id','revision_id','generation_id','chunk_id','start_byte','end_byte','source_sha256','text_sha256','dense_profile_id','sparse_profile_id','dense_profile','sparse_profile','authorization_revision','principal_ids','grant_ids','language','kind','tag']);
 const digest=z.string().regex(/^[a-f0-9]{64}$/);

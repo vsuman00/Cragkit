@@ -14,6 +14,7 @@ from .contracts.models import Collection, Identity
 from .contracts._validation import input_text, integer
 
 from .errors import IntegrityViolation, InvalidRequest, UnsupportedCapability
+from .embeddings import EmbeddingBatch
 
 
 class FrozenModel(BaseModel):
@@ -342,3 +343,123 @@ def decode_response(raw: object) -> Any:
         return parsed
     except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
         raise IntegrityViolation() from None
+
+
+def _batch_snapshot(value: object) -> Any:
+    """Bound complete E-r1 batches separately from small request JSON."""
+    from .embeddings import EmbeddingBatch, EmbeddingProfile, EmbeddingUsage
+    active: set[int] = set()
+    nodes = 0
+    def visit(item: object, depth: int) -> Any:
+        nonlocal nodes
+        nodes += 1
+        if nodes > 16384 or depth > 8:
+            raise InvalidRequest()
+        if item is None or type(item) in (str, bool, int, float):
+            if type(item) is str:
+                if len(item) > 1024:
+                    raise InvalidRequest()
+                try:
+                    if len(item.encode('utf-8')) > 1024:
+                        raise InvalidRequest()
+                except UnicodeError:
+                    raise InvalidRequest() from None
+            if type(item) is float and not math.isfinite(item):
+                raise InvalidRequest()
+            return item
+        if type(item) in (EmbeddingBatch, EmbeddingProfile, EmbeddingUsage, DenseProfile):
+            item = vars(item)
+        if type(item) not in (dict, list, tuple) or id(item) in active:
+            raise InvalidRequest()
+        assert isinstance(item, (dict, list, tuple))
+        if len(item) > 16384:
+            raise InvalidRequest()
+        active.add(id(item))
+        try:
+            if type(item) is dict:
+                if any(type(key) is not str for key in item):
+                    raise InvalidRequest()
+                for key in item:
+                    if len(key) > 256:
+                        raise InvalidRequest()
+                    try:
+                        if len(key.encode('utf-8')) > 256:
+                            raise InvalidRequest()
+                    except UnicodeError:
+                        raise InvalidRequest() from None
+                return {key: visit(child, depth + 1) for key, child in item.items()}
+            assert isinstance(item, (list, tuple))
+            return [visit(child, depth + 1) for child in item]
+        finally:
+            active.remove(id(item))
+    return visit(value, 0)
+
+
+def bind_embedding_batch(batch: object, profile: object, *, expected_items: int | None = None) -> EmbeddingBatch:
+    """Validate an already computed batch without dispatch or accounting effects."""
+    from .embeddings import EmbeddingBatch, EmbeddingProfile, EmbeddingUsage, FAKE_PROFILE, OPENAI_PROFILE
+    from .errors import EmbeddingProfileMismatch
+    if expected_items is not None:
+        normalized_items = integer(expected_items)
+        if type(normalized_items) is not int or not 1 <= normalized_items <= 8:
+            raise InvalidRequest()
+        expected_items = normalized_items
+    expected_raw = _batch_snapshot(profile)
+    try:
+        expected = DenseProfile.model_validate(expected_raw)
+    except (ValueError, TypeError, OverflowError):
+        raise InvalidRequest() from None
+    expected_data = expected.model_dump()
+    if expected_data not in (FAKE_PROFILE.model_dump(), OPENAI_PROFILE.model_dump()):
+        raise EmbeddingProfileMismatch()
+    data = _batch_snapshot(batch)
+    if type(data) is not dict or set(data) != {'profile', 'vectors', 'usage', 'provider_calls', 'synthetic'}:
+        raise InvalidRequest()
+    try:
+        actual_profile = DenseProfile.model_validate(data['profile'])
+    except (ValueError, TypeError, OverflowError):
+        raise InvalidRequest() from None
+    if actual_profile.model_dump() != expected_data:
+        raise EmbeddingProfileMismatch()
+    if type(data['synthetic']) is not bool:
+        raise InvalidRequest()
+    synthetic = expected.provider == 'fake'
+    if data['synthetic'] != synthetic:
+        raise EmbeddingProfileMismatch()
+    if type(data['provider_calls']) not in (int, float) or data['provider_calls'] != 1:
+        raise InvalidRequest()
+    vectors = data['vectors']
+    if type(vectors) is not list or not 1 <= len(vectors) <= 8:
+        raise InvalidRequest()
+    if expected_items is not None and len(vectors) != expected_items:
+        raise InvalidRequest()
+    validated: list[tuple[float, ...]] = []
+    for vector in vectors:
+        if type(vector) is not list:
+            raise InvalidRequest()
+        if len(vector) != 1536:
+            raise EmbeddingProfileMismatch()
+        validated.append(tuple(dense_vector(vector)))
+    usage = data['usage']
+    if type(usage) is not dict or set(usage) != {'prompt_tokens', 'total_tokens', 'cost_usd', 'cost_kind'}:
+        raise InvalidRequest()
+    prompt, total = usage['prompt_tokens'], usage['total_tokens']
+    if prompt is None and total is None:
+        pass
+    elif (type(prompt) not in (int, float) or type(total) not in (int, float)
+          or not 0 <= prompt <= total <= 2147483647 or int(prompt) != prompt or int(total) != total):
+        raise InvalidRequest()
+    else:
+        prompt, total = int(prompt), int(total)
+    cost, kind = usage['cost_usd'], usage['cost_kind']
+    if cost is not None and (type(cost) not in (int, float) or not 0 <= cost <= 1000000):
+        raise InvalidRequest()
+    if synthetic:
+        if kind != 'known' or cost is None or cost != 0:
+            raise InvalidRequest()
+    elif not (kind == 'estimated' and cost is not None or kind == 'unknown' and cost is None):
+        raise InvalidRequest()
+    return EmbeddingBatch(profile=EmbeddingProfile.model_validate(expected_data), vectors=tuple(validated),
+                          usage=EmbeddingUsage(prompt_tokens=prompt, total_tokens=total,
+                                               cost_usd=None if cost is None else float(cost), cost_kind=kind),
+                          provider_calls=1, synthetic=synthetic)

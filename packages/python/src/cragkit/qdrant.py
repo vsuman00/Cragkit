@@ -9,14 +9,14 @@ from typing import Any, Literal, Mapping, Protocol
 
 from ._qdrant_contract import (
     CandidatePayload, PAYLOAD_FIELDS, QdrantConfig, QdrantNomination, SPARSE_PROFILE,
-    SparseProfile, compile_filter, decode_response, dense_vector, identity_tuple, matches,
+    SparseProfile, bind_embedding_batch, compile_filter, decode_response, dense_vector, identity_tuple, matches,
     parse_model, point_id, snapshot, sparse_vector,
 )
 from ._qdrant_transport import HttpxQdrantTransport, deadline_value, safe_transport_error
 from .contracts import RetrievalRequest, TrustedScope
-from .embeddings import FAKE_PROFILE
+from .embeddings import FAKE_PROFILE, OPENAI_PROFILE
 from .errors import (
-    CragkitError, DeadlineExceeded, IndexNotReady, IntegrityViolation, InvalidRequest,
+    CragkitError, DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady, IntegrityViolation, InvalidRequest,
     ProviderUnavailable, UnsupportedCapability,
 )
 from .execution import ExecutionLedger
@@ -39,8 +39,10 @@ class QdrantSearchStore:
     """
     def __init__(self, config: object, transport: QdrantTransport) -> None:
         self._config: QdrantConfig = parse_model(QdrantConfig, config)
-        if (self._config.dense_profile.model_dump() != FAKE_PROFILE.model_dump() or
-                self._config.sparse_profile is not None and self._config.sparse_profile != SPARSE_PROFILE):
+        selected = self._config.dense_profile.model_dump()
+        if (selected not in (FAKE_PROFILE.model_dump(), OPENAI_PROFILE.model_dump()) or
+                self._config.sparse_profile is not None and
+                (self._config.sparse_profile != SPARSE_PROFILE or selected != FAKE_PROFILE.model_dump())):
             raise UnsupportedCapability()
         if (getattr(transport, 'bounded_responses', None) is not True or
                 getattr(transport, 'cancellation_safe', None) is not True or
@@ -171,7 +173,13 @@ class QdrantSearchStore:
         query_filter = compile_filter(req, trusted)
         queries: dict[str, Any] = {}
         if dense is not None:
-            queries['dense'] = dense_vector(dense)
+            if type(dense) in (list, tuple):
+                if self._config.dense_profile.model_dump() != FAKE_PROFILE.model_dump():
+                    raise EmbeddingProfileMismatch()
+                queries['dense'] = dense_vector(dense)
+            else:
+                batch = bind_embedding_batch(dense, self._config.dense_profile, expected_items=1)
+                queries['dense'] = list(batch.vectors[0])
         if sparse is not None:
             if self._config.sparse_profile is None:
                 raise UnsupportedCapability()
@@ -289,4 +297,4 @@ class QdrantSearchStore:
 
 
 __all__ = ['QdrantSearchStore', 'QdrantConfig', 'CandidatePayload', 'QdrantNomination',
-           'SparseProfile', 'SPARSE_PROFILE', 'HttpxQdrantTransport', 'point_id', 'compile_filter']
+           'SparseProfile', 'SPARSE_PROFILE', 'HttpxQdrantTransport', 'point_id', 'compile_filter', 'bind_embedding_batch']
