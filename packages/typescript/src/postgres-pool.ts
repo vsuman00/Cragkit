@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { constants } from 'node:fs';
 import { open, readFile, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { DeadlineExceeded, InvalidRequest, ProviderUnavailable, UnsupportedCapability } from './errors.js';
 import { valid_native_json } from './shared.js';
@@ -30,6 +31,14 @@ export interface PgClient {
 }
 export interface PgPool { connect(): Promise<PgClient>; end(): Promise<void>; }
 export type PoolFactory = (config: PoolConfig) => PgPool | Promise<PgPool>;
+/** Keep verified TLS while leaving IP certificate identity to pg's host binding. */
+export function verified_tls_options(host: string, ca: string): Readonly<{ca: string; rejectUnauthorized: true; servername?: string}> {
+  return Object.freeze({
+    ca,
+    rejectUnauthorized: true as const,
+    ...(isIP(host) === 0 ? {servername: host} : {}),
+  });
+}
 export type LeaseOptions = Readonly<{ deadline: number; signal?: AbortSignal }>;
 export const now = (): number => performance.now() / 1000;
 export const abort_error = (): DOMException => new DOMException('Operation aborted.', 'AbortError');
@@ -108,7 +117,7 @@ async function default_factory(config: PoolConfig): Promise<PgPool> {
   let driver: { Pool: new (options: object) => PgPool };
   try { driver = await import(name) as typeof driver; } catch { throw new UnsupportedCapability(); }
   const pool = new driver.Pool({ host: config.host, port: config.port, database: config.dbname,
-    user: config.user, password, ssl: { ca, rejectUnauthorized: true, servername: config.host },
+    user: config.user, password, ssl: verified_tls_options(config.host, ca),
     max: config.max_size, min: 1, connectionTimeoutMillis: Math.ceil(config.acquire_timeout * 1000),
     idleTimeoutMillis: 10_000, application_name: 'cragkit-resource' });
   // An idle-client error must not crash the host or print raw provider details.

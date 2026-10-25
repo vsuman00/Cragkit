@@ -868,3 +868,10 @@ uv run --project packages/python --frozen pytest tools/tests/test_runtime_diagno
 The optional native readers borrow existing PostgreSQL pools. Import Python `cragkit.qdrant_source` or Node `cragkit/qdrant-source`; core imports remain unchanged. [V5-03B/C evidence](../evaluation/reports/V5/V5-03BC.md) records the verified focused/full-suite commands, type checks, exact catalog query/manifest and negative-case coverage. Use `--no-sync --extra qdrant --extra postgres` with the existing frozen Python environment to preserve both optional drivers. Run one language suite at a time.
 
 Both facades execute all 40 source scenarios with fake authority/drivers. The rollback-only native catalog probe also checks deliberate policy/function/constraint/PUBLIC-privilege drift. These checks do not replace V5-03D actual restricted LOGIN, PostgreSQL/Qdrant and provider/final-release acceptance. No persistent source schema is installed by the probe or the reader.
+
+
+## V5-03D local native source acceptance
+
+[V5-03D/C1](../evaluation/reports/V5/V5-03D.md) records the exact opt-in command for preinstalled PostgreSQL 17.11 and the checksummed Qdrant 1.20.0 binary. It creates isolated local TLS/SCRAM PostgreSQL and loopback Qdrant fixtures, runs 14 source cases per runtime serially, checks wrong-hostname/untrusted-certificate rejection in Node, then shuts down and removes its private data. It uses no hosted configuration or live models. Do not run this tool as a watcher or point it at an unrelated server.
+
+Focused lifecycle/protocol checks are `uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_source_native.py tools/tests/test_check_qdrant_source.py -q`. After the strict Node build, run `node --test --test-concurrency=1 packages/typescript/tests/postgres-pool.test.mjs packages/typescript/tests/qdrant-source.test.mjs packages/typescript/tests/qdrant-authority.test.mjs`. D-F1 keeps certificate verification enabled and omits IP SNI, as required by Node 26.5. V5-04 publication and repair acceptance remain separate.

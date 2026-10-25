@@ -8,9 +8,19 @@ For example, an old Qdrant payload can still contain a revoked grant. The source
 
 The administrator applies [0001_authority.sql](migrations/0001_authority.sql) explicitly, inside a transaction, with an external wrapper that computes the SHA-256 of the exact migration bytes. That same transaction records the actual version and checksum in `cragkit_qdrant.schema_migrations`. The SQL contains no self-checksum constant or automatic migration entry. The wrapper must verify the expected independent history before reuse and reject an unknown namespace or checksum; an existing namespace is never silently adopted. No import or source read runs this file.
 
-The migration requires a UTF-8 PostgreSQL 17 database. It creates no extension, role, credential, pgvector object or FTS object. It does not read or alter the existing `cragkit` schema, its migration history or optional vector profiles. Root acceptance applies the new DDL and synthetic seed data in one transaction that is rolled back, refusing a preexisting authority namespace.
+The migration requires a UTF-8 PostgreSQL 17 database. It creates no extension, role, credential, pgvector object or FTS object. It does not read or alter the existing `cragkit` schema, its migration history or optional vector profiles. V5-03A applies the new DDL and synthetic seed data in one transaction that is rolled back, refusing a preexisting authority namespace. V5-03D uses an isolated local cluster with committed synthetic setup, then removes the entire task-owned cluster after shutdown.
 
-The namespace, tables and functions deny `PUBLIC` privileges. The administrator must separately grant a dedicated reader schema usage, SELECT on the four content tables plus the metadata-only `schema_migrations` history and EXECUTE on the three scope helpers: `scope_visible(text,text,text[],text[],text,boolean)`, `scope_grants()` and `valid_identity_array(text[])`. Runtime readers must be nonowners without superuser or `BYPASSRLS` privileges, membership or an administrative connection fallback. All four content tables enable and force RLS. See the [PostgreSQL 17 row-security rules](https://www.postgresql.org/docs/17/ddl-rowsecurity.html) for owner and BYPASSRLS semantics. This slice adds only SELECT policies; it provides no runtime writer privileges or writer policies. Privileged staging in acceptance is administrative fixture setup.
+The namespace, tables and functions deny `PUBLIC` privileges. The administrator must separately grant a dedicated reader schema usage, SELECT on the four content tables plus the metadata-only `schema_migrations` history and EXECUTE on the three scope helpers: `scope_visible(text,text,text[],text[],text,boolean)`, `scope_grants()` and `valid_identity_array(text[])`. Runtime readers must be nonowners without superuser or `BYPASSRLS` privileges, unsafe/owner role membership or an administrative connection fallback. All four content tables enable and force RLS. See the [PostgreSQL 17 row-security rules](https://www.postgresql.org/docs/17/ddl-rowsecurity.html) for owner and BYPASSRLS semantics. This slice adds only SELECT policies; it provides no runtime writer privileges or writer policies. Privileged staging in acceptance is administrative fixture setup.
+
+The accepted catalog profile also requires no PUBLIC usage on the four explicitly created domains. The Neon reference migration owner already used private type defaults. Stock PostgreSQL grants type usage to PUBLIC by default; the migration does not override that owner default. Use a dedicated migration owner with private type defaults before installation, or apply this scoped administrator step in the same installation transaction:
+
+```sql
+REVOKE USAGE ON TYPE cragkit_qdrant.identity_text,
+    cragkit_qdrant.collection_text, cragkit_qdrant.sha256_hex,
+    cragkit_qdrant.safe_count FROM PUBLIC;
+```
+
+Verify the exact [catalog fingerprint](../../../contracts/fixtures/qdrant_authority_catalog.json) before accepting the installation. The library rejects a privilege mismatch and never changes owner defaults or repairs grants. Implicit array/composite type privileges are represented separately in the reference manifest. The isolated local acceptance fixture sets private type defaults only for its own disposable administrator.
 
 ## Rows and invariants
 
@@ -49,6 +59,6 @@ The native query computes source/excerpt lengths first and gates returned byte c
 
 ## Verification state
 
-This document describes the schema and required reader behavior. Worker review alone does not establish PostgreSQL execution, RLS behavior, source-adapter acceptance or concurrency safety. Root records actual transactional constraint/RLS checks and rollback cleanup separately. V5-03B/C implement native readers; V5-03D verifies stale grants, provider disclosure and final release against the real backends. V5-04 adds the independently required writer/publication capabilities.
+This document describes the schema and required reader behavior. Worker review alone does not establish PostgreSQL execution, RLS behavior, source-adapter acceptance or concurrency safety. Root records actual transactional constraint/RLS checks and rollback cleanup separately. [V5-03B/C](../../../evaluation/reports/V5/V5-03BC.md) records native reader implementation and contract checks. [V5-03D/C1](../../../evaluation/reports/V5/V5-03D.md) records real local PostgreSQL/Qdrant stale-grant, provider-spy and final-release acceptance. V5-04 adds the independently required writer/publication capabilities.
 
 A useful failure case is a byte span beginning inside a multibyte character: SQL can prove that the excerpt matches those exact bytes, but the native strict decoder must reject it. As a small exercise, explain why a superseded generation can satisfy the historical policy while remaining ineligible for a new search.

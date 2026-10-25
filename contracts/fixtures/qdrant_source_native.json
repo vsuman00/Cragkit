@@ -1,0 +1,100 @@
+{
+  "revision": "QS-native-r1",
+  "task": "V5-03D",
+  "status": "executed_native_local",
+  "cases": [
+    {
+      "id": "active",
+      "setup": "active",
+      "outcome": "verified",
+      "provider_spy_calls": 1
+    },
+    {
+      "id": "budget",
+      "setup": "active",
+      "outcome": "budget_exhausted",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "revoke_before_provider",
+      "setup": "active",
+      "outcome": "unavailable",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "revoke_after_provider",
+      "setup": "active",
+      "outcome": "unavailable",
+      "provider_spy_calls": 1
+    },
+    {
+      "id": "metadata",
+      "setup": "active",
+      "outcome": "unavailable",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "tombstone",
+      "setup": "active",
+      "outcome": "unavailable",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "staging",
+      "setup": "staging",
+      "outcome": "unavailable",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "superseded",
+      "setup": "active",
+      "outcome": "unavailable",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "retained",
+      "setup": "active",
+      "outcome": "verified",
+      "provider_spy_calls": 1
+    },
+    {
+      "id": "invalid_utf8",
+      "setup": "invalid_utf8",
+      "outcome": "IntegrityViolation",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "malformed",
+      "setup": "active",
+      "outcome": "InvalidRequest",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "forged_binding",
+      "setup": "active",
+      "outcome": "InvalidRequest",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "foreign_scope",
+      "setup": "active",
+      "outcome": "UnauthorizedScope",
+      "provider_spy_calls": 0
+    },
+    {
+      "id": "source_outage",
+      "setup": "active",
+      "outcome": "ProviderUnavailable",
+      "provider_spy_calls": 0
+    }
+  ],
+  "executed": true,
+  "execution_scope": {
+    "postgresql": "17.11 isolated TLS/SCRAM reference cluster",
+    "qdrant": "1.20.0 isolated single-node reference",
+    "cases_each_runtime": 14,
+    "live_model_calls": 0,
+    "hosted_database_tested": false,
+    "publication_compatibility_tested": false
+  }
+}
