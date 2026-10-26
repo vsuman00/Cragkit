@@ -14,7 +14,8 @@ from ._postgres_pool import PoolResource
 from ._postgres_session import SessionConnection
 from ._qdrant_authority import (_HISTORY_SQL, _PUBLICATION_CATALOG_SQL, _CATALOG_FINGERPRINT_SQL,
     EXPECTED_PUBLICATION_HISTORY, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT)
-from ._qdrant_contract import CandidatePayload, QdrantConfig, SPARSE_PROFILE, parse_model, point_id
+from ._qdrant_contract import (CandidatePayload, QdrantConfig, SPARSE_PROFILE, decode_response,
+                               parse_model, point_id)
 from ._qdrant_manifest import (_Security, _Purge, _Manifest, _Stage, _ReplayResult, _parse,
     encode_security_intent, encode_stage_intent, encode_purge_intent, encode_manifest,
     restore_dense_replay, restore_sparse_replay)
@@ -167,6 +168,32 @@ class Dispatch:
     state: str
 
 
+class _CommitUnknown(Exception):
+    """Private discrimination for an unacknowledged committing transaction."""
+
+
+def _stored_identity(value: object, *, nullable: bool = False) -> str | None:
+    if nullable and value is None:
+        return None
+    try:
+        return _identity(value)
+    except InvalidRequest:
+        raise IntegrityViolation() from None
+
+
+def _stored_count(value: object, minimum: int = 0, maximum: int = 9007199254740991) -> int:
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise IntegrityViolation()
+    return value
+
+
+def _stored_uuid(value: object) -> str:
+    if type(value) is not str or re.fullmatch(
+            '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', value) is None:
+        raise IntegrityViolation()
+    return value
+
+
 class PostgresQdrantWriter:
     def __init__(self, resource: PoolResource, config: object, instance_id: object) -> None:
         if type(resource) is not PoolResource:
@@ -193,7 +220,8 @@ class PostgresQdrantWriter:
         return rows
 
     async def _run(self, ctx: WriterContext | None, deadline: float,
-                   operation: Callable[[SessionConnection], Awaitable[_T]], *, initializing: bool = False) -> _T:
+                   operation: Callable[[SessionConnection], Awaitable[_T]], *, initializing: bool = False,
+                   detect_commit_unknown: bool = False) -> _T:
         deadline = deadline_value(deadline)
         if self._closed or self._active is not None:
             raise ProviderUnavailable()
@@ -228,7 +256,20 @@ class PostgresQdrantWriter:
                         result = await operation(connection)
                         deadline_value(deadline)
                         committing = True
-                        await transaction.__aexit__(None, None, None)
+                        try:
+                            await transaction.__aexit__(None, None, None)
+                        except (asyncio.CancelledError, TimeoutError, DeadlineExceeded):
+                            raise
+                        except Exception as error:
+                            try:
+                                code = getattr(error, 'sqlstate', None)
+                            except Exception:
+                                code = None
+                            known_rollback = type(code) is str and code in (
+                                '23503', '23505', '23514', '23502', '40001', '40P01', '57014')
+                            if detect_commit_unknown and not known_rollback:
+                                raise _CommitUnknown() from None
+                            raise
                         entered = False
                         if connection.info.transaction_status != 0:
                             raise ProviderUnavailable()
@@ -261,6 +302,10 @@ class PostgresQdrantWriter:
             raise
         except TimeoutError:
             raise DeadlineExceeded() from None
+        except _CommitUnknown:
+            if detect_commit_unknown:
+                raise
+            raise ProviderUnavailable() from None
         except Exception as error:
             raise _safe(error, deadline) from None
         finally:
@@ -289,6 +334,300 @@ class PostgresQdrantWriter:
     async def inspect(self, value: object, *, deadline: float) -> Mapping[str, Any] | None:
         ctx = context(value)
         return await self._run(ctx, deadline, lambda connection: self._inspect(connection, ctx))
+
+    async def _manager_intent(self, connection: SessionConnection,
+                              ctx: WriterContext) -> Mapping[str, Any] | None:
+        result = await self._inspect(connection, ctx)
+        if result is None:
+            return None
+        if (set(result) != set(_META) or type(result['action']) is not str
+                or result['action'] not in ('stage', 'update_authorization', 'tombstone', 'purge')
+                or type(result['state']) is not str or result['state'] not in (
+                    'staged', 'writing', 'prepared', 'published', 'conflict', 'denied',
+                    'authority_committed', 'complete')):
+            raise IntegrityViolation()
+        try:
+            _digest(result['payload_sha256'])
+            if result['manifest_sha256'] is not None:
+                _digest(result['manifest_sha256'])
+        except InvalidRequest:
+            raise IntegrityViolation() from None
+        _stored_identity(result['revision_id'], nullable=True)
+        _stored_identity(result['generation_id'], nullable=True)
+        for key in ('authority_committed', 'replica_complete', 'purge_complete'):
+            if type(result[key]) is not bool:
+                raise IntegrityViolation()
+        if result['action'] == 'stage' and any(result[key] is None for key in
+                ('manifest_sha256', 'revision_id', 'generation_id')):
+            raise IntegrityViolation()
+        return MappingProxyType(dict(result))
+
+    async def _manager_document(self, connection: SessionConnection, ctx: WriterContext, *,
+                                lock: bool = False) -> Mapping[str, Any] | None:
+        columns = ('active_generation_id', 'authorization_revision', 'mutation_epoch', 'tombstoned')
+        rows = await self._query(connection, 'SELECT ' + ','.join(columns)
+            + ' FROM cragkit_qdrant.documents WHERE ' + _DOC
+            + ' LIMIT 2' + (' FOR UPDATE' if lock else ''), _doc(ctx))
+        if not rows:
+            return None
+        if len(rows) != 1 or len(rows[0]) != len(columns):
+            raise IntegrityViolation()
+        result = dict(zip(columns, rows[0], strict=True))
+        _stored_identity(result['active_generation_id'], nullable=True)
+        _stored_identity(result['authorization_revision'])
+        _stored_count(result['mutation_epoch'])
+        if type(result['tombstoned']) is not bool:
+            raise IntegrityViolation()
+        if result['authorization_revision'] != ctx.scope.authorization_revision:
+            raise UnauthorizedScope()
+        return MappingProxyType(result)
+
+    async def _manager_backend(self, connection: SessionConnection, *,
+                               lock: bool = False) -> Mapping[str, Any]:
+        columns = ('instance_id', 'backend_namespace', 'storage_identity', 'supervisor_id',
+                   'epoch', 'state', 'recovery_id')
+        rows = await self._query(connection, 'SELECT ' + ','.join(columns)
+            + ' FROM cragkit_qdrant.backend_instances WHERE instance_id=%s LIMIT 2'
+            + (' FOR SHARE' if lock else ''), (self.instance_id,))
+        if not rows:
+            raise ProviderUnavailable()
+        if len(rows) != 1 or len(rows[0]) != len(columns):
+            raise IntegrityViolation()
+        result = dict(zip(columns, rows[0], strict=True))
+        for key in ('instance_id', 'backend_namespace', 'storage_identity', 'supervisor_id'):
+            _stored_identity(result[key])
+        _stored_count(result['epoch'], 1)
+        _stored_identity(result['recovery_id'], nullable=True)
+        if (result['instance_id'] != self.instance_id
+                or result['backend_namespace'] != self.config.backend_namespace
+                or type(result['state']) is not str or result['state'] not in ('open', 'recovery_blocked')
+                or (result['state'] == 'open') != (result['recovery_id'] is None)):
+            raise IntegrityViolation()
+        return MappingProxyType(result)
+
+    async def _manager_owner(self, connection: SessionConnection, ctx: WriterContext, *,
+                             lock: bool = False) -> Mapping[str, Any] | None:
+        columns = ('instance_id', 'intent_id', 'owner_token', 'backend_epoch')
+        rows = await self._query(connection,
+            'SELECT instance_id,intent_id,owner_token::text,backend_epoch '
+            'FROM cragkit_qdrant.document_owners WHERE ' + _DOC + ' LIMIT 2'
+            + (' FOR UPDATE' if lock else ''), _doc(ctx))
+        if not rows:
+            return None
+        if len(rows) != 1 or len(rows[0]) != len(columns):
+            raise IntegrityViolation()
+        result = dict(zip(columns, rows[0], strict=True))
+        _stored_identity(result['instance_id'])
+        _stored_identity(result['intent_id'])
+        _stored_uuid(result['owner_token'])
+        _stored_count(result['backend_epoch'], 1)
+        return MappingProxyType(result)
+
+    async def manager_snapshot(self, value: object, *, deadline: float) -> Mapping[str, Any]:
+        ctx = context(value)
+
+        async def snapshot(connection: SessionConnection) -> Mapping[str, Any]:
+            document = await self._manager_document(connection, ctx)
+            intent = await self._manager_intent(connection, ctx)
+            backend = await self._manager_backend(connection)
+            owner = await self._manager_owner(connection, ctx)
+            rows = await self._query(connection,
+                'SELECT sequence FROM cragkit_qdrant.dispatch_journal WHERE ' + _INTENT
+                + ' ORDER BY sequence LIMIT 257', _key(ctx))
+            if len(rows) > 256 or any(len(row) != 1 for row in rows):
+                raise IntegrityViolation()
+            numbers = tuple(_stored_count(row[0], 1, 256) for row in rows)
+            if len(set(numbers)) != len(numbers):
+                raise IntegrityViolation()
+            pending = await self._query(connection,
+                'SELECT dispatch_id FROM cragkit_qdrant.dispatch_journal WHERE ' + _DOC
+                + " AND state<>'settled' LIMIT 1", _doc(ctx))
+            if len(pending) > 1 or any(len(row) != 1 for row in pending):
+                raise IntegrityViolation()
+            if pending:
+                _stored_identity(pending[0][0])
+            return MappingProxyType({'intent': intent, 'document': document, 'backend': backend,
+                'owner': owner, 'max_sequence': max(numbers, default=0), 'pending': bool(pending)})
+        return await self._run(ctx, deadline, snapshot)
+
+    async def admit_publication(self, value: object, *, deadline: float) -> Mapping[str, Any]:
+        ctx = context(value)
+
+        async def admit(connection: SessionConnection) -> Mapping[str, Any]:
+            document = await self._manager_document(connection, ctx)
+            if document is None:
+                raise UnauthorizedScope()
+            intent = await self._manager_intent(connection, ctx)
+            if intent is None or intent['action'] != 'stage':
+                raise InvalidRequest()
+            if intent['state'] in ('published', 'conflict', 'denied'):
+                return MappingProxyType({'intent': intent, 'owner': None})
+            backend = await self._manager_backend(connection, lock=True)
+            await self._manager_owner(connection, ctx, lock=True)
+            document = await self._manager_document(connection, ctx, lock=True)
+            if document is None:
+                raise UnauthorizedScope()
+            intent = await self._manager_intent(connection, ctx)
+            if intent is None or intent['action'] != 'stage':
+                raise IntegrityViolation()
+            if intent['state'] in ('published', 'conflict', 'denied'):
+                return MappingProxyType({'intent': intent, 'owner': None})
+            fences = await self._query(connection,
+                'SELECT expected_authorization_revision,expected_mutation_epoch,'
+                'expected_active_generation_id FROM cragkit_qdrant.publication_intents WHERE '
+                + _INTENT, _key(ctx))
+            if len(fences) != 1 or len(fences[0]) != 3:
+                raise IntegrityViolation()
+            expected_revision, expected_epoch, expected_active = fences[0]
+            _stored_identity(expected_revision)
+            _stored_count(expected_epoch)
+            _stored_identity(expected_active, nullable=True)
+            failure = None
+            if (document['tombstoned'] or expected_revision != document['authorization_revision']
+                    or expected_epoch != document['mutation_epoch']):
+                failure = 'denied'
+            elif expected_active != document['active_generation_id']:
+                failure = 'conflict'
+            if failure is not None:
+                outcome = await self._outcome(connection, ctx, failure)
+                return MappingProxyType({'intent': outcome, 'owner': None})
+            if backend['state'] != 'open':
+                raise ProviderUnavailable()
+            await self._require_settled(connection, ctx)
+            await self._load_stage(connection, ctx)
+            await connection.execute(
+                'INSERT INTO cragkit_qdrant.document_owners '
+                '(tenant_id,collection,document_id,instance_id,intent_id,owner_token,backend_epoch) '
+                'VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (tenant_id,collection,document_id) '
+                'DO UPDATE SET intent_id=EXCLUDED.intent_id,owner_token=EXCLUDED.owner_token,'
+                'backend_epoch=EXCLUDED.backend_epoch',
+                (*_doc(ctx), self.instance_id, ctx.intent_id, ctx.owner_token, backend['epoch']))
+            await connection.execute("UPDATE cragkit_qdrant.publication_intents SET state='writing' "
+                'WHERE ' + _INTENT + " AND state IN ('staged','authority_committed')", _key(ctx))
+            result = await self._manager_intent(connection, ctx)
+            if result is None:
+                raise IntegrityViolation()
+            return MappingProxyType({'intent': result, 'owner': MappingProxyType({
+                'owner_token': ctx.owner_token, 'backend_epoch': backend['epoch']})})
+
+        try:
+            return await self._run(ctx, deadline, admit, detect_commit_unknown=True)
+        except _CommitUnknown:
+            snapshot = await self.manager_snapshot(ctx, deadline=deadline)
+            intent, owner, backend = snapshot['intent'], snapshot['owner'], snapshot['backend']
+            if intent is not None and intent['action'] == 'stage':
+                if intent['state'] in ('published', 'conflict', 'denied'):
+                    return MappingProxyType({'intent': intent, 'owner': None})
+                if (intent['state'] in ('writing', 'prepared') and not snapshot['pending']
+                        and backend['state'] == 'open' and owner is not None
+                        and owner['instance_id'] == self.instance_id
+                        and owner['intent_id'] == ctx.intent_id and owner['owner_token'] == ctx.owner_token
+                        and owner['backend_epoch'] == backend['epoch']):
+                    return MappingProxyType({'intent': intent, 'owner': MappingProxyType({
+                        'owner_token': ctx.owner_token, 'backend_epoch': backend['epoch']})})
+            return await self._run(ctx, deadline, admit)
+
+    async def dispatch_status(self, value: object, dispatch_id: object, *,
+                              deadline: float) -> Mapping[str, Any] | None:
+        ctx = context(value)
+        identity = _identity(dispatch_id)
+
+        async def status(connection: SessionConnection) -> Mapping[str, Any] | None:
+            document = await self._manager_document(connection, ctx)
+            if document is None:
+                raise UnauthorizedScope()
+            columns = ('sequence', 'owner_token', 'backend_epoch', 'credential_generation',
+                       'operation', 'state', 'completion_sha256', 'request_sha256',
+                       'request_bytes', 'instance_id', 'recovery')
+            rows = await self._query(connection,
+                'SELECT sequence,owner_token::text,backend_epoch,credential_generation,operation,'
+                'state,completion_sha256,request_sha256,request_bytes,instance_id,recovery '
+                'FROM cragkit_qdrant.dispatch_journal WHERE ' + _INTENT
+                + ' AND dispatch_id=%s LIMIT 2', (*_key(ctx), identity))
+            if not rows:
+                return None
+            if len(rows) != 1 or len(rows[0]) != len(columns):
+                raise IntegrityViolation()
+            journal = dict(zip(columns, rows[0], strict=True))
+            _stored_count(journal['sequence'], 1, 256)
+            _stored_count(journal['backend_epoch'], 1)
+            _stored_uuid(journal['owner_token'])
+            _stored_identity(journal['credential_generation'])
+            if (journal['instance_id'] != self.instance_id or type(journal['recovery']) is not bool
+                    or type(journal['operation']) is not str
+                    or journal['operation'] not in ('complete_point_upsert', 'delete_points')
+                    or type(journal['state']) is not str
+                    or journal['state'] not in ('reserved', 'dispatched', 'unknown', 'settled')):
+                raise IntegrityViolation()
+            try:
+                _digest(journal['request_sha256'])
+                if journal['completion_sha256'] is not None:
+                    _digest(journal['completion_sha256'])
+            except InvalidRequest:
+                raise IntegrityViolation() from None
+            if (journal['state'] == 'settled') != (journal['completion_sha256'] is not None):
+                raise IntegrityViolation()
+            raw = journal['request_bytes']
+            if type(raw) is memoryview:
+                if raw.ndim != 1 or raw.itemsize != 1 or not raw.c_contiguous:
+                    raise IntegrityViolation()
+                if not 1 <= raw.nbytes <= 1048576:
+                    raise IntegrityViolation()
+                raw = raw.tobytes()
+            elif type(raw) is bytearray:
+                if not 1 <= len(raw) <= 1048576:
+                    raise IntegrityViolation()
+                raw = bytes(raw)
+            if type(raw) is not bytes or not 1 <= len(raw) <= 1048576:
+                raise IntegrityViolation()
+            if hashlib.sha256(raw).hexdigest() != journal['request_sha256']:
+                raise IntegrityViolation()
+            try:
+                body = decode_response(raw)
+            except InvalidRequest:
+                raise IntegrityViolation() from None
+            if type(body) is not dict or set(body) != {'points'} or type(body['points']) is not list:
+                raise IntegrityViolation()
+            if not 1 <= len(body['points']) <= 8:
+                raise IntegrityViolation()
+            if journal['operation'] == 'delete_points':
+                body_ids = tuple(_stored_uuid(item) for item in body['points'])
+            else:
+                body_ids_list = []
+                for point in body['points']:
+                    if (type(point) is not dict or set(point) != {'id', 'payload', 'vector'}
+                            or type(point['payload']) is not dict or type(point['vector']) is not dict):
+                        raise IntegrityViolation()
+                    body_ids_list.append(_stored_uuid(point['id']))
+                body_ids = tuple(body_ids_list)
+            if len(set(body_ids)) != len(body_ids):
+                raise IntegrityViolation()
+            members = await self._query(connection,
+                'SELECT backend_namespace,physical_collection,collection_incarnation,point_id::text '
+                'FROM cragkit_qdrant.dispatch_points WHERE ' + _INTENT
+                + ' AND dispatch_id=%s ORDER BY point_id::text LIMIT 9', (*_key(ctx), identity))
+            if not 1 <= len(members) <= 8 or any(len(row) != 4 for row in members):
+                raise IntegrityViolation()
+            physical = (self.config.backend_namespace, self.config.physical_collection,
+                        self.config.collection_incarnation)
+            if any(row[:3] != physical for row in members):
+                raise IntegrityViolation()
+            ids = tuple(sorted(_stored_uuid(row[3]) for row in members))
+            if len(set(ids)) != len(ids) or ids != tuple(sorted(body_ids)):
+                raise IntegrityViolation()
+            claims = await self._query(connection,
+                'SELECT point_id::text FROM cragkit_qdrant.point_claims WHERE ' + _DOC
+                + ' AND instance_id=%s AND backend_namespace=%s AND physical_collection=%s'
+                ' AND collection_incarnation=%s AND point_id=ANY(%s::uuid[]) LIMIT 9',
+                (*_doc(ctx), self.instance_id, *physical, list(ids)))
+            if (any(len(row) != 1 for row in claims)
+                    or tuple(sorted(_stored_uuid(row[0]) for row in claims)) != ids):
+                raise IntegrityViolation()
+            result = {key: journal[key] for key in columns if key not in
+                      ('request_bytes', 'instance_id', 'recovery')}
+            result.update(dispatch_id=identity, point_ids=ids)
+            return MappingProxyType(result)
+        return await self._run(ctx, deadline, status)
 
     async def _ensure(self, connection: SessionConnection, table: str, values: dict[str, Any],
                       keys: tuple[str, ...], json_columns: tuple[str, ...] = ()) -> None:

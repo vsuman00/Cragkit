@@ -6,7 +6,7 @@ import { DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady, IntegrityVio
 import { AUTHORITY_FINGERPRINT_SQL, AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY,
   AUTHORITY_PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT } from './qdrant-authority.js';
 import { encode_manifest, encode_stage_intent, restore_dense_replay, restore_sparse_replay } from './qdrant-manifest.js';
-import { same, point_id, type QdrantConfig } from './qdrant-contract.js';
+import { same, point_id, parse_response, type QdrantConfig } from './qdrant-contract.js';
 import { type TrustedScope } from './requests.js';
 import { config as parseConfig, context as parseContext, options as parseOptions, scope as parseScope,
   stage_data, issue_verified_stage, operation as parseOperation, metadata, native_array, db_bytes, db_count, db_json,
@@ -31,6 +31,15 @@ export type IntentView = Readonly<{action:string;state:string;payload_sha256:str
   revision_id:string|null;generation_id:string|null;authority_committed:boolean;replica_complete:boolean;purge_complete:boolean}>;
 export type DispatchView = Readonly<{dispatch_id:string;request_bytes:readonly number[];request_sha256:string;
   point_ids:readonly string[];operation:string;state:string}>;
+export type ManagerBackend=Readonly<{instance_id:string;backend_namespace:string;storage_identity:string;supervisor_id:string;
+  epoch:number;state:'open'|'recovery_blocked';recovery_id:string|null}>;
+export type ManagerOwner=Readonly<{instance_id:string;intent_id:string;owner_token:string;backend_epoch:number}>;
+export type ManagerSnapshot=Readonly<{intent:IntentView|null;document:Readonly<{active_generation_id:string|null;
+  authorization_revision:string;mutation_epoch:number;tombstoned:boolean}>|null;backend:ManagerBackend;
+  owner:ManagerOwner|null;max_sequence:number;pending:boolean}>;
+export type PublicationAdmission=Readonly<{intent:IntentView;owner:Readonly<{owner_token:string;backend_epoch:number}>|null}>;
+export type DispatchStatus=Readonly<{dispatch_id:string;sequence:number;owner_token:string;backend_epoch:number;
+  credential_generation:string;operation:string;state:string;completion_sha256:string|null;request_sha256:string;point_ids:readonly string[]}>;
 export type ExpectedProjection=Readonly<Record<never,never>>;
 export type ProjectionPoint=Readonly<{point_id:string;payload:Readonly<Data>;dense:ReturnType<typeof restore_dense_replay>;sparse:ReturnType<typeof restore_sparse_replay>|null}>;
 export type ProjectionData=Readonly<{context:WriterContext;physical_binding:Readonly<Data>;manifest_sha256:string;
@@ -182,7 +191,7 @@ export class PostgresQdrantWriter {
     catch(error) { throw safe(error, options.deadline); }
     finally { options.signal?.removeEventListener('abort',onAbort); this.#active=undefined; finish(); }
   }
-  async #tx<T>(context:WriterContext|null,options:LeaseOptions,body:(tx:Tx)=>Promise<T>):Promise<T> {
+  async #tx<T>(context:WriterContext|null,options:LeaseOptions,body:(tx:Tx)=>Promise<T>,preserveCommitCancellation=false):Promise<T> {
     return this.#resource.withLease(options,async(client,signal)=>{
       const lease={deadline:options.deadline,signal};
       let initialStatus:string|null;
@@ -222,6 +231,8 @@ export class PostgresQdrantWriter {
           client.release(true);
           let code:unknown;
           try{code=Object.getOwnPropertyDescriptor(error as object,'code')?.value;}catch{ /* No driver error hooks. */ }
+          if(preserveCommitCancellation&&(error instanceof DeadlineExceeded
+            ||(error instanceof DOMException&&error.name==='AbortError')||code==='57014'))throw safe(error,options.deadline);
           if(typeof code==='string'&&['23503','23505','23514','23502','40001','40P01'].includes(code))throw safe(error,options.deadline);
           throw new CommitUnknown();
         }
@@ -346,6 +357,152 @@ export class PostgresQdrantWriter {
   async inspect(input:unknown,rawOptions:unknown):Promise<IntentView|null>{
     const context=parseContext(input),options=parseOptions(rawOptions);
     return this.#work(options,lease=>this.#tx(context,lease,async tx=>{const intent=await this.#intent(tx,context);return intent?intent_view(intent):null;}));
+  }
+
+  /** Manager metadata never substitutes for mutation admission or authority. */
+  async #managerBackend(tx:Tx,lock=false):Promise<ManagerBackend> {
+    const rows=await tx.query('SELECT instance_id,backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id FROM cragkit_qdrant.backend_instances WHERE instance_id=$1'+(lock?' FOR SHARE':''),[this.#instance],2);
+    if(rows.length===0)throw new ProviderUnavailable();
+    if(rows.length!==1||rows[0].length!==7)throw new IntegrityViolation();
+    try {
+      const [instance_id,backend_namespace,storage_identity,supervisor_id,rawEpoch,state,recovery_id]=rows[0];
+      for(const value of [instance_id,backend_namespace,storage_identity,supervisor_id])text(value);
+      const epoch=db_count(rawEpoch);
+      if(instance_id!==this.#instance||backend_namespace!==this.#config.backend_namespace||epoch<1
+        ||typeof state!=='string'||!['open','recovery_blocked'].includes(state))throw new IntegrityViolation();
+      if(state==='open'?recovery_id!==null:typeof recovery_id!=='string')throw new IntegrityViolation();
+      if(recovery_id!==null)text(recovery_id);
+      return Object.freeze({instance_id:instance_id as string,backend_namespace:backend_namespace as string,
+        storage_identity:storage_identity as string,supervisor_id:supervisor_id as string,epoch,
+        state:state as ManagerBackend['state'],recovery_id:recovery_id as string|null});
+    } catch(error) {
+      if(error instanceof InvalidRequest)throw new IntegrityViolation();
+      throw error;
+    }
+  }
+
+  async #managerOwner(tx:Tx,context:WriterContext,lock=false):Promise<ManagerOwner|null> {
+    const rows=await this.#select(tx,'document_owners',['instance_id','intent_id','owner_token','backend_epoch'],context,lock?' FOR UPDATE':'',[],2);
+    if(rows.length>1)throw new IntegrityViolation();
+    if(rows.length===0)return null;
+    try {
+      const row=rows[0],backend_epoch=db_count(row.backend_epoch);
+      if(backend_epoch<1)throw new IntegrityViolation();
+      return Object.freeze({instance_id:text(row.instance_id),intent_id:text(row.intent_id),
+        owner_token:uuid(row.owner_token),backend_epoch});
+    } catch(error) {
+      if(error instanceof InvalidRequest)throw new IntegrityViolation();
+      throw error;
+    }
+  }
+
+  async #managerPending(tx:Tx,context:WriterContext):Promise<boolean> {
+    const rows=await this.#select(tx,'dispatch_journal',['state'],context," AND state<>'settled'",[],1);
+    if(rows.some(row=>typeof row.state!=='string'||!['reserved','dispatched','unknown'].includes(row.state)))throw new IntegrityViolation();
+    return rows.length!==0;
+  }
+
+  async manager_snapshot(input:unknown,rawOptions:unknown):Promise<ManagerSnapshot> {
+    const context=parseContext(input),options=parseOptions(rawOptions);
+    return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
+      const document=await this.#document(tx,context);
+      if(document&&document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+      const backend=await this.#managerBackend(tx);
+      const owner=await this.#managerOwner(tx,context);
+      const intent=await this.#intent(tx,context);
+      const rows=await this.#select(tx,'dispatch_journal',['dispatch_id','sequence'],context,' AND intent_id=$4',[context.intent_id],257);
+      if(rows.length>256)throw new IntegrityViolation();
+      const ids=new Set<string>(),sequences=new Set<number>();
+      let max_sequence=0;
+      try {
+        for(const row of rows){
+          const id=text(row.dispatch_id),sequence=db_count(row.sequence);
+          if(sequence<1||sequence>256||ids.has(id)||sequences.has(sequence))throw new IntegrityViolation();
+          ids.add(id);
+          sequences.add(sequence);
+          max_sequence=Math.max(max_sequence,sequence);
+        }
+      } catch(error) {
+        if(error instanceof InvalidRequest)throw new IntegrityViolation();
+        throw error;
+      }
+      const pending=await this.#managerPending(tx,context);
+      const current=document?Object.freeze({active_generation_id:document.active_generation_id as string|null,
+        authorization_revision:document.authorization_revision as string,mutation_epoch:db_count(document.mutation_epoch),
+        tombstoned:document.tombstoned as boolean}):null;
+      return Object.freeze({intent:intent?intent_view(intent):null,document:current,backend,owner,max_sequence,pending});
+    }));
+  }
+
+  async admit_publication(input:unknown,rawOptions:unknown):Promise<PublicationAdmission> {
+    const context=parseContext(input),options=parseOptions(rawOptions);
+    const admit=async(tx:Tx):Promise<PublicationAdmission>=>{
+      let intent=await this.#intent(tx,context);
+      if(!intent||intent.action!=='stage')throw new InvalidRequest();
+      const preliminary=await this.#document(tx,context);
+      if(!preliminary||preliminary.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+      if(['published','conflict','denied'].includes(String(intent.state)))return Object.freeze({intent:intent_view(intent),owner:null});
+      // Refresh authority after the owner wait, without requiring the old token.
+      const backend=await this.#managerBackend(tx,true);
+      const owner=await this.#managerOwner(tx,context,true);
+      const document=await this.#document(tx,context,true);
+      if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+      intent=await this.#intent(tx,context);
+      if(!intent||intent.action!=='stage')throw new IntegrityViolation();
+      if(['published','conflict','denied'].includes(String(intent.state)))return Object.freeze({intent:intent_view(intent),owner:null});
+      const denied=document.tombstoned||document.authorization_revision!==intent.expected_authorization_revision
+        ||db_count(document.mutation_epoch)!==db_count(intent.expected_mutation_epoch);
+      const conflict=document.active_generation_id!==intent.expected_active_generation_id;
+      if(denied||conflict){
+        const terminal=await this.#updateIntent(tx,context,denied?'denied':'conflict');
+        return Object.freeze({intent:terminal,owner:null});
+      }
+      if(backend.state!=='open')throw new ProviderUnavailable();
+      if(await this.#managerPending(tx,context))throw new ProviderUnavailable();
+      await this.#loadStage(tx,context);
+      const sameOwner=owner?.instance_id===this.#instance&&owner.intent_id===context.intent_id
+        &&owner.owner_token===context.owner_token&&owner.backend_epoch===backend.epoch;
+      if(owner&&!sameOwner){
+        await tx.query('UPDATE cragkit_qdrant.document_owners SET instance_id=$4,intent_id=$5,owner_token=$6::uuid,backend_epoch=$7 WHERE (tenant_id,collection,document_id)=($1,$2,$3)',
+          [...this.#key(context),this.#instance,context.intent_id,context.owner_token,backend.epoch],0);
+      } else if(!owner){
+        await this.#insert(tx,'document_owners',{...Object.fromEntries(TARGET.map((key,i)=>[key,this.#key(context)[i]])),
+          instance_id:this.#instance,intent_id:context.intent_id,owner_token:context.owner_token,backend_epoch:backend.epoch});
+      }
+      if(intent.state==='staged'||intent.state==='authority_committed')await this.#updateIntent(tx,context,'writing');
+      const current=await this.#intent(tx,context);
+      if(!current)throw new IntegrityViolation();
+      return Object.freeze({intent:intent_view(current),owner:Object.freeze({owner_token:context.owner_token,backend_epoch:backend.epoch})});
+    };
+    return this.#work(options,async lease=>{
+      try {
+        return await this.#tx(context,lease,admit,true);
+      } catch(error) {
+        if(!(error instanceof CommitUnknown))throw error;
+        if(lease.signal?.aborted)throw new DOMException('Operation aborted.','AbortError');
+        if(now()>=lease.deadline)throw new DeadlineExceeded();
+        // Confirm a committed receipt before considering any same-ID mutation.
+        const confirmed=await this.#tx(context,lease,async tx=>{
+          const document=await this.#document(tx,context);
+          if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+          const intent=await this.#intent(tx,context);
+          if(!intent||intent.action!=='stage')throw new IntegrityViolation();
+          if(['published','conflict','denied'].includes(String(intent.state)))return Object.freeze({intent:intent_view(intent),owner:null});
+          const backend=await this.#managerBackend(tx);
+          const owner=await this.#managerOwner(tx,context);
+          const pending=await this.#managerPending(tx,context);
+          if(backend.state==='open'&&!pending&&['writing','prepared'].includes(String(intent.state))
+            &&owner?.instance_id===this.#instance&&owner.intent_id===context.intent_id
+            &&owner.owner_token===context.owner_token&&owner.backend_epoch===backend.epoch){
+            return Object.freeze({intent:intent_view(intent),owner:Object.freeze({owner_token:context.owner_token,backend_epoch:backend.epoch})});
+          }
+          return null;
+        },true);
+        if(confirmed)return confirmed;
+        // Only an actual lost COMMIT acknowledgment permits this one same-ID retry.
+        return this.#tx(context,lease,admit,true);
+      }
+    });
   }
   async #mutation<T>(context:WriterContext,options:LeaseOptions,body:(tx:Tx)=>Promise<T>,reconcile:(tx:Tx)=>Promise<T>):Promise<T>{
     return this.#work(options,async lease=>{
@@ -743,6 +900,71 @@ export class PostgresQdrantWriter {
     if(new Set(point_ids).size!==point_ids.length)throw new IntegrityViolation();
     return Object.freeze({dispatch_id:text(journal.dispatch_id),request_bytes:Object.freeze(Array.from(db_bytes(journal.request_bytes,1048576))),
       request_sha256:digest(journal.request_sha256),point_ids:Object.freeze(point_ids),operation:text(journal.operation),state:text(journal.state)});
+  }
+
+  async dispatch_status(input:unknown,rawId:unknown,rawOptions:unknown):Promise<DispatchStatus|null> {
+    const context=parseContext(input),dispatch_id=text(rawId),options=parseOptions(rawOptions);
+    return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
+      const document=await this.#document(tx,context);
+      if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+      const journal=await this.#journal(tx,context,dispatch_id);
+      if(!journal)return null;
+      try {
+        const instances=await this.#select(tx,'dispatch_journal',['instance_id'],context,' AND intent_id=$4 AND dispatch_id=$5',[context.intent_id,dispatch_id],2);
+        if(instances.length!==1||instances[0].instance_id!==this.#instance)throw new IntegrityViolation();
+        const sequence=db_count(journal.sequence),backend_epoch=db_count(journal.backend_epoch);
+        const operation=text(journal.operation),state=text(journal.state);
+        const owner_token=uuid(journal.owner_token),credential_generation=text(journal.credential_generation);
+        if(journal.dispatch_id!==dispatch_id||sequence<1||sequence>256||backend_epoch<1
+          ||!['complete_point_upsert','delete_points'].includes(operation)
+          ||!['reserved','dispatched','unknown','settled'].includes(state))throw new IntegrityViolation();
+        const completion_sha256=journal.completion_sha256===null?null:digest(journal.completion_sha256);
+        if((state==='settled')!==(completion_sha256!==null))throw new IntegrityViolation();
+        const view=await this.#dispatchView(tx,context,journal);
+        const memberships=await this.#select(tx,'dispatch_points',['backend_namespace','physical_collection','collection_incarnation','point_id'],context,
+          ' AND intent_id=$4 AND dispatch_id=$5',[context.intent_id,dispatch_id],9);
+        if(memberships.length!==view.point_ids.length)throw new IntegrityViolation();
+        for(const member of memberships){
+          if(member.backend_namespace!==this.#config.backend_namespace||member.physical_collection!==this.#config.physical_collection
+            ||member.collection_incarnation!==this.#config.collection_incarnation||!view.point_ids.includes(uuid(member.point_id)))throw new IntegrityViolation();
+        }
+        const claims=await this.#select(tx,'point_claims',['instance_id','backend_namespace','physical_collection','collection_incarnation','point_id'],context,
+          ' AND point_id=ANY($4::uuid[])',[view.point_ids],9);
+        if(claims.length!==view.point_ids.length||new Set(claims.map(claim=>claim.point_id)).size!==view.point_ids.length)throw new IntegrityViolation();
+        for(const claim of claims){
+          if(claim.instance_id!==this.#instance||claim.backend_namespace!==this.#config.backend_namespace
+            ||claim.physical_collection!==this.#config.physical_collection||claim.collection_incarnation!==this.#config.collection_incarnation
+            ||!view.point_ids.includes(uuid(claim.point_id)))throw new IntegrityViolation();
+        }
+        // The strict parser owns a bounded null-prototype graph. Native copies
+        // let the existing descriptor guards validate operation shape safely.
+        const native=(value:unknown):unknown=>{
+          if(Array.isArray(value))return value.map(native);
+          if(value!==null&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,native(item)]));
+          return value;
+        };
+        const body=native(parse_response(Buffer.from(view.request_bytes)));
+        if(typeof body!=='object'||body===null||Array.isArray(body)||Object.keys(body).length!==1
+          ||!Object.hasOwn(body,'points'))throw new IntegrityViolation();
+        const points=native_array((body as Data).points,1,8);
+        const ids=points.map(point=>{
+          if(operation==='delete_points')return uuid(point);
+          if(typeof point!=='object'||point===null||Array.isArray(point))throw new IntegrityViolation();
+          const keys=Object.keys(point);
+          if(keys.length!==3||!['id','vector','payload'].every(key=>Object.hasOwn(point,key)))throw new IntegrityViolation();
+          const record=point as Data;
+          if(typeof record.vector!=='object'||record.vector===null||Array.isArray(record.vector)
+            ||typeof record.payload!=='object'||record.payload===null||Array.isArray(record.payload))throw new IntegrityViolation();
+          return uuid(record.id);
+        }).sort();
+        if(!same(ids,view.point_ids))throw new IntegrityViolation();
+        return Object.freeze({dispatch_id,sequence,owner_token,backend_epoch,credential_generation,operation,state,
+          completion_sha256,request_sha256:view.request_sha256,point_ids:view.point_ids});
+      } catch(error) {
+        if(error instanceof InvalidRequest)throw new IntegrityViolation();
+        throw error;
+      }
+    }));
   }
   async reserve_dispatch(input:unknown,rawDispatch:unknown,rawOptions:unknown):Promise<DispatchView>{
     const context=parseContext(input),options=parseOptions(rawOptions);

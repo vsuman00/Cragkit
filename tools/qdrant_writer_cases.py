@@ -82,6 +82,54 @@ def successor_stage(inputs, suffix, expected_active):
     return stage
 
 
+class _AckConnection:
+    """Use the actual driver, withholding one acknowledged COMMIT in this fixture."""
+    def __init__(self, connection, observations):
+        self.connection, self.observations = connection, observations
+
+    def __getattr__(self, key):
+        return getattr(self.connection, key)
+
+    def transaction(self):
+        connection = self.connection
+        transaction, observations = connection.transaction(), self.observations
+        class Transaction:
+            async def __aenter__(self):
+                await transaction.__aenter__()
+                return self
+
+            async def __aexit__(self, kind, error, traceback):
+                result = await transaction.__aexit__(kind, error, traceback)
+                if kind is None and observations['armed']:
+                    observations['armed'] = False
+                    observations['fired'] += 1
+                    observations['retired_connection'] = connection
+                    raise ConnectionError('injected_committed_ack_loss')
+                return result
+        return Transaction()
+
+
+class _AckPool:
+    def __init__(self, config, observations):
+        from cragkit._postgres_pool import _owned_pool
+        self.pool, self.observations = _owned_pool(config), observations
+
+    async def open(self, **options):
+        return await self.pool.open(**options)
+
+    async def wait(self, **options):
+        return await self.pool.wait(**options)
+
+    async def close(self, **options):
+        return await self.pool.close(**options)
+
+    async def getconn(self, **options):
+        return _AckConnection(await self.pool.getconn(**options), self.observations)
+
+    async def putconn(self, connection):
+        return await self.pool.putconn(connection.connection)
+
+
 async def python_writer_cases(config, inputs):
     """Execute the native Python authority against a caller-owned private pool."""
     import asyncio
@@ -95,7 +143,9 @@ async def python_writer_cases(config, inputs):
     private_config = dict(config)
     private_config['sslrootcert'] = Path(private_config['sslrootcert'])
     private_config['passfile'] = Path(private_config['passfile'])
-    resource = PoolResource(PoolConfig.model_validate(private_config))
+    acknowledgment = dict(armed=False, fired=0)
+    resource = PoolResource(PoolConfig.model_validate(private_config),
+        factory=lambda cfg: _AckPool(cfg, acknowledgment))
     writer = PostgresQdrantWriter(resource, parse_model(QdrantConfig, inputs['config']), inputs['instance_id'])
     other_resource = PoolResource(PoolConfig.model_validate(private_config))
     other = PostgresQdrantWriter(other_resource, parse_model(QdrantConfig, inputs['config']), inputs['instance_id'])
@@ -117,6 +167,12 @@ async def python_writer_cases(config, inputs):
         await expect(IndexNotReady, lambda: writer.inspect(context, deadline=deadline))
         await writer.initialize(deadline=deadline)
         checks.append('explicit_initialization_exact_schema_and_dedicated_login')
+        empty = await writer.manager_snapshot(context, deadline=deadline)
+        if (empty['intent'] is not None or empty['document'] is not None or empty['owner'] is not None
+                or empty['max_sequence'] != 0 or empty['pending']
+                or empty['backend']['state'] != 'open' or empty['backend']['epoch'] != 1
+                or empty['backend']['backend_namespace'] != inputs['config']['backend_namespace']):
+            raise RuntimeError('manager_absent_snapshot')
         plan = prepare_stage(inputs['stage'])
         await writer.stage(plan, scope, owner_token=OWNER_TOKEN, deadline=deadline)
         first = await writer.inspect(context, deadline=deadline)
@@ -126,6 +182,30 @@ async def python_writer_cases(config, inputs):
         if await writer.inspect(context, deadline=deadline) != first:
             raise RuntimeError('writer_stage_replay_changed')
         checks.append('immutable_creation_and_exact_idempotent_stage_replay')
+        staged = await writer.manager_snapshot(context, deadline=deadline)
+        if (staged['intent']['state'] != 'staged' or staged['document']['active_generation_id'] is not None
+                or staged['document']['authorization_revision'] != 'auth-1'):
+            raise RuntimeError('manager_staged_snapshot')
+        checks.append('manager_snapshot_absent_and_staged_state')
+        admission = await writer.admit_publication(context, deadline=deadline)
+        if (admission['intent']['state'] != 'writing'
+                or dict(admission['owner']) != dict(owner_token=OWNER_TOKEN, backend_epoch=1)):
+            raise RuntimeError('manager_owner_admission')
+        exact_owner = dict(instance_id=inputs['instance_id'], intent_id=context['intent_id'],
+            owner_token=OWNER_TOKEN, backend_epoch=1)
+        if dict((await writer.manager_snapshot(context, deadline=deadline))['owner']) != exact_owner:
+            raise RuntimeError('manager_snapshot_owner_binding')
+        checks.append('manager_admission_acquires_exact_private_owner')
+        alternate = dict(context, owner_token='00000000-0000-4000-8000-000000000002')
+        acknowledgment['armed'] = True
+        admitted = await writer.admit_publication(alternate, deadline=deadline)
+        if (acknowledgment['armed'] or acknowledgment['fired'] != 1
+                or not acknowledgment['retired_connection'].closed
+                or admitted['owner']['owner_token'] != alternate['owner_token']
+                or (await writer.manager_snapshot(context, deadline=deadline))['owner']['owner_token'] != alternate['owner_token']):
+            raise RuntimeError('manager_committed_admission_ack_loss')
+        await writer.admit_publication(context, deadline=deadline)
+        checks.append('manager_admission_commit_ack_loss_reconciles_same_owner')
         changed = deepcopy(inputs['stage'])
         changed['intent']['initial_authorization']['tag'] = 'changed'
         changed_plan = prepare_stage(changed)
@@ -149,6 +229,21 @@ async def python_writer_cases(config, inputs):
         if sorted(payload['points'], key=lambda point: point['id']) != sorted(inputs['expected_points'], key=lambda point: point['id']):
             raise RuntimeError('writer_reserved_complete_vectors_current_acl')
         checks.append('committed_reservation_constructs_exact_complete_points_and_current_acl')
+        waiting = await writer.manager_snapshot(dict(context, intent_id='manager-other-intent'), deadline=deadline)
+        status = await writer.dispatch_status(context, dispatch['dispatch_id'], deadline=deadline)
+        if (not waiting['pending'] or waiting['intent'] is not None or status is None
+                or status['state'] != 'reserved' or status['sequence'] != 1 or status['completion_sha256'] is not None
+                or list(status['point_ids']) != sorted(point_ids) or status['request_sha256'] != reservation['request_sha256']
+                or 'request_bytes' in status
+                or await writer.dispatch_status(context, 'manager-missing-dispatch', deadline=deadline) is not None):
+            raise RuntimeError('manager_pending_dispatch_snapshot')
+        expected_status = dict(dispatch_id=dispatch['dispatch_id'], sequence=1, owner_token=OWNER_TOKEN,
+            backend_epoch=1, credential_generation='credential-1', operation='complete_point_upsert',
+            state='reserved', completion_sha256=None, request_sha256=reservation['request_sha256'],
+            point_ids=tuple(sorted(point_ids)))
+        if dict(status) != expected_status:
+            raise RuntimeError('manager_closed_dispatch_status')
+        checks.append('manager_snapshot_document_wide_uncertainty_and_exact_dispatch_metadata')
         reordered = await writer.reserve_dispatch(context, dict(dispatch, point_ids=list(reversed(point_ids))), deadline=deadline)
         if reordered['request_bytes'] != reservation['request_bytes'] or reordered['request_sha256'] != reservation['request_sha256']:
             raise RuntimeError('writer_same_claimed_set_replay_changed_request')
@@ -162,6 +257,10 @@ async def python_writer_cases(config, inputs):
         # deliberately not reported as an actual Qdrant acknowledgment/readback.
         completion = sha256(b'D-native-synthetic-completion').hexdigest()
         await writer.settle_dispatch(context, dispatch['dispatch_id'], completion, deadline=deadline)
+        settled = await writer.dispatch_status(context, dispatch['dispatch_id'], deadline=deadline)
+        if dict(settled) != dict(expected_status, state='settled', completion_sha256=completion):
+            raise RuntimeError('manager_settled_dispatch_snapshot')
+        checks.append('manager_settled_dispatch_status_preserves_known_fixture_hash')
         await writer.prepare(context, completion, deadline=deadline)
         await writer.publish(context, deadline=deadline)
         published = await writer.inspect(context, deadline=deadline)
@@ -191,7 +290,18 @@ async def python_writer_cases(config, inputs):
         await other.stage(prepare_stage(contender_b), scope, owner_token='00000000-0000-4000-8000-000000000002', deadline=deadline)
         a = await prepared(writer, contender_a, OWNER_TOKEN)
         b = await prepared(other, contender_b, '00000000-0000-4000-8000-000000000002')
+        conflict_stage = inputs['successors']['manager-conflict']
+        conflict_context = dict(context, intent_id=conflict_stage['intent']['intent_id'])
+        await writer.stage(prepare_stage(conflict_stage), scope, owner_token=OWNER_TOKEN, deadline=deadline)
         await other.publish(b, deadline=deadline)
+        before_conflict = await writer.manager_snapshot(conflict_context, deadline=deadline)
+        conflict = await writer.admit_publication(conflict_context, deadline=deadline)
+        after_conflict = await writer.manager_snapshot(conflict_context, deadline=deadline)
+        if (conflict['intent']['state'] != 'conflict' or conflict['owner'] is not None
+                or before_conflict['document'] != after_conflict['document']
+                or before_conflict['owner'] != after_conflict['owner']):
+            raise RuntimeError('manager_original_pointer_conflict')
+        checks.append('manager_original_pointer_conflict_before_takeover')
         loser = await writer.publish(a, deadline=deadline)
         if loser['state'] != 'conflict' or loser['authority_committed']:
             raise RuntimeError('writer_competing_publication_must_persist_conflict')
@@ -204,6 +314,9 @@ async def python_writer_cases(config, inputs):
         checks.append('superseded_completed_publication_replays_historical_outcome')
         denied_stage = successor_stage(inputs, 'denied', contender_b['manifest']['generation_id'])
         denied_context = await prepared(writer, denied_stage, OWNER_TOKEN)
+        manager_denied_stage = inputs['successors']['manager-denied']
+        manager_denied_context = dict(context, intent_id=manager_denied_stage['intent']['intent_id'])
+        await writer.stage(prepare_stage(manager_denied_stage), scope, owner_token=OWNER_TOKEN, deadline=deadline)
         revocation = dict(action='update_authorization', intent_id='native-revocation', tenant_id=scope.tenant_id,
             collection=context['collection'], document_id=context['document_id'],
             expected_authorization_revision='auth-1', expected_mutation_epoch=1,
@@ -215,6 +328,22 @@ async def python_writer_cases(config, inputs):
             raise RuntimeError('writer_revoked_publication_must_persist_denied')
         checks.append('two_login_revocation_after_preparation_denies_publication')
         current_scope = parse_model(TrustedScope, dict(inputs['scope'], authorization_revision='auth-2'))
+        await expect(UnauthorizedScope, lambda: writer.admit_publication(manager_denied_context, deadline=deadline))
+        if (await writer.inspect(manager_denied_context, deadline=deadline))['state'] != 'staged':
+            raise RuntimeError('manager_stale_scope_poisoned_intent')
+        checks.append('manager_stale_caller_cannot_poison_valid_intent')
+        fresh_denied = dict(manager_denied_context, scope=current_scope)
+        before_denial = await writer.manager_snapshot(fresh_denied, deadline=deadline)
+        admission_denied = await writer.admit_publication(fresh_denied, deadline=deadline)
+        historical_context = dict(context, scope=current_scope)
+        historical_admission = await writer.admit_publication(historical_context, deadline=deadline)
+        after_denial = await writer.manager_snapshot(historical_context, deadline=deadline)
+        if (admission_denied['intent']['state'] != 'denied' or admission_denied['owner'] is not None
+                or historical_admission['intent']['state'] != 'published' or historical_admission['owner'] is not None
+                or before_denial['document'] != after_denial['document']
+                or before_denial['owner'] != after_denial['owner']):
+            raise RuntimeError('manager_original_security_denial')
+        checks.append('manager_original_security_denial_before_takeover_and_historical_metadata')
         stale = dict(revocation, intent_id='native-stale-security')
         stale_receipt = await writer.apply_security(stale, scope, owner_token=OWNER_TOKEN, deadline=deadline)
         if stale_receipt['state'] != 'denied' or stale_receipt['authority_committed']:

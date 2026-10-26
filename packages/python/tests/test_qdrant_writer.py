@@ -1,6 +1,8 @@
 """Pure admission and committed writer lifecycle, without services/providers."""
 import asyncio
 import copy
+from hashlib import sha256
+import json
 from functools import wraps
 from contextlib import asynccontextmanager
 from dataclasses import FrozenInstanceError
@@ -568,3 +570,286 @@ async def test_same_generation_cannot_adopt_a_different_manifest_even_at_equal_c
     else:
         await writer.stage(plan,ctx()['scope'],**options)
         assert ('ensure','members') in events and connection.commits==1
+
+
+class ManagerConnection(Connection):
+    """Stateful committed-metadata double; no remote completion is simulated."""
+    def __init__(self, state):
+        super().__init__()
+        self.state = state
+
+    def transaction(self):
+        connection = self
+
+        class Transaction:
+            async def __aenter__(self):
+                connection.info.transaction_status = 2
+                self.before = {
+                    key: value if isinstance(value, BaseException) else copy.deepcopy(value)
+                    for key, value in connection.state.items()
+                }
+
+            async def __aexit__(self, kind, error, traceback):
+                if kind is None:
+                    connection.commits += 1
+                    failure = connection.state.pop('commit_error', None)
+                    if failure is not None:
+                        raise failure
+                else:
+                    connection.rollbacks += 1
+                    connection.state.clear()
+                    connection.state.update(self.before)
+                connection.info.transaction_status = 0
+
+        return Transaction()
+
+    async def execute(self, sql, params=None):
+        if (sql.startswith('SET ') or 'set_config(' in sql
+                or sql == implementation._WRITER_ROLE_SQL):
+            return await super().execute(sql, params)
+        self.calls.append((sql, params))
+        if self.state.get('body_error') is not None:
+            raise self.state['body_error']
+        if sql.startswith('SELECT active_generation_id,authorization_revision,mutation_epoch,tombstoned'):
+            if 'FOR UPDATE' in sql and self.state.get('after_owner_wait') is not None:
+                patch = self.state.pop('after_owner_wait')
+                self.state['document'].update(patch)
+            document = self.state['document']
+            return Cursor([] if document is None else [tuple(document[key] for key in
+                ('active_generation_id', 'authorization_revision', 'mutation_epoch', 'tombstoned'))])
+        if sql.startswith('SELECT action,state,payload_sha256'):
+            intent = self.state['intent']
+            return Cursor([] if intent is None else [tuple(intent[key] for key in implementation._META)])
+        if sql.startswith('SELECT instance_id,backend_namespace,storage_identity'):
+            return Cursor(self.state['backend'])
+        if sql.startswith('SELECT instance_id,intent_id,owner_token::text,backend_epoch'):
+            if 'FOR UPDATE' in sql:
+                self.state['owner_locked'] = True
+            return Cursor([] if self.state['owner'] is None else [self.state['owner']])
+        if sql.startswith('SELECT sequence FROM cragkit_qdrant.dispatch_journal'):
+            return Cursor(self.state['sequences'])
+        if sql.startswith('SELECT dispatch_id FROM cragkit_qdrant.dispatch_journal'):
+            return Cursor(self.state['pending'])
+        if sql.startswith('SELECT expected_authorization_revision,expected_mutation_epoch,expected_active_generation_id FROM'):
+            assert self.state.get('owner_locked') is True
+            return Cursor([self.state['fences']])
+        if sql.startswith('INSERT INTO cragkit_qdrant.document_owners'):
+            self.state['owner'] = (params[3], params[4], params[5], params[6])
+            self.state['owner_writes'] += 1
+            return Cursor([])
+        if sql.startswith("UPDATE cragkit_qdrant.publication_intents SET state='writing'"):
+            if self.state['intent']['state'] == 'staged':
+                self.state['intent']['state'] = 'writing'
+            return Cursor([])
+        if sql.startswith('UPDATE cragkit_qdrant.publication_intents SET state=%s'):
+            self.state['intent']['state'] = params[0]
+            return Cursor([])
+        if sql.startswith('SELECT sequence,owner_token::text,backend_epoch,credential_generation'):
+            return Cursor(self.state['dispatch'])
+        if sql.startswith('SELECT backend_namespace,physical_collection,collection_incarnation,point_id::text'):
+            return Cursor(self.state['dispatch_members'])
+        if sql.startswith('SELECT point_id::text FROM cragkit_qdrant.point_claims'):
+            return Cursor(self.state['claims'])
+        raise AssertionError('unexpected manager SQL')
+
+
+def manager_writer(monkeypatch):
+    plan = prepare_stage(stage_input())
+    graph = stage_data(plan)
+    state = {
+        'document': {'active_generation_id': graph.intent.expected_active_generation_id,
+            'authorization_revision': 'auth-1', 'mutation_epoch': 1, 'tombstoned': False},
+        'intent': {'action': 'stage', 'state': 'staged', 'payload_sha256': plan.payload_sha256,
+            'manifest_sha256': plan.manifest_sha256, 'revision_id': graph.manifest.revision_id,
+            'generation_id': graph.manifest.generation_id, 'authority_committed': False,
+            'replica_complete': False, 'purge_complete': False},
+        'backend': [('instance-1', 'fixture-local', 'storage-1', 'supervisor-1', 1, 'open', None)],
+        'owner': None, 'owner_writes': 0, 'sequences': [], 'pending': [],
+        'fences': ('auth-1', 1, graph.intent.expected_active_generation_id),
+        'dispatch': [], 'dispatch_members': [], 'claims': [],
+    }
+    connections = []
+    pool = resource(monkeypatch, Connection())
+
+    @asynccontextmanager
+    async def lease(self, *, deadline):
+        connection = ManagerConnection(state)
+        connections.append(connection)
+        yield connection
+
+    monkeypatch.setattr(PoolResource, 'lease', lease)
+    writer = PostgresQdrantWriter(pool, config(), 'instance-1')
+    writer._ready = True
+    loads = []
+
+    async def load(connection, context):
+        loads.append(context)
+        if state.get('graph_error'):
+            raise IntegrityViolation()
+        return plan
+
+    monkeypatch.setattr(writer, '_load_stage', load)
+    return writer, state, connections, loads
+
+
+@run_async
+async def test_manager_snapshot_absent_and_existing_are_closed_immutable_metadata(monkeypatch):
+    writer, state, connections, _ = manager_writer(monkeypatch)
+    deadline = asyncio.get_running_loop().time() + 5
+    state['document'] = state['intent'] = None
+    empty = await writer.manager_snapshot(ctx(), deadline=deadline)
+    assert empty['document'] is None and empty['intent'] is None and empty['owner'] is None
+    assert empty['max_sequence'] == 0 and empty['pending'] is False
+    with pytest.raises(TypeError):
+        empty['backend']['epoch'] = 2
+    state['owner'] = ('instance-1', 'predecessor-intent',
+                      '22222222-2222-4222-8222-222222222222', 1)
+    state['sequences'] = [(1,), (5,)]
+    state['pending'] = [('other-intent-dispatch',)]
+    snapshot = await writer.manager_snapshot(ctx(), deadline=deadline)
+    assert snapshot['owner']['intent_id'] == 'predecessor-intent'
+    assert snapshot['max_sequence'] == 5 and snapshot['pending'] is True
+    assert set(snapshot) == {'intent', 'document', 'backend', 'owner', 'max_sequence', 'pending'}
+    pending_call = next(call for call in connections[-1].calls
+                        if call[0].startswith('SELECT dispatch_id'))
+    assert pending_call[1] == ('tenant-a', 'docs', 'doc-1')
+
+
+@pytest.mark.parametrize('sequences', [[(1,), (1,)], [(257,)], [(True,)], [(1.0,)], [(1,)] * 257])
+@run_async
+async def test_manager_snapshot_rejects_invalid_sequence_history(monkeypatch, sequences):
+    writer, state, _, _ = manager_writer(monkeypatch)
+    state['sequences'] = sequences
+    with pytest.raises(IntegrityViolation):
+        await writer.manager_snapshot(ctx(), deadline=asyncio.get_running_loop().time() + 5)
+
+
+@pytest.mark.parametrize('patch,outcome', [
+    ({'active_generation_id': 'new-active'}, 'conflict'),
+    ({'mutation_epoch': 2}, 'denied'),
+    ({'tombstoned': True}, 'denied'),
+])
+@run_async
+async def test_admission_persists_original_fence_failure_after_owner_wait(monkeypatch, patch, outcome):
+    writer, state, connections, loads = manager_writer(monkeypatch)
+    state['owner'] = ('instance-1', 'competing-intent',
+                      '22222222-2222-4222-8222-222222222222', 1)
+    previous = state['owner']
+    state['after_owner_wait'] = patch
+    result = await writer.admit_publication(ctx(), deadline=asyncio.get_running_loop().time() + 5)
+    assert result['intent']['state'] == outcome and result['owner'] is None
+    assert state['owner'] == previous and state['owner_writes'] == 0 and loads == []
+    assert connections[0].commits == 1
+    calls = [sql for sql, _ in connections[0].calls]
+    backend = next(index for index, sql in enumerate(calls) if 'FOR SHARE' in sql)
+    owner = next(index for index, sql in enumerate(calls)
+                 if sql.startswith('SELECT instance_id,intent_id,owner_token::text,backend_epoch ')
+                 and 'FROM cragkit_qdrant.document_owners' in sql and 'FOR UPDATE' in sql)
+    document = next(index for index, sql in enumerate(calls)
+                    if 'documents' in sql and 'FOR UPDATE' in sql)
+    assert backend < owner < document
+
+
+@run_async
+async def test_stale_caller_scope_never_poisoned_and_terminal_does_not_take_owner(monkeypatch):
+    writer, state, _, loads = manager_writer(monkeypatch)
+    state['document']['authorization_revision'] = 'auth-new'
+    with pytest.raises(UnauthorizedScope):
+        await writer.admit_publication(ctx(), deadline=asyncio.get_running_loop().time() + 5)
+    assert state['intent']['state'] == 'staged' and state['owner_writes'] == 0
+    state['intent']['state'] = 'published'
+    state['document']['active_generation_id'] = 'later-generation'
+    current = copy.deepcopy(ctx())
+    current['scope']['authorization_revision'] = 'auth-new'
+    result = await writer.admit_publication(current, deadline=asyncio.get_running_loop().time() + 5)
+    assert result['intent']['state'] == 'published' and result['owner'] is None
+    assert state['document']['active_generation_id'] == 'later-generation'
+    assert state['owner_writes'] == 0 and loads == []
+
+
+@pytest.mark.parametrize('failure', ['pending', 'graph'])
+@run_async
+async def test_admission_refuses_pending_or_corrupt_graph_without_takeover(monkeypatch, failure):
+    writer, state, _, _ = manager_writer(monkeypatch)
+    if failure == 'pending':
+        state['pending'] = [('reserved-predecessor',)]
+    else:
+        state['graph_error'] = True
+    with pytest.raises(ProviderUnavailable if failure == 'pending' else IntegrityViolation):
+        await writer.admit_publication(ctx(), deadline=asyncio.get_running_loop().time() + 5)
+    assert state['owner_writes'] == 0 and state['intent']['state'] == 'staged'
+
+
+@run_async
+async def test_normal_admission_is_same_context_and_lost_commit_ack_reconciles(monkeypatch):
+    writer, state, connections, loads = manager_writer(monkeypatch)
+    state['commit_error'] = RuntimeError('PRIVATE_ACK_LOST')
+    result = await writer.admit_publication(ctx(), deadline=asyncio.get_running_loop().time() + 5)
+    assert result['owner'] == {'owner_token': ctx()['owner_token'], 'backend_epoch': 1}
+    assert result['intent']['state'] == 'writing'
+    assert state['owner_writes'] == 1 and len(loads) == 1
+    assert len(connections) == 2 and connections[0].closed
+    assert state['owner'][2] == ctx()['owner_token']
+
+
+@run_async
+async def test_body_operational_failure_is_not_retried_as_lost_commit(monkeypatch):
+    writer, state, connections, _ = manager_writer(monkeypatch)
+    state['body_error'] = ProviderUnavailable()
+    with pytest.raises(ProviderUnavailable):
+        await writer.admit_publication(ctx(), deadline=asyncio.get_running_loop().time() + 5)
+    assert len(connections) == 1 and connections[0].rollbacks == 1
+    assert state['owner_writes'] == 0
+
+
+def manager_dispatch(state):
+    identity = FIXTURE['members'][0]['point_id']
+    body = json.dumps({'points': [identity]}, separators=(',', ':')).encode()
+    state['dispatch'] = [(1, ctx()['owner_token'], 1, 'credential-1', 'delete_points',
+        'settled', 'a' * 64, sha256(body).hexdigest(), body, 'instance-1', False)]
+    state['dispatch_members'] = [('fixture-local', config()['physical_collection'],
+                                 config()['collection_incarnation'], identity)]
+    state['claims'] = [(identity,)]
+    return identity
+
+
+@run_async
+async def test_dispatch_status_is_exact_scoped_metadata_not_completion_proof(monkeypatch):
+    writer, state, _, _ = manager_writer(monkeypatch)
+    assert await writer.dispatch_status(ctx(), 'absent', deadline=asyncio.get_running_loop().time() + 5) is None
+    point = manager_dispatch(state)
+    status = await writer.dispatch_status(ctx(), 'dispatch-1', deadline=asyncio.get_running_loop().time() + 5)
+    assert status['completion_sha256'] == 'a' * 64 and status['point_ids'] == (point,)
+    assert set(status) == {'dispatch_id', 'sequence', 'owner_token', 'backend_epoch',
+        'credential_generation', 'operation', 'state', 'completion_sha256', 'request_sha256', 'point_ids'}
+    with pytest.raises(TypeError):
+        status['state'] = 'unknown'
+    row = list(state['dispatch'][0])
+    row[5], row[6] = 'unknown', None
+    state['dispatch'] = [tuple(row)]
+    unknown = await writer.dispatch_status(ctx(), 'dispatch-1', deadline=asyncio.get_running_loop().time() + 5)
+    assert unknown['state'] == 'unknown' and unknown['completion_sha256'] is None
+    assert state['dispatch'][0][5] == 'unknown'
+
+
+@pytest.mark.parametrize('failure', ['hash', 'points', 'claim', 'physical', 'completion', 'sequence'])
+@run_async
+async def test_dispatch_status_rejects_contradictory_durable_metadata(monkeypatch, failure):
+    writer, state, _, _ = manager_writer(monkeypatch)
+    manager_dispatch(state)
+    row = list(state['dispatch'][0])
+    if failure == 'hash':
+        row[7] = 'b' * 64
+    elif failure == 'points':
+        state['dispatch_members'] *= 2
+    elif failure == 'claim':
+        state['claims'] = []
+    elif failure == 'physical':
+        state['dispatch_members'][0] = ('foreign', *state['dispatch_members'][0][1:])
+    elif failure == 'completion':
+        row[6] = None
+    else:
+        row[0] = 257
+    state['dispatch'] = [tuple(row)]
+    with pytest.raises(IntegrityViolation):
+        await writer.dispatch_status(ctx(), 'dispatch-1', deadline=asyncio.get_running_loop().time() + 5)

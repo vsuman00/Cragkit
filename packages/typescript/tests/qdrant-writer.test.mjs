@@ -21,6 +21,8 @@ const context={scope,collection:'docs',document_id:'doc-1',intent_id:'intent-2',
 const opts=()=>({deadline:now()+5});
 const stageOpts=()=>({...opts(),owner_token:token});
 const digest=value=>createHash('sha256').update(value).digest('hex');
+const dispatchRequest={dispatch_id:'dispatch-manager',sequence:1,credential_generation:'credential-1',
+  operation:'complete_point_upsert',point_ids:fixture.members.map(member=>member.point_id)};
 function input(){
   const manifest={...fixture.physical,tenant_id:'tenant-a',collection:'docs',document_id:'doc-1',
     revision_id:fixture.source_revision.revision_id,generation_id:fixture.intent.generation_id,
@@ -50,7 +52,8 @@ function clone(value){
 function setup(){
   const state={queries:[],clients:[],role:true,history:AUTHORITY_PUBLICATION_HISTORY.map(row=>[...row]),
     catalog:true,fingerprint:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,startStatus:'I',commitLost:false,
-    rollbackFail:false,wait:null,tables:{backend_instances:[{instance_id:'instance-fixture',backend_namespace:'fixture-local',epoch:1,state:'open'}]}};
+    rollbackFail:false,wait:null,commitError:null,tables:{backend_instances:[{instance_id:'instance-fixture',backend_namespace:'fixture-local',
+      storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',epoch:1,state:'open',recovery_id:null}]}};
   const keys={documents:['tenant_id','collection','document_id'],document_revisions:['tenant_id','collection','document_id','revision_id'],
     generations:['tenant_id','collection','document_id','generation_id'],members:['tenant_id','collection','document_id','revision_id','generation_id','chunk_id'],
     publication_intents:['tenant_id','collection','document_id','intent_id'],point_claims:['backend_namespace','physical_collection','collection_incarnation','point_id'],
@@ -63,7 +66,12 @@ function setup(){
         const sql=query.text,params=query.values??[];state.queries.push(query);
         if(sql.startsWith('BEGIN')){this.snapshot=clone(state.tables);this.status='T';return {rows:[]};}
         if(sql==='ROLLBACK'){if(state.rollbackFail)throw Error('private rollback');state.tables=this.snapshot;this.status='I';return {rows:[]};}
-        if(sql==='COMMIT'){this.status='I';if(state.commitLost){state.commitLost=false;throw Error('private lost acknowledgment');}return {rows:[]};}
+        if(sql==='COMMIT'){
+          this.status='I';
+          if(state.commitError){const failure=state.commitError;state.commitError=null;state.tables=this.snapshot;throw failure;}
+          if(state.commitLost){state.commitLost=false;state.onLostCommit?.();throw Error('private lost acknowledgment');}
+          return {rows:[]};
+        }
         if(sql===WRITER_ROLE_SQL){if(state.wait)await state.wait;return {rows:[[state.role]]};}
         if(sql===AUTHORITY_HISTORY_SQL)return {rows:state.history};
         if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL)return {rows:[[state.catalog]]};
@@ -149,6 +157,220 @@ async function ordinarySetup(){
   await f.writer.acquire_owner(context,opts());
   return f;
 }
+
+test('manager snapshots are immutable metadata for absent, scoped and staged targets',async()=>{
+  const f=setup();
+  try{
+    await f.writer.initialize(opts());
+    const empty=await f.writer.manager_snapshot(context,opts());
+    assert.deepEqual({intent:empty.intent,document:empty.document,owner:empty.owner,max_sequence:empty.max_sequence,pending:empty.pending},
+      {intent:null,document:null,owner:null,max_sequence:0,pending:false});
+    assert.ok(Object.isFrozen(empty.backend));
+    await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+    const staged=await f.writer.manager_snapshot(context,opts());
+    assert.equal(staged.intent.state,'staged');
+    assert.equal(staged.document.authorization_revision,'auth-1');
+    assert.ok(Object.isFrozen(staged.document));
+    assert.equal(JSON.stringify(staged).includes('canonical_utf8'),false);
+    const hidden=await f.writer.manager_snapshot({...context,scope:{...scope,tenant_id:'foreign'}},opts());
+    assert.equal(hidden.document,null);
+    assert.equal(hidden.intent,null);
+    await assert.rejects(f.writer.manager_snapshot({...context,scope:{...scope,authorization_revision:'stale'}},opts()),UnauthorizedScope);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('snapshot sequences are intent-scoped while pending work includes predecessor intents',async()=>{
+  const f=await ordinarySetup();
+  try{
+    f.state.tables.dispatch_journal=[
+      {tenant_id:scope.tenant_id,collection:'docs',document_id:'doc-1',intent_id:context.intent_id,dispatch_id:'current-1',sequence:2,state:'settled'},
+      {tenant_id:scope.tenant_id,collection:'docs',document_id:'doc-1',intent_id:'predecessor',dispatch_id:'old',sequence:200,state:'unknown'},
+    ];
+    const result=await f.writer.manager_snapshot(context,opts());
+    assert.equal(result.max_sequence,2);
+    assert.equal(result.pending,true);
+    assert.equal(result.owner.owner_token,token);
+    f.state.tables.dispatch_journal.push({...f.state.tables.dispatch_journal[0],dispatch_id:'duplicate-sequence'});
+    await assert.rejects(f.writer.manager_snapshot(context,opts()),IntegrityViolation);
+    f.state.tables.dispatch_journal=Array.from({length:257},(_,i)=>({...f.state.tables.dispatch_journal[0],dispatch_id:'d-'+i,sequence:i+1}));
+    await assert.rejects(f.writer.manager_snapshot(context,opts()),IntegrityViolation);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('publication admission validates the whole stage before acquiring a stable owner',async()=>{
+  const f=setup();
+  try{
+    await f.writer.initialize(opts());
+    await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+    const admitted=await f.writer.admit_publication(context,opts());
+    assert.equal(admitted.intent.state,'writing');
+    assert.deepEqual(admitted.owner,{owner_token:token,backend_epoch:1});
+    assert.ok(Object.isFrozen(admitted.owner));
+    assert.deepEqual(await f.writer.admit_publication(context,opts()),admitted);
+    f.state.tables.vector_replays.pop();
+    await assert.rejects(f.writer.admit_publication(context,opts()),IntegrityViolation);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('original fence admission persists terminal outcomes before owner takeover',async()=>{
+  for(const failure of ['denied','conflict']){
+    const f=await ordinarySetup();
+    try{
+      const replacement='00000000-0000-4000-8000-000000000002';
+      Object.assign(f.state.tables.document_owners[0],{intent_id:'newer-intent',owner_token:replacement});
+      let current=context;
+      if(failure==='denied'){
+        Object.assign(f.state.tables.documents[0],{authorization_revision:'auth-2',mutation_epoch:2,tombstoned:true});
+        await assert.rejects(f.writer.admit_publication(context,opts()),UnauthorizedScope);
+        assert.equal((await f.writer.inspect(context,opts())).state,'writing');
+        current={...context,scope:{...scope,authorization_revision:'auth-2'}};
+      }else{
+        f.state.tables.documents[0].active_generation_id='newer-generation';
+      }
+      const result=await f.writer.admit_publication(current,opts());
+      assert.equal(result.intent.state,failure);
+      assert.equal(result.owner,null);
+      assert.equal(f.state.tables.document_owners[0].owner_token,replacement);
+      const pointer=f.state.tables.documents[0].active_generation_id;
+      f.state.tables.backend_instances[0].state='recovery_blocked';
+      f.state.tables.backend_instances[0].recovery_id='recovery-1';
+      assert.deepEqual(await f.writer.admit_publication(current,opts()),result);
+      assert.equal(f.state.tables.documents[0].active_generation_id,pointer);
+    }finally{await f.writer.close();await f.resource.close();}
+  }
+});
+
+test('admission refreshes fences after owner wait and refuses unresolved predecessor work',async()=>{
+  const f=await ordinarySetup();
+  try{
+    f.state.onOwnerLock=state=>{
+      state.tables.documents[0].active_generation_id='winner';
+      state.tables.document_owners[0].owner_token='00000000-0000-4000-8000-000000000002';
+    };
+    const start=f.state.queries.length;
+    const result=await f.writer.admit_publication(context,opts());
+    assert.equal(result.intent.state,'conflict');
+    assert.equal(result.owner,null);
+    const queries=f.state.queries.slice(start).map(query=>query.text);
+    const backend=queries.findIndex(sql=>sql.includes('backend_instances')&&sql.endsWith('FOR SHARE'));
+    const owner=queries.findIndex(sql=>sql.includes('document_owners')&&sql.endsWith('FOR UPDATE'));
+    const document=queries.findIndex(sql=>sql.includes('FROM cragkit_qdrant.documents')&&sql.endsWith('FOR UPDATE'));
+    assert.ok(backend>=0&&owner>backend&&document>owner);
+  }finally{await f.writer.close();await f.resource.close();}
+  const blocked=await ordinarySetup();
+  try{
+    blocked.state.tables.dispatch_journal=[{tenant_id:scope.tenant_id,collection:'docs',document_id:'doc-1',intent_id:'predecessor',state:'reserved'}];
+    await assert.rejects(blocked.writer.admit_publication({...context,owner_token:'00000000-0000-4000-8000-000000000003'},opts()),ProviderUnavailable);
+    assert.equal(blocked.state.tables.document_owners[0].owner_token,token);
+  }finally{await blocked.writer.close();await blocked.resource.close();}
+});
+
+test('admission observes the same intent published during its owner-lock wait',async()=>{
+  const f=await ordinarySetup();
+  try{
+    f.state.onOwnerLock=state=>{
+      Object.assign(state.tables.publication_intents[0],{state:'published',authority_committed:true,replica_complete:true});
+      state.tables.documents[0].active_generation_id=fixture.intent.generation_id;
+      state.tables.document_owners[0].owner_token='00000000-0000-4000-8000-000000000002';
+    };
+    const start=f.state.queries.length;
+    const result=await f.writer.admit_publication(context,opts());
+    assert.equal(result.intent.state,'published');
+    assert.equal(result.owner,null);
+    assert.equal(f.state.queries.slice(start).some(query=>/^UPDATE cragkit_qdrant\.(document_owners|publication_intents)/.test(query.text)),false);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('admission lost COMMIT acknowledgment reconciles only the same identity',async()=>{
+  const f=setup();
+  try{
+    await f.writer.initialize(opts());
+    await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+    f.state.commitLost=true;
+    f.state.onLostCommit=()=>{f.state.tables.documents[0].active_generation_id='changed-after-admission';};
+    const result=await f.writer.admit_publication(context,opts());
+    assert.deepEqual(result.owner,{owner_token:token,backend_epoch:1});
+    assert.equal(result.intent.state,'writing','confirmed historical admission is metadata, not new mutation permission');
+    assert.equal(f.state.tables.document_owners.length,1);
+    assert.ok(f.state.clients.some(client=>client.releases.includes(true)));
+    assert.equal(f.state.queries.filter(query=>query.text.startsWith('INSERT INTO cragkit_qdrant.document_owners')).length,1);
+    assert.equal((await f.writer.admit_publication(context,opts())).intent.state,'conflict');
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('known commit failures and native cancellation never retry admission',async()=>{
+  for(const [failure,expected] of [
+    [Object.assign(Error('private known rollback'),{code:'23514'}),IntegrityViolation],
+    [new DOMException('private cancellation','AbortError'),error=>error.name==='AbortError'],
+    [new DeadlineExceeded(),DeadlineExceeded],
+  ]){
+    const f=setup();
+    try{
+      await f.writer.initialize(opts());
+      await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+      f.state.commitError=failure;
+      const start=f.state.queries.length;
+      await assert.rejects(f.writer.admit_publication(context,opts()),expected);
+      assert.equal(f.state.queries.slice(start).filter(query=>query.text.startsWith('BEGIN')).length,1);
+    }finally{await f.writer.close();await f.resource.close();}
+  }
+});
+
+test('dispatch metadata reconciles exact completion without exposing or replaying bytes',async()=>{
+  const f=await ordinarySetup();
+  try{
+    assert.equal(await f.writer.dispatch_status(context,'missing',opts()),null);
+    const reserved=await f.writer.reserve_dispatch(context,dispatchRequest,opts());
+    const status=await f.writer.dispatch_status(context,dispatchRequest.dispatch_id,opts());
+    assert.equal(status.state,'reserved');
+    assert.equal(status.request_sha256,reserved.request_sha256);
+    assert.deepEqual(status.point_ids,[...dispatchRequest.point_ids].sort());
+    assert.equal('request_bytes'in status,false);
+    assert.ok(Object.isFrozen(status.point_ids));
+    await f.writer.mark_dispatched(context,dispatchRequest.dispatch_id,opts());
+    f.state.commitLost=true;
+    await f.writer.settle_dispatch(context,dispatchRequest.dispatch_id,'f'.repeat(64),opts());
+    const completed=await f.writer.dispatch_status(context,dispatchRequest.dispatch_id,opts());
+    assert.equal(completed.state,'settled');
+    assert.equal(completed.completion_sha256,'f'.repeat(64));
+    assert.equal(await f.writer.dispatch_status({...context,intent_id:'different-intent'},dispatchRequest.dispatch_id,opts()),null);
+    f.state.tables.documents[0].authorization_revision='auth-2';
+    await assert.rejects(f.writer.dispatch_status(context,dispatchRequest.dispatch_id,opts()),UnauthorizedScope);
+    const fresh={...context,scope:{...scope,authorization_revision:'auth-2'}};
+    assert.deepEqual(await f.writer.dispatch_status(fresh,dispatchRequest.dispatch_id,opts()),completed);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('dispatch status requires a currently authorized document even for missing IDs',async()=>{
+  const f=setup();
+  try{
+    await f.writer.initialize(opts());
+    await assert.rejects(f.writer.dispatch_status(context,'missing',opts()),UnauthorizedScope);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('dispatch status rejects malformed journal, membership and self-hashed wrong IDs',async()=>{
+  for(const change of [
+    f=>{f.state.tables.dispatch_journal[0].sequence=257;},
+    f=>{f.state.tables.dispatch_journal[0].completion_sha256='a'.repeat(64);},
+    f=>{f.state.tables.dispatch_points[0].physical_collection='foreign';},
+    f=>{f.state.tables.point_claims[0].instance_id='foreign';},
+    f=>{
+      const journal=f.state.tables.dispatch_journal[0];
+      const body=JSON.parse(journal.request_bytes);
+      body.points[0].id='ffffffff-ffff-5fff-8fff-ffffffffffff';
+      journal.request_bytes=Buffer.from(JSON.stringify(body));
+      journal.request_sha256=digest(journal.request_bytes);
+    },
+  ]){
+    const f=await ordinarySetup();
+    try{
+      await f.writer.reserve_dispatch(context,dispatchRequest,opts());
+      change(f);
+      await assert.rejects(f.writer.dispatch_status(context,dispatchRequest.dispatch_id,opts()),IntegrityViolation);
+    }finally{await f.writer.close();await f.resource.close();}
+  }
+});
 
 test('ordinary publication projection binds complete raw graph, current payload and fixed witness',async()=>{
   const f=await ordinarySetup();

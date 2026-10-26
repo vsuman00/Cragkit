@@ -999,3 +999,16 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory. The native checker runs both languages serially with at most two database clients, synthetic original vectors and isolated PostgreSQL/Qdrant. Its completed-acknowledgment settlement and deliberate point corruptions are primitive fixture interventions. Final observations require unpublished source state, matching normalized witnesses and owned listener absence before fixture removal. Public manager and process-crash acceptance remain later V5-04 work.
+
+## V5-04F2a1 manager authority admission
+
+Private manager snapshots and admission use the existing restricted writer profile. [F2a1 evidence](../evaluation/reports/V5/V5-04F2a1.md) distinguishes SQL authority observations from public HTTP/publication acceptance.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_writer.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-writer.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_writer.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04F2a1/a-new-run
+```
+
+The checker now includes eight additional manager-authority groups in each runtime while retaining the original fourteen SQL and fourteen per-runtime D groups. It starts only isolated PostgreSQL, runs languages serially and requires a fresh output directory. Its one lost-commit observation forwards the actual commit before withholding the acknowledgment, then checks that the uncertain client was discarded. A discarded-connection log is expected for that injected failure. Fixture completion hashes remain synthetic; this command does not run Qdrant or establish public-manager publication.

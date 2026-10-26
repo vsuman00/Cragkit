@@ -266,6 +266,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [ ] V5-04F: Actual bounded staged writes and full readback/publication.
     - [x] V5-04F1: Ordinary current-authority projections and private full-readback receipts; 2,136 Python/tool and 1,106 Node regressions, strict types/build, 38 native ordinary cases with witness parity, 36 native readback regression cases and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F1.md).
     - [ ] V5-04F2: Authenticated dispatch and public stage/publish manager operations.
+      - [x] V5-04F2a1: Private manager authority snapshot, original-fence admission and dispatch outcome lookup; 2,157 Python/tool and 1,117 Node regressions, strict types/build, 58 native SQL checks with ordered case parity and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a1.md).
+      - [ ] V5-04F2a2: Native attempt transport and public in-process stage/publish manager.
+      - [ ] V5-04F2b: Explicit native ordinary-worker channel for a surviving supervisor.
     - [ ] V5-04F3: Native staged-publication acceptance and previous-generation preservation.
   - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
@@ -315,6 +318,12 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04F2a1: Manager authority admission
+
+State: COMPLETE for private manager authority admission; F2/public manager/full V5 remain incomplete. [Evidence](../evaluation/reports/V5/V5-04F2a1.md). Started after accepted F1 commit 90b5662f72d344040e67e74c1162cab245044916, pushed and synchronized 0/0. Concrete outcome: private authority snapshots, durable original-fence outcomes before takeover, and exact dispatch metadata for known-acknowledgment SQL reconciliation. No HTTP/public-manager claim in this child. F2a1-r1 assignment is recorded in the ignored assignment artifact. Sol Python `/root/v5_candidate_contract` owns only `_qdrant_writer.py` and its test and assembles; Sol Node `/root/v5_candidate_fixtures` owns only `qdrant-writer.ts` and its test. Both review the shared shape directly before edits. Root owns contracts/fixtures, native harnesses, documentation/tracker, serial tests and Git; other sources, migrations, manifests/locks, evaluation seals and user audits remain protected. No worker tests/services/network/database/provider calls/installs/Git. At most two native database clients, setup admin released and one test process. Root will resolve protected/public-boundary issues before dependent edits; unresolved material decisions go to Astra. Handoff pending.
+
+Final F2a1 handoff: Sol peers transferred their two owned runtime files each; Python assembled without a remaining parity mismatch. Root integrated eight native SQL groups per runtime into the existing D checker, preserving its authority-only proof scope and all original groups. Actual committed acknowledgment loss discarded the native client and reconciled the same private owner. Final checks: 91 focused Python, 35 focused Node, mypy 44 files/build, 2,157 Python/tool (four existing deliberate warnings), 1,117 Node, 58 native groups (14 SQL + 22 per runtime), exact ordered case parity and 16 seals. Runtime regression fixtures corrected a role-SQL match and copying exceptions before BEGIN; source review corrected a post-owner-wait stale intent and aligned confirmed-read reconciliation. Changed scope: both writer sources/tests, three existing native checker/consumer paths, development/report/tracker. No schema, codec, source reader, controller/recovery, lock, sealed input or user audit change. Resource snapshot: 33 GiB disk/54 percent memory free; native fixtures shut down and removed; no model/provider/hosted calls, installs/downloads, release or persistent service. Learning practice unassessed. Root commits/pushes, verifies synchronization, then continues F2a2 transport/authority bundle/public stage/publish, F2b/F3/G/H and V5-05 through V5-EXIT without routine permission prompts.
 
 ### V5-04F1: Ordinary publication readback
 

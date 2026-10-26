@@ -197,7 +197,9 @@ async def check(fixture, runtime):
             inputs['successors'] = {
                 suffix: successor_stage(inputs, suffix, active)
                 for suffix, active in (('race-a', inputs['stage']['manifest']['generation_id']),
-                    ('race-b', inputs['stage']['manifest']['generation_id']), ('denied', 'gen-race-b'))}
+                    ('race-b', inputs['stage']['manifest']['generation_id']), ('denied', 'gen-race-b'),
+                    ('manager-conflict', inputs['stage']['manifest']['generation_id']),
+                    ('manager-denied', 'gen-race-b'))}
             runtime_config = database.config('writer')
             # Each runtime exercises two independent writer clients. Setup is
             # complete, so no administrative client remains in that window.
