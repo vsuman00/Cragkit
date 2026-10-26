@@ -18,8 +18,8 @@ type Identity = Readonly<{instance_id:string;storage_identity:string;supervisor_
 type Binding = Readonly<{intent_id:string;owner_token:string;epoch:number;dispatch_id:string;recovery_id?:string}>;
 type AttemptData = Readonly<{binding:Binding;key:string;credential_generation:string;recovery:boolean;proof?:PhysicalRecovery}>;
 type ProofData = Readonly<{recovery_id:string;old_epoch:number;new_epoch:number;credential_generation:string}>;
-type Options = LeaseOptions;
-type RequestOptions = Readonly<{body?:readonly number[];deadline:number;signal?:AbortSignal}>;
+type Options = LeaseOptions & {max_response_bytes?:number};
+type RequestOptions = Readonly<{body?:readonly number[];deadline:number;signal?:AbortSignal;max_response_bytes?:number}>;
 export interface SupervisorTransport {
   request(method:string,path:string,options:RequestOptions):Promise<readonly number[]>;
   close():Promise<void>;
@@ -271,6 +271,7 @@ export class ManagedQdrantSupervisor {
     startup_profile();
     if(!this.#identity||!this.#alive())throw new ProviderUnavailable();
     const endpoint=new URL(this.#identity.endpoint);
+    const maximum=options.max_response_bytes??RESPONSE_LIMIT;
     let request:http.ClientRequest|undefined;
     const work=new Promise<{status:number;bytes:readonly number[]}>((resolve,reject)=>{
       request=http.request({hostname:'127.0.0.1',port:Number(endpoint.port),method,path,agent:false,maxHeaderSize:16384,
@@ -281,7 +282,7 @@ export class ManagedQdrantSupervisor {
         incoming.on('error',()=>reject(new ProviderUnavailable()));
         incoming.once('aborted',()=>reject(new ProviderUnavailable()));
         incoming.on('data',(chunk:Buffer)=>{
-          if(!Buffer.isBuffer(chunk)||chunk.length>RESPONSE_LIMIT-size){incoming.destroy();reject(new ProviderUnavailable());return;}
+          if(!Buffer.isBuffer(chunk)||chunk.length>maximum-size){incoming.destroy();reject(new ProviderUnavailable());return;}
           size+=chunk.length;chunks.push(Buffer.from(chunk));
         });
         incoming.once('end',()=>resolve({status:incoming.statusCode??0,bytes:Object.freeze(Array.from(Buffer.concat(chunks)))}));
@@ -305,8 +306,9 @@ export class ManagedQdrantSupervisor {
       request:async(method,path,rawOptions)=>{
         if(closed)throw new InvalidRequest();
         if(active)throw new ProviderUnavailable();
-        const value=fields(rawOptions,['deadline'],['body','signal']);
+        const value=fields(rawOptions,['deadline'],['body','signal','max_response_bytes']);
         const options=lease_options({deadline:value.deadline,...(value.signal===undefined?{}:{signal:value.signal})});
+        const maximum=value.max_response_bytes===undefined?RESPONSE_LIMIT:count(value.max_response_bytes,1,RESPONSE_LIMIT);
         if(typeof method!=='string'||typeof path!=='string'||!this.#allowed(method,path,admin))throw new InvalidRequest();
         const body=byte_body(value.body);
         if((method==='GET'&&body!==undefined)||(method!=='GET'&&body===undefined))throw new InvalidRequest();
@@ -315,7 +317,7 @@ export class ManagedQdrantSupervisor {
         if(options.signal?.aborted)controller.abort();
         let finish!:()=>void;
         const done=new Promise<void>(resolve=>{finish=resolve;});active={controller,done};
-        try{return await this.#request(key,method,path,body,{deadline:options.deadline,signal:controller.signal});}
+        try{return await this.#request(key,method,path,body,{deadline:options.deadline,signal:controller.signal,max_response_bytes:maximum});}
         catch(error){throw safe(error);}
         finally{options.signal?.removeEventListener('abort',relay);active=undefined;finish();}
       },

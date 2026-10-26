@@ -14,14 +14,17 @@ from ._postgres_pool import PoolResource
 from ._postgres_session import SessionConnection
 from ._qdrant_authority import (_HISTORY_SQL, _PUBLICATION_CATALOG_SQL, _CATALOG_FINGERPRINT_SQL,
     EXPECTED_PUBLICATION_HISTORY, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT)
-from ._qdrant_contract import QdrantConfig, SPARSE_PROFILE, parse_model, point_id
+from ._qdrant_contract import CandidatePayload, QdrantConfig, SPARSE_PROFILE, parse_model, point_id
 from ._qdrant_manifest import (_Security, _Purge, _Manifest, _Stage, _ReplayResult, _parse,
     encode_security_intent, encode_stage_intent, encode_purge_intent, encode_manifest,
     restore_dense_replay, restore_sparse_replay)
 from ._qdrant_transport import deadline_value
 from ._qdrant_writer_contract import (StagePlan, StageData, WriterContext, bind_stage, context,
-    prepare_stage, sequence, issue_stage)
-from ._qdrant_source import metadata_guard
+    prepare_stage, sequence, issue_stage, stage_data)
+from ._qdrant_reconciliation import (ExpectedPoint, ExpectedProjection, physical_binding,
+    finalize_projection, projection_data)
+from ._qdrant_vectors import _DenseVector, _SparseVector
+from ._qdrant_source import IMMUTABLE_FIELDS, metadata_guard
 from .contracts import TrustedScope
 from .embeddings import FAKE_PROFILE, OPENAI_PROFILE
 from .errors import (CragkitError, DeadlineExceeded, IndexNotReady, IntegrityViolation,
@@ -339,6 +342,11 @@ class PostgresQdrantWriter:
                 if not created and prior_intent is None:
                     raise IntegrityViolation()
             document = await self._document(connection, ctx)
+            conflicting=await self._query(connection,'SELECT intent_id FROM cragkit_qdrant.publication_intents WHERE '+_DOC+
+                " AND action='stage' AND revision_id=%s AND generation_id=%s AND (manifest_sha256 IS DISTINCT FROM %s OR manifest_bytes IS DISTINCT FROM %s) LIMIT 1",
+                (*_doc(ctx),m.revision_id,m.generation_id,data.manifest_encoding.sha256,data.manifest_encoding.encoded_bytes))
+            if conflicting:
+                raise IntegrityViolation()
             if intent.initial_authorization is not None and not prior_document:
                 initial = intent.initial_authorization
                 if (document['principal_ids'] != _acl(initial.principal_ids) or document['grant_ids'] != _acl(initial.grant_ids)
@@ -640,6 +648,16 @@ class PostgresQdrantWriter:
             or row[9]!=(self.config.sparse_profile.model_dump() if self.config.sparse_profile else None)
             or type(row[10]) is not int or not 1<=row[10]<=64):
             raise IntegrityViolation()
+        raw_members=await self._query(connection,'SELECT chunk_id,point_id::text FROM cragkit_qdrant.members WHERE '+_DOC+' AND revision_id=%s AND generation_id=%s LIMIT 65',(*_doc(ctx),revision,generation))
+        if (len(raw_members)!=row[10] or any(len(item)!=2 or any(type(value) is not str for value in item) for item in raw_members)
+            or len(set(raw_members))!=len(raw_members)):
+            raise IntegrityViolation()
+        raw_claims=await self._query(connection,'SELECT chunk_id,point_id::text,instance_id,backend_namespace,physical_collection,collection_incarnation FROM cragkit_qdrant.point_claims WHERE '+_DOC+' AND revision_id=%s AND generation_id=%s LIMIT 65',(*_doc(ctx),revision,generation))
+        raw_replays=await self._query(connection,'SELECT chunk_id,point_id::text,backend_namespace,physical_collection,collection_incarnation FROM cragkit_qdrant.vector_replays WHERE '+_DOC+' AND revision_id=%s AND generation_id=%s LIMIT 65',(*_doc(ctx),revision,generation))
+        for records,width,physical in ((raw_claims,6,(self.instance_id,*row[4:7])),(raw_replays,5,row[4:7])):
+            if (len(records)!=row[10] or any(len(item)!=width or any(type(value) is not str for value in item) or item[2:]!=physical for item in records)
+                or {item[:2] for item in records}!=set(raw_members)):
+                raise IntegrityViolation()
         members = await self._query(connection,"""SELECT m.chunk_id,m.point_id::text,m.start_byte,m.end_byte,
  m.source_sha256,m.text_sha256,m.excerpt_utf8,p.dense_input_sha256,p.sparse_input_sha256,
  v.dense_blob,v.dense_blob_sha256,v.sparse_blob,v.sparse_blob_sha256,p.dense_profile,p.sparse_profile
@@ -725,6 +743,75 @@ class PostgresQdrantWriter:
             await self._document(connection,ctx)
             return await self._load_stage(connection,ctx)
         return await self._run(ctx,deadline,load)
+
+    async def project_stage(self,value: object,binding: object,*,deadline: float) -> ExpectedProjection:
+        ctx=context(value)
+        physical=physical_binding(binding)
+        if physical['instance_id']!=self.instance_id:
+            raise UnsupportedCapability()
+        async def project(connection: SessionConnection) -> ExpectedProjection:
+            rows=await self._query(connection,'SELECT backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id FROM cragkit_qdrant.backend_instances WHERE instance_id=%s FOR SHARE',(self.instance_id,))
+            expected=(self.config.backend_namespace,physical['storage_identity'],physical['supervisor_id'],
+                      physical['new_epoch'],'recovery_blocked',physical['recovery_id'])
+            if not rows:
+                raise ProviderUnavailable()
+            if (len(rows)!=1 or len(rows[0])!=6 or any(type(item) is not str for item in rows[0][:3])
+                or type(rows[0][3]) is not int or type(rows[0][4]) is not str
+                or rows[0][5] is not None and type(rows[0][5]) is not str):
+                raise IntegrityViolation()
+            if rows[0][:3]!=expected[:3]:
+                raise IntegrityViolation()
+            if rows[0][3:]!=expected[3:]:
+                raise ProviderUnavailable()
+            owners=await self._query(connection,'SELECT owner_token::text,intent_id,backend_epoch,instance_id FROM cragkit_qdrant.document_owners WHERE '+_DOC+' FOR UPDATE',_doc(ctx))
+            if owners!=[(ctx.owner_token,ctx.intent_id,physical['new_epoch'],self.instance_id)]:
+                raise ProviderUnavailable()
+            document=await self._document(connection,ctx)
+            plan=await self._load_stage(connection,ctx)
+            graph=stage_data(plan);manifest=graph.manifest
+            points=[]
+            for member,dense,sparse in zip(manifest.members,graph.dense,graph.sparse,strict=True):
+                payload={'backend_namespace':manifest.backend_namespace,'physical_collection':manifest.physical_collection,
+                    'collection_incarnation':manifest.collection_incarnation,'tenant_id':manifest.tenant_id,
+                    'collection':manifest.collection,'document_id':manifest.document_id,'revision_id':manifest.revision_id,
+                    'generation_id':manifest.generation_id,'chunk_id':member.chunk_id,'start_byte':member.start_byte,
+                    'end_byte':member.end_byte,'source_sha256':manifest.source_sha256,'text_sha256':member.text_sha256,
+                    'dense_profile_id':manifest.dense_profile.profile_id,'dense_profile':manifest.dense_profile.model_dump(),
+                    'sparse_profile_id':manifest.sparse_profile.profile_id if manifest.sparse_profile else '',
+                    'sparse_profile':manifest.sparse_profile.model_dump() if manifest.sparse_profile else None,
+                    'authorization_revision':document['authorization_revision'],
+                    'principal_ids':document['principal_ids'],'grant_ids':document['grant_ids']}
+                for key in ('language','kind','tag'):
+                    if document[key] is not None:payload[key]=document[key]
+                parsed=parse_model(CandidatePayload,payload)
+                points.append(ExpectedPoint(member.point_id,parsed,cast(_DenseVector,dense.encoded),
+                    cast(_SparseVector,sparse.encoded) if sparse is not None else None))
+            authority=MappingProxyType({key:tuple(document[key]) if key in ('principal_ids','grant_ids') else document[key]
+                for key in ('principal_ids','grant_ids','language','kind','tag')})
+            return finalize_projection(self,{'context':ctx,'physical_binding':physical,
+                'manifest_sha256':plan.manifest_sha256,'revision_id':manifest.revision_id,
+                'generation_id':manifest.generation_id,'authorization_revision':document['authorization_revision'],
+                'mutation_epoch':document['mutation_epoch'],'active_generation_id':document['active_generation_id'],
+                'tombstoned':document['tombstoned'],'points':tuple(points),'authority':authority})
+        return await self._run(ctx,deadline,project)
+
+    async def validate_projection(self,projection: object,*,deadline: float) -> None:
+        original=projection_data(projection,self)
+        fresh=await self.project_stage(original['context'],dict(original['physical_binding']),deadline=deadline)
+        current=projection_data(fresh,self)
+        immutable=('manifest_sha256','revision_id','generation_id','point_ids')
+        if any(original[key]!=current[key] for key in immutable):
+            raise IntegrityViolation()
+        for expected,observed in zip(original['points'],current['points'],strict=True):
+            expected_seals=(expected.dense.input_sha256,expected.sparse.input_sha256 if expected.sparse else None)
+            observed_seals=(observed.dense.input_sha256,observed.sparse.input_sha256 if observed.sparse else None)
+            if (expected_seals!=observed_seals or any(getattr(expected.payload,key)!=getattr(observed.payload,key)
+                for key in IMMUTABLE_FIELDS)):
+                raise IntegrityViolation()
+        if (original['witness']!=current['witness'] or
+            tuple(point.payload.model_dump(mode='json') for point in original['points'])!=
+            tuple(point.payload.model_dump(mode='json') for point in current['points'])):
+            raise UnauthorizedScope()
 
     async def prepare(self, value: object, readback_sha256: object, *, deadline: float) -> Mapping[str, Any]:
         ctx = context(value)

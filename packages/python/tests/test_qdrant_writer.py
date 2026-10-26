@@ -208,7 +208,7 @@ async def test_metadata_receipt_is_immutable(monkeypatch):
     with pytest.raises(TypeError):receipt['state']='published'
 
 
-@pytest.mark.parametrize('corruption',[None,'missing_member','invalid_utf8','wrong_excerpt','wrong_manifest','wrong_replay','wrong_profile'])
+@pytest.mark.parametrize('corruption',[None,'missing_member','invalid_utf8','wrong_excerpt','wrong_manifest','wrong_replay','wrong_profile','extra_raw_member','extra_raw_claim','extra_raw_replay'])
 @run_async
 async def test_preparation_reconstructs_complete_manifest_and_every_original_sidecar(monkeypatch,corruption):
     data=stage_data(prepare_stage(stage_input()));m=data.manifest
@@ -232,6 +232,15 @@ async def test_preparation_reconstructs_complete_manifest_and_every_original_sid
         if sql.startswith('SELECT revision_id,generation_id,manifest_bytes'):return intent_rows
         if sql.startswith('SELECT r.canonical_utf8'):return [tuple(generation)]
         if sql.startswith('SELECT m.chunk_id'):return [tuple(row) for row in members]
+        if sql.startswith('SELECT chunk_id,point_id::text'):
+            base=[(member.chunk_id,member.point_id) for member in m.members]
+            if 'FROM cragkit_qdrant.members ' in sql:
+                return base+([('hidden-extra','ffffffff-ffff-4fff-8fff-ffffffffffff')] if corruption=='extra_raw_member' else [])
+            if 'FROM cragkit_qdrant.point_claims ' in sql:
+                rows=[(*item,'fixture-instance',m.backend_namespace,m.physical_collection,m.collection_incarnation) for item in base]
+                return rows+([('hidden-extra','ffffffff-ffff-4fff-8fff-ffffffffffff','fixture-instance',m.backend_namespace,m.physical_collection,m.collection_incarnation)] if corruption=='extra_raw_claim' else [])
+            rows=[(*item,m.backend_namespace,m.physical_collection,m.collection_incarnation) for item in base]
+            return rows+([('hidden-extra','ffffffff-ffff-4fff-8fff-ffffffffffff',m.backend_namespace,m.physical_collection,m.collection_incarnation)] if corruption=='extra_raw_replay' else [])
         if sql.startswith('SELECT payload_bytes,payload_sha256'):
             return [(data.intent_encoding.encoded_bytes,data.intent_encoding.sha256)]
         raise AssertionError('unexpected SQL')
@@ -509,3 +518,33 @@ def test_fixed_writer_capability_remains_nologin_safe_and_without_outbound_membe
 
 def test_constructor_requires_actual_borrowed_resource():
     with pytest.raises(InvalidRequest):PostgresQdrantWriter(object(),config(),'instance')
+
+
+@pytest.mark.parametrize('conflicting',[False,True])
+@run_async
+async def test_same_generation_cannot_adopt_a_different_manifest_even_at_equal_count(monkeypatch,conflicting):
+    connection=Connection();writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'fixture-instance')
+    writer._ready=True;events=[]
+    async def inspect(connection,context):return {'action':'stage','state':'staged'}
+    async def ensure(connection,table,values,keys,json_columns=()):events.append(('ensure',table))
+    async def document(connection,context,**options):
+        events.append(('lock','document'))
+        return {'authorization_revision':'auth-1','mutation_epoch':1,'active_generation_id':'gen-1','tombstoned':False}
+    original=writer._query
+    async def query(connection,sql,params=()):
+        if sql.startswith('SELECT document_id FROM'):return [('doc-1',)]
+        if sql.startswith('SELECT intent_id FROM cragkit_qdrant.publication_intents'):
+            assert events[-1]==('lock','document')
+            assert 'manifest_sha256 IS DISTINCT FROM' in sql and 'manifest_bytes IS DISTINCT FROM' in sql
+            return [('other-stage-intent',)] if conflicting else []
+        return await original(connection,sql,params)
+    monkeypatch.setattr(writer,'_inspect',inspect);monkeypatch.setattr(writer,'_ensure',ensure)
+    monkeypatch.setattr(writer,'_document',document);monkeypatch.setattr(writer,'_query',query)
+    plan=prepare_stage(stage_input());options={'owner_token':ctx()['owner_token'],'deadline':asyncio.get_running_loop().time()+2}
+    if conflicting:
+        with pytest.raises(IntegrityViolation):await writer.stage(plan,ctx()['scope'],**options)
+        assert events==[('ensure','publication_intents'),('lock','document')]
+        assert connection.rollbacks==1
+    else:
+        await writer.stage(plan,ctx()['scope'],**options)
+        assert ('ensure','members') in events and connection.commits==1

@@ -225,3 +225,21 @@ test('expired options and fake proofs are rejected without launching a process',
   assert.throws(()=>supervisor.issue_recovery_attempt({drained:true},{...attempt(2),recovery_id:'recovery-1'},options()),UnsupportedCapability);
   await supervisor.close();
 });
+
+test('transport enforces the remaining response allowance before buffering a larger body', {skip:process.platform!=='darwin'||process.arch!=='arm64'},async()=>{
+  const fake=runtime();
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  try{
+    await supervisor.initialize({...options(),provision});
+    const handle=supervisor.transport_for(supervisor.issue_attempt(attempt(),options()));
+    const before=fake.state.requests.length;
+    for(const maximum of [0,-1,1.5,1048577,Infinity,true]){
+      await assert.rejects(handle.request('GET','/',{...options(),max_response_bytes:maximum}),InvalidRequest);
+    }
+    assert.equal(fake.state.requests.length,before,'invalid allowances never dispatch');
+    await assert.rejects(handle.request('GET','/',{...options(),max_response_bytes:1}),ProviderUnavailable);
+    const expected=Buffer.from(JSON.stringify({version:'1.20.0'}));
+    assert.deepEqual(Buffer.from(await handle.request('GET','/',{...options(),max_response_bytes:expected.length})),expected);
+    await handle.close();
+  }finally{await supervisor.close();fake.restore();}
+});

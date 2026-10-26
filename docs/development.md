@@ -964,3 +964,14 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh artifact directory. The native runtimes run serially and explicitly provision synthetic collections; retired invalid keys must receive HTTP 401. The controller preserves storage, refuses directory adoption and leaves ordinary admission closed after recovery. The checker removes only its fixture directory after verified shutdown. No hosted configuration or SQL settlement is used in E1.
+
+## V5-04E2a recovery readback acceptance
+
+The internal native verifiers bind exact current authority and complete Qdrant readback to an actual controller recovery proof. [E2a evidence](../evaluation/reports/V5/V5-04E2a.md) records the SQL and process checks. Build Node, then run this explicit local profile with a fresh directory:
+
+```sh
+npm --prefix packages/typescript run build
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_reconciliation.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04E2a/a-new-run
+```
+
+This uses isolated PostgreSQL 17.11 with TLS and restricted writer/supervisor logins, at most two clients, and one pinned Qdrant process. Python and Node run serially. Deliberate point corruptions are fixture interventions; the checker never settles its unknown journal or reopens the SQL gate. Complete readback issues an internal receipt, not publication or purge completion. E2b supplies the separate settlement and admission handoff. Successful cleanup verifies listener absence before removing only owned fixture storage.

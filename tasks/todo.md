@@ -261,6 +261,8 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [ ] V5-04E: Exclusive supervisor and durable instance recovery.
     - [x] V5-04E1: Native controller/immutable credentials; 32 focused Python/tool and nine Node groups, 2001 Python/tool and 1064 Node regressions, strict types/build, 18 actual process/key checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E1.md).
     - [ ] V5-04E2: Durable recovery gate, per-document authorized reconciliation and private settlement admission.
+      - [x] V5-04E2a: Authority-bound full readback; 2054 Python/tool and 1078 Node regressions, strict types/build, 36 native readback checks, normalized witness parity, 42 native D regression checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E2a.md).
+      - [ ] V5-04E2b: Durable instance control, retired-dispatch settlement and private admission handoff.
   - [ ] V5-04F: Actual bounded staged writes and full readback/publication.
   - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
@@ -310,6 +312,16 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04E2a: Authority-bound recovery readback
+
+State: COMPLETE for exact recovery readback; parent E2/E/V5-04 and full V5 remain incomplete. [E2a evidence](../evaluation/reports/V5/V5-04E2a.md). E1 was committed/pushed as 9898c4204c067020c012e892770a873aa49ab38e and synchronized 0/0. Continue through V5-EXIT without routine permission prompts.
+
+Shared outcome: exact current-authority stage projections, complete bounded native Qdrant readback and privately issued receipts in both runtimes. Sol `/root/v5_candidate_contract` owned the four Python writer/verifier/test paths and assembled. Sol `/root/v5_candidate_fixtures` owned the corresponding four Node paths. Both coordinated interfaces and taxonomy directly and froze/transferred all paths to root. Sol `/root/v5_manifest_security_review` wrote only the Node native consumer, transferred it, then reviewed the independent implementations read-only. Root owned the shared contract, remaining harness/test paths, E2a-T Node transport allowance/test, docs/report/tracker, serial acceptance and Git. No unresolved material issue required Astra.
+
+Root passed final full suites: 2054 Python/tool tests with four existing deliberate warnings, 1078 Node tests, mypy42files, Node build and 16 seals. Final native E2a passed 18 checks per runtime plus normalized witness parity; D regression passed 42 SQL/native checks. Administrative clients closed before each two-client runtime window. Actual fixture interventions tested wrong membership/vectors/profiles, immediate authority changes and tombstone absence; they did not settle journals, reopen gates or count as production repair. All successful runs independently verified listener absence and removed owned fixture storage. Review corrections covered hidden raw members, row-order dependence, parsed JSON prototypes, cleanup failures, streaming remaining-byte caps and cross-runtime error distinctions.
+
+Changed scope: native writer/reconciliation modules/tests, additive Node response allowance/test, four native harness/consumer/test paths, QW/development guidance, E99-E100, report and tracker. Both migrations, shared fixtures, manifests/locks, all seals and three user audit drafts remain unchanged. Last resource observation: 36 GiB disk/60 percent memory free on M4/16 GiB; one test process and serial services. Learning practice remains unassessed. Root commits/pushes this accepted scope and continues E2b: current-credential uncertainty cannot be cleared by readback alone; only retired effects plus verified durable settlement and a sealed transport handoff can reopen admission. Unavailable foreign document scopes keep instance recovery blocked.
 
 ### V5-04E1: Exclusive controller and credential capabilities
 

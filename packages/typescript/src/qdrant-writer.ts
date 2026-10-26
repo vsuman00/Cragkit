@@ -31,6 +31,19 @@ export type IntentView = Readonly<{action:string;state:string;payload_sha256:str
   revision_id:string|null;generation_id:string|null;authority_committed:boolean;replica_complete:boolean;purge_complete:boolean}>;
 export type DispatchView = Readonly<{dispatch_id:string;request_bytes:readonly number[];request_sha256:string;
   point_ids:readonly string[];operation:string;state:string}>;
+export type ExpectedProjection=Readonly<Record<never,never>>;
+export type ProjectionPoint=Readonly<{point_id:string;payload:Readonly<Data>;dense:ReturnType<typeof restore_dense_replay>;sparse:ReturnType<typeof restore_sparse_replay>|null}>;
+export type ProjectionData=Readonly<{context:WriterContext;physical_binding:Readonly<Data>;manifest_sha256:string;
+  revision_id:string;generation_id:string;points:readonly ProjectionPoint[];tombstoned:boolean;authorization_revision:string;
+  mutation_epoch:number;active_generation_id:string|null;principal_ids:readonly string[];grant_ids:readonly string[];
+  language:string|null;kind:string|null;tag:string|null}>;
+const projections=new WeakMap<object,Readonly<{issuer:PostgresQdrantWriter;data:ProjectionData}>>();
+export function projection_data(input:unknown,writer:PostgresQdrantWriter):ProjectionData{
+  if(typeof input!=='object'||input===null)throw new InvalidRequest();
+  const found=projections.get(input);
+  if(!found||found.issuer!==writer)throw new InvalidRequest();
+  return found.data;
+}
 
 /** Dedicated writer capability, never a reader, owner, administrator or supervisor. */
 export const WRITER_ROLE_SQL = `SELECT current_user=session_user
@@ -344,6 +357,11 @@ export class PostgresQdrantWriter {
           ||db_count(prior.mutation_epoch)!==intent.expected_mutation_epoch)throw new UnauthorizedScope();
         if(prior.active_generation_id!==intent.expected_active_generation_id)throw new IntegrityViolation();
       }else if(intent.initial_authorization===null)throw new UnauthorizedScope();
+      // The document lock serializes all new stage bindings. A generation is
+      // one immutable manifest, even when a caller uses another stable intent.
+      const otherBindings=await tx.query('SELECT manifest_sha256 FROM cragkit_qdrant.publication_intents WHERE (tenant_id,collection,document_id)=($1,$2,$3) AND revision_id=$4 AND generation_id=$5 AND action=\'stage\' AND manifest_sha256<>$6 LIMIT 1',
+        [...this.#key(context),record.revision_id,record.generation_id,data.manifest.sha256],1);
+      if(otherBindings.length)throw new IntegrityViolation();
       await this.#ensure(tx,'publication_intents',intentRecord,context,' AND intent_id=$4',[context.intent_id]);
       if(!prior){
         const auth=metadata(intent.initial_authorization);
@@ -500,6 +518,71 @@ export class PostgresQdrantWriter {
       const document=await this.#document(tx,context);
       if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
       return issue_verified_stage((await this.#loadStage(tx,context)).data);
+    }));
+  }
+  async #project(tx:Tx,context:WriterContext,physical:Readonly<Data>):Promise<ProjectionData>{
+    const rows=await tx.query('SELECT backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id FROM cragkit_qdrant.backend_instances WHERE instance_id=$1 FOR SHARE',[this.#instance],2);
+    if(rows.length===0)throw new ProviderUnavailable();
+    if(rows.length!==1||rows[0].length!==6)throw new IntegrityViolation();
+    const [namespace,storage,supervisor,epoch,state,recovery]=rows[0];
+    if(state!=='recovery_blocked')throw new ProviderUnavailable();
+    if(db_count(epoch)!==physical.new_epoch||recovery!==physical.recovery_id)throw new ProviderUnavailable();
+    if(namespace!==this.#config.backend_namespace||storage!==physical.storage_identity
+      ||supervisor!==physical.supervisor_id)throw new IntegrityViolation();
+    const owners=await this.#select(tx,'document_owners',['instance_id','intent_id','owner_token','backend_epoch'],context,' FOR UPDATE',[],2);
+    if(owners.length!==1||owners[0].instance_id!==this.#instance||owners[0].intent_id!==context.intent_id
+      ||owners[0].owner_token!==context.owner_token||db_count(owners[0].backend_epoch)!==physical.new_epoch)throw new ProviderUnavailable();
+    const document=await this.#document(tx,context,true);
+    if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+    const stage=await this.#loadStage(tx,context);
+    const points=stage.points.map(point=>{
+      const claim=point.claim;
+      const payload:Data={backend_namespace:claim.backend_namespace,physical_collection:claim.physical_collection,
+        collection_incarnation:claim.collection_incarnation,tenant_id:context.scope.tenant_id,collection:context.collection,
+        document_id:context.document_id,revision_id:claim.revision_id,generation_id:claim.generation_id,chunk_id:claim.chunk_id,
+        start_byte:db_count(claim.start_byte),end_byte:db_count(claim.end_byte),source_sha256:digest(claim.source_sha256),text_sha256:digest(claim.text_sha256),
+        dense_profile_id:this.#config.dense_profile.profile_id,sparse_profile_id:this.#config.sparse_profile?.profile_id??'',
+        dense_profile:this.#config.dense_profile,sparse_profile:this.#config.sparse_profile,
+        authorization_revision:document.authorization_revision,principal_ids:document.principal_ids,grant_ids:document.grant_ids};
+      for(const key of ['language','kind','tag'])if(document[key]!==null)payload[key]=document[key];
+      return Object.freeze({point_id:uuid(claim.point_id),payload:metadata(payload),dense:point.dense,sparse:point.sparse});
+    });
+    points.sort((left,right)=>Buffer.compare(Buffer.from(left.point_id),Buffer.from(right.point_id)));
+    return Object.freeze({context,physical_binding:physical,manifest_sha256:stage.manifest.sha256,
+      revision_id:text(stage.data.record.revision_id),generation_id:text(stage.data.record.generation_id),points:Object.freeze(points),
+      tombstoned:document.tombstoned as boolean,authorization_revision:text(document.authorization_revision),mutation_epoch:db_count(document.mutation_epoch),
+      active_generation_id:document.active_generation_id===null?null:text(document.active_generation_id),
+      principal_ids:document.principal_ids as readonly string[],grant_ids:document.grant_ids as readonly string[],
+      language:document.language as string|null,kind:document.kind as string|null,tag:document.tag as string|null});
+  }
+  async project_stage(input:unknown,rawPhysical:unknown,rawOptions:unknown):Promise<ExpectedProjection>{
+    const context=parseContext(input),options=parseOptions(rawOptions),physical=metadata(rawPhysical);
+    const keys=['instance_id','storage_identity','supervisor_id','recovery_id','old_epoch','new_epoch','credential_generation'];
+    if(Object.keys(physical).length!==keys.length||keys.some(key=>!Object.hasOwn(physical,key)))throw new InvalidRequest();
+    for(const key of ['instance_id','storage_identity','supervisor_id','recovery_id','credential_generation'])text(physical[key]);
+    const old=count(physical.old_epoch,1),next=count(physical.new_epoch,1);
+    if(next!==old+1)throw new InvalidRequest();
+    if(physical.instance_id!==this.#instance)throw new UnsupportedCapability();
+    return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
+      const data=await this.#project(tx,context,physical),projection=Object.freeze({});
+      projections.set(projection,Object.freeze({issuer:this,data}));return projection;
+    }));
+  }
+  async validate_projection(input:unknown,rawOptions:unknown):Promise<void>{
+    const previous=projection_data(input,this),options=parseOptions(rawOptions);
+    await this.#work(options,lease=>this.#tx(previous.context,lease,async tx=>{
+      const current=await this.#project(tx,previous.context,previous.physical_binding);
+      if(current.manifest_sha256!==previous.manifest_sha256||current.revision_id!==previous.revision_id
+        ||current.generation_id!==previous.generation_id||current.points.length!==previous.points.length)throw new IntegrityViolation();
+      if(current.tombstoned!==previous.tombstoned||current.authorization_revision!==previous.authorization_revision
+        ||current.mutation_epoch!==previous.mutation_epoch||current.active_generation_id!==previous.active_generation_id
+        ||!same(current.principal_ids,previous.principal_ids)||!same(current.grant_ids,previous.grant_ids)
+        ||current.language!==previous.language||current.kind!==previous.kind||current.tag!==previous.tag)throw new UnauthorizedScope();
+      for(let i=0;i<current.points.length;i++){
+        const left=current.points[i],right=previous.points[i];
+        if(left.point_id!==right.point_id||!same(left.payload,right.payload)||left.dense.input_sha256!==right.dense.input_sha256
+          ||(left.sparse?.input_sha256??null)!==(right.sparse?.input_sha256??null))throw new IntegrityViolation();
+      }
     }));
   }
   async acquire_owner(input:unknown,rawOptions:unknown):Promise<Readonly<{owner_token:string;backend_epoch:number}>>{

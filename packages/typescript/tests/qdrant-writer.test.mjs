@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,projection_data,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
@@ -94,6 +94,7 @@ function setup(){
           }
           if(sql.includes('point_id=ANY'))rows=rows.filter(row=>params[3].includes(row.point_id));
           if(sql.includes("state<>'settled'"))rows=rows.filter(row=>row.state!=='settled');
+          if(sql.includes('manifest_sha256<>$6'))rows=rows.filter(row=>row.manifest_sha256!==params[5]);
           const limit=Number(/LIMIT (\d+)/.exec(sql)?.[1]??65);
           return {rows:rows.slice(0,limit).map(row=>columns.split(',').map(column=>clone(row[column.replace('::text','')])))};
         }
@@ -374,5 +375,76 @@ test('CAS refreshes terminal fences after the owner-lock wait before validating 
       assert.ok(owner>=0&&document>owner);
       await x.writer.close();await x.resource.close();
     }
+  }
+});
+
+test('one generation cannot acquire a second different manifest through a new intent',async()=>{
+  const x=setup();await x.writer.initialize(opts());await x.writer.stage(prepare_stage(input()),scope,stageOpts());
+  const changed=input();changed.intent.intent_id='other-stage';changed.intent.initial_authorization=null;
+  for(let i=0;i<changed.manifest.members.length;i++){
+    const member=changed.manifest.members[i];member.chunk_id='replacement-'+i;
+    const tuple=[...fixture.members[i].identity_tuple];tuple[9]=member.chunk_id;member.point_id=point_id(tuple);
+  }
+  changed.intent.manifest_sha256=encode_manifest(changed.manifest,changed.canonical_text).sha256;
+  const before=x.state.queries.length;
+  await assert.rejects(x.writer.stage(prepare_stage(changed),scope,stageOpts()),IntegrityViolation);
+  assert.equal(x.state.tables.members.length,2);assert.equal(x.state.tables.publication_intents.length,1);
+  assert.equal(x.state.queries.slice(before).some(query=>query.text.startsWith('INSERT INTO cragkit_qdrant.members')),false);
+  await x.writer.close();await x.resource.close();
+});
+
+function blocked(x){
+  Object.assign(x.state.tables.backend_instances[0],{state:'recovery_blocked',epoch:2,recovery_id:'recovery-1',
+    storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture'});
+  x.state.tables.document_owners[0].backend_epoch=2;
+  return {instance_id:'instance-fixture',storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',
+    recovery_id:'recovery-1',old_epoch:1,new_epoch:2,credential_generation:'credential-2'};
+}
+test('private recovery projection binds exact current authority and physical epoch',async()=>{
+  const x=setup();await x.writer.initialize(opts());await x.writer.stage(prepare_stage(input()),scope,stageOpts());
+  await x.writer.acquire_owner(context,opts());const physical=blocked(x);
+  const projection=await x.writer.project_stage(context,physical,opts()),data=projection_data(projection,x.writer);
+  assert.ok(Object.isFrozen(projection));assert.deepEqual(JSON.parse(JSON.stringify(projection)),{});
+  assert.equal(data.points.length,2);assert.equal(data.manifest_sha256,fixture.intent.manifest_sha256);
+  assert.ok(Object.isFrozen(data.points[0].payload));assert.equal('canonical_text'in data,false);
+  await x.writer.validate_projection(projection,opts());
+  await assert.rejects(x.writer.validate_projection({...projection},opts()),InvalidRequest);
+  await assert.rejects(x.writer.project_stage(context,{...physical,storage_identity:'foreign'},opts()),IntegrityViolation);
+  x.state.tables.document_owners[0].backend_epoch=1;
+  await assert.rejects(x.writer.project_stage(context,physical,opts()),ProviderUnavailable);
+  await x.writer.close();await x.resource.close();
+});
+test('projection validation rechecks full graph and mutable authority before receipt admission',async()=>{
+  for(const change of ['metadata','authorization','tombstone']){
+    const x=setup();await x.writer.initialize(opts());await x.writer.stage(prepare_stage(input()),scope,stageOpts());
+    await x.writer.acquire_owner(context,opts());const projection=await x.writer.project_stage(context,blocked(x),opts());
+    const document=x.state.tables.documents[0];
+    if(change==='metadata')document.tag='changed';
+    if(change==='authorization')document.authorization_revision='auth-2';
+    if(change==='tombstone')document.tombstoned=true;
+    await assert.rejects(x.writer.validate_projection(projection,opts()),UnauthorizedScope);
+    assert.equal(x.state.tables.backend_instances[0].state,'recovery_blocked');
+    await x.writer.close();await x.resource.close();
+  }
+});
+
+test('projection distinguishes unavailable recovery control from immutable physical contradictions',async()=>{
+  for(const change of ['wrong-instance','missing','open','epoch','recovery-id','namespace','storage','supervisor']){
+    const x=setup();await x.writer.initialize(opts());await x.writer.stage(prepare_stage(input()),scope,stageOpts());
+    await x.writer.acquire_owner(context,opts());const physical=blocked(x),backend=x.state.tables.backend_instances[0];
+    const clients=x.state.clients.length;
+    if(change==='wrong-instance')physical.instance_id='other-instance';
+    if(change==='missing')x.state.tables.backend_instances=[];
+    if(change==='open')backend.state='open';
+    if(change==='epoch')backend.epoch=3;
+    if(change==='recovery-id')backend.recovery_id='other-recovery';
+    if(change==='namespace')backend.backend_namespace='other-namespace';
+    if(change==='storage')backend.storage_identity='other-storage';
+    if(change==='supervisor')backend.supervisor_id='other-supervisor';
+    const expected=change==='wrong-instance'?UnsupportedCapability:
+      ['namespace','storage','supervisor'].includes(change)?IntegrityViolation:ProviderUnavailable;
+    await assert.rejects(x.writer.project_stage(context,physical,opts()),expected);
+    if(change==='wrong-instance')assert.equal(x.state.clients.length,clients);
+    await x.writer.close();await x.resource.close();
   }
 });
