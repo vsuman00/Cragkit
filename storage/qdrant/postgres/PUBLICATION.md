@@ -1,6 +1,6 @@
 # Managed publication authority
 
-This is the additive V5-04C1 SQL foundation for [QW-r1](../../../contracts/QDRANT_PUBLICATION_V5.md). It defines database constraints and restricted runtime capabilities. It does not demonstrate Qdrant completion, supervisor process exclusion, application write authorization or native publication. Those remain the D through H children. The C2 reader/catalog compatibility child is required before the parent C task is complete.
+This is the additive V5-04C1 SQL foundation for [QW-r1](../../../contracts/QDRANT_PUBLICATION_V5.md). It defines database constraints and restricted runtime capabilities. It does not demonstrate Qdrant completion, supervisor process exclusion, application write authorization or native publication. Those remain the D through H children. [C2 evidence](../../../evaluation/reports/V5/V5-04C2.md) records the subsequent native reader/catalog compatibility acceptance.
 
 For example, a committed `reserved` dispatch prevents a new document owner even when its caller disappears. A supervisor can later settle that historical record during instance recovery without changing the original request or epoch. The database records that decision; the native supervisor must establish that old requests can no longer arrive.
 
@@ -21,7 +21,7 @@ The migration requires those exact safe flags, no outbound role memberships and 
 
 The migration adds validated generation bounds of 1 through 64 expected members, refuses existing actual member sets above 64, and refuses contradictory existing active/published flags. It preserves the bytes and existing reader policies of `0001`. Existing consistent source-only published generations remain legacy authority facts; the new commit guards apply to subsequent publication changes. There is no automatic conversion of old content to verified vector manifests or claims.
 
-The upgraded schema requires a new exact history/catalog profile. Old QS-r1 readers correctly reject it. C2 must support the old source-only profile and the new publication profile explicitly, with frozen complete fingerprints and dynamic role checks. It must not ignore added objects or weaken the original fingerprint.
+The upgraded schema requires a new exact history/catalog profile. Readers from before C2 reject it. Current native readers support the old source-only profile and the new publication profile explicitly through [C2-r1](../../../contracts/QDRANT_SOURCES_V5.md#c2-r1-explicit-publication-schema-compatibility), with frozen complete fingerprints and dynamic role checks. They reject added objects and preserve the original fingerprint.
 
 ## Roles and scope
 
@@ -89,4 +89,4 @@ Authorization/metadata updates and tombstones that leave the active pointer unch
 
 C1's root harness installs and probes the schema inside an isolated rollback-only PostgreSQL transaction. It exercises restricted roles, row/column isolation, immutable facts, legal and illegal state transitions, global collisions, deferred publication consistency and cleanup. The same-outer-transaction `created_xid` checks do not establish real cross-commit membership freezing; D/H must exercise a reservation commit followed by a separate attempted extension.
 
-Actual two-connection reservation/owner-transfer, instance-gate and member-limit interleavings remain D/H native evidence. Successful sequential constraints or source review do not prove those races passed. C1 requires its own actual SQL acceptance report, and C2 remains incomplete until upgraded reader history/catalog checks pass. No Qdrant process, model call, publication durability or production-readiness claim follows from this migration alone.
+Actual two-connection reservation/owner-transfer, instance-gate and member-limit interleavings remain D/H native evidence. Successful sequential constraints or source review do not prove those races passed. [C1 SQL acceptance](../../../evaluation/reports/V5/V5-04C1.md) and C2 reader acceptance are separate from those gates. No model call, publication durability or production-readiness claim follows from this migration alone.

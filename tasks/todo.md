@@ -254,9 +254,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V5-04A: QW-r1 publication/recovery boundary, 43 fault scenarios, 14 numeric cases and computed cross-runtime goldens; [design acceptance](../evaluation/reports/V5/V5-04A.md).
   - [x] V5-04B1: Pure native vector encoders and readback validators; 71 focused Python/25 Node cases, 1796 Python/tool and 1005 Node regressions, strict types and 21 cross-runtime comparisons passed. [Evidence](../evaluation/reports/V5/V5-04B1.md).
   - [x] V5-04B2: Immutable generation/intent manifests and portable replay serialization; 41 focused Python/27 Node cases, 1837 Python/tool and 1032 Node regressions, strict types and 33 parity cases passed. [Evidence](../evaluation/reports/V5/V5-04B2.md).
-  - [ ] V5-04C: Additive authority schema, writer privileges and exact reader/catalog compatibility.
+  - [x] V5-04C: Additive authority schema, writer privileges and exact reader/catalog compatibility; C1/C2 accepted. Native writer/coordinator/recovery operations remain D-H.
     - [x] V5-04C1: Additive publication migration; 17 local PostgreSQL acceptance groups, 27 focused tests, 1864 Python/tool and 1032 Node regressions plus strict types/build passed. [Evidence](../evaluation/reports/V5/V5-04C1.md).
-    - [ ] V5-04C2: Explicit upgraded history/catalog profile and native reader compatibility; next smallest task after C1 acceptance.
+    - [x] V5-04C2: Exact old/new native reader profiles; 66 focused Python/tool and 17 Node tests, 1899 Python/tool and 1038 Node regressions, strict types/build and 56 final native source-case executions passed. [Evidence](../evaluation/reports/V5/V5-04C2.md).
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
 
@@ -303,6 +303,22 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04C2: Explicit source-reader upgrade
+
+State: COMPLETE for native reader compatibility; parent V5-04C is complete. C1 was accepted, committed/pushed as f149276 and synchronized 0/0. Shared outcome: both native source readers accept only the exact source-only or publication history/catalog pair, retain source-only behavior, and reject writer/supervisor or excess operational privileges on every read lease. The new catalog fixture is captured from C1's actual PostgreSQL result; the original fixture/query and both migrations are protected.
+
+- Sol v5_candidate_contract owns only packages/python/src/cragkit/_qdrant_authority.py and packages/python/tests/test_qdrant_authority.py; native Python compatibility and named assembler.
+- Sol v5_candidate_fixtures owns only packages/typescript/src/qdrant-authority.ts and packages/typescript/tests/qdrant-authority.test.mjs; complementary native Node compatibility.
+- Root owns C2-r1 shared profile/fixture, native harness profile acceptance, all commands, tracker/docs/reports and Git. Two native lanes are bounded to two implementation/test files each (C2a); the separate native harness/profile slice is C2b. Peers coordinate exact constants, profile selection and error semantics directly, with stopped writers before ownership transfers. Scope/ownership/protected changes go to root and unresolved material decisions to Astra. No worker tests/builds/scripts/network/DB/services/install/Git.
+
+Frozen C2-r1: preserve strict old structural/catalog checks, select one explicit profile from exact bounded history (LIMIT 3), then validate its structural check and exact fingerprint; no mixed pairs, prefix acceptance or ignored catalog objects. New profile history is the exact two migration checksums, with fingerprint e395925257def30b9d143b7210c68583d4cbbb0950d8a8e1bb4f5aba5b8be69b. Reader grants require SELECT on only the five original tables, no SELECT on new operational columns, no DML/ownership/admin or writer/supervisor membership. Initial and fresh-lease checks remain separate. Acceptance: both known profiles, crossed/unknown/extra history and drift failures, role rejection, serial actual PostgreSQL/Qdrant source/provider-gate parity and exact cleanup. One suite/process; fake providers and existing small local fixtures only. Learning unassessed; final acceptance is recorded below.
+
+Final handoff: both native Sol peers delivered separate two-file implementations/tests, coordinated directly and froze/transferred their paths. Python peer assembled; independent Sol and root reviewed. Corrections covered Node malformed-history parity and serialization hooks, Python internal FK-trigger checks, outage reconnect and simultaneous probe/revocation failure preservation. No unresolved material issue required Astra. Root passed 66 focused Python/tool tests, 17 Node tests, 1899 full Python/tool tests (four existing deliberate warnings), 1038 Node tests, mypy38files and TypeScript build.
+
+Final source-verified and publication-verified runs each passed 14 actual Python and 14 actual Node source cases: 56 executions across both profiles, exact result/ledger parity, current authorization/provider/final gates, TLS negatives and complete collection/process/private-directory cleanup. Both native SQL permission predicates rejected noninherited capability memberships and column writes; publication also rejected operational column reads and new helper execution. Four actual catalog drifts changed the hash; a disabled internal FK trigger preserved the hash but failed both new structural probes. Administrative source seeding restored its two exact disabled publication constraint triggers and final fingerprints before acceptance; it is not manager publication.
+
+Changed scope: two native authority modules/tests, shared source contract/new captured catalog, four native parent/permission helper/test paths, current storage/development guidance, C1 historical snapshot pointer, C2 report, E93-E94 and tracker. Original source structural/fingerprint/data queries, catalog fixture/query, both migrations, all 16 seals, manifests/locks and three user audits remain unchanged. Root owns final prose/link/scope checks and Git. No hosted mutation, paid call, download, install or persistent service. Latest M4/16 GiB snapshot: 38 GiB disk, 51 percent memory free; one PostgreSQL/Qdrant pair and at most two database clients, all task processes closed. Learning practice unassessed. Next smallest action: V5-04D native authority writer operations; cross-commit/race/controller/Qdrant publication/repair acceptance remains D-H. Full V5 is incomplete.
 
 ### V5-04C1: Durable publication authority
 

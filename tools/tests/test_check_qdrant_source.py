@@ -10,6 +10,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_qdrant_source as implementation
 
 
+@pytest.mark.parametrize('publication',[False,True])
+@pytest.mark.parametrize('failure',[False,True])
+def test_administrative_source_seed_restores_exact_triggers_before_commit(publication,failure):
+    events=[]
+    class Transaction:
+        async def __aenter__(self):events.append('begin')
+        async def __aexit__(self,kind,*args):events.append('rollback' if kind else 'commit')
+    class Admin:
+        def transaction(self):return Transaction()
+    async def command(query):events.append(query)
+    async def run():
+        async with implementation.source_fixture_transaction(Admin(),command,publication=publication):
+            events.append('seed')
+            if failure:raise ValueError('fixture interrupted')
+    if failure:
+        with pytest.raises(ValueError):asyncio.run(run())
+    else:asyncio.run(run())
+    assert events[0]=='begin' and events[-1]==('rollback' if failure else 'commit')
+    if publication:
+        assert events[1:3]==['ALTER TABLE cragkit_qdrant.documents DISABLE TRIGGER publication_document_commit',
+            'ALTER TABLE cragkit_qdrant.generations DISABLE TRIGGER publication_generation_commit']
+        if not failure:
+            assert events[-4:-1]==['SET CONSTRAINTS ALL IMMEDIATE',
+                'ALTER TABLE cragkit_qdrant.documents ENABLE TRIGGER publication_document_commit',
+                'ALTER TABLE cragkit_qdrant.generations ENABLE TRIGGER publication_generation_commit']
+    else:assert events==['begin','seed',events[-1]]
+
+
 class Writer:
     def __init__(self):
         self.frames = []

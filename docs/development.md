@@ -922,4 +922,25 @@ The native command explicitly starts and removes one private loopback PostgreSQL
 uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_schema.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --artifacts-dir artifacts/V5/V5-04C1/run-new
 ```
 
-The runner checks the exact original source catalog before each upgrade, tests scoped nonowner roles and rejects managed admission under repeatable-read/serializable isolation. It verifies namespace/role/membership/default-privilege rollback and closes the connection, server and private directory before writing success. SET ROLE is policy evidence; actual native LOGIN, cross-commit and concurrent mutation acceptance remain later gates.
+The runner checks the exact original source catalog before each upgrade, tests scoped nonowner roles and rejects managed admission under repeatable-read/serializable isolation. It verifies namespace/role/membership/default-privilege rollback and closes the connection, server and private directory before writing success. SET ROLE is policy evidence; actual writer LOGIN, cross-commit and concurrent mutation acceptance remain later gates. C2 separately verifies source-reader LOGIN.
+
+## V5-04C2 explicit reader profiles
+
+The [source contract](../contracts/QDRANT_SOURCES_V5.md#c2-r1-explicit-publication-schema-compatibility) binds each exact history/catalog pair. [C2 evidence](../evaluation/reports/V5/V5-04C2.md) records both native profiles, role predicates, drift rejection and source/provider release gates. Neither profile advertises a publication manager.
+
+Run focused tests and build serially:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_authority.py tools/tests/test_check_qdrant_source.py tools/tests/test_qdrant_source_privileges.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-authority.test.mjs
+```
+
+Native acceptance requires the already available pinned binaries. Run one profile at a time, with separate artifact directories:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_source.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --authority-profile publication --artifacts-dir artifacts/V5/V5-04C2/publication-verified
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_source.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --authority-profile source --artifacts-dir artifacts/V5/V5-04C2/source-verified
+```
+
+The parent evaluates both native SQL permission predicates on a real TLS reader connection, restoring each unsafe grant before source cases. The publication profile also tests catalog drift and disabled internal FK triggers. Each native runtime executes the same fourteen source/provider-gate cases. Private administrative source seeding temporarily disables only the two named new publication constraint triggers inside a transaction, resolves pending FK events and restores them before reading. This creates source fixtures; it is not manager publication. Final fingerprints, owned collection cleanup, process exit and private-directory removal are verified. No hosted database, model call or download is involved.

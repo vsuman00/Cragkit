@@ -2,7 +2,7 @@
 
 V5-03A supplies the separate PostgreSQL 17 namespace `cragkit_qdrant`. It stores authoritative source bytes and current authorization for the [source contract](../../../contracts/QDRANT_SOURCES_V5.md). This foundation does not implement the [QD-r1](../../../contracts/QDRANT_V5.md) intent registry, physical ownership reservation, mutation coordinator, publication CAS or repair protocol. It cannot by itself claim QD-r1 compatibility.
 
-The separate [publication migration guide](PUBLICATION.md) describes V5-04C1's additive SQL records and writer/supervisor permissions. Its local SQL acceptance does not establish a native publication manager. Upgraded reader compatibility remains C2, followed by D-H implementation and fault acceptance.
+The separate [publication migration guide](PUBLICATION.md) describes V5-04C1's additive SQL records and writer/supervisor permissions. Its local SQL acceptance does not establish a native publication manager. [C2](../../../evaluation/reports/V5/V5-04C2.md) adds explicit native reader compatibility; D-H implementation and fault acceptance remain required.
 
 For example, an old Qdrant payload can still contain a revoked grant. The source reader must use current document authorization in this schema before returning any excerpt; a matching vector payload does not authorize it.
 

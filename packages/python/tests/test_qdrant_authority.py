@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,7 +23,8 @@ class Connection:
     def __init__(self):
         self.info=SimpleNamespace(transaction_status=0)
         self.calls=[]; self.closed=False; self.rollbacks=0
-        self.role=[(True,)];self.catalog=[(True,)];self.history=list(implementation.EXPECTED_HISTORY)
+        self.role=[(True,)];self.catalog=[(True,)];self.publication_catalog=[(True,)]
+        self.history=list(implementation.EXPECTED_HISTORY)
         self.failure=None;self.rollback_failure=False;self.rows=[]
         self.fingerprint=[(implementation.EXPECTED_CATALOG_FINGERPRINT,)]
     def transaction(self, *, force_rollback):
@@ -40,6 +42,7 @@ class Connection:
         if self.failure is not None: raise self.failure
         if sql==implementation._ROLE_SQL:return Cursor(self.role)
         if sql==implementation._CATALOG_SQL:return Cursor(self.catalog)
+        if sql==implementation._PUBLICATION_CATALOG_SQL:return Cursor(self.publication_catalog)
         if sql==implementation._HISTORY_SQL:return Cursor(self.history)
         if sql==implementation._CATALOG_FINGERPRINT_SQL:return Cursor(self.fingerprint)
         if sql==implementation._SCOPE_SQL:return Cursor([(None,)*5])
@@ -163,3 +166,127 @@ def test_catalog_fingerprint_missing_changed_or_multiple_rejects(value):
         with pytest.raises(UnsupportedCapability):await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
         assert conn.rollbacks==1 and pool.returned==1
     asyncio.run(scenario())
+
+
+def test_publication_profile_matches_captured_history_and_fingerprint():
+    root = Path(__file__).resolve().parents[3]
+    fixture = json.loads((root / 'contracts/fixtures/qdrant_publication_catalog.json').read_text())
+    assert implementation.EXPECTED_PUBLICATION_HISTORY == tuple(tuple(row) for row in fixture['history'])
+    assert implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT == fixture['catalog_fingerprint']
+    assert implementation.EXPECTED_PUBLICATION_HISTORY[0] == implementation.EXPECTED_HISTORY[0]
+
+
+@pytest.mark.parametrize('publication', [False, True])
+def test_exact_profile_selected_from_history_before_structural_or_role_checks(publication):
+    async def scenario():
+        reader, conn, pool = authority()
+        expected_catalog = implementation._CATALOG_SQL
+        if publication:
+            conn.history = list(implementation.EXPECTED_PUBLICATION_HISTORY)
+            conn.fingerprint = [(implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,)]
+            conn.catalog = [(False,)]  # Never run the source-only structural check for publication.
+            expected_catalog = implementation._PUBLICATION_CATALOG_SQL
+        else:
+            conn.publication_catalog = [(False,)]
+        await reader.initialize(deadline=asyncio.get_running_loop().time() + 2)
+        queries = [sql for sql, _ in conn.calls if sql in (
+            implementation._HISTORY_SQL, implementation._CATALOG_SQL,
+            implementation._PUBLICATION_CATALOG_SQL, implementation._ROLE_SQL,
+            implementation._CATALOG_FINGERPRINT_SQL)]
+        assert queries == [implementation._HISTORY_SQL, expected_catalog,
+                           implementation._ROLE_SQL, implementation._CATALOG_FINGERPRINT_SQL]
+        assert 'LIMIT 3' in implementation._HISTORY_SQL
+        assert conn.rollbacks == 1 and pool.borrowed == pool.returned == 1
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('history', [
+    [], [('0001_authority', '0' * 64)], [('0002_publication', '0' * 64)],
+    list(implementation.EXPECTED_PUBLICATION_HISTORY) + [('0003_unknown', '0' * 64)],
+    list(reversed(implementation.EXPECTED_PUBLICATION_HISTORY)),
+    [implementation.EXPECTED_HISTORY[0], ('0002_publication', '0' * 64)],
+    [(False,)], [('0001_authority', None)], [('0001_authority', b'checksum')],
+    [('0001_authority', 'hash', 'extra')], [list(implementation.EXPECTED_HISTORY[0])],
+])
+def test_unknown_extra_malformed_or_crossed_history_rejects_before_catalog(history):
+    async def scenario():
+        reader, conn, pool = authority()
+        conn.history = history
+        with pytest.raises(UnsupportedCapability):
+            await reader.initialize(deadline=asyncio.get_running_loop().time() + 2)
+        queries = [sql for sql, _ in conn.calls]
+        assert implementation._HISTORY_SQL in queries
+        assert implementation._CATALOG_SQL not in queries
+        assert implementation._PUBLICATION_CATALOG_SQL not in queries
+        assert implementation._CATALOG_FINGERPRINT_SQL not in queries
+        assert implementation._ROLE_SQL not in queries
+        assert conn.rollbacks == 1 and pool.returned == 1
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('publication', [False, True])
+def test_crossed_catalog_hash_pair_is_never_accepted(publication):
+    async def scenario():
+        reader, conn, _ = authority()
+        if publication:
+            conn.history = list(implementation.EXPECTED_PUBLICATION_HISTORY)
+        conn.fingerprint = [(implementation.EXPECTED_CATALOG_FINGERPRINT if publication
+                             else implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,)]
+        with pytest.raises(UnsupportedCapability):
+            await reader.initialize(deadline=asyncio.get_running_loop().time() + 2)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('field', ['publication_catalog', 'fingerprint'])
+def test_publication_structural_or_complete_fingerprint_drift_rejects(field):
+    async def scenario():
+        reader, conn, _ = authority()
+        conn.history = list(implementation.EXPECTED_PUBLICATION_HISTORY)
+        conn.fingerprint = [(implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,)]
+        setattr(conn, field, [(False,)])
+        with pytest.raises(UnsupportedCapability):
+            await reader.initialize(deadline=asyncio.get_running_loop().time() + 2)
+    asyncio.run(scenario())
+
+
+def test_role_guard_denies_operational_select_capability_membership_and_extra_helpers():
+    sql = implementation._ROLE_SQL
+    for name in ('cragkit_qdrant_writer', 'cragkit_qdrant_supervisor'):
+        assert name in sql
+    assert "pg_has_role(current_user,r.oid,'MEMBER')" in sql
+    assert "has_any_column_privilege(current_user,c.oid,'SELECT')" in sql
+    assert "has_function_privilege(current_user,p.oid,'EXECUTE')" in sql
+    assert 'p.oid IS DISTINCT FROM to_regprocedure' in sql
+    assert "has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE,REFERENCES')" in sql
+
+
+def test_fresh_lease_role_rejection_precedes_scope_and_source_queries():
+    async def scenario():
+        reader, conn, _ = authority()
+        conn.history = list(implementation.EXPECTED_PUBLICATION_HISTORY)
+        conn.fingerprint = [(implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,)]
+        await reader.initialize(deadline=asyncio.get_running_loop().time() + 2)
+        conn.role = [(False,)]
+        conn.calls.clear()
+        request = parse_model(RetrievalRequest, FIXTURE['request'])
+        scope = parse_model(TrustedScope, FIXTURE['scope'])
+        config = parse_model(QdrantConfig, CONFIG)
+        nomination = validate_nomination(expand(FIXTURE['nomination']), request, scope, config)
+        with pytest.raises(UnauthorizedScope):
+            await reader.read(nomination, request, scope, config, retained=False,
+                              max_source_bytes=13, deadline=asyncio.get_running_loop().time() + 2)
+        assert any(sql == implementation._ROLE_SQL for sql, _ in conn.calls)
+        assert all(sql != implementation._SCOPE_SQL and not sql.startswith('SELECT ' + implementation._SELECTION)
+                   for sql, _ in conn.calls)
+    asyncio.run(scenario())
+
+
+def test_publication_structural_guard_is_separate_and_requires_complete_rls_profile():
+    sql = implementation._PUBLICATION_CATALOG_SQL
+    assert 'count(*)=13' in sql and 'count(*)=12' in sql
+    assert "c.relname<>'schema_migrations'" in sql
+    assert 'c.relrowsecurity AND c.relforcerowsecurity' in sql
+    assert 'NOT x.convalidated' in sql and 'p.prosecdef' in sql
+    assert "t.tgenabled<>'O'" in sql
+    assert 't.tgisinternal' not in sql
+    assert 'count(*)=5' in implementation._CATALOG_SQL

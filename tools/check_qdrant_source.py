@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from copy import deepcopy
+from contextlib import asynccontextmanager
 from hashlib import sha256
 import json
 import logging
@@ -22,6 +23,24 @@ ACTIONS = frozenset(('reset_active', 'reset_staging', 'reset_invalid_utf8', 'rev
                      'metadata', 'tombstone', 'supersede', 'source_outage'))
 STAGE = 'configuration'
 NODE_STEP = 'not_started'
+
+
+@asynccontextmanager
+async def source_fixture_transaction(admin, command, *, publication=False):
+    """Seed source-reader fixtures as administrator, never as a managed writer."""
+    triggers = (('documents','publication_document_commit'),
+                ('generations','publication_generation_commit'))
+    async with admin.transaction():
+        if publication:
+            for table,trigger in triggers:
+                await command(f'ALTER TABLE cragkit_qdrant.{table} DISABLE TRIGGER {trigger}')
+        yield
+        if publication:
+            # Resolve pending FK events before ALTER TABLE; restore the exact
+            # catalog before any reader/provider gate can execute.
+            await command('SET CONSTRAINTS ALL IMMEDIATE')
+            for table,trigger in triggers:
+                await command(f'ALTER TABLE cragkit_qdrant.{table} ENABLE TRIGGER {trigger}')
 
 
 class NodeCaseFailure(RuntimeError):
@@ -112,7 +131,7 @@ async def node_cases(value, mutate):
             process.stdin.close()
 
 
-async def check(pg, qdrant):
+async def check(pg, qdrant, *, authority_profile='source'):
     global STAGE
     import psycopg
     from psycopg import sql
@@ -120,6 +139,8 @@ async def check(pg, qdrant):
     from qdrant_source_native import PostgresSourceFixture
     from check_python_postgres import require_client_tls
 
+    if authority_profile not in ('source','publication'):
+        raise ValueError('source_authority_profile')
     assert isinstance(pg, PostgresSourceFixture)
     admin = None
     failures = []
@@ -175,7 +196,7 @@ async def check(pg, qdrant):
             if action == 'reset_invalid_utf8':
                 selected['canonical_utf8'] = bytes.fromhex('4120636166c3a920e99baa2eff')
                 selected['source_sha256'] = sha256(selected['canonical_utf8']).hexdigest()
-            async with admin.transaction():
+            async with source_fixture_transaction(admin,command,publication=authority_profile=='publication'):
                 await command('UPDATE cragkit_qdrant.documents SET active_generation_id=NULL')
                 for table in ('members', 'generations', 'document_revisions', 'documents'):
                     await command('DELETE FROM cragkit_qdrant.' + table)
@@ -184,7 +205,7 @@ async def check(pg, qdrant):
                     await command(statement)
             await replace_vector(selected)
             return
-        async with admin.transaction():
+        async with source_fixture_transaction(admin,command,publication=authority_profile=='publication' and action=='supersede'):
             if action == 'supersede':
                 generation = deepcopy(row)
                 generation['generation_id'] = 'gen-2'
@@ -212,21 +233,33 @@ async def check(pg, qdrant):
         item = migration()
         await command(item.sql)
         await command('INSERT INTO cragkit_qdrant.schema_migrations(version,checksum_sha256) VALUES(%s,%s)', (item.version, item.checksum))
+        fingerprint_sql, payload_sql = catalog_queries()
+        source_reference = json.loads((ROOT / 'contracts/fixtures/qdrant_authority_catalog.json').read_text())
+        if await command(fingerprint_sql) != [(source_reference['catalog_fingerprint'],)]:
+            raise RuntimeError('source_initial_catalog_reference_mismatch')
+        if authority_profile=='publication':
+            from qdrant_publication_schema import CAPABILITY_ROLES, migration as publication_migration
+            for role in CAPABILITY_ROLES:
+                await command(sql.SQL('CREATE ROLE {} NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT').format(sql.Identifier(role)))
+            item = publication_migration()
+            await command(item.sql)
+            await command('INSERT INTO cragkit_qdrant.schema_migrations(version,checksum_sha256) VALUES(%s,%s)', (item.version,item.checksum))
         await command(sql.SQL('CREATE ROLE {} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT PASSWORD {}').format(sql.Identifier(reader), sql.Literal(password)))
         await command(sql.SQL('GRANT USAGE ON SCHEMA cragkit_qdrant TO {}').format(sql.Identifier(reader)))
-        await command(sql.SQL('GRANT SELECT ON ALL TABLES IN SCHEMA cragkit_qdrant TO {}').format(sql.Identifier(reader)))
+        await command(sql.SQL('GRANT SELECT ON cragkit_qdrant.documents,cragkit_qdrant.document_revisions,cragkit_qdrant.generations,cragkit_qdrant.members,cragkit_qdrant.schema_migrations TO {}').format(sql.Identifier(reader)))
         await command(sql.SQL('GRANT EXECUTE ON FUNCTION cragkit_qdrant.scope_visible(text,text,text[],text[],text,boolean),cragkit_qdrant.scope_grants(),cragkit_qdrant.valid_identity_array(text[]) TO {}').format(sql.Identifier(reader)))
         await command('SET search_path=pg_catalog')
-        fingerprint_sql, payload_sql = catalog_queries()
-        reference = json.loads((ROOT / 'contracts/fixtures/qdrant_authority_catalog.json').read_text())
+        reference = json.loads((ROOT / ('contracts/fixtures/qdrant_publication_catalog.json' if authority_profile=='publication' else 'contracts/fixtures/qdrant_authority_catalog.json')).read_text())
         observed_hash = (await command(fingerprint_sql))[0][0]
         observed_catalog = json.loads((await command(payload_sql))[0][0])
         (pg.artifacts / 'observed-catalog.json').write_text(json.dumps(observed_catalog, indent=2) + '\n')
         if observed_hash != reference['catalog_fingerprint']:
             raise RuntimeError('source_local_catalog_reference_mismatch')
-        from cragkit._qdrant_authority import _CATALOG_SQL
-        if await command(_CATALOG_SQL) != [(True,)]:
+        from cragkit._qdrant_authority import _CATALOG_SQL, _PUBLICATION_CATALOG_SQL
+        if await command(_PUBLICATION_CATALOG_SQL if authority_profile=='publication' else _CATALOG_SQL) != [(True,)]:
             raise RuntimeError('source_local_catalog_shape_mismatch')
+        from qdrant_source_privileges import check_reader_privileges
+        checks.extend(await check_reader_privileges(admin,reader_config,publication=authority_profile=='publication'))
         checks.append('isolated_tls_schema_and_restricted_login_created')
         # Replace only the eight points owned by the Qdrant fixture.
         deleted = await asyncio.to_thread(qdrant.request, 'POST', qdrant.collection_path + '/points/delete?wait=true&ordering=strong',
@@ -246,8 +279,15 @@ async def check(pg, qdrant):
             raise RuntimeError('source_runtime_result_parity')
         checks.append('node_tls_rejected_wrong_hostname_and_untrusted_private_certificate')
         checks.append('full_source_result_and_candidate_ledger_parity')
-        return {'task': 'V5-03D', 'contract_revision': scenarios['revision'], 'runtime_cases_each': len(python),
+        await asyncio.to_thread(pg.start)
+        admin = await connect_admin()
+        if await command(fingerprint_sql) != [(reference['catalog_fingerprint'],)]:
+            raise RuntimeError('source_final_catalog_reference_mismatch')
+        return {'task': 'V5-04C2' if authority_profile=='publication' else 'V5-03D',
+                'authority_profile':authority_profile, 'catalog_fingerprint':observed_hash,
+                'contract_revision': scenarios['revision'], 'runtime_cases_each': len(python),
                 'checks': checks, 'python': python, 'node': node, 'live_model_calls': 0,
+                'publication_schema_reader_compatibility_tested': authority_profile=='publication',
                 'publication_compatibility_tested': False, 'hosted_database_tested': False}
     except BaseException as error:
         primary = error
@@ -289,12 +329,13 @@ def main():
     parser.add_argument('--server-binary', type=Path, required=True)
     parser.add_argument('--binary-sha256', required=True)
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
+    parser.add_argument('--authority-profile',choices=('source','publication'),default='source')
     parser.add_argument('--artifacts-dir', type=Path, default=ROOT / 'artifacts/V5/native-sources')
     args = parser.parse_args()
     try:
         with QdrantFixture(args.server_binary, args.artifacts_dir, args.binary_sha256) as qdrant:
             with PostgresSourceFixture(args.postgres_bin, args.artifacts_dir) as postgres:
-                report = asyncio.run(check(postgres, qdrant))
+                report = asyncio.run(check(postgres, qdrant,authority_profile=args.authority_profile))
             report['postgres_checks'] = postgres.checks
         report['qdrant_checks'] = qdrant.checks
         args.artifacts_dir.mkdir(parents=True, exist_ok=True)

@@ -14,6 +14,21 @@ Initialization compares the exact [catalog query](QDRANT_AUTHORITY_CATALOG_V5.sq
 
 Reader grants comprise schema usage, SELECT on the four content tables and metadata-only `schema_migrations`, and EXECUTE on `scope_visible`, `scope_grants` and `valid_identity_array` with the signatures in the storage guide. The independent history stores `version`, `checksum_sha256` and `applied_at`; an explicit administrator wrapper records the checksum of the actual migration bytes. Source initialization never silently adopts an unknown namespace/history or writes this ledger.
 
+### C2-r1: Explicit publication-schema compatibility
+
+The source-only catalog above remains an accepted independent profile. The additive publication profile has its own [captured catalog](fixtures/qdrant_publication_catalog.json), using the unchanged complete catalog query. Runtime code embeds both profiles; it does not load repository files. Both exact history and fingerprint must match the same profile:
+
+| Profile | Exact history | Catalog SHA-256 |
+| --- | --- | --- |
+| Source-only | `0001_authority` with its existing exact checksum | `8104abeef00594e7bfa4b533a139767599b56b87d09062c0d6f52f6e2f5d0b48` |
+| Publication | The same `0001_authority`, followed by `0002_publication` with checksum `386fe01d0d03e35ac35c21bce598b21bff2c5ad510e9cdf0a6fbe56f359b6661` | `e395925257def30b9d143b7210c68583d4cbbb0950d8a8e1bb4f5aba5b8be69b` |
+
+Read at most three ordered history rows so an unexpected third entry cannot be mistaken for the accepted two-row profile. Choose a known profile before its structural and fingerprint checks. Preserve the original source-only structural check; the new structural check must require PostgreSQL 17/UTF-8, thirteen ordinary tables, all twelve content/operational tables forcing RLS, validated constraints and no security-definer functions. The complete fingerprint binds every remaining catalog detail. Unknown or mixed pairs, drift and extra history fail `UnsupportedCapability`; no wildcard or migration-prefix acceptance is allowed.
+
+Source readers still require SELECT on exactly the original five tables. They must have no table/column SELECT on new operational tables, no DML on any authority table, and no ownership/admin/bypass or writer/supervisor capability membership, even when inheritance is disabled. Only the three existing scope helpers are executable reader helpers. Recheck effective role permissions on every source-read lease. Granting writer capability later must fail `UnauthorizedScope` before source release. These checks never install privileges or migrate data.
+
+This adds reader compatibility only. A valid publication schema does not prove that a native manager, supervisor or Qdrant publication protocol has run. Read-only repeatable-read source transactions remain separate from managed writes' READ COMMITTED requirement.
+
 The authority owns current document grants, authorization revision, metadata, tombstone and active generation; immutable canonical revision bytes and locator; parser/chunker identity; and complete scoped generation/member identities and profiles. Qdrant payloads cannot replace these values. An administrative setup can populate this foundation for acceptance, but cannot establish QD-r1 writer compatibility.
 
 `capabilities()` must report `source_authority=true`, `candidate_replica_only=false` for this source component, and `qd_r1_compatible=false`, `publication=false`, `repair=false`. The complete combined Qdrant profile remains incompatible with full QD-r1 until V5-04 implements and validates the ownership registry, durable intent/dispatch journal, enforceable mutation coordination, uncertain-operation recovery and atomic publication CAS. A lease, advisory lock or caller-supplied `drained=true` does not fence an already dispatched Qdrant request.
