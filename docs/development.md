@@ -905,3 +905,21 @@ node --test --test-concurrency=1 packages/typescript/tests/qdrant-manifest.test.
 ```
 
 Full regression commands remain the existing Python/tool pytest suite and `npm --prefix packages/typescript test`. Restore requires expected hashes from trusted immutable authority data and reissues B1 provenance. The later manager must link every restored vector to its manifest and recheck current authorization before publication.
+
+## V5-04C1 publication authority SQL
+
+The [additive migration guide](../storage/qdrant/postgres/PUBLICATION.md) defines the writer/supervisor roles, durable records and transaction boundaries. [C1 evidence](../evaluation/reports/V5/V5-04C1.md) records local PostgreSQL acceptance. It does not establish Qdrant completion or native manager compatibility.
+
+Run focused construction/lifecycle tests without a database:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_publication_schema.py tools/tests/test_check_qdrant_publication_schema.py -q
+```
+
+The native command explicitly starts and removes one private loopback PostgreSQL 17.11 TLS/SCRAM cluster. It uses synthetic rows and rollback-only transactions, with one connection and no hosted configuration, Qdrant or model call. Choose a fresh artifact directory; an existing success file is refused.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_schema.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --artifacts-dir artifacts/V5/V5-04C1/run-new
+```
+
+The runner checks the exact original source catalog before each upgrade, tests scoped nonowner roles and rejects managed admission under repeatable-read/serializable isolation. It verifies namespace/role/membership/default-privilege rollback and closes the connection, server and private directory before writing success. SET ROLE is policy evidence; actual native LOGIN, cross-commit and concurrent mutation acceptance remain later gates.

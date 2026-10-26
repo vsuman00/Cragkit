@@ -254,7 +254,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V5-04A: QW-r1 publication/recovery boundary, 43 fault scenarios, 14 numeric cases and computed cross-runtime goldens; [design acceptance](../evaluation/reports/V5/V5-04A.md).
   - [x] V5-04B1: Pure native vector encoders and readback validators; 71 focused Python/25 Node cases, 1796 Python/tool and 1005 Node regressions, strict types and 21 cross-runtime comparisons passed. [Evidence](../evaluation/reports/V5/V5-04B1.md).
   - [x] V5-04B2: Immutable generation/intent manifests and portable replay serialization; 41 focused Python/27 Node cases, 1837 Python/tool and 1032 Node regressions, strict types and 33 parity cases passed. [Evidence](../evaluation/reports/V5/V5-04B2.md).
-  - [ ] V5-04C: Additive authority schema, writer privileges and exact reader/catalog compatibility; next smallest task.
+  - [ ] V5-04C: Additive authority schema, writer privileges and exact reader/catalog compatibility.
+    - [x] V5-04C1: Additive publication migration; 17 local PostgreSQL acceptance groups, 27 focused tests, 1864 Python/tool and 1032 Node regressions plus strict types/build passed. [Evidence](../evaluation/reports/V5/V5-04C1.md).
+    - [ ] V5-04C2: Explicit upgraded history/catalog profile and native reader compatibility; next smallest task after C1 acceptance.
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
 
@@ -301,6 +303,22 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04C1: Durable publication authority
+
+State: COMPLETE for additive SQL/local acceptance. Baseline 5ffd4be was synchronized; the three user audit drafts remain untracked and excluded. Shared outcome: an additive PostgreSQL 17 publication schema for QW-r1 intents, global physical claims, document ownership, uncertain dispatches and preparation, with real local constraint, least-privilege and rollback evidence. C1 supplies storage invariants; native writer operations and Qdrant fault acceptance remain D-H. Parent C also requires C2's explicit catalog/history upgrade.
+
+- Sol v5_candidate_contract owns only new storage/qdrant/postgres/migrations/0002_publication.sql and storage/qdrant/postgres/PUBLICATION.md; schema implementation and named assembler.
+- Sol v5_candidate_fixtures owns only new tools/qdrant_publication_schema.py and tools/tests/test_qdrant_publication_schema.py; complementary SQL acceptance construction and negative cases.
+- Root owns the shared schema decision, tracker, local acceptance runner, catalog/reader compatibility, all commands and Git. Both peers start with a read-only schema/security proposal and coordinate dependencies directly before the schema freezes. No worker tests, scripts, services, installs, network, database or Git actions. Outcome, protected-boundary and ownership changes go to root; unresolved material issues go to Astra after peer/root review.
+
+Protected: migration 0001 and its exact source-only profile, reader authorization, sealed inputs, user drafts, manifests/locks and native runtime boundaries. Root alone runs one test process and one disposable PostgreSQL cluster, at most two clients; no hosted mutation, Qdrant process or model call is needed for C1. Acceptance: immutable/scoped relationships, hidden global collisions, reader/staging isolation, durable uncertainty, least-privilege roles and complete rollback/process cleanup. Learning practice remains unassessed.
+
+C1 is executed in two bounded implementation slices: C1a owns the migration, storage guide, SQL probe builder and probe tests; C1b owns the explicit local runner and its CLI/cleanup tests. Root owns C1b. Frozen C1-SQL-r1 uses separately provisioned safe NOLOGIN writer/supervisor capability roles, role-specific policies, staged visibility through the bound stage intent, same-document predecessor journal visibility, and global metadata-only supervisor privileges. Four additional operation settings bind the trusted target/intent/owner/instance context; settings do not authenticate a database caller. Managed writes require READ COMMITTED and owner/instance locking. C1's rollback-only probe does not establish concurrent writer or remote completion correctness; D-H supply native operations and fault interleavings.
+
+Final handoff: both substantive Sol peers coordinated directly, froze their paths and transferred ownership; the SQL peer assembled. Independent Sol/root source review corrected nullable constraints, privilege/policy construction, historical settlement, initial pointer admission, immutable dispatch membership, owner refresh, member count fences and isolation assumptions. Root's first CLI tests exposed a missing diagnostic argument. Native 01 and diagnostic 02 stopped at an overly strict probe identifier regex, with cluster cleanup; neither is acceptance. After the peer correction and regression, native 03 passed all 17 groups, exact original catalog before upgrade, complete role/schema/default rollback, verified TLS and process/private-directory removal. SQL-only positive recovery and immediate denial passed; no Qdrant proof is inferred.
+
+Root passed 27 focused tests, 1864 Python/tool regressions (four existing deliberate warnings), 1032 Node tests, mypy38files and strict TypeScript build. Source/guide/helper/runner/tests, storage/development guidance, E91-E92, this tracker and C1 report are the changed scope. All 16 seals, original migration and three audit hashes remain unchanged. Prose inspection found zero suspicious characters and low density with unchanged deterministic output. Latest M4/16 GiB snapshot: 38 GiB disk, 52 percent system memory free; one test process/one private PostgreSQL process/one client, all closed. No hosted mutation, provider call, model/SDK install, persistent service or publication. Learning unassessed. Next: C2 must accept only exact old/new history/catalog pairs and reject writer/supervisor reader memberships; D-H still own real LOGIN/commit/race/controller/Qdrant acceptance. Full V5 remains incomplete. Root owns final scoped Git review, immediate push and synchronization.
 
 ### V5-04B2: Immutable manifests and original-vector replay
 
