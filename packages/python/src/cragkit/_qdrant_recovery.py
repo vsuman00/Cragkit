@@ -19,7 +19,7 @@ from ._qdrant_reconciliation import (
 )
 from ._qdrant_supervisor import ManagedQdrantSupervisor, _config
 from ._qdrant_transport import deadline_value
-from ._qdrant_writer import _safe as writer_error
+from ._qdrant_writer import PostgresQdrantWriter, writer_binding, _safe as writer_error
 from ._qdrant_writer_contract import WriterContext, context
 from .contracts.models import Identity
 from ._qdrant_manifest import _parse, _Model
@@ -29,6 +29,10 @@ from .errors import (
 )
 
 _T = TypeVar('_T')
+_RECOVERY_ORIGINS: WeakKeyDictionary[
+    object, tuple[PoolResource, PostgresQdrantWriter, ManagedQdrantSupervisor,
+                  QdrantReconciliationVerifier, object]
+] = WeakKeyDictionary()
 _DOC = 'tenant_id=%s AND collection=%s AND document_id=%s'
 _INTENT = _DOC + ' AND intent_id=%s'
 _BACKEND_FIELDS = ('backend_namespace', 'storage_identity', 'supervisor_id',
@@ -143,6 +147,40 @@ def _intent(value: WriterContext) -> tuple[object, ...]:
     return (*_target(value), value.intent_id)
 
 
+def _recovery_origin(value: object) -> tuple[
+        PoolResource, PostgresQdrantWriter, ManagedQdrantSupervisor,
+        QdrantReconciliationVerifier, object]:
+    if type(value) is not PostgresQdrantRecovery or value not in _RECOVERY_ORIGINS:
+        raise InvalidRequest()
+    original = _RECOVERY_ORIGINS[value]
+    resource, writer, supervisor, verifier, config = original
+    if (value.resource is not resource or value._writer is not writer
+            or value.supervisor is not supervisor or value.verifier is not verifier
+            or value.config is not config):
+        raise InvalidRequest()
+    writer_binding(writer)
+    if (verifier_authority(verifier, supervisor) is not writer
+            or verifier.writer is not writer or verifier.supervisor is not supervisor):
+        raise InvalidRequest()
+    return original
+
+
+def recovery_components(value: object, expected_writer: object, expected_supervisor: object,
+                        expected_config: object) -> QdrantReconciliationVerifier:
+    """Resolve only the original issuer-bound verifier, without initializing."""
+    if (type(expected_writer) is not PostgresQdrantWriter
+            or type(expected_supervisor) is not ManagedQdrantSupervisor):
+        raise InvalidRequest()
+    _, writer, supervisor, verifier, config = _recovery_origin(value)
+    if writer is not expected_writer or supervisor is not expected_supervisor:
+        raise InvalidRequest()
+    parsed = _config(expected_config)
+    original_config = writer_binding(writer)['config']
+    if parsed != config or parsed != original_config:
+        raise UnsupportedCapability()
+    return verifier
+
+
 def _error(error: Exception, deadline: float) -> CragkitError:
     try:
         code = getattr(error, 'sqlstate', None)
@@ -174,6 +212,7 @@ class PostgresQdrantRecovery:
         self._closed = False
         self._active: asyncio.Task[Any] | None = None
         self._scoped_control: _ScopedControl | None = None
+        _RECOVERY_ORIGINS[self] = (resource, self._writer, supervisor, verifier, self.config)
 
     def _control(self) -> _ScopedControl:
         if self._scoped_control is None:
@@ -182,6 +221,7 @@ class PostgresQdrantRecovery:
 
     @asynccontextmanager
     async def _operation(self, deadline: float, *, initialize: bool = False) -> AsyncIterator[None]:
+        _recovery_origin(self)
         deadline_value(deadline)
         if self._closed or self._active is not None:
             raise ProviderUnavailable()

@@ -3,7 +3,7 @@ import { types } from 'node:util';
 import { PoolResource, bounded, now, type LeaseOptions } from './postgres-pool.js';
 import { ManagedQdrantSupervisor, type SupervisorControlSession } from './qdrant-supervisor.js';
 import { QdrantReconciliationVerifier, receipt_data, verifier_authority } from './qdrant-reconciliation.js';
-import { projection_data, type PostgresQdrantWriter } from './qdrant-writer.js';
+import { projection_data, writer_binding, type PostgresQdrantWriter } from './qdrant-writer.js';
 import { AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY, AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT } from './qdrant-authority.js';
 import { same, type QdrantConfig } from './qdrant-contract.js';
@@ -19,6 +19,29 @@ type Tx = Readonly<{query:(sql:string,values?:readonly unknown[],max?:number)=>P
 type SQLSettlement = Readonly<Record<never,never>>;
 type Settlement = Readonly<{issuer:PostgresQdrantRecovery;supervisor:ManagedQdrantSupervisor;barrier:unknown;binding:Binding}>;
 const settlements = new WeakMap<object,Settlement>();
+type RecoveryRegistration=Readonly<{
+  resource:PoolResource;
+  config:QdrantConfig;
+  writer:PostgresQdrantWriter;
+  supervisor:ManagedQdrantSupervisor;
+  verifier:QdrantReconciliationVerifier;
+}>;
+const recoveryRegistrations=new WeakMap<object,RecoveryRegistration>();
+
+/** Return only the originally bound nominal verifier, never privileged resources. */
+export function recovery_components(input:unknown,expected_writer:unknown,expected_supervisor:unknown,expected_config:unknown):QdrantReconciliationVerifier {
+  if(typeof input!=='object'||input===null||types.isProxy(input)
+    ||Object.getPrototypeOf(input)!==PostgresQdrantRecovery.prototype
+    ||typeof expected_supervisor!=='object'||expected_supervisor===null||types.isProxy(expected_supervisor)
+    ||Object.getPrototypeOf(expected_supervisor)!==ManagedQdrantSupervisor.prototype)throw new InvalidRequest();
+  const original=recoveryRegistrations.get(input);
+  const writer=writer_binding(expected_writer);
+  if(!original||original.writer!==expected_writer||original.supervisor!==expected_supervisor)throw new InvalidRequest();
+  if(verifier_authority(original.verifier,original.supervisor)!==original.writer)throw new InvalidRequest();
+  const config=parse_config(expected_config);
+  if(!same(config,original.config)||!same(writer.config,original.config))throw new UnsupportedCapability();
+  return original.verifier;
+}
 
 /** Only a committed recovery coordinator can mint the nominal SQL handoff. */
 export function settlement_data(token:unknown,supervisor:ManagedQdrantSupervisor,barrier:unknown):Binding {
@@ -134,6 +157,8 @@ export class PostgresQdrantRecovery {
     this.#supervisor=supervisor;
     this.#verifier=verifier;
     this.#writer=verifier_authority(verifier,supervisor);
+    recoveryRegistrations.set(this,Object.freeze({resource:this.#resource,config:this.#config,writer:this.#writer,
+      supervisor:this.#supervisor,verifier:this.#verifier}));
   }
   #admit(initializing=false):void {
     if (this.#closed||this.#active) throw new ProviderUnavailable();

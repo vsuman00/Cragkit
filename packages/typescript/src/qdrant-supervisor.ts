@@ -152,6 +152,12 @@ export class ManagedQdrantSupervisor {
       alive:this.#alive(),
     });
   }
+  profile_binding(input:unknown):Readonly<Record<string,unknown>> {
+    const profile=parse_config(metadata(input));
+    const registered=this.#profiles.get(profile.physical_collection);
+    if(!registered||!same(registered,profile))throw new UnsupportedCapability();
+    return this.control_binding();
+  }
   #controlAccess(token?:object):void {
     if(token!==this.#controlToken||(token!==undefined&&this.#controlDraining)){
       throw new ProviderUnavailable();

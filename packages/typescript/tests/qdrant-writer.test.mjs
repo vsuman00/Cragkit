@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
@@ -133,6 +133,40 @@ function setup(){
     sslrootcert:'/fake/ca',passfile:'/fake/pass',release_timeout:.05,close_timeout:.1}),{pool});
   return {state,pool,resource,writer:new PostgresQdrantWriter(resource,config,'instance-fixture')};
 }
+
+test('writer binding exposes immutable original constructor metadata without I/O or resource access',async()=>{
+  const f=setup();
+  const raw=structuredClone(config);
+  const writer=new PostgresQdrantWriter(f.resource,raw,'original-instance');
+  try{
+    raw.physical_collection='changed_after_constructor';
+    const binding=writer_binding(writer);
+    assert.deepEqual(Object.keys(binding).sort(),['config','instance_id']);
+    assert.equal(binding.instance_id,'original-instance');
+    assert.equal(binding.config.physical_collection,config.physical_collection);
+    assert.ok(Object.isFrozen(binding));
+    assert.ok(Object.isFrozen(binding.config));
+    assert.ok(Object.isFrozen(binding.config.dense_profile));
+    assert.throws(()=>{binding.config.dense_profile.model='changed';},TypeError);
+    assert.equal(f.state.queries.length,0);
+    assert.equal(f.state.clients.length,0);
+    assert.equal(f.pool.ends,0);
+    assert.equal('resource'in binding,false);
+  }finally{await writer.close();await f.writer.close();await f.resource.close();}
+});
+
+test('writer binding rejects copied, unregistered, subclass and proxy objects before I/O',async()=>{
+  const f=setup();
+  class Foreign extends PostgresQdrantWriter {}
+  const child=new Foreign(f.resource,config,'child-instance');
+  try{
+    for(const value of [null,{}, {...f.writer},Object.create(PostgresQdrantWriter.prototype),child,new Proxy(f.writer,{})]){
+      assert.throws(()=>writer_binding(value),InvalidRequest);
+    }
+    assert.equal(f.state.queries.length,0);
+    assert.equal(f.state.clients.length,0);
+  }finally{await child.close();await f.writer.close();await f.resource.close();}
+});
 
 test('private immutable StagePlan binds vectors and exact declared member seals',()=>{
   const raw=input(),plan=prepare_stage(raw);

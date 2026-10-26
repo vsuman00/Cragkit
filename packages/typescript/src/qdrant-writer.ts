@@ -40,6 +40,17 @@ export type ManagerSnapshot=Readonly<{intent:IntentView|null;document:Readonly<{
 export type PublicationAdmission=Readonly<{intent:IntentView;owner:Readonly<{owner_token:string;backend_epoch:number}>|null}>;
 export type DispatchStatus=Readonly<{dispatch_id:string;sequence:number;owner_token:string;backend_epoch:number;
   credential_generation:string;operation:string;state:string;completion_sha256:string|null;request_sha256:string;point_ids:readonly string[]}>;
+type WriterRegistration=Readonly<{resource:PoolResource;config:QdrantConfig;instance_id:string}>;
+const writerRegistrations=new WeakMap<object,WriterRegistration>();
+
+/** Constructor identity only: this metadata grants no readiness or write authority. */
+export function writer_binding(input:unknown):Readonly<{config:QdrantConfig;instance_id:string}> {
+  if(typeof input!=='object'||input===null||types.isProxy(input)
+    ||Object.getPrototypeOf(input)!==PostgresQdrantWriter.prototype)throw new InvalidRequest();
+  const original=writerRegistrations.get(input);
+  if(!original)throw new InvalidRequest();
+  return Object.freeze({config:original.config,instance_id:original.instance_id});
+}
 export type ExpectedProjection=Readonly<Record<never,never>>;
 export type ProjectionPoint=Readonly<{point_id:string;payload:Readonly<Data>;dense:ReturnType<typeof restore_dense_replay>;sparse:ReturnType<typeof restore_sparse_replay>|null}>;
 export type ProjectionData=Readonly<{context:WriterContext;physical_binding:Readonly<Data>;manifest_sha256:string;
@@ -176,6 +187,7 @@ export class PostgresQdrantWriter {
   constructor(resource: PoolResource, config: unknown, instance_id: unknown) {
     if (!(resource instanceof PoolResource)) throw new InvalidRequest();
     this.#resource=resource; this.#config=parseConfig(config); this.#instance=text(instance_id);
+    writerRegistrations.set(this,Object.freeze({resource:this.#resource,config:this.#config,instance_id:this.#instance}));
   }
   async #work<T>(options: LeaseOptions, task:(options:LeaseOptions)=>Promise<T>, initialize=false):Promise<T> {
     if(this.#closed||this.#active) throw new ProviderUnavailable();

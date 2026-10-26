@@ -154,9 +154,9 @@ class _AckPool:
 async def python_recovery_cases(value):
     from cragkit._postgres_pool import PoolConfig, PoolResource
     from cragkit._qdrant_supervisor import ManagedQdrantSupervisor
-    from cragkit._qdrant_writer import PostgresQdrantWriter, prepare_stage
+    from cragkit._qdrant_writer import PostgresQdrantWriter, prepare_stage, writer_binding
     from cragkit._qdrant_reconciliation import QdrantReconciliationVerifier, receipt_data
-    from cragkit._qdrant_recovery import PostgresQdrantRecovery
+    from cragkit._qdrant_recovery import PostgresQdrantRecovery, recovery_components
     from cragkit.contracts import TrustedScope
     from cragkit.errors import InvalidRequest, ProviderUnavailable, UnsupportedCapability
     import logging
@@ -179,6 +179,9 @@ async def python_recovery_cases(value):
     writer = PostgresQdrantWriter(resource, inputs['config'], inputs['instance_id'])
     verifier = QdrantReconciliationVerifier(writer, supervisor)
     recovery = PostgresQdrantRecovery(sup_resource, inputs['config'], supervisor, verifier)
+    if (writer_binding(writer)['instance_id'] != inputs['instance_id']
+            or recovery_components(recovery, writer, supervisor, inputs['config']) is not verifier):
+        raise RuntimeError('recovery_fixture_native_dependency_binding')
     def context(stage, scope, token):
         return dict(scope=TrustedScope.model_validate(scope), collection=stage['manifest']['collection'],
             document_id=stage['manifest']['document_id'], intent_id=stage['intent']['intent_id'], owner_token=token)

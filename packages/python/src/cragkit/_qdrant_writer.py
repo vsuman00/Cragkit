@@ -9,6 +9,7 @@ import re
 from types import MappingProxyType
 from collections.abc import Mapping
 from typing import Any, Awaitable, Callable, TypeVar, cast
+from weakref import WeakKeyDictionary
 
 from ._postgres_pool import PoolResource
 from ._postgres_session import SessionConnection
@@ -34,6 +35,9 @@ from .errors import (CragkitError, DeadlineExceeded, IndexNotReady, IntegrityVio
     InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability)
 
 _T = TypeVar('_T')
+_WRITER_ORIGINS: WeakKeyDictionary[
+    object, tuple[PoolResource, QdrantConfig, str]
+] = WeakKeyDictionary()
 _DOC = 'tenant_id=%s AND collection=%s AND document_id=%s'
 _INTENT = _DOC + ' AND intent_id=%s'
 _META = ('action','state','payload_sha256','manifest_sha256','revision_id','generation_id',
@@ -194,6 +198,17 @@ def _stored_uuid(value: object) -> str:
     return value
 
 
+def writer_binding(value: object) -> Mapping[str, Any]:
+    """Return nominal constructor metadata, never a resource or permission."""
+    if type(value) is not PostgresQdrantWriter or value not in _WRITER_ORIGINS:
+        raise InvalidRequest()
+    resource, config, instance_id = _WRITER_ORIGINS[value]
+    if (value.resource is not resource or value.config is not config
+            or type(value.instance_id) is not str or value.instance_id != instance_id):
+        raise InvalidRequest()
+    return MappingProxyType({'config': config, 'instance_id': instance_id})
+
+
 class PostgresQdrantWriter:
     def __init__(self, resource: PoolResource, config: object, instance_id: object) -> None:
         if type(resource) is not PoolResource:
@@ -210,6 +225,7 @@ class PostgresQdrantWriter:
         self._ready = False
         self._closed = False
         self._active: asyncio.Task[Any] | None = None
+        _WRITER_ORIGINS[self] = (self.resource, self.config, self.instance_id)
 
     async def _query(self, connection: SessionConnection, sql: str,
                      params: tuple[object, ...] = ()) -> list[tuple[Any, ...]]:

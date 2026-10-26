@@ -5,7 +5,7 @@ import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
 import {PostgresQdrantWriter} from '../dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,settlement_data} from '../dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,settlement_data,recovery_components} from '../dist/qdrant-recovery.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {InvalidRequest,UnsupportedCapability,ProviderUnavailable,UnauthorizedScope,IndexNotReady} from '../dist/errors.js';
@@ -101,8 +101,48 @@ function setup(){
   const writer=new PostgresQdrantWriter(resource,config,'instance-1');
   const verifier=new QdrantReconciliationVerifier(writer,supervisor);
   const coordinator=new PostgresQdrantRecovery(resource,config,supervisor,verifier);
-  return {state,resource,supervisor,verifier,coordinator};
+  return {state,resource,writer,supervisor,verifier,coordinator};
 }
+
+test('recovery components return exactly the original verifier without I/O or resource disclosure',async()=>{
+  const f=setup();
+  const equivalent=new QdrantReconciliationVerifier(f.writer,f.supervisor);
+  try{
+    const actual=recovery_components(f.coordinator,f.writer,f.supervisor,structuredClone(config));
+    assert.equal(actual,f.verifier);
+    assert.notEqual(actual,equivalent);
+    assert.equal(f.state.queries.length,0);
+    assert.equal(f.state.clients.length,0);
+    assert.equal(f.state.ended,0);
+    assert.equal('resource'in actual,false);
+  }finally{await equivalent.close();await f.coordinator.close();await f.writer.close();}
+});
+
+test('recovery component graph rejects copied types, wrong identities and profile contradictions',async()=>{
+  const f=setup();
+  const otherWriter=new PostgresQdrantWriter(f.resource,config,'instance-1');
+  const otherSupervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/other','instance-1',config);
+  class Foreign extends PostgresQdrantRecovery {}
+  const child=new Foreign(f.resource,config,f.supervisor,f.verifier);
+  const mismatch=new PostgresQdrantRecovery(f.resource,{...config,collection_incarnation:'different'},f.supervisor,f.verifier);
+  try{
+    for(const value of [null,{}, {...f.coordinator},Object.create(PostgresQdrantRecovery.prototype),child,new Proxy(f.coordinator,{})]){
+      assert.throws(()=>recovery_components(value,f.writer,f.supervisor,config),InvalidRequest);
+    }
+    assert.throws(()=>recovery_components(f.coordinator,otherWriter,f.supervisor,config),InvalidRequest);
+    assert.throws(()=>recovery_components(f.coordinator,f.writer,otherSupervisor,config),InvalidRequest);
+    assert.throws(()=>recovery_components(f.coordinator,new Proxy(f.writer,{}),f.supervisor,config),InvalidRequest);
+    assert.throws(()=>recovery_components(f.coordinator,f.writer,new Proxy(f.supervisor,{}),config),InvalidRequest);
+    assert.throws(()=>recovery_components(f.coordinator,f.writer,f.supervisor,{}),InvalidRequest);
+    assert.throws(()=>recovery_components(f.coordinator,f.writer,f.supervisor,{...config,physical_collection:'other_valid_collection'}),UnsupportedCapability);
+    assert.throws(()=>recovery_components(mismatch,f.writer,f.supervisor,{...config,collection_incarnation:'different'}),UnsupportedCapability);
+    assert.equal(f.state.queries.length,0);
+    assert.equal(f.state.clients.length,0);
+  }finally{
+    await child.close();await mismatch.close();await f.coordinator.close();
+    await otherWriter.close();await f.writer.close();await otherSupervisor.close();
+  }
+});
 
 test('explicit initialization, committed block, repeated same-ID physical fencing and borrowed ownership',async()=>{
   const f=setup();

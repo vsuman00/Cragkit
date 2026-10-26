@@ -1,5 +1,6 @@
 """Native-controller unit doubles; actual process/key evidence belongs to root."""
 import asyncio
+from copy import deepcopy
 from functools import wraps
 import json
 from pathlib import Path
@@ -33,8 +34,9 @@ class Process:
     async def wait(self):self.returncode=-15;return self.returncode
 
 
-def supervisor(tmp_path,monkeypatch):
+def supervisor(tmp_path,monkeypatch,profiles=()):
     owner=ManagedQdrantSupervisor(Path('/fixture/qdrant'),tmp_path/'owned','instance-1',CONFIG)
+    for profile in profiles:owner.register_profile(profile)
     owner._key='OLD_SECRET';owner._credential_generation='credential-1'
     owner._storage_id='storage-1';owner._supervisor_id='supervisor-1';owner._endpoint='http://127.0.0.1:12345'
     owner._probe={'collection':'control_probe','collection_config':{},'point':{
@@ -52,6 +54,44 @@ def test_constructor_is_io_free_and_rejects_bad_configuration(tmp_path,monkeypat
     assert repr(owner)=='ManagedQdrantSupervisor()'
     with pytest.raises(InvalidRequest):ManagedQdrantSupervisor('binary',tmp_path,'instance',CONFIG)
     with pytest.raises(InvalidRequest):ManagedQdrantSupervisor(Path('/fixture/qdrant'),tmp_path,'x'*257,CONFIG)
+
+
+def test_profile_binding_requires_full_registered_descriptor_and_preserves_control_failures(tmp_path,monkeypatch):
+    owner=ManagedQdrantSupervisor(Path('/fixture/qdrant'),tmp_path/'owned','instance-1',CONFIG)
+    secondary={**CONFIG,'physical_collection':'secondary','collection_incarnation':'inc-2',
+               'sparse_profile':implementation.SPARSE_PROFILE.model_dump()}
+    owner.register_profile(secondary)
+    for profile in (CONFIG,secondary):
+        with pytest.raises(ProviderUnavailable):owner.profile_binding(profile)
+    for malformed in (None,{}, {**CONFIG,'physical_collection':'invalid/name'}):
+        with pytest.raises(InvalidRequest):owner.profile_binding(malformed)
+    alternatives=[{**CONFIG,'backend_namespace':'other'}, {**CONFIG,'physical_collection':'unregistered'},
+        {**CONFIG,'collection_incarnation':'other'},
+        {**CONFIG,'dense_profile':implementation.OPENAI_PROFILE.model_dump()},
+        {**CONFIG,'sparse_profile':implementation.SPARSE_PROFILE.model_dump()}]
+    for profile in alternatives:
+        with pytest.raises(UnsupportedCapability):owner.profile_binding(profile)
+    owner=supervisor(tmp_path,monkeypatch,(secondary,))
+    assert owner.profile_binding(deepcopy(CONFIG))==owner.control_binding()
+    assert owner.profile_binding(secondary)==owner.control_binding()
+    metadata=owner.profile_binding(CONFIG)
+    with pytest.raises(TypeError):metadata['epoch']=2
+    assert 'SECRET' not in repr(metadata) and 'api_key' not in metadata
+    before=(owner._gate,owner._epoch,dict(owner._profiles),len(owner._attempts),len(owner._proofs))
+    for profile in alternatives:
+        with pytest.raises(UnsupportedCapability):owner.profile_binding(profile)
+    assert before==(owner._gate,owner._epoch,dict(owner._profiles),len(owner._attempts),len(owner._proofs))
+    owner._process.returncode=-9
+    assert owner.profile_binding(CONFIG)['alive'] is False
+    owner._recovery={'recovery_id':'r','old_epoch':1,'new_epoch':2};owner._sealed=True
+    metadata=owner.profile_binding(CONFIG)
+    assert metadata['sealed'] and metadata['recovery']==owner.control_binding()['recovery']
+    with pytest.raises(TypeError):metadata['recovery']['new_epoch']=3
+    def not_owner():raise ProviderUnavailable()
+    monkeypatch.setattr(owner,'_assert_owner',not_owner)
+    with pytest.raises(ProviderUnavailable):owner.profile_binding(CONFIG)
+    owner._closed=True
+    with pytest.raises(ProviderUnavailable):owner.profile_binding(CONFIG)
 
 
 @run_async

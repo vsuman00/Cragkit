@@ -145,6 +145,19 @@ async def python_supervisor_cases(binary, work_dir, inputs):
     try:
         await supervisor.initialize(deadline=deadline, provision=provision)
         before = plain(supervisor.identity())
+        registered = plain(supervisor.profile_binding(inputs['config']))
+        if (registered['instance_id'] != before['instance_id']
+                or registered['storage_identity'] != before['storage_identity']
+                or registered['supervisor_id'] != before['supervisor_id']
+                or registered['epoch'] != 1 or registered['alive'] is not True
+                or registered['sealed'] or registered['recovery'] is not None):
+            raise RuntimeError('supervisor_fixture_registered_profile_binding')
+        try:
+            supervisor.profile_binding(dict(inputs['config'], physical_collection='UnregisteredProfile'))
+        except UnsupportedCapability:
+            pass
+        else:
+            raise RuntimeError('supervisor_fixture_unregistered_profile_accepted')
         endpoint = before['endpoint']
         first_pid = await observed_listener(before['endpoint'])
         checks.append('explicit_provisioning_verified_profiles_probe_and_owned_listener')
@@ -172,6 +185,10 @@ async def python_supervisor_cases(binary, work_dir, inputs):
         recovery = dict(recovery_id='e1-recovery', old_epoch=1, new_epoch=2)
         proof = await supervisor.recover(recovery, deadline=deadline)
         after = plain(supervisor.identity())
+        registered = plain(supervisor.profile_binding(inputs['config']))
+        if (registered['epoch'] != 2 or registered['recovery']['recovery_id'] != 'e1-recovery'
+                or registered['alive'] is not True):
+            raise RuntimeError('supervisor_fixture_recovery_profile_binding')
         second_pid = await observed_listener(after['endpoint'])
         if second_pid == first_pid or after['endpoint'] != before['endpoint']:
             raise RuntimeError('supervisor_fixture_process_was_not_restarted')

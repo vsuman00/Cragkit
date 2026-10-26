@@ -13,7 +13,7 @@ import pytest
 
 import cragkit._qdrant_writer as implementation
 from cragkit._postgres_pool import PoolConfig, PoolResource
-from cragkit._qdrant_writer import PostgresQdrantWriter, prepare_stage
+from cragkit._qdrant_writer import PostgresQdrantWriter, prepare_stage, writer_binding
 from cragkit._qdrant_writer_contract import StagePlan, stage_data
 from cragkit.embeddings import OPENAI_PROFILE
 from cragkit.errors import (DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady,
@@ -540,6 +540,47 @@ def test_fixed_writer_capability_remains_nologin_safe_and_without_outbound_membe
 
 def test_constructor_requires_actual_borrowed_resource():
     with pytest.raises(InvalidRequest):PostgresQdrantWriter(object(),config(),'instance')
+
+
+def test_writer_binding_is_original_immutable_metadata_without_io_or_resource(monkeypatch):
+    connection = Connection()
+    pool = resource(monkeypatch, connection)
+    writer = PostgresQdrantWriter(pool, config(), 'instance-1')
+    binding = writer_binding(writer)
+    assert set(binding) == {'config', 'instance_id'}
+    assert binding['config'] is writer.config and binding['instance_id'] == 'instance-1'
+    assert connection.calls == [] and not connection.closed and not writer._ready
+    with pytest.raises(TypeError):
+        binding['resource'] = pool
+    with pytest.raises(ValueError):
+        binding['config'].physical_collection = 'other_collection'
+    with pytest.raises(ValueError):
+        binding['config'].dense_profile.model = 'other-model'
+
+
+def test_writer_binding_rejects_unissued_copied_and_subclass_objects(monkeypatch):
+    class Child(PostgresQdrantWriter):
+        pass
+
+    pool = resource(monkeypatch, Connection())
+    writer = PostgresQdrantWriter(pool, config(), 'instance-1')
+    for value in ({}, object(), copy.copy(writer), object.__new__(PostgresQdrantWriter),
+                  Child(pool, config(), 'instance-1')):
+        with pytest.raises(InvalidRequest):
+            writer_binding(value)
+
+
+@pytest.mark.parametrize('field', ['resource', 'config', 'instance_id'])
+def test_writer_binding_rejects_reassigned_public_constructor_binding(monkeypatch, field):
+    connection = Connection()
+    pool = resource(monkeypatch, connection)
+    writer = PostgresQdrantWriter(pool, config(), 'instance-1')
+    replacements = {'resource': PoolResource(pool.config),
+                    'config': writer.config.model_copy(), 'instance_id': 'other-instance'}
+    setattr(writer, field, replacements[field])
+    with pytest.raises(InvalidRequest):
+        writer_binding(writer)
+    assert not connection.closed and connection.calls == []
 
 
 @pytest.mark.parametrize('conflicting',[False,True])

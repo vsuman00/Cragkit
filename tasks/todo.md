@@ -268,9 +268,12 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
     - [ ] V5-04F2: Authenticated dispatch and public stage/publish manager operations.
       - [x] V5-04F2a1: Private manager authority snapshot, original-fence admission and dispatch outcome lookup; 2,157 Python/tool and 1,117 Node regressions, strict types/build, 58 native SQL checks with ordered case parity and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a1.md).
       - [ ] V5-04F2a2: Native attempt transport and public in-process stage/publish manager.
+        - [x] V5-04F2a2i: Private native dependency and registered-profile bindings; 2,173 Python/tool and 1,123 Node regressions, strict types/build, 68 native controller/recovery checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a2i.md).
+        - [ ] V5-04F2a2ii: Bounded native transport and public stage/publish operations.
       - [ ] V5-04F2b: Explicit native ordinary-worker channel for a surviving supervisor.
     - [ ] V5-04F3: Native staged-publication acceptance and previous-generation preservation.
   - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
+    - [ ] V5-04G0: Additive append-only current-epoch preparation attestations and exact authority compatibility, before cross-epoch prepared repair.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
@@ -318,6 +321,12 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04F2a2i: Native dependency bindings
+
+State: COMPLETE for private dependency metadata; public manager/full V5 remain incomplete. [Evidence](../evaluation/reports/V5/V5-04F2a2i.md). Started after F2a1 accepted/pushed as f07d1121110bf2deccbcf17f7e93be0989cbceaf, synchronized 0/0. Outcome: exact original writer/recovery dependency metadata and supervisor registered-profile binding for the later explicit manager bundle. F2a2i-r1 assignment: Sol Python `/root/v5_candidate_contract` owns writer/recovery source/test (four paths) and assembles; Sol Node `/root/v5_candidate_fixtures` owns corresponding four paths; independent Sol `/root/v5_manifest_security_review` owns both supervisor sources/tests (four paths). Root owns shared contract/tracker/docs, serial checks, native regression and Git. No overlap, worker tests/services/network/database/providers/installs/Git or pool/resource getters. All other product boundaries, migrations, fixtures/codecs, manifests/locks, sealed inputs and user audits protected. Existing E2 physical capabilities remain exact actual supervisor; accessors expose no readiness/proof. Manager authority is an explicit borrowed writer/recovery bundle, with original verifier identity preserved. Handoff pending.
+
+Final F2a2i handoff: runtime and independent controller lanes transferred all twelve owned source/test paths; Python assembly found no remaining mismatch. Root added actual binding assertions to four existing native consumers and passed 182 focused Python, 66 focused Node, mypy 44 files/build, 2,173 Python/tool (four existing warnings), 1,123 Node, 18 controller + 50 durable recovery native checks and 16 seals. Metadata accessors expose no resource/readiness/proof; physical/SQL rules remain unchanged. Changed scope: writer/recovery/controller source/tests, four native consumers, development/report/tracker. No migration, codec, reader, manifest/lock, sealed input or user audit changed. Tests ran serially with at most two database clients and owned fixture cleanup. No hosted/provider call, install/download, release or persistent service. Practice unassessed. Public-manager review found preparation immutability prevents same-intent publication after global epoch advance; two Sol audits and Astra agree on separate G0 append-only attestation evolution, not replacing the intent or weakening epoch checks. Root commits/pushes, verifies synchronization, then freezes F2a2ii public manager/transport with bounded same-epoch prepared resume, followed by F2b/F3/G0/G/H and remaining V5 tasks.
 
 ### V5-04F2a1: Manager authority admission
 

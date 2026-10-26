@@ -8,9 +8,9 @@ import {createRequire} from 'node:module';
 import {isDeepStrictEqual} from 'node:util';
 import {PoolResource, parse_pool_config, bounded, now, verified_tls_options} from '../packages/typescript/dist/postgres-pool.js';
 import {ManagedQdrantSupervisor} from '../packages/typescript/dist/qdrant-supervisor.js';
-import {PostgresQdrantWriter, prepare_stage} from '../packages/typescript/dist/qdrant-writer.js';
+import {PostgresQdrantWriter, prepare_stage, writer_binding} from '../packages/typescript/dist/qdrant-writer.js';
 import {QdrantReconciliationVerifier, receipt_data} from '../packages/typescript/dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery} from '../packages/typescript/dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery, recovery_components} from '../packages/typescript/dist/qdrant-recovery.js';
 import {InvalidRequest, ProviderUnavailable, UnsupportedCapability} from '../packages/typescript/dist/errors.js';
 
 const OWNER = '00000000-0000-4000-8000-000000000001';
@@ -279,6 +279,8 @@ async function cases(value) {
     await supervisorResource.open();
     await resource.open(); await writer.initialize(options);
     recovery = new PostgresQdrantRecovery(supervisorResource, inputs.config, supervisor, verifier);
+    if (writer_binding(writer).instance_id !== inputs.instance_id
+      || recovery_components(recovery, writer, supervisor, inputs.config) !== verifier) throw new Error('native_dependency_binding');
     await recovery.initialize(options);
     const registered = await state();
     if (!isDeepStrictEqual(registered, [['open', '1', null]])) throw new Error('instance_registration');

@@ -13,7 +13,7 @@ from cragkit._postgres_pool import PoolConfig, PoolResource
 from cragkit._qdrant_reconciliation import (
     ExpectedProjection, QdrantReconciliationVerifier, ReconciliationReceipt, _RECEIPTS,
 )
-from cragkit._qdrant_recovery import PostgresQdrantRecovery, settlement_data
+from cragkit._qdrant_recovery import PostgresQdrantRecovery, recovery_components, settlement_data
 from cragkit._qdrant_supervisor import ManagedQdrantSupervisor, _Proof
 from cragkit._qdrant_writer import PostgresQdrantWriter
 from cragkit._qdrant_writer_contract import context
@@ -29,6 +29,94 @@ def run_async(function):
     def run(*args, **kwargs):
         return asyncio.run(function(*args, **kwargs))
     return run
+
+
+def test_recovery_components_returns_exact_original_verifier_without_io(monkeypatch, tmp_path):
+    recovery, supervisor, database, _ = setup(monkeypatch, tmp_path)
+    expected = recovery.verifier
+    original_writer = recovery._writer
+    assert recovery_components(recovery, original_writer, supervisor, config()) is expected
+    assert recovery_components(recovery, original_writer, supervisor, recovery.config) is expected
+    assert not recovery._ready and database.events == [] and database.connections == []
+
+
+def test_recovery_components_rejects_copies_subclasses_and_wrong_graph(monkeypatch, tmp_path):
+    recovery, supervisor, database, _ = setup(monkeypatch, tmp_path)
+    writer = recovery._writer
+
+    class Child(PostgresQdrantRecovery):
+        pass
+
+    child = Child(recovery.resource, config(), supervisor, recovery.verifier)
+    for value in ({}, object(), copy_recovery(recovery),
+                  object.__new__(PostgresQdrantRecovery), child):
+        with pytest.raises(InvalidRequest):
+            recovery_components(value, writer, supervisor, config())
+    other_writer = PostgresQdrantWriter(writer.resource, config(), 'instance-1')
+    other_supervisor = ManagedQdrantSupervisor(Path('/fixture/qdrant'), tmp_path / 'other',
+                                              'instance-1', config())
+    for expected_writer, expected_supervisor in ((other_writer, supervisor), (writer, other_supervisor)):
+        with pytest.raises(InvalidRequest):
+            recovery_components(recovery, expected_writer, expected_supervisor, config())
+    assert database.events == [] and database.connections == []
+
+
+def copy_recovery(value):
+    from copy import copy
+    return copy(value)
+
+
+def test_recovery_components_config_shape_and_full_descriptor_identity(monkeypatch, tmp_path):
+    recovery, supervisor, database, _ = setup(monkeypatch, tmp_path)
+    with pytest.raises(InvalidRequest):
+        recovery_components(recovery, recovery._writer, supervisor, {'unknown': True})
+    changed = config()
+    changed['physical_collection'] = 'different_collection'
+    with pytest.raises(UnsupportedCapability):
+        recovery_components(recovery, recovery._writer, supervisor, changed)
+    mismatched = PostgresQdrantRecovery(recovery.resource, changed, supervisor, recovery.verifier)
+    with pytest.raises(UnsupportedCapability):
+        recovery_components(mismatched, recovery._writer, supervisor, changed)
+    assert database.events == [] and database.connections == []
+
+
+@pytest.mark.parametrize('field', ['resource', 'config', 'supervisor', 'verifier', '_writer'])
+@run_async
+async def test_recovery_constructor_drift_rejected_before_control_or_sql(monkeypatch, tmp_path, field):
+    recovery, supervisor, database, _ = setup(monkeypatch, tmp_path)
+    original_writer = recovery._writer
+    original_resource = recovery.resource
+    if field == 'resource':
+        replacement = PoolResource(original_resource.config)
+    elif field == 'config':
+        replacement = recovery.config.model_copy()
+    elif field == 'supervisor':
+        replacement = ManagedQdrantSupervisor(Path('/fixture/qdrant'), tmp_path / 'other',
+                                             'instance-1', config())
+    elif field == 'verifier':
+        replacement = QdrantReconciliationVerifier(original_writer, supervisor)
+    else:
+        replacement = PostgresQdrantWriter(original_writer.resource, config(), 'instance-1')
+    setattr(recovery, field, replacement)
+    with pytest.raises(InvalidRequest):
+        recovery_components(recovery, original_writer, supervisor, config())
+    with pytest.raises(InvalidRequest):
+        await recovery.initialize(deadline=asyncio.get_running_loop().time() + 5)
+    assert database.events == [] and database.connections == []
+    assert original_resource._state == 'new' and not original_resource._driver_closed
+
+
+@pytest.mark.parametrize('field', ['writer', 'supervisor'])
+@run_async
+async def test_original_verifier_public_binding_drift_is_not_accepted(monkeypatch, tmp_path, field):
+    recovery, supervisor, database, _ = setup(monkeypatch, tmp_path)
+    writer = recovery._writer
+    setattr(recovery.verifier, field, object())
+    with pytest.raises(InvalidRequest):
+        recovery_components(recovery, writer, supervisor, config())
+    with pytest.raises(InvalidRequest):
+        await recovery.initialize(deadline=asyncio.get_running_loop().time() + 5)
+    assert database.events == [] and database.connections == []
 
 
 class Cursor:

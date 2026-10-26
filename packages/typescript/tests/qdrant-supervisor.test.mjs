@@ -113,6 +113,62 @@ test('constructor and registration are pure and reject unknown profiles or lifec
   await supervisor.close();await supervisor.close();
 });
 
+test('profile binding requires the complete registered descriptor before returning control metadata',async()=>{
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  const secondary={...config,physical_collection:'secondary',collection_incarnation:'inc-2'};
+  supervisor.register_profile(secondary);
+  assert.throws(()=>supervisor.profile_binding(config),ProviderUnavailable);
+  assert.throws(()=>supervisor.profile_binding(secondary),ProviderUnavailable);
+  for(const malformed of [null,{}, {...config,physical_collection:'invalid/name'}]){
+    assert.throws(()=>supervisor.profile_binding(malformed),InvalidRequest);
+  }
+  let hooks=0;
+  const accessor={...config};Object.defineProperty(accessor,'backend_namespace',{enumerable:true,get(){hooks++;return 'fixture-local';}});
+  const proxy=new Proxy(config,{get(){hooks++;throw Error('hook');}});
+  for(const malformed of [accessor,proxy])assert.throws(()=>supervisor.profile_binding(malformed),InvalidRequest);
+  assert.equal(hooks,0);
+  for(const changed of [{...config,backend_namespace:'other'}, {...config,physical_collection:'unregistered'},
+    {...config,collection_incarnation:'other'}, {...config,sparse_profile:null},
+    {...config,dense_profile:{...config.dense_profile,model:'other'}}]){
+    assert.throws(()=>supervisor.profile_binding(changed),UnsupportedCapability);
+  }
+  await supervisor.close();
+  assert.throws(()=>supervisor.profile_binding(config),ProviderUnavailable);
+});
+
+test('profile binding preserves dead and recovery metadata without HTTP or lifecycle mutation', {skip:process.platform!=='darwin'||process.arch!=='arm64'},async()=>{
+  const fake=runtime();const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  const secondary={...config,physical_collection:'secondary',collection_incarnation:'inc-2'};
+  supervisor.register_profile(secondary);
+  try{
+    await supervisor.initialize({...options(),provision:async(admin,probe)=>{
+      await provision(admin,probe);
+      await admin.request('PUT','/collections/secondary',{...options(),body:bytes({
+        vectors:{dense:{size:1536,distance:'Cosine'}},sparse_vectors:{sparse:{}},
+        optimizers_config:{prevent_unoptimized:false},replication_factor:1,write_consistency_factor:1})});
+    }});
+    const snapshot=()=>[fake.state.requests.length,fake.state.spawns,fake.state.stops];
+    const before=snapshot();
+    const metadata=supervisor.profile_binding(structuredClone(config));
+    assert.deepEqual(metadata,supervisor.control_binding());assert.ok(Object.isFrozen(metadata));
+    assert.deepEqual(supervisor.profile_binding(secondary),metadata);
+    assert.equal('api_key'in metadata,false);assert.equal('endpoint'in metadata,false);
+    assert.throws(()=>{metadata.epoch=2;},TypeError);
+    assert.deepEqual(snapshot(),before);
+    const proof=await supervisor.recover({recovery_id:'profile-r',old_epoch:1,new_epoch:2},options());
+    await supervisor.seal_recovery(proof,options());
+    const recoveryBefore=snapshot();
+    const recovery=supervisor.profile_binding(config);
+    assert.deepEqual(recovery,supervisor.control_binding());assert.equal(recovery.sealed,true);
+    assert.equal(recovery.recovery.recovery_id,'profile-r');assert.ok(Object.isFrozen(recovery.recovery));
+    assert.throws(()=>{recovery.recovery.new_epoch=3;},TypeError);
+    assert.deepEqual(snapshot(),recoveryBefore);
+    assert.throws(()=>supervisor.issue_attempt(attempt(2),options()),ProviderUnavailable);
+    fake.state.children.at(-1).kill('SIGKILL');
+    assert.equal(supervisor.profile_binding(config).alive,false);
+  }finally{await supervisor.close();fake.restore();}
+});
+
 test('initialize independently verifies provisioned profiles and opaque ordinary capabilities', {skip:process.platform!=='darwin'||process.arch!=='arm64'}, async()=>{
   const fake=runtime();const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
   let retainedAdmin;

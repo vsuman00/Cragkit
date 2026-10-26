@@ -255,6 +255,13 @@ class ManagedQdrantSupervisor:
             'alive': self._process is not None and self._process.returncode is None,
         })
 
+    def profile_binding(self, config: object) -> Mapping[str, Any]:
+        """Exact registered profile metadata; never readiness or physical proof."""
+        profile = _config(config)
+        if self._profiles.get(profile.physical_collection) != profile:
+            raise UnsupportedCapability()
+        return self.control_binding()
+
     def _control_access(self, token: object | None = None) -> None:
         if token is not self._control_token or token is not None and self._control_draining:
             raise ProviderUnavailable()

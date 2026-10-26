@@ -167,6 +167,14 @@ async function cases({binary, work_dir, inputs}) {
     phase = 'initialize';
     await supervisor.initialize({...options, provision});
     const before = supervisor.identity();
+    const registered = supervisor.profile_binding(inputs.config);
+    if (registered.instance_id !== before.instance_id || registered.storage_identity !== before.storage_identity
+      || registered.supervisor_id !== before.supervisor_id || registered.epoch !== 1
+      || registered.alive !== true || registered.sealed || registered.recovery !== null) throw new Error('registered_profile_binding');
+    let profileRejected = false;
+    try { supervisor.profile_binding({...inputs.config, physical_collection: 'UnregisteredProfile'}); }
+    catch (error) { if (!(error instanceof UnsupportedCapability)) throw error; profileRejected = true; }
+    if (!profileRejected) throw new Error('unregistered_profile_accepted');
     ownedEndpoint = before.endpoint;
     if (!Object.isFrozen(before) || !Object.isFrozen(before.probe_spec)) throw new Error('identity_not_frozen');
     const firstPid = await observedListener(before.endpoint);
@@ -199,6 +207,9 @@ async function cases({binary, work_dir, inputs}) {
     const recovery = {recovery_id: 'e1-recovery', old_epoch: 1, new_epoch: 2};
     const proof = await supervisor.recover(recovery, options);
     const after = supervisor.identity();
+    const recoveryProfile = supervisor.profile_binding(inputs.config);
+    if (recoveryProfile.epoch !== 2 || recoveryProfile.recovery?.recovery_id !== 'e1-recovery'
+      || recoveryProfile.alive !== true) throw new Error('recovery_profile_binding');
     const secondPid = await observedListener(after.endpoint);
     if (firstPid === secondPid || after.endpoint !== before.endpoint) throw new Error('process_not_restarted');
     for (const field of ['instance_id', 'storage_identity', 'supervisor_id']) {

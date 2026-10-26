@@ -1012,3 +1012,15 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 The checker now includes eight additional manager-authority groups in each runtime while retaining the original fourteen SQL and fourteen per-runtime D groups. It starts only isolated PostgreSQL, runs languages serially and requires a fresh output directory. Its one lost-commit observation forwards the actual commit before withholding the acknowledgment, then checks that the uncertain client was discarded. A discarded-connection log is expected for that injected failure. Fixture completion hashes remain synthetic; this command does not run Qdrant or establish public-manager publication.
+
+## V5-04F2a2i native dependency bindings
+
+Private dependency/profile accessors retain the original native writer, recovery verifier and controller identities without exposing resources. [Evidence](../evaluation/reports/V5/V5-04F2a2i.md) records their narrower metadata scope.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_writer.py packages/python/tests/test_qdrant_recovery.py packages/python/tests/test_qdrant_supervisor.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-writer.test.mjs packages/typescript/tests/qdrant-recovery.test.mjs packages/typescript/tests/qdrant-supervisor.test.mjs
+```
+
+The existing `check_qdrant_supervisor.py` and `check_qdrant_recovery.py` commands also verify these bindings on their real native graphs. Use their previously documented arguments with fresh output directories under `artifacts/V5/V5-04F2a2i/`. Accessor success does not open ordinary admission or authorize settlement; existing actual capabilities and current SQL checks still apply.
