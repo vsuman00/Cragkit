@@ -146,6 +146,36 @@ For creation, `initial_authorization` is the ordered array `[authorization_revis
 
 These operation digests are SHA-256 of `J(array)`. B2 must consume the shared ordered fixture rather than a generic object serializer.
 
+### B2 native helpers and durable original vectors
+
+The following internal pure helpers perform no I/O, model work, ledger mutation or public package export. Their immutable JSON result has `value` (the ordered nested array), `encoded_bytes` and lowercase `sha256`. Python uses nested tuples and bytes; Node uses frozen arrays, including byte arrays. These records identify content; they are not authorization, verified-vector or publication capabilities.
+
+`encode_manifest(record, canonical_text)` accepts exactly these record keys: `backend_namespace`, `physical_collection`, `collection_incarnation`, `tenant_id`, `collection`, `document_id`, `revision_id`, `generation_id`, `source_sha256`, `source_bytes`, `source_locator`, `parser_id`, `chunker_profile`, `dense_profile`, `sparse_profile`, `members`. Each member has exactly `chunk_id`, `point_id`, `start_byte`, `end_byte`, `text_sha256`, `dense_input_sha256`, `sparse_input_sha256`. Derive each complete QC tuple from its shared record and chunk; validate the supplied UUID against the derivation. The full profiles follow supported QC configuration rules. Sparse absence requires a null descriptor and null member sparse seal.
+
+`canonical_text` is a native string, not a byte buffer or locator. Strict UTF-8 encoding preserves BOM, CRLF, NUL and every code point without normalization. Reject surrogates. Preflight both character and byte ceilings before a complete encoded copy, using bounded chunks where necessary. Require 1 to 16,777,216 source bytes, exact source digest/count, 1 to 64 members, unique chunk IDs/UUIDs, safe integral nonboolean offsets, nonempty spans inside the source and at most 32,768 excerpt bytes. Strictly decode each exact slice and verify its digest. This helper validates source/member metadata and serializes the declared vector seals; the later manager must independently restore and match every actual vector before preparing publication.
+
+`encode_stage_intent(record)` accepts exactly `intent_id`, `tenant_id`, `collection`, `document_id`, `manifest_sha256`, `expected_active_generation_id`, `expected_authorization_revision`, `expected_mutation_epoch`, `initial_authorization`. It emits the stage array above. Non-null initial authorization requires expected active null, initial epoch one and the same expected authorization revision.
+
+`encode_security_intent(record)` accepts exactly `action`, `intent_id`, `tenant_id`, `collection`, `document_id`, `expected_authorization_revision`, `expected_mutation_epoch`, `authorization`. `action` is `update_authorization` or `tombstone`. The `authorization` object and non-null stage `initial_authorization` have exactly `authorization_revision`, `principal_ids`, `grant_ids`, `language`, `kind`, `tag`, `tombstoned`. The revision supplies the security tuple's new revision. Initial authorization requires tombstoned false; a tombstone action requires true. Each ACL array has at most 64 valid identities before deduplication and unsigned UTF-8 sorting. Nullable metadata strings are NUL-free and at most 1,024 UTF-8 bytes. The helper cannot establish the current tombstone state; the authoritative manager must enforce monotonic deletion.
+
+`encode_purge_intent(record)` accepts exactly `intent_id`, `tenant_id`, `collection`, `document_id`, `tombstone_intent_payload_sha256`, `expected_authorization_revision`, `expected_mutation_epoch`, and emits the purge array above. Epochs are nonnegative safe semantic integers; other identity, collection and locator bounds remain QC/QS rules. Missing nullable keys and extra fields are invalid. Bound metadata traversal to 4,096 native nodes, reject cycles/proxies/accessors/custom containers without evaluating hooks, and enforce the 1,048,576-byte final manifest ceiling.
+
+`encode_dense_replay(original, profile)` and `encode_sparse_replay(indices, original, profile)` snapshot the original native numbers once, validate/encode them through B1 and return immutable `blob`, `blob_sha256`, `input_sha256`, `encoded`. `encoded` is the freshly issued B1 result. Original numbers are their finite binary64 numerical values, preserving signed zero. Input identity remains B1's canonical float32 seal. No generic serializer or new real-model batch admission is introduced.
+
+The exact replay blob is:
+
+```text
+ASCII("cragkit.qdrant.replay.v1") || 00 || FRAME(ASCII(kind)) || U32(count)
+|| [all U32 indices, only for sparse]
+|| F64(original[0]) || ... || F64(original[count-1])
+```
+
+`kind` is `dense` or `sparse`. `F64` is IEEE-754 binary64 little-endian. Dense count is exactly 1,536; sparse count is 1 to 16 with sorted unique uint32 indices. Exact blob length follows count, with no trailing data. The original blob and its digest are durable sidecar data, separate from the generation's canonical float32 identity. Python blob admission accepts exact native bytes; Node accepts a bounded native array of unsigned byte numbers and returns a frozen array. A later authority adapter converts validated driver bytea to this native form.
+
+`restore_dense_replay(blob, expected_blob_sha256, expected_input_sha256, profile)` and `restore_sparse_replay(...)` return a newly issued B1 result. Both expected hashes come from the trusted immutable authority record. Check native shape, hard length cap, hashes, domain/kind/count and exact layout before decoding bounded data; decode original values, re-encode through B1 and compare its complete canonical input seal. An attacker-supplied blob and matching self-reported hashes do not authorize anything. A copied result's fields cannot mint provenance. Replaying a valid original near the norm boundary must work even when its rounded components would fail original admission.
+
+New malformed shapes, sizes, numeric input or options give `InvalidRequest`; structurally valid contradictory source/member data, duplicate membership or wrong UUID/digest give `IntegrityViolation`. Unsupported manifest profiles retain QC's `UnsupportedCapability`; a replay encoder's full-profile contradiction uses B1's `EmbeddingProfileMismatch`. Restore converts malformed or contradictory replay/hash/profile data to `IntegrityViolation`, while preserving unknown operational failures. This does not weaken manager scope, authorization or publication checks.
+
 Current ACL, authorization revision and metadata replicas are excluded from immutable generation/vector identity. They are rebuilt from current authority for every point replay. An authorization-change intent separately binds the complete desired replacement ACL/metadata and expected fences; this does not authorize a staged publication to ignore a later security change.
 
 ## Additive authority and privileges

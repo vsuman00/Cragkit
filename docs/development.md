@@ -890,3 +890,18 @@ node --test --test-concurrency=1 packages/typescript/tests/qdrant-vectors.test.m
 ```
 
 The complete regression commands remain the existing Python/tool pytest suite and `npm --prefix packages/typescript test`. These checks prove pure codec behavior; they do not complete Qdrant publication or crash recovery. Durable replay must preserve admitted original numeric input as well as the canonical seal, because rounding can move a valid norm beyond the original E-r1 admission boundary.
+
+## V5-04B2 metadata and replay codecs
+
+The internal native helpers implement [QW-r1 manifests and portable replay](../contracts/QDRANT_PUBLICATION_V5.md#b2-native-helpers-and-durable-original-vectors). They require no service or provider. [B2 evidence](../evaluation/reports/V5/V5-04B2.md) records exact manifest/intent arrays, original Float64LE sidecars, corruption checks and cross-runtime results. These encoders do not authorize source release or establish publication.
+
+Run from the repository root, one runtime at a time:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_manifest.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres mypy --config-file packages/python/pyproject.toml packages/python/src
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-manifest.test.mjs
+```
+
+Full regression commands remain the existing Python/tool pytest suite and `npm --prefix packages/typescript test`. Restore requires expected hashes from trusted immutable authority data and reissues B1 provenance. The later manager must link every restored vector to its manifest and recheck current authorization before publication.

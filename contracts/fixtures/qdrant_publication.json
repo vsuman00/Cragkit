@@ -68,6 +68,246 @@
     "manifest": ["cragkit.qdrant.manifest.v1","fixture-local","cragkit_pub_fixture","pub-inc-1","tenant-a","docs","doc-1","rev-2","gen-2","0391605f65138f90f93b9a7ad361ceaa0628163bd80dfb2b8912775ebf16fc05","13","fixture:qdrant/doc-1@rev-2","fixture_parser_v1","fixture_chunker_v1",[["profile_id","fake_embedding_1536_v1"],["provider","fake"],["model","fake_embedding_model_v1"],["dimensions","1536"],["tokenizer","fake-byte-v1"],["normalization","l2"]],[["profile_id","fake_manual_sparse_v1"],["encoder","caller_supplied_fixture"],["model","none"],["revision","1"],["vocabulary","fixture_uint32_v1"],["preprocessing","none"],["weighting","caller_supplied"],["corpus_statistics_revision","none"]],"2",[[["cragkit.qdrant.point.v1","fixture-local","cragkit_pub_fixture","pub-inc-1","tenant-a","docs","doc-1","rev-2","gen-2","chunk-1","fake_embedding_1536_v1","fake_manual_sparse_v1"],"5edd7b92-5f53-506e-a689-262f54605df9","2","7","850f7dc43910ff890f8879c0ed26fe697c93a067ad93a7d50f466a7028a9bf4e","e23b8700fd62e28814e88fd339d943cb3716914866838bf8b59935c0b1411042","ee8bde04677f5de545e00d521cd06ba2c9d03fc61f7b44d47b154efc0516ffba"],[["cragkit.qdrant.point.v1","fixture-local","cragkit_pub_fixture","pub-inc-1","tenant-a","docs","doc-1","rev-2","gen-2","chunk-2","fake_embedding_1536_v1","fake_manual_sparse_v1"],"96353d29-e104-52a5-9de4-96da588b07d4","8","11","53058fe2e03c00d93c4ba9361889dd7569d7d7b9674ed172266ee66265208cc6","a73b4fe60c1df71faf4f08975c34e52416f5a631f875e20d16d5b0f95bffc380","eaec0f4cb709fa3a7748df8a74d004b9a762fefda8cd2d1fd99a9dbe82d7ee96"]]],
     "stage_intent": ["cragkit.qdrant.intent.v1","stage","intent-2","tenant-a","docs","doc-1","4c5c1d1685ba90582c2358bc1189342e605e011b7525cccc8d11e023b9433fff","gen-1","auth-1","1",null]
   },
+  "replay_goldens": [
+    {
+      "id": "dense_basis",
+      "kind": "dense",
+      "original_encoding": {
+        "dimensions": 1536,
+        "nonzero": [
+          [
+            0,
+            1.0
+          ]
+        ]
+      },
+      "blob_sha256": "9236ffefa54b9bd096f7ef4320883a786c310cf7f52e5eb6f9f6fc5dbe4d69de",
+      "blob_bytes": 12326,
+      "input_sha256": "e23b8700fd62e28814e88fd339d943cb3716914866838bf8b59935c0b1411042"
+    },
+    {
+      "id": "dense_boundary",
+      "kind": "dense",
+      "original_encoding": {
+        "dimensions": 1536,
+        "nonzero": [
+          [
+            0,
+            1.00099999
+          ]
+        ]
+      },
+      "blob_sha256": "10bfbb0533d13879256ce46adcd4aa943d9f631427242e51564d77f881e63765",
+      "blob_bytes": 12326,
+      "input_sha256": "b606c9d89eb50fa436ab61a42422daf4ee95c40fb8952c4d33a721c34d2a4ca3"
+    },
+    {
+      "id": "dense_signed_zero",
+      "kind": "dense",
+      "original_encoding": {
+        "dimensions": 1536,
+        "nonzero": [
+          [
+            0,
+            1.0
+          ]
+        ],
+        "negative_zero_index": 1
+      },
+      "blob_sha256": "3bacd17741793f881f9bf1f1e09d22c3e133f0126636a257b05fc8f1efd2c0bb",
+      "blob_bytes": 12326,
+      "input_sha256": "e23b8700fd62e28814e88fd339d943cb3716914866838bf8b59935c0b1411042"
+    },
+    {
+      "id": "sparse_map",
+      "kind": "sparse",
+      "indices": [
+        2,
+        7
+      ],
+      "values": [
+        1.0,
+        0.5
+      ],
+      "blob_sha256": "bdba35963ccd9c7ebdf19abf3bb9316e251f4340d440510f217cef052ced6a3d",
+      "blob_bytes": 63,
+      "input_sha256": "ee8bde04677f5de545e00d521cd06ba2c9d03fc61f7b44d47b154efc0516ffba"
+    }
+  ],
+  "operation_goldens": {
+    "authorization": {
+      "record": {
+        "action": "update_authorization",
+        "intent_id": "auth-intent-2",
+        "tenant_id": "tenant-a",
+        "collection": "docs",
+        "document_id": "doc-1",
+        "expected_authorization_revision": "auth-1",
+        "expected_mutation_epoch": 1,
+        "authorization": {
+          "authorization_revision": "auth-2",
+          "principal_ids": [
+            "reader-雪",
+            "reader-a",
+            "reader-a"
+          ],
+          "grant_ids": [
+            "grant-b",
+            "grant-a",
+            "grant-a"
+          ],
+          "language": "en",
+          "kind": "guide",
+          "tag": "updated",
+          "tombstoned": false
+        }
+      },
+      "value": [
+        "cragkit.qdrant.intent.v1",
+        "update_authorization",
+        "auth-intent-2",
+        "tenant-a",
+        "docs",
+        "doc-1",
+        "auth-1",
+        "1",
+        [
+          "auth-2",
+          [
+            "reader-a",
+            "reader-雪"
+          ],
+          [
+            "grant-a",
+            "grant-b"
+          ],
+          "en",
+          "guide",
+          "updated",
+          "false"
+        ]
+      ],
+      "sha256": "ee61c3d991aecbdbb86b169360490fedf2f1f31ff2a3c45528870d73272983ae",
+      "encoded_bytes": 196
+    },
+    "tombstone": {
+      "record": {
+        "action": "tombstone",
+        "intent_id": "delete-intent-3",
+        "tenant_id": "tenant-a",
+        "collection": "docs",
+        "document_id": "doc-1",
+        "expected_authorization_revision": "auth-2",
+        "expected_mutation_epoch": 2,
+        "authorization": {
+          "authorization_revision": "auth-3",
+          "principal_ids": [],
+          "grant_ids": [],
+          "language": null,
+          "kind": null,
+          "tag": null,
+          "tombstoned": true
+        }
+      },
+      "value": [
+        "cragkit.qdrant.intent.v1",
+        "tombstone",
+        "delete-intent-3",
+        "tenant-a",
+        "docs",
+        "doc-1",
+        "auth-2",
+        "2",
+        [
+          "auth-3",
+          [],
+          [],
+          null,
+          null,
+          null,
+          "true"
+        ]
+      ],
+      "sha256": "1320127de63664282ddf01fa72faa05b18c42c52b80749bf029fdd8512efe0ce",
+      "encoded_bytes": 136
+    },
+    "purge": {
+      "record": {
+        "intent_id": "purge-intent-3",
+        "tenant_id": "tenant-a",
+        "collection": "docs",
+        "document_id": "doc-1",
+        "tombstone_intent_payload_sha256": "1320127de63664282ddf01fa72faa05b18c42c52b80749bf029fdd8512efe0ce",
+        "expected_authorization_revision": "auth-3",
+        "expected_mutation_epoch": 3
+      },
+      "value": [
+        "cragkit.qdrant.intent.v1",
+        "purge",
+        "purge-intent-3",
+        "tenant-a",
+        "docs",
+        "doc-1",
+        "1320127de63664282ddf01fa72faa05b18c42c52b80749bf029fdd8512efe0ce",
+        "auth-3",
+        "3"
+      ],
+      "sha256": "6d60005ee23911803fa64ba26c1387fe1b88dacad87d534cc56f9ecd338c4b01",
+      "encoded_bytes": 159
+    },
+    "bootstrap_stage": {
+      "record": {
+        "intent_id": "create-intent-1",
+        "tenant_id": "tenant-a",
+        "collection": "docs",
+        "document_id": "doc-1",
+        "manifest_sha256": "4c5c1d1685ba90582c2358bc1189342e605e011b7525cccc8d11e023b9433fff",
+        "expected_active_generation_id": null,
+        "expected_authorization_revision": "auth-1",
+        "expected_mutation_epoch": 1,
+        "initial_authorization": {
+          "authorization_revision": "auth-1",
+          "principal_ids": [
+            "reader-a"
+          ],
+          "grant_ids": [
+            "grant-a"
+          ],
+          "language": "en",
+          "kind": "guide",
+          "tag": "reference",
+          "tombstoned": false
+        }
+      },
+      "value": [
+        "cragkit.qdrant.intent.v1",
+        "stage",
+        "create-intent-1",
+        "tenant-a",
+        "docs",
+        "doc-1",
+        "4c5c1d1685ba90582c2358bc1189342e605e011b7525cccc8d11e023b9433fff",
+        null,
+        "auth-1",
+        "1",
+        [
+          "auth-1",
+          [
+            "reader-a"
+          ],
+          [
+            "grant-a"
+          ],
+          "en",
+          "guide",
+          "reference",
+          "false"
+        ]
+      ],
+      "sha256": "e6c30d180095d73ed0def7ebaca07ea8bbe7704a18f323e0e3fec05f087eed79",
+      "encoded_bytes": 234
+    }
+  },
   "complete_point_template": {
     "id": "$member:point_id",
     "vector": {"dense": "$member:dense", "sparse": "$member:sparse"},

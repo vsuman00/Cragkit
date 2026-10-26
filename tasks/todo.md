@@ -253,7 +253,8 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V5-04: [Publication and repair](versions/V5-integrations.md#v5-04-publication-and-repair) — implementation and native fault acceptance pending.
   - [x] V5-04A: QW-r1 publication/recovery boundary, 43 fault scenarios, 14 numeric cases and computed cross-runtime goldens; [design acceptance](../evaluation/reports/V5/V5-04A.md).
   - [x] V5-04B1: Pure native vector encoders and readback validators; 71 focused Python/25 Node cases, 1796 Python/tool and 1005 Node regressions, strict types and 21 cross-runtime comparisons passed. [Evidence](../evaluation/reports/V5/V5-04B1.md).
-  - [ ] V5-04B2: Immutable generation/intent manifests and portable replay serialization; next smallest task.
+  - [x] V5-04B2: Immutable generation/intent manifests and portable replay serialization; 41 focused Python/27 Node cases, 1837 Python/tool and 1032 Node regressions, strict types and 33 parity cases passed. [Evidence](../evaluation/reports/V5/V5-04B2.md).
+  - [ ] V5-04C: Additive authority schema, writer privileges and exact reader/catalog compatibility; next smallest task.
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
 
@@ -300,6 +301,17 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04B2: Immutable manifests and original-vector replay
+
+State: COMPLETE for pure native metadata/replay acceptance. Previous goal turn made verified progress: V5-04A/B1 accepted and pushed, latest 83fdde6 synchronized 0/0; three user audit drafts remain preserved. Shared outcome: exact native QW-r1 generation/stage/security/purge seals and bounded original Float64LE replay sidecars that reconstruct B1-issued expected vectors without re-admitting only rounded data.
+
+- Sol v5_candidate_contract owns only new packages/python/src/cragkit/_qdrant_manifest.py and packages/python/tests/test_qdrant_manifest.py; Python implementation/tests and named assembler.
+- Sol v5_candidate_fixtures owns only new packages/typescript/src/qdrant-manifest.ts and packages/typescript/tests/qdrant-manifest.test.mjs; complementary native TypeScript implementation/tests.
+- Root owns the QW-r1 addendum, shared goldens, reports/tracker/development instructions, actual checks and Git. Existing B1/QC/QS runtime code, migrations, manifests/locks, exports and user drafts are protected. Peers coordinate concrete dependencies directly; ownership transfers require stopped writers, and outcome/protected-boundary changes escalate to root, then Astra if unresolved.
+- Sol v5_manifest_security_review owned no writable paths and reviewed the new helpers for source fidelity, native guards, resource bounds, replay and parity. Findings went directly to the relevant owner and root; all commands remained root-owned.
+
+Final handoff: both peers reviewed the frozen helper boundary, wrote substantive tests first and waited for root's actual missing-module failures. They implemented separate paths, coordinated directly, assembled and transferred ownership. Four replay/four operation goldens independently matched Node calculations. Root corrected the test span, ASCII-blank parity, kind-specific pre-copy caps and span error precedence; negative cases cover explicit hash/UUID syntax. A source-only JavaScript-anchor hypothesis was disproved by actual runtime probes and retracted, with protected QC unchanged. Final fresh checks passed 41 focused Python/27 Node cases, strict Python38files/Node build, 1837 Python/tool regressions (four existing deliberate warnings), 1032 Node package tests and all 33 cross-runtime hash/value/error cases. No native datastore/model, install or service ran. All 16 seals, migration 0001 and three user audits remain unchanged. Prose skill found no suspicious carriers and low density with byte-identical cleanup. Resource snapshot: 38 GiB disk, 47 percent system memory free; no task-owned service. Learning practice unassessed. Next: V5-04C additive authority schema, writer privileges and exact catalog/reader upgrade, then D-H native implementation and actual fault acceptance. Full V5 remains incomplete.
 
 ### V5-04A: Publication/repair execution contract
 
