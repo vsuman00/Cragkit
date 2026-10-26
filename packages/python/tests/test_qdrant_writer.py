@@ -91,6 +91,26 @@ def resource(monkeypatch,connection):
     return pool
 
 
+@pytest.mark.parametrize('field,value,error', [
+    ('instance_id', 'other-instance', UnsupportedCapability),
+    ('intent_id', 'other-intent', UnsupportedCapability),
+    ('owner_token', '22222222-2222-4222-8222-222222222222', UnsupportedCapability),
+    ('epoch', True, InvalidRequest),
+])
+@run_async
+async def test_ordinary_projection_binding_refuses_before_lease(monkeypatch, field, value, error):
+    connection = Connection()
+    writer = PostgresQdrantWriter(resource(monkeypatch, connection), config(), 'instance-1')
+    writer._ready = True
+    binding = {'instance_id': 'instance-1', 'storage_identity': 'storage-1',
+               'supervisor_id': 'supervisor-1', 'epoch': 2, 'credential_generation': 'credential-2',
+               'intent_id': 'intent-2', 'owner_token': ctx()['owner_token'], 'dispatch_id': 'dispatch-1'}
+    binding[field] = value
+    with pytest.raises(error):
+        await writer.project_publication(ctx(), binding, deadline=asyncio.get_running_loop().time() + 5)
+    assert connection.calls == []
+
+
 def test_stage_plan_binds_originals_without_public_source_or_vectors():
     raw=stage_input();plan=prepare_stage(raw)
     assert plan.member_count==2

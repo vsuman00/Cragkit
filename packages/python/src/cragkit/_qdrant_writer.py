@@ -23,6 +23,8 @@ from ._qdrant_writer_contract import (StagePlan, StageData, WriterContext, bind_
     prepare_stage, sequence, issue_stage, stage_data)
 from ._qdrant_reconciliation import (ExpectedPoint, ExpectedProjection, physical_binding,
     finalize_projection, projection_data)
+from ._qdrant_publication_verification import (PublicationProjection, ordinary_binding,
+    finalize_publication_projection, publication_projection_data)
 from ._qdrant_vectors import _DenseVector, _SparseVector
 from ._qdrant_source import IMMUTABLE_FIELDS, metadata_guard
 from .contracts import TrustedScope
@@ -744,6 +746,104 @@ class PostgresQdrantWriter:
             return await self._load_stage(connection,ctx)
         return await self._run(ctx,deadline,load)
 
+    def _projection_points(self, graph: StageData, document: Mapping[str, Any]) -> tuple[ExpectedPoint, ...]:
+        manifest = graph.manifest
+        points = []
+        for member, dense, sparse in zip(manifest.members, graph.dense, graph.sparse, strict=True):
+            payload = {
+                'backend_namespace': manifest.backend_namespace,
+                'physical_collection': manifest.physical_collection,
+                'collection_incarnation': manifest.collection_incarnation,
+                'tenant_id': manifest.tenant_id, 'collection': manifest.collection,
+                'document_id': manifest.document_id, 'revision_id': manifest.revision_id,
+                'generation_id': manifest.generation_id, 'chunk_id': member.chunk_id,
+                'start_byte': member.start_byte, 'end_byte': member.end_byte,
+                'source_sha256': manifest.source_sha256, 'text_sha256': member.text_sha256,
+                'dense_profile_id': manifest.dense_profile.profile_id,
+                'dense_profile': manifest.dense_profile.model_dump(),
+                'sparse_profile_id': manifest.sparse_profile.profile_id if manifest.sparse_profile else '',
+                'sparse_profile': manifest.sparse_profile.model_dump() if manifest.sparse_profile else None,
+                'authorization_revision': document['authorization_revision'],
+                'principal_ids': document['principal_ids'], 'grant_ids': document['grant_ids'],
+            }
+            for key in ('language', 'kind', 'tag'):
+                if document[key] is not None:
+                    payload[key] = document[key]
+            points.append(ExpectedPoint(member.point_id, parse_model(CandidatePayload, payload),
+                cast(_DenseVector, dense.encoded),
+                cast(_SparseVector, sparse.encoded) if sparse is not None else None))
+        return tuple(points)
+
+    async def project_publication(self, value: object, binding: object, *,
+                                  deadline: float) -> PublicationProjection:
+        ctx = context(value)
+        attempt = ordinary_binding(binding)
+        if (attempt['instance_id'] != self.instance_id or attempt['intent_id'] != ctx.intent_id
+                or attempt['owner_token'] != ctx.owner_token):
+            raise UnsupportedCapability()
+
+        async def project(connection: SessionConnection) -> PublicationProjection:
+            rows = await self._query(connection,
+                'SELECT backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id '
+                'FROM cragkit_qdrant.backend_instances WHERE instance_id=%s FOR SHARE',
+                (self.instance_id,))
+            if not rows:
+                raise ProviderUnavailable()
+            if (len(rows) != 1 or len(rows[0]) != 6
+                    or any(type(item) is not str for item in rows[0][:3])
+                    or type(rows[0][3]) is not int or type(rows[0][4]) is not str
+                    or rows[0][5] is not None and type(rows[0][5]) is not str):
+                raise IntegrityViolation()
+            if rows[0][:3] != (self.config.backend_namespace, attempt['storage_identity'],
+                                attempt['supervisor_id']):
+                raise IntegrityViolation()
+            if rows[0][3:] != (attempt['epoch'], 'open', None):
+                raise ProviderUnavailable()
+            owners = await self._query(connection,
+                'SELECT owner_token::text,intent_id,backend_epoch,instance_id '
+                'FROM cragkit_qdrant.document_owners WHERE ' + _DOC + ' FOR UPDATE', _doc(ctx))
+            if owners != [(ctx.owner_token, ctx.intent_id, attempt['epoch'], self.instance_id)]:
+                raise ProviderUnavailable()
+            document = await self._document(connection, ctx)
+            if document['tombstoned']:
+                raise UnauthorizedScope()
+            await self._require_settled(connection, ctx)
+            plan = await self._load_stage(connection, ctx)
+            graph = stage_data(plan)
+            authority = MappingProxyType({
+                key: tuple(document[key]) if key in ('principal_ids', 'grant_ids') else document[key]
+                for key in ('principal_ids', 'grant_ids', 'language', 'kind', 'tag')
+            })
+            return finalize_publication_projection(self, {
+                'context': ctx, 'attempt_binding': attempt, 'manifest_sha256': plan.manifest_sha256,
+                'revision_id': graph.manifest.revision_id, 'generation_id': graph.manifest.generation_id,
+                'authorization_revision': document['authorization_revision'],
+                'mutation_epoch': document['mutation_epoch'],
+                'active_generation_id': document['active_generation_id'], 'tombstoned': False,
+                'points': self._projection_points(graph, document), 'authority': authority,
+            })
+        return await self._run(ctx, deadline, project)
+
+    async def validate_publication_projection(self, projection: object, *, deadline: float) -> None:
+        original = publication_projection_data(projection, self)
+        fresh = await self.project_publication(original['context'], dict(original['attempt_binding']),
+                                               deadline=deadline)
+        current = publication_projection_data(fresh, self)
+        if any(original[key] != current[key] for key in
+               ('manifest_sha256', 'revision_id', 'generation_id', 'point_ids')):
+            raise IntegrityViolation()
+        for expected, observed in zip(original['points'], current['points'], strict=True):
+            if (expected.dense.input_sha256 != observed.dense.input_sha256
+                    or (expected.sparse.input_sha256 if expected.sparse else None)
+                    != (observed.sparse.input_sha256 if observed.sparse else None)
+                    or any(getattr(expected.payload, key) != getattr(observed.payload, key)
+                           for key in IMMUTABLE_FIELDS)):
+                raise IntegrityViolation()
+        if (original['witness'] != current['witness']
+                or tuple(point.payload.model_dump(mode='json') for point in original['points'])
+                != tuple(point.payload.model_dump(mode='json') for point in current['points'])):
+            raise UnauthorizedScope()
+
     async def project_stage(self,value: object,binding: object,*,deadline: float) -> ExpectedProjection:
         ctx=context(value)
         physical=physical_binding(binding)
@@ -769,23 +869,7 @@ class PostgresQdrantWriter:
             document=await self._document(connection,ctx)
             plan=await self._load_stage(connection,ctx)
             graph=stage_data(plan);manifest=graph.manifest
-            points=[]
-            for member,dense,sparse in zip(manifest.members,graph.dense,graph.sparse,strict=True):
-                payload={'backend_namespace':manifest.backend_namespace,'physical_collection':manifest.physical_collection,
-                    'collection_incarnation':manifest.collection_incarnation,'tenant_id':manifest.tenant_id,
-                    'collection':manifest.collection,'document_id':manifest.document_id,'revision_id':manifest.revision_id,
-                    'generation_id':manifest.generation_id,'chunk_id':member.chunk_id,'start_byte':member.start_byte,
-                    'end_byte':member.end_byte,'source_sha256':manifest.source_sha256,'text_sha256':member.text_sha256,
-                    'dense_profile_id':manifest.dense_profile.profile_id,'dense_profile':manifest.dense_profile.model_dump(),
-                    'sparse_profile_id':manifest.sparse_profile.profile_id if manifest.sparse_profile else '',
-                    'sparse_profile':manifest.sparse_profile.model_dump() if manifest.sparse_profile else None,
-                    'authorization_revision':document['authorization_revision'],
-                    'principal_ids':document['principal_ids'],'grant_ids':document['grant_ids']}
-                for key in ('language','kind','tag'):
-                    if document[key] is not None:payload[key]=document[key]
-                parsed=parse_model(CandidatePayload,payload)
-                points.append(ExpectedPoint(member.point_id,parsed,cast(_DenseVector,dense.encoded),
-                    cast(_SparseVector,sparse.encoded) if sparse is not None else None))
+            points = self._projection_points(graph, document)
             authority=MappingProxyType({key:tuple(document[key]) if key in ('principal_ids','grant_ids') else document[key]
                 for key in ('principal_ids','grant_ids','language','kind','tag')})
             return finalize_projection(self,{'context':ctx,'physical_binding':physical,

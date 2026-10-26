@@ -1,5 +1,5 @@
 /** Authority-bound readback evidence only: no SQL settlement or admission reopen. */
-import { ManagedQdrantSupervisor } from './qdrant-supervisor.js';
+import { ManagedQdrantSupervisor, type SupervisorTransport } from './qdrant-supervisor.js';
 import { randomUUID } from 'node:crypto';
 import { types } from 'node:util';
 import { PostgresQdrantWriter, projection_data, type ExpectedProjection, type ProjectionData, type ProjectionPoint } from './qdrant-writer.js';
@@ -142,6 +142,103 @@ export function verify_point(expected: ProjectionPoint, observed: Data): void {
     throw error;
   }
 }
+/** Shared exact replica readback; callers own provenance and transport lifetime. */
+export async function verify_projection_readback(
+  transport: SupervisorTransport,
+  collection: string,
+  expected: Readonly<{points: readonly ProjectionPoint[]; tombstoned: boolean}>,
+  rawOptions: unknown,
+): Promise<void> {
+  const options = parse_options(rawOptions);
+  const lease = {deadline: options.deadline, signal: options.signal};
+  let calls = 0;
+  let aggregate = 0;
+  const request = async (path: string, body: unknown): Promise<Data> => {
+    if (calls >= MAX_CALLS || aggregate >= MAX_AGGREGATE) throw new ProviderUnavailable();
+    calls++;
+    const raw = await transport.request('POST', path, {
+      body: Object.freeze(Array.from(Buffer.from(JSON.stringify(body)))),
+      max_response_bytes: Math.min(MAX_RESPONSE, MAX_AGGREGATE - aggregate),
+      ...lease,
+    });
+    let bytes: unknown[];
+    try {
+      bytes = native_array(raw, 0, MAX_RESPONSE);
+    } catch (error) {
+      if (error instanceof InvalidRequest) throw new IntegrityViolation();
+      throw error;
+    }
+    if (bytes.length > MAX_AGGREGATE - aggregate) throw new ProviderUnavailable();
+    aggregate += bytes.length;
+    const buffer = Buffer.from(bytes.map(value => {
+      try {
+        return count(value, 0, 255);
+      } catch (error) {
+        if (error instanceof InvalidRequest) throw new IntegrityViolation();
+        throw error;
+      }
+    }));
+    return envelope(buffer);
+  };
+  const base = '/collections/' + collection + '/points';
+  const byId = new Map(expected.points.map(point => [point.point_id, point]));
+  for (let start = 0; start < expected.points.length; start += MAX_PAGE) {
+    const ids = expected.points.slice(start, start + MAX_PAGE).map(point => point.point_id);
+    const parsed = await request(base, {ids, with_payload: true, with_vector: true});
+    const observed = rows(parsed.result, ids.length);
+    const seen = new Set<string>();
+    if (expected.tombstoned && observed.length) throw new IntegrityViolation();
+    for (const row of observed) {
+      const id = point_id(row);
+      if (!ids.includes(id) || seen.has(id)) throw new IntegrityViolation();
+      seen.add(id);
+      verify_point(byId.get(id)!, row);
+    }
+    if (!expected.tombstoned && seen.size !== ids.length) throw new IntegrityViolation();
+  }
+  const filterKeys = ['backend_namespace', 'physical_collection', 'collection_incarnation',
+    'tenant_id', 'collection', 'document_id', 'revision_id', 'generation_id'];
+  const filter = {must: filterKeys.map(key => ({key, match: {value: expected.points[0].payload[key]}}))};
+  const seen = new Set<string>();
+  const offsets = new Set<string>();
+  let offset: string | null = null;
+  let pages = 0;
+  for (;;) {
+    if (++pages > 9) throw new ProviderUnavailable();
+    const parsed = await request(base + '/scroll', {
+      filter, limit: MAX_PAGE, with_payload: true, with_vector: true, ...(offset === null ? {} : {offset}),
+    });
+    let page: Data;
+    try {
+      page = fields(parsed.result, ['points', 'next_page_offset']);
+    } catch (error) {
+      if (error instanceof InvalidRequest) throw new IntegrityViolation();
+      throw error;
+    }
+    const observed = rows(page.points, MAX_PAGE);
+    if (expected.tombstoned && observed.length) throw new IntegrityViolation();
+    for (const row of observed) {
+      const id = point_id(row);
+      const point = byId.get(id);
+      if (!point || seen.has(id) || seen.size >= 64) throw new IntegrityViolation();
+      seen.add(id);
+      verify_point(point, row);
+    }
+    if (page.next_page_offset === null) break;
+    let next: string;
+    try {
+      next = uuid(page.next_page_offset);
+    } catch (error) {
+      if (error instanceof InvalidRequest) throw new IntegrityViolation();
+      throw error;
+    }
+    if (observed.length === 0 || offsets.has(next)) throw new IntegrityViolation();
+    offsets.add(next);
+    offset = next;
+  }
+  if (seen.size !== (expected.tombstoned ? 0 : expected.points.length)) throw new IntegrityViolation();
+}
+
 function canonical_acl(ids: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(ids)].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b))));
 }
@@ -197,93 +294,9 @@ export class QdrantReconciliationVerifier {
         epoch: physical.new_epoch, dispatch_id: 'readback-' + randomUUID(), recovery_id: physical.recovery_id,
       }, lease);
       transport = this.#supervisor.transport_for(capability);
-      let calls = 0;
-      let aggregate = 0;
-      const request = async (path: string, body: unknown): Promise<Data> => {
-        if (calls >= MAX_CALLS || aggregate >= MAX_AGGREGATE) throw new ProviderUnavailable();
-        calls++;
-        const raw = await transport!.request('POST', path, {
-          body: Object.freeze(Array.from(Buffer.from(JSON.stringify(body)))),
-          max_response_bytes: Math.min(MAX_RESPONSE, MAX_AGGREGATE - aggregate),
-          ...lease,
-        });
-        let bytes: unknown[];
-        try {
-          bytes = native_array(raw, 0, MAX_RESPONSE);
-        } catch (error) {
-          if (error instanceof InvalidRequest) throw new IntegrityViolation();
-          throw error;
-        }
-        if (bytes.length > MAX_AGGREGATE - aggregate) throw new ProviderUnavailable();
-        aggregate += bytes.length;
-        const buffer = Buffer.from(bytes.map(value => {
-          try {
-            return count(value, 0, 255);
-          } catch (error) {
-            if (error instanceof InvalidRequest) throw new IntegrityViolation();
-            throw error;
-          }
-        }));
-        return envelope(buffer);
-      };
-      const collection = String(expected.points[0].payload.physical_collection);
-      const base = '/collections/' + collection + '/points';
-      const byId = new Map(expected.points.map(point => [point.point_id, point]));
-      for (let start = 0; start < expected.points.length; start += MAX_PAGE) {
-        const ids = expected.points.slice(start, start + MAX_PAGE).map(point => point.point_id);
-        const parsed = await request(base, {ids, with_payload: true, with_vector: true});
-        const observed = rows(parsed.result, ids.length);
-        const seen = new Set<string>();
-        if (expected.tombstoned && observed.length) throw new IntegrityViolation();
-        for (const row of observed) {
-          const id = point_id(row);
-          if (!ids.includes(id) || seen.has(id)) throw new IntegrityViolation();
-          seen.add(id);
-          verify_point(byId.get(id)!, row);
-        }
-        if (!expected.tombstoned && seen.size !== ids.length) throw new IntegrityViolation();
-      }
-      const filterKeys = ['backend_namespace', 'physical_collection', 'collection_incarnation',
-        'tenant_id', 'collection', 'document_id', 'revision_id', 'generation_id'];
-      const filter = {must: filterKeys.map(key => ({key, match: {value: expected.points[0].payload[key]}}))};
-      const seen = new Set<string>();
-      const offsets = new Set<string>();
-      let offset: string | null = null;
-      let pages = 0;
-      for (;;) {
-        if (++pages > 9) throw new ProviderUnavailable();
-        const parsed = await request(base + '/scroll', {
-          filter, limit: MAX_PAGE, with_payload: true, with_vector: true, ...(offset === null ? {} : {offset}),
-        });
-        let page: Data;
-        try {
-          page = fields(parsed.result, ['points', 'next_page_offset']);
-        } catch (error) {
-          if (error instanceof InvalidRequest) throw new IntegrityViolation();
-          throw error;
-        }
-        const observed = rows(page.points, MAX_PAGE);
-        if (expected.tombstoned && observed.length) throw new IntegrityViolation();
-        for (const row of observed) {
-          const id = point_id(row);
-          const point = byId.get(id);
-          if (!point || seen.has(id) || seen.size >= 64) throw new IntegrityViolation();
-          seen.add(id);
-          verify_point(point, row);
-        }
-        if (page.next_page_offset === null) break;
-        let next: string;
-        try {
-          next = uuid(page.next_page_offset);
-        } catch (error) {
-          if (error instanceof InvalidRequest) throw new IntegrityViolation();
-          throw error;
-        }
-        if (observed.length === 0 || offsets.has(next)) throw new IntegrityViolation();
-        offsets.add(next);
-        offset = next;
-      }
-      if (seen.size !== (expected.tombstoned ? 0 : expected.points.length)) throw new IntegrityViolation();
+      await verify_projection_readback(
+        transport, String(expected.points[0].payload.physical_collection), expected, lease,
+      );
       await transport.close();
       transport = undefined;
       await this.#writer.validate_projection(projection, lease);

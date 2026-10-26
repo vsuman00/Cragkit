@@ -986,3 +986,16 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory. The local profile runs the SQL privilege checks, then each native runtime serially, with two max-size-one pools and no remaining administrative client during runtime work. The two-client ceiling is a development configuration; applications own their other pool users. Fault wrappers perform real commits and withhold one acknowledgment, or pause one coordinator before actual fencing. They do not fabricate SQL/HTTP success. A test-only current-generation journal/upsert establishes a valid unresolved precondition; production recovery dispatch remains F/G work. Successful runs verify shutdown before deleting owned fixtures. Close recovery coordinators before their borrowed resources and controller. Supervisor restart/adoption and the H process-crash matrix remain separate from this primitive's acceptance.
+
+## V5-04F1 ordinary publication readback
+
+The private ordinary verifier checks the complete staged graph and live attempt, performs full native readback, then rechecks authority. It cannot publish, settle uncertainty or reopen admission. [F1 evidence](../evaluation/reports/V5/V5-04F1.md) records the tested boundary.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_writer.py packages/python/tests/test_qdrant_publication_verification.py packages/python/tests/test_qdrant_reconciliation.py tools/tests/test_qdrant_publication_verification_native.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-writer.test.mjs packages/typescript/tests/qdrant-reconciliation.test.mjs packages/typescript/tests/qdrant-publication-verification.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_verification.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04F1/a-new-run
+```
+
+Use a fresh directory. The native checker runs both languages serially with at most two database clients, synthetic original vectors and isolated PostgreSQL/Qdrant. Its completed-acknowledgment settlement and deliberate point corruptions are primitive fixture interventions. Final observations require unpublished source state, matching normalized witnesses and owned listener absence before fixture removal. Public manager and process-crash acceptance remain later V5-04 work.

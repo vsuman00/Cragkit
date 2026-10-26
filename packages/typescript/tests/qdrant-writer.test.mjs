@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,projection_data,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
@@ -135,6 +135,71 @@ test('private immutable StagePlan binds vectors and exact declared member seals'
   assert.throws(()=>prepare_stage({...input(),dense_batches:[]}),InvalidRequest);
   const wrong=input();wrong.dense_vectors[0][0]=0;wrong.dense_vectors[0][1]=1;
   assert.throws(()=>prepare_stage(wrong),IntegrityViolation);
+});
+
+const ordinaryBinding={instance_id:'instance-fixture',storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',
+  epoch:1,credential_generation:'credential-1',intent_id:context.intent_id,owner_token:token,dispatch_id:'readback-1'};
+
+async function ordinarySetup(){
+  const f=setup();
+  Object.assign(f.state.tables.backend_instances[0],{storage_identity:ordinaryBinding.storage_identity,
+    supervisor_id:ordinaryBinding.supervisor_id,recovery_id:null});
+  await f.writer.initialize(opts());
+  await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+  await f.writer.acquire_owner(context,opts());
+  return f;
+}
+
+test('ordinary publication projection binds complete raw graph, current payload and fixed witness',async()=>{
+  const f=await ordinarySetup();
+  try{
+    const projection=await f.writer.project_publication(context,ordinaryBinding,opts());
+    const data=publication_projection_data(projection,f.writer);
+    assert.deepEqual(JSON.parse(JSON.stringify(projection)),{});
+    assert.ok(Object.isFrozen(data.witness));
+    assert.equal(data.witness.length,21);
+    assert.equal(data.witness[0],'cragkit.qdrant.publication.readback.v1');
+    assert.equal(data.point_ids.length,2);
+    assert.equal(data.readback_sha256,digest(Buffer.from(data.encoded_bytes)));
+    assert.equal(data.points[0].payload.authorization_revision,'auth-1');
+    assert.equal('canonical_text'in data,false);
+    assert.throws(()=>publication_projection_data({...projection},f.writer),InvalidRequest);
+    await f.writer.validate_publication_projection(projection,opts());
+    f.state.tables.documents[0].tag='changed';
+    await assert.rejects(f.writer.validate_publication_projection(projection,opts()),UnauthorizedScope);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('ordinary publication rejects target mismatch before SQL and document-wide pending work',async()=>{
+  const f=await ordinarySetup();
+  try{
+    const before=f.state.queries.length;
+    await assert.rejects(f.writer.project_publication(context,{...ordinaryBinding,intent_id:'foreign'},opts()),UnsupportedCapability);
+    assert.equal(f.state.queries.length,before);
+    f.state.tables.dispatch_journal=[{tenant_id:scope.tenant_id,collection:context.collection,document_id:context.document_id,
+      intent_id:'predecessor-intent',state:'unknown'}];
+    await assert.rejects(f.writer.project_publication(context,ordinaryBinding,opts()),ProviderUnavailable);
+    f.state.tables.dispatch_journal=[];
+    f.state.tables.vector_replays.pop();
+    await assert.rejects(f.writer.project_publication(context,ordinaryBinding,opts()),IntegrityViolation);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('ordinary publication distinguishes current backend and authority fences',async()=>{
+  for(const [change,error] of [
+    [f=>{f.state.tables.backend_instances[0].epoch=2;},ProviderUnavailable],
+    [f=>{f.state.tables.backend_instances[0].state='recovery_blocked';},ProviderUnavailable],
+    [f=>{f.state.tables.backend_instances[0].storage_identity='different';},IntegrityViolation],
+    [f=>{f.state.tables.document_owners[0].owner_token='00000000-0000-4000-8000-000000000002';},ProviderUnavailable],
+    [f=>{f.state.tables.documents[0].authorization_revision='auth-2';},UnauthorizedScope],
+    [f=>{f.state.tables.documents[0].tombstoned=true;},UnauthorizedScope],
+  ]){
+    const f=await ordinarySetup();
+    try{
+      change(f);
+      await assert.rejects(f.writer.project_publication(context,ordinaryBinding,opts()),error);
+    }finally{await f.writer.close();await f.resource.close();}
+  }
 });
 
 test('real profiles require bound full E batches before SQL',()=>{

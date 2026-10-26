@@ -264,6 +264,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
       - [x] V5-04E2a: Authority-bound full readback; 2054 Python/tool and 1078 Node regressions, strict types/build, 36 native readback checks, normalized witness parity, 42 native D regression checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E2a.md).
       - [x] V5-04E2b: Durable instance control and private admission; 2108 Python/tool and 1094 Node regressions, strict types/build, 50 native SQL/recovery checks, 54 native controller/readback regression checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E2b.md).
   - [ ] V5-04F: Actual bounded staged writes and full readback/publication.
+    - [x] V5-04F1: Ordinary current-authority projections and private full-readback receipts; 2,136 Python/tool and 1,106 Node regressions, strict types/build, 38 native ordinary cases with witness parity, 36 native readback regression cases and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F1.md).
+    - [ ] V5-04F2: Authenticated dispatch and public stage/publish manager operations.
+    - [ ] V5-04F3: Native staged-publication acceptance and previous-generation preservation.
   - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
 
@@ -312,6 +315,18 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04F1: Ordinary publication readback
+
+State: COMPLETE for ordinary readback; public manager/publication and full V5 remain incomplete. [F1 evidence](../evaluation/reports/V5/V5-04F1.md). E2b accepted/committed/pushed as 0c6e4a0d473e0e58179c4f10d152db42a7d9a63e, synchronized 0/0. Concrete outcome: exact current-authority stage projections and full native Qdrant readback under an actual ordinary immutable attempt capability, issuing a private receipt after fresh authority/capability checks. Any unresolved document dispatch remains operationally unavailable. F2/F3 still own production dispatch/public manager publication and acceptance; F/full V5 remain incomplete.
+
+F1-r1 runtime pair delivered and transferred its files to root. Python focused checks passed 136 tests and strict typing of 44 files. Node's first focused run passed 40/41; its cancellation fixture incorrectly counted a destroyed historical database connection as a live lease. Sol `/root/v5_candidate_fixtures` owns only the Node publication-verifier module/test for that correction and bounded-close error handling, then transfers them back. Existing writer files and shared Node readback extraction remain root-owned.
+
+F1 native pair: Sol `/root/v5_candidate_contract` owns new `tools/qdrant_publication_verification_cases.py` and assembles; Sol `/root/v5_manifest_security_review` owns new `tools/qdrant_publication_verification_node.mjs`. Their shared outcome is real ordinary readback receipts and negative current-authority/vector cases using primitive pre-journaled writes, completed acknowledgments and explicit fixture settlement. The envelope is the existing native readback shape; result scope is `ordinary_readback_only`, with physical witness nonces normalized at positions 2, 3 and 5. Root owns the new parent checker, tool tests, documentation/tracker, serial acceptance and Git. Peers agree the case list directly before editing. Migrations, codecs, source readers, supervisor/recovery modules, shared fixtures, manifests/locks, seals and user audits remain protected. Workers run no tests/processes/services/network/database/provider calls/installs/Git. Root uses one test process and at most two native database clients after releasing setup administration. F2's full manager-process crash profile remains a separate owned child; killing an HTTP dispatcher alone will not satisfy it.
+
+
+F1 final handoff: runtime pair and native pair transferred all owned paths to root. Final local checks: 2,136 Python/tool tests (four existing deliberate warnings), 1,106 Node tests, mypy 44 files, strict build, 38 native ordinary checks with witness parity, 36 E2a native regression checks with parity and 16 seals. Root fixed the cancellation fixture and an extracted helper forwarding an undefined owner option to strict native HTTP; the final focused and native runs passed. Two failed private fixtures were removed only after independent native listener absence; successful runs removed their own storage after cleanup. Changed scope: both writer sources/tests, both new ordinary-verifier sources/tests, Node shared readback extraction, four native harness/test paths, report/development guidance, E102 and tracker. Protected migrations, codecs, manifests/locks, source readers, supervisor/recovery, seals and three user audit drafts remain unchanged. Resource snapshot: 35 GiB disk, 45 percent memory free; no model/hosted calls, installs/downloads, release or persistent service. Practice unassessed. Root commits/pushes this accepted scope, verifies synchronization, then continues F2a manager admission/transport/stage/publish, F2b explicit native worker channel, F3/G/H and remaining V5 tasks. Astra's bounded worker-boundary advice requires fresh asynchronous parent validation and keeps all E2 physical capabilities parent-local; it does not change crash acceptance.
+
 
 ### V5-04E2b: Durable recovery settlement and admission
 

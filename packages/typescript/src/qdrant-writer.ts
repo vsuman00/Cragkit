@@ -44,6 +44,37 @@ export function projection_data(input:unknown,writer:PostgresQdrantWriter):Proje
   if(!found||found.issuer!==writer)throw new InvalidRequest();
   return found.data;
 }
+export type PublicationProjection=Readonly<Record<never,never>>;
+export type PublicationProjectionData=Readonly<Omit<ProjectionData,'physical_binding'|'tombstoned'>&{
+  attempt_binding:Readonly<Data>;
+  tombstoned:false;
+  point_ids:readonly string[];
+  witness:readonly unknown[];
+  encoded_bytes:readonly number[];
+  readback_sha256:string;
+  sha256:string;
+}>;
+const publicationProjections=new WeakMap<object,Readonly<{issuer:PostgresQdrantWriter;data:PublicationProjectionData}>>();
+
+/** Nominal provenance only; a copied projection never becomes authority. */
+export function publication_projection_data(input:unknown,writer:PostgresQdrantWriter):PublicationProjectionData {
+  if(typeof input!=='object'||input===null)throw new InvalidRequest();
+  const found=publicationProjections.get(input);
+  if(!found||found.issuer!==writer)throw new InvalidRequest();
+  return found.data;
+}
+
+function freeze_witness(value:unknown):unknown {
+  if(Array.isArray(value)){
+    for(const child of value)freeze_witness(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+function canonical_acl(values:readonly string[]):readonly string[] {
+  return Object.freeze([...new Set(values)].sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right))));
+}
 
 /** Dedicated writer capability, never a reader, owner, administrator or supervisor. */
 export const WRITER_ROLE_SQL = `SELECT current_user=session_user
@@ -535,7 +566,18 @@ export class PostgresQdrantWriter {
     const document=await this.#document(tx,context,true);
     if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
     const stage=await this.#loadStage(tx,context);
-    const points=stage.points.map(point=>{
+    const points=this.#projectionPoints(context,document,stage.points);
+    return Object.freeze({context,physical_binding:physical,manifest_sha256:stage.manifest.sha256,
+      revision_id:text(stage.data.record.revision_id),generation_id:text(stage.data.record.generation_id),points,
+      tombstoned:document.tombstoned as boolean,authorization_revision:text(document.authorization_revision),mutation_epoch:db_count(document.mutation_epoch),
+      active_generation_id:document.active_generation_id===null?null:text(document.active_generation_id),
+      principal_ids:document.principal_ids as readonly string[],grant_ids:document.grant_ids as readonly string[],
+      language:document.language as string|null,kind:document.kind as string|null,tag:document.tag as string|null});
+  }
+
+  /** Both recovery and ordinary verification use the exact current QC payload. */
+  #projectionPoints(context:WriterContext,document:Data,source:readonly PointData[]):readonly ProjectionPoint[] {
+    const points=source.map(point=>{
       const claim=point.claim;
       const payload:Data={backend_namespace:claim.backend_namespace,physical_collection:claim.physical_collection,
         collection_incarnation:claim.collection_incarnation,tenant_id:context.scope.tenant_id,collection:context.collection,
@@ -548,12 +590,7 @@ export class PostgresQdrantWriter {
       return Object.freeze({point_id:uuid(claim.point_id),payload:metadata(payload),dense:point.dense,sparse:point.sparse});
     });
     points.sort((left,right)=>Buffer.compare(Buffer.from(left.point_id),Buffer.from(right.point_id)));
-    return Object.freeze({context,physical_binding:physical,manifest_sha256:stage.manifest.sha256,
-      revision_id:text(stage.data.record.revision_id),generation_id:text(stage.data.record.generation_id),points:Object.freeze(points),
-      tombstoned:document.tombstoned as boolean,authorization_revision:text(document.authorization_revision),mutation_epoch:db_count(document.mutation_epoch),
-      active_generation_id:document.active_generation_id===null?null:text(document.active_generation_id),
-      principal_ids:document.principal_ids as readonly string[],grant_ids:document.grant_ids as readonly string[],
-      language:document.language as string|null,kind:document.kind as string|null,tag:document.tag as string|null});
+    return Object.freeze(points);
   }
   async project_stage(input:unknown,rawPhysical:unknown,rawOptions:unknown):Promise<ExpectedProjection>{
     const context=parseContext(input),options=parseOptions(rawOptions),physical=metadata(rawPhysical);
@@ -578,6 +615,84 @@ export class PostgresQdrantWriter {
         ||current.mutation_epoch!==previous.mutation_epoch||current.active_generation_id!==previous.active_generation_id
         ||!same(current.principal_ids,previous.principal_ids)||!same(current.grant_ids,previous.grant_ids)
         ||current.language!==previous.language||current.kind!==previous.kind||current.tag!==previous.tag)throw new UnauthorizedScope();
+      for(let i=0;i<current.points.length;i++){
+        const left=current.points[i],right=previous.points[i];
+        if(left.point_id!==right.point_id||!same(left.payload,right.payload)||left.dense.input_sha256!==right.dense.input_sha256
+          ||(left.sparse?.input_sha256??null)!==(right.sparse?.input_sha256??null))throw new IntegrityViolation();
+      }
+    }));
+  }
+
+  async #projectPublication(tx:Tx,context:WriterContext,attempt:Readonly<Data>):Promise<PublicationProjectionData> {
+    const backends=await tx.query('SELECT backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id FROM cragkit_qdrant.backend_instances WHERE instance_id=$1 FOR SHARE',[this.#instance],2);
+    if(backends.length===0)throw new ProviderUnavailable();
+    if(backends.length!==1||backends[0].length!==6)throw new IntegrityViolation();
+    const [namespace,storage,supervisor,epoch,state,recovery]=backends[0];
+    if(namespace!==this.#config.backend_namespace||storage!==attempt.storage_identity
+      ||supervisor!==attempt.supervisor_id)throw new IntegrityViolation();
+    if(state!=='open'||recovery!==null||db_count(epoch)!==attempt.epoch)throw new ProviderUnavailable();
+    const owners=await this.#select(tx,'document_owners',['instance_id','intent_id','owner_token','backend_epoch'],context,' FOR UPDATE',[],2);
+    if(owners.length!==1||owners[0].instance_id!==this.#instance||owners[0].intent_id!==context.intent_id
+      ||owners[0].owner_token!==context.owner_token||db_count(owners[0].backend_epoch)!==attempt.epoch)throw new ProviderUnavailable();
+    const document=await this.#document(tx,context,true);
+    if(!document||document.authorization_revision!==context.scope.authorization_revision||document.tombstoned)throw new UnauthorizedScope();
+    const pending=await this.#select(tx,'dispatch_journal',['state'],context," AND state<>'settled'",[],1);
+    if(pending.length)throw new ProviderUnavailable();
+    const stage=await this.#loadStage(tx,context);
+    const points=this.#projectionPoints(context,document,stage.points);
+    const revision_id=text(stage.data.record.revision_id);
+    const generation_id=text(stage.data.record.generation_id);
+    const authorization_revision=text(document.authorization_revision);
+    const mutation_epoch=db_count(document.mutation_epoch);
+    const active_generation_id=document.active_generation_id===null?null:text(document.active_generation_id);
+    const principal_ids=document.principal_ids as readonly string[];
+    const grant_ids=document.grant_ids as readonly string[];
+    const language=document.language as string|null;
+    const kind=document.kind as string|null;
+    const tag=document.tag as string|null;
+    const witness=freeze_witness([
+      'cragkit.qdrant.publication.readback.v1',attempt.instance_id,attempt.storage_identity,attempt.supervisor_id,
+      String(attempt.epoch),attempt.credential_generation,attempt.intent_id,attempt.owner_token,attempt.dispatch_id,
+      context.scope.tenant_id,context.collection,context.document_id,revision_id,generation_id,stage.manifest.sha256,
+      authorization_revision,String(mutation_epoch),active_generation_id,'false',
+      points.map(point=>[point.point_id,point.dense.input_sha256,point.sparse?.input_sha256??null]),
+      [canonical_acl(principal_ids),canonical_acl(grant_ids),language,kind,tag],
+    ]) as readonly unknown[];
+    const encoded_bytes=Object.freeze(Array.from(Buffer.from(JSON.stringify(witness))));
+    const readback_sha256=hash(Buffer.from(encoded_bytes));
+    return Object.freeze({context,attempt_binding:attempt,manifest_sha256:stage.manifest.sha256,revision_id,generation_id,
+      authorization_revision,mutation_epoch,active_generation_id,tombstoned:false,points,
+      point_ids:Object.freeze(points.map(point=>point.point_id)),principal_ids,grant_ids,language,kind,tag,
+      witness,encoded_bytes,readback_sha256,sha256:readback_sha256});
+  }
+
+  async project_publication(input:unknown,rawAttempt:unknown,rawOptions:unknown):Promise<PublicationProjection> {
+    const context=parseContext(input),options=parseOptions(rawOptions),attempt=metadata(rawAttempt);
+    const keys=['instance_id','storage_identity','supervisor_id','epoch','credential_generation','intent_id','owner_token','dispatch_id'];
+    if(Object.keys(attempt).length!==keys.length||keys.some(key=>!Object.hasOwn(attempt,key)))throw new InvalidRequest();
+    for(const key of ['instance_id','storage_identity','supervisor_id','credential_generation','intent_id','dispatch_id'])text(attempt[key]);
+    uuid(attempt.owner_token);
+    count(attempt.epoch,1);
+    if(attempt.instance_id!==this.#instance||attempt.intent_id!==context.intent_id
+      ||attempt.owner_token!==context.owner_token)throw new UnsupportedCapability();
+    return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
+      const data=await this.#projectPublication(tx,context,attempt);
+      const projection=Object.freeze({});
+      publicationProjections.set(projection,Object.freeze({issuer:this,data}));
+      return projection;
+    }));
+  }
+
+  async validate_publication_projection(input:unknown,rawOptions:unknown):Promise<void> {
+    const previous=publication_projection_data(input,this),options=parseOptions(rawOptions);
+    await this.#work(options,lease=>this.#tx(previous.context,lease,async tx=>{
+      const current=await this.#projectPublication(tx,previous.context,previous.attempt_binding);
+      if(current.manifest_sha256!==previous.manifest_sha256||current.revision_id!==previous.revision_id
+        ||current.generation_id!==previous.generation_id||current.points.length!==previous.points.length)throw new IntegrityViolation();
+      if(current.authorization_revision!==previous.authorization_revision||current.mutation_epoch!==previous.mutation_epoch
+        ||current.active_generation_id!==previous.active_generation_id||!same(current.principal_ids,previous.principal_ids)
+        ||!same(current.grant_ids,previous.grant_ids)||current.language!==previous.language
+        ||current.kind!==previous.kind||current.tag!==previous.tag)throw new UnauthorizedScope();
       for(let i=0;i<current.points.length;i++){
         const left=current.points[i],right=previous.points[i];
         if(left.point_id!==right.point_id||!same(left.payload,right.payload)||left.dense.input_sha256!==right.dense.input_sha256
