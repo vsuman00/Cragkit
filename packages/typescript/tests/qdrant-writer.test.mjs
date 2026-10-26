@@ -1,0 +1,378 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
+import {PostgresQdrantWriter,prepare_stage,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {stage_data} from '../dist/qdrant-writer-contract.js';
+import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
+  AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
+import {encode_dense_replay,encode_manifest} from '../dist/qdrant-manifest.js';
+import {point_id} from '../dist/qdrant-contract.js';
+import {OPENAI_PROFILE} from '../dist/embeddings.js';
+import {InvalidRequest,IntegrityViolation,UnauthorizedScope,UnsupportedCapability,IndexNotReady,
+  ProviderUnavailable,DeadlineExceeded,EmbeddingProfileMismatch} from '../dist/errors.js';
+
+const fixture=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_publication.json',import.meta.url),'utf8'));
+const token='00000000-0000-4000-8000-000000000001';
+const scope={tenant_id:'tenant-a',principal_id:'reader-a',grant_ids:['grant-a'],authorization_revision:'auth-1'};
+const config={...fixture.physical,dense_profile:fixture.profiles.dense,sparse_profile:fixture.profiles.sparse};
+const context={scope,collection:'docs',document_id:'doc-1',intent_id:'intent-2',owner_token:token};
+const opts=()=>({deadline:now()+5});
+const stageOpts=()=>({...opts(),owner_token:token});
+const digest=value=>createHash('sha256').update(value).digest('hex');
+function input(){
+  const manifest={...fixture.physical,tenant_id:'tenant-a',collection:'docs',document_id:'doc-1',
+    revision_id:fixture.source_revision.revision_id,generation_id:fixture.intent.generation_id,
+    source_sha256:fixture.source_revision.source_sha256,source_bytes:fixture.source_revision.source_bytes,
+    source_locator:fixture.source_revision.source_locator,parser_id:fixture.source_revision.parser_id,
+    chunker_profile:fixture.intent.chunker_profile,dense_profile:structuredClone(fixture.profiles.dense),
+    sparse_profile:structuredClone(fixture.profiles.sparse),members:fixture.members.map(member=>({
+      chunk_id:member.chunk_id,point_id:member.point_id,start_byte:member.start_byte,end_byte:member.end_byte,
+      text_sha256:member.text_sha256,dense_input_sha256:member.dense.vector_sha256,sparse_input_sha256:member.sparse.vector_sha256}))};
+  const intent={intent_id:'intent-2',tenant_id:'tenant-a',collection:'docs',document_id:'doc-1',
+    manifest_sha256:fixture.intent.manifest_sha256,expected_active_generation_id:null,
+    expected_authorization_revision:'auth-1',expected_mutation_epoch:1,
+    initial_authorization:{authorization_revision:'auth-1',principal_ids:['reader-a'],grant_ids:['grant-a'],
+      language:'en',kind:'guide',tag:'reference',tombstoned:false}};
+  return {manifest,intent,canonical_text:fixture.source_revision.canonical_utf8.value,
+    dense_vectors:fixture.members.map(member=>Array.from({length:1536},(_,i)=>i===member.dense.basis_index?1:0)),
+    sparse_vectors:fixture.members.map(member=>({indices:[...member.sparse.indices],values:[...member.sparse.values]}))};
+}
+function clone(value){
+  if(Buffer.isBuffer(value))return Buffer.from(value);
+  if(Array.isArray(value))return value.map(clone);
+  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,clone(item)]));
+  return value;
+}
+
+/** A deterministic SQL-call double, not evidence of PostgreSQL constraint behavior. */
+function setup(){
+  const state={queries:[],clients:[],role:true,history:AUTHORITY_PUBLICATION_HISTORY.map(row=>[...row]),
+    catalog:true,fingerprint:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,startStatus:'I',commitLost:false,
+    rollbackFail:false,wait:null,tables:{backend_instances:[{instance_id:'instance-fixture',backend_namespace:'fixture-local',epoch:1,state:'open'}]}};
+  const keys={documents:['tenant_id','collection','document_id'],document_revisions:['tenant_id','collection','document_id','revision_id'],
+    generations:['tenant_id','collection','document_id','generation_id'],members:['tenant_id','collection','document_id','revision_id','generation_id','chunk_id'],
+    publication_intents:['tenant_id','collection','document_id','intent_id'],point_claims:['backend_namespace','physical_collection','collection_incarnation','point_id'],
+    vector_replays:['tenant_id','collection','document_id','revision_id','generation_id','chunk_id'],document_owners:['tenant_id','collection','document_id'],
+    dispatch_journal:['tenant_id','collection','document_id','intent_id','dispatch_id'],dispatch_points:['tenant_id','collection','document_id','intent_id','dispatch_id','point_id'],
+    preparations:['tenant_id','collection','document_id','intent_id']};
+  const pool={ends:0,async end(){this.ends++;},async connect(){
+    const client={status:state.startStatus,releases:[],snapshot:null,getTransactionStatus(){return this.status;},release(value=false){this.releases.push(value);},
+      async query(query){
+        const sql=query.text,params=query.values??[];state.queries.push(query);
+        if(sql.startsWith('BEGIN')){this.snapshot=clone(state.tables);this.status='T';return {rows:[]};}
+        if(sql==='ROLLBACK'){if(state.rollbackFail)throw Error('private rollback');state.tables=this.snapshot;this.status='I';return {rows:[]};}
+        if(sql==='COMMIT'){this.status='I';if(state.commitLost){state.commitLost=false;throw Error('private lost acknowledgment');}return {rows:[]};}
+        if(sql===WRITER_ROLE_SQL){if(state.wait)await state.wait;return {rows:[[state.role]]};}
+        if(sql===AUTHORITY_HISTORY_SQL)return {rows:state.history};
+        if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL)return {rows:[[state.catalog]]};
+        if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
+        if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config'))return {rows:[]};
+        const insert=/^INSERT INTO cragkit_qdrant\.(\w+) \(([^)]+)\)/.exec(sql);
+        if(insert){
+          const [,table,columns]=insert;
+          const row=Object.fromEntries(columns.split(',').map((column,i)=>[column,['dense_profile','sparse_profile'].includes(column)&&params[i]!==null?JSON.parse(params[i]):clone(params[i])]));
+          const rows=state.tables[table]??=[];
+          if(rows.some(existing=>keys[table].every(key=>existing[key]===row[key])))return {rows:[]};
+          if(table==='documents')Object.assign(row,{active_generation_id:null,...row});
+          if(table==='generations')Object.assign(row,{published:false,ever_published:false,...row});
+          if(table==='publication_intents')Object.assign(row,{state:'staged',authority_committed:false,replica_complete:false,purge_complete:false,...row});
+          if(table==='dispatch_journal')Object.assign(row,{state:'reserved',recovery:false,completion_sha256:null,...row});
+          rows.push(row);return {rows:sql.includes('RETURNING document_id')?[[row.document_id]]:[]};
+        }
+        const select=/^SELECT (.+?) FROM cragkit_qdrant\.(\w+) WHERE /.exec(sql);
+        if(select){
+          const [,columns,table]=select;
+          if(table==='document_owners'&&sql.includes('FOR UPDATE')&&state.onOwnerLock){
+            const boundary=state.onOwnerLock;state.onOwnerLock=null;boundary(state);
+          }
+          let rows=(state.tables[table]??[]).filter(row=>table==='backend_instances'?row.instance_id===params[0]:
+            row.tenant_id===params[0]&&row.collection===params[1]&&row.document_id===params[2]);
+          for(const [column,number] of [...sql.matchAll(/(?:AND |\()((?:intent|dispatch|revision|generation|chunk|point)_id|payload_sha256|backend_namespace|physical_collection|collection_incarnation)=\$(\d+)(?!\d)/g)].map(match=>[match[1],Number(match[2])])){
+            rows=rows.filter(row=>row[column]===params[number-1]);
+          }
+          if(sql.includes('point_id=ANY'))rows=rows.filter(row=>params[3].includes(row.point_id));
+          if(sql.includes("state<>'settled'"))rows=rows.filter(row=>row.state!=='settled');
+          const limit=Number(/LIMIT (\d+)/.exec(sql)?.[1]??65);
+          return {rows:rows.slice(0,limit).map(row=>columns.split(',').map(column=>clone(row[column.replace('::text','')])))};
+        }
+        const update=/^UPDATE cragkit_qdrant\.(\w+) SET /.exec(sql);
+        if(update){
+          const table=update[1];let rows=(state.tables[table]??[]).filter(row=>row.tenant_id===params[0]&&row.collection===params[1]&&row.document_id===params[2]);
+          if(table==='publication_intents'){
+            const id=sql.includes('state=$4')?params[4]:params[3];rows=rows.filter(row=>row.intent_id===id);
+            for(const row of rows){row.state=sql.includes('state=$4')?params[3]:/state='([^']+)'/.exec(sql)[1];
+              if(sql.includes('authority_committed=true'))row.authority_committed=true;if(sql.includes('replica_complete=true'))row.replica_complete=true;}
+          }else if(table==='document_owners')for(const row of rows)Object.assign(row,{instance_id:params[3],intent_id:params[4],owner_token:params[5],backend_epoch:params[6]});
+          else if(table==='dispatch_journal'){
+            rows=rows.filter(row=>row.intent_id===params[3]&&row.dispatch_id===params[4]);for(const row of rows)Object.assign(row,{state:params[5],completion_sha256:params[6]});
+          }else if(table==='documents'){
+            if(sql.includes('SET active_generation_id'))for(const row of rows)row.active_generation_id=params[3];
+            else for(const row of rows)Object.assign(row,{principal_ids:params[3],grant_ids:params[4],authorization_revision:params[5],mutation_epoch:params[6],language:params[7],kind:params[8],tag:params[9],tombstoned:params[10]});
+          }else if(table==='generations'){
+            for(const row of rows){if(sql.includes('published=false')){if(row.generation_id!==params[3])row.published=false;}
+              else if(row.generation_id===params[3]){row.published=true;row.ever_published=true;}}
+          }
+          return {rows:sql.includes('RETURNING document_id')?rows.map(row=>[row.document_id]):[]};
+        }
+        throw Error('unexpected synthetic SQL');
+      }};
+    state.clients.push(client);return client;
+  }};
+  const resource=new PoolResource(parse_pool_config({host:'host.invalid',dbname:'fixture',user:'writer',
+    sslrootcert:'/fake/ca',passfile:'/fake/pass',release_timeout:.05,close_timeout:.1}),{pool});
+  return {state,pool,resource,writer:new PostgresQdrantWriter(resource,config,'instance-fixture')};
+}
+
+test('private immutable StagePlan binds vectors and exact declared member seals',()=>{
+  const raw=input(),plan=prepare_stage(raw);
+  assert.ok(Object.isFrozen(plan));assert.equal(plan.manifest_sha256,fixture.intent.manifest_sha256);
+  assert.deepEqual(Object.keys(plan).sort(),['manifest_sha256','member_count','payload_sha256']);
+  raw.dense_vectors[0][0]=0;raw.canonical_text='changed';
+  assert.equal(plan.member_count,2);assert.equal(JSON.stringify(plan).includes('café'),false);
+  assert.throws(()=>prepare_stage({...input(),dense_batches:[]}),InvalidRequest);
+  const wrong=input();wrong.dense_vectors[0][0]=0;wrong.dense_vectors[0][1]=1;
+  assert.throws(()=>prepare_stage(wrong),IntegrityViolation);
+});
+
+test('real profiles require bound full E batches before SQL',()=>{
+  const raw=input();raw.manifest.dense_profile=OPENAI_PROFILE;raw.manifest.sparse_profile=null;raw.sparse_vectors=null;
+  for(let i=0;i<raw.manifest.members.length;i++){
+    const member=raw.manifest.members[i];const tuple=[...fixture.members[i].identity_tuple];tuple[10]=OPENAI_PROFILE.profile_id;tuple[11]='';
+    member.point_id=point_id(tuple);member.dense_input_sha256=encode_dense_replay(raw.dense_vectors[i],OPENAI_PROFILE).input_sha256;member.sparse_input_sha256=null;
+  }
+  raw.intent.manifest_sha256=encode_manifest(raw.manifest,raw.canonical_text).sha256;
+  assert.throws(()=>prepare_stage(raw),EmbeddingProfileMismatch);
+  const vectors=raw.dense_vectors;delete raw.dense_vectors;
+  raw.dense_batches=[{profile:OPENAI_PROFILE,vectors,usage:{prompt_tokens:1,total_tokens:1,cost_usd:0,cost_kind:'estimated'},provider_calls:1,synthetic:false}];
+  assert.doesNotThrow(()=>prepare_stage(raw));
+  raw.dense_batches[0].synthetic=true;
+  assert.throws(()=>prepare_stage(raw),EmbeddingProfileMismatch);
+});
+
+test('malformed inputs, proxies and copied plans fail before database checkout',async()=>{
+  const x=setup();let hooks=0;
+  const malicious=new Proxy(input(),{ownKeys(){hooks++;throw Error('private');}});
+  assert.throws(()=>prepare_stage(malicious),InvalidRequest);
+  await assert.rejects(x.writer.stage({...prepare_stage(input())},scope,stageOpts()),InvalidRequest);
+  await assert.rejects(x.writer.inspect({...context,collection:undefined},opts()),InvalidRequest);
+  assert.equal(hooks,0);assert.equal(x.state.clients.length,0);await x.writer.close();await x.resource.close();
+});
+
+test('explicit initialization is exact new profile and each lease requires dedicated writer safety',async()=>{
+  const x=setup();await assert.rejects(x.writer.inspect(context,opts()),IndexNotReady);
+  await x.writer.initialize(opts());assert.ok(x.state.queries.some(query=>query.text==='BEGIN ISOLATION LEVEL READ COMMITTED'));
+  await x.writer.inspect(context,opts());assert.equal(x.state.queries.filter(query=>query.text===WRITER_ROLE_SQL).length,2);
+  x.state.role=false;await assert.rejects(x.writer.inspect(context,opts()),UnauthorizedScope);
+  assert.ok(WRITER_ROLE_SQL.includes("pg_has_role(current_user,capability.oid,'USAGE')"));
+  assert.ok(WRITER_ROLE_SQL.includes('capability.rolcanlogin OR capability.rolsuper OR capability.rolbypassrls OR capability.rolcreaterole OR capability.rolcreatedb OR capability.rolreplication'));
+  assert.ok(WRITER_ROLE_SQL.includes('membership.member=capability.oid'));
+  assert.ok(WRITER_ROLE_SQL.includes("WHEN privilege='UPDATE' THEN c.relname IN ('documents','generations','publication_intents','document_owners','dispatch_journal')"));
+  assert.ok(WRITER_ROLE_SQL.includes("(c.relname='members' AND a.attname='point_id')"));
+  assert.ok(WRITER_ROLE_SQL.includes("p.oid IS NOT DISTINCT FROM to_regprocedure"));
+  assert.equal(WRITER_ROLE_SQL.includes("has_table_privilege('cragkit_qdrant_writer'"),false);
+  await x.writer.close();await x.resource.close();assert.equal(x.pool.ends,0);
+});
+
+test('wrong history, drift and dirty leases fail closed',async()=>{
+  for(const change of [state=>{state.history=[];},state=>{state.fingerprint='bad';},state=>{state.catalog=false;}]){
+    const x=setup();change(x.state);await assert.rejects(x.writer.initialize(opts()),UnsupportedCapability);await x.writer.close();await x.resource.close();
+  }
+  const x=setup();x.state.startStatus='T';await assert.rejects(x.writer.initialize(opts()),InvalidRequest);
+  assert.deepEqual(x.state.clients[0].releases,[true]);await x.writer.close();await x.resource.close();
+});
+
+test('atomic stage replay compares immutable facts and scope without adopting changed input',async()=>{
+  const x=setup();await x.writer.initialize(opts());const raw=input(),plan=prepare_stage(raw);
+  const first=await x.writer.stage(plan,scope,stageOpts());assert.equal(first.state,'staged');
+  await x.writer.stage(plan,scope,stageOpts());assert.equal(x.state.tables.members.length,2);
+  const changed=input();changed.intent.initial_authorization.tag='changed';
+  await assert.rejects(x.writer.stage(prepare_stage(changed),scope,stageOpts()),IntegrityViolation);
+  await assert.rejects(x.writer.stage(plan,{...scope,tenant_id:'foreign'},stageOpts()),UnauthorizedScope);
+  const scoped=x.state.queries.find(query=>query.text.includes("set_config('cragkit_qdrant.writer_document_id'"));
+  assert.equal(scoped.values.length,9);assert.deepEqual(scoped.values.slice(0,3),['tenant-a','docs','reader-a']);
+  await x.writer.close();await x.resource.close();
+});
+
+test('lost stage commit acknowledgment reconciles the same identity without duplicate generation',async()=>{
+  const x=setup();await x.writer.initialize(opts());x.state.commitLost=true;
+  const result=await x.writer.stage(prepare_stage(input()),scope,stageOpts());
+  assert.equal(result.state,'staged');assert.equal(x.state.tables.generations.length,1);assert.equal(x.state.tables.members.length,2);
+  assert.ok(x.state.clients.some(client=>client.releases.includes(true)));await x.writer.close();await x.resource.close();
+});
+
+test('reservation constructs complete immutable wire bytes and binds exact point set',async()=>{
+  const x=setup();await x.writer.initialize(opts());await x.writer.stage(prepare_stage(input()),scope,stageOpts());
+  const owner=await x.writer.acquire_owner(context,opts());assert.deepEqual(owner,{owner_token:token,backend_epoch:1});
+  const request={dispatch_id:'dispatch-1',sequence:1,credential_generation:'credential-1',operation:'complete_point_upsert',point_ids:fixture.members.map(member=>member.point_id)};
+  const reservation=await x.writer.reserve_dispatch(context,request,opts());
+  assert.ok(Object.isFrozen(reservation.request_bytes));assert.equal(digest(Buffer.from(reservation.request_bytes)),reservation.request_sha256);
+  const body=JSON.parse(Buffer.from(reservation.request_bytes));assert.equal(body.points.length,2);
+  for(const point of body.points){assert.deepEqual(Object.keys(point.vector).sort(),['dense','sparse']);assert.equal(point.payload.authorization_revision,'auth-1');assert.equal('text'in point.payload,false);}
+  assert.equal(await x.writer.mark_dispatched(context,'dispatch-1',opts()),undefined);
+  await x.writer.mark_unknown(context,'dispatch-1',opts());
+  await assert.rejects(x.writer.settle_dispatch(context,'dispatch-1','a'.repeat(64),opts()),ProviderUnavailable);
+  await assert.rejects(x.writer.mark_dispatched(context,'dispatch-1',opts()),ProviderUnavailable);
+  const before=x.state.queries.length;await assert.rejects(x.writer.reserve_dispatch(context,{...request,dispatch_id:'dispatch-2',sequence:2},opts()),ProviderUnavailable);
+  assert.ok(x.state.queries.slice(before).findIndex(query=>query.text.includes('backend_instances')&&query.text.includes('FOR SHARE'))<x.state.queries.slice(before).findIndex(query=>query.text.includes('document_owners')&&query.text.includes('FOR UPDATE')));
+  await x.writer.close();await x.resource.close();
+});
+
+test('settled preparation publication and immediate tombstone are authority transactions only',async()=>{
+  const x=setup();await x.writer.initialize(opts());await x.writer.stage(prepare_stage(input()),scope,stageOpts());await x.writer.acquire_owner(context,opts());
+  await x.writer.reserve_dispatch(context,{dispatch_id:'dispatch-1',sequence:1,credential_generation:'credential-1',operation:'complete_point_upsert',point_ids:fixture.members.map(member=>member.point_id)},opts());
+  await x.writer.settle_dispatch(context,'dispatch-1','b'.repeat(64),opts());
+  await x.writer.prepare(context,'c'.repeat(64),opts());await x.writer.publish(context,opts());
+  assert.equal((await x.writer.inspect(context,opts())).state,'published');
+  const security={action:'tombstone',intent_id:'tombstone-1',tenant_id:'tenant-a',collection:'docs',document_id:'doc-1',
+    expected_authorization_revision:'auth-1',expected_mutation_epoch:1,authorization:{authorization_revision:'auth-2',principal_ids:[],grant_ids:[],language:null,kind:null,tag:null,tombstoned:true}};
+  const start=x.state.queries.length;const result=await x.writer.apply_security(security,scope,stageOpts());assert.equal(result.authority_committed,true);
+  await x.writer.apply_security(security,scope,stageOpts());assert.equal(x.state.tables.documents[0].mutation_epoch,2);
+  assert.equal(x.state.queries.slice(start).some(query=>query.text.includes('FOR SHARE')),false);
+  await x.writer.close();await x.resource.close();
+});
+
+test('completed publication receipt survives a later active generation without republishing',async()=>{
+  const x=setup();
+  await x.writer.initialize(opts());
+  await x.writer.stage(prepare_stage(input()),scope,stageOpts());
+  await x.writer.acquire_owner(context,opts());
+  await x.writer.prepare(context,'c'.repeat(64),opts());
+  const receipt=await x.writer.publish(context,opts());
+  x.state.tables.documents[0].active_generation_id='successor-generation';
+  x.state.tables.generations[0].published=false;
+  const start=x.state.queries.length;
+  assert.deepEqual(await x.writer.publish(context,opts()),receipt);
+  assert.equal(x.state.tables.documents[0].active_generation_id,'successor-generation');
+  assert.equal(x.state.queries.slice(start).some(query=>query.text.startsWith('UPDATE cragkit_qdrant.')),false);
+  await x.writer.close();await x.resource.close();
+});
+
+test('single active operation, midflight cancellation and close are bounded and caller-owned',async()=>{
+  const x=setup();await x.writer.initialize(opts());let finish;x.state.wait=new Promise(resolve=>{finish=resolve;});
+  const controller=new AbortController();const pending=x.writer.inspect(context,{...opts(),signal:controller.signal});
+  const stopped=assert.rejects(pending,error=>error.name==='AbortError');await new Promise(resolve=>setImmediate(resolve));
+  await assert.rejects(x.writer.inspect(context,opts()),ProviderUnavailable);controller.abort();await stopped;
+  finish();x.state.wait=null;await x.writer.close();await x.writer.close();await assert.rejects(x.writer.inspect(context,opts()),ProviderUnavailable);
+  await x.resource.close();assert.equal(x.pool.ends,0);
+});
+
+test('expired or malformed deadlines never check out a client',async()=>{
+  const x=setup();for(const value of [NaN,Infinity,Number.MAX_SAFE_INTEGER+1])await assert.rejects(x.writer.initialize({deadline:value}),InvalidRequest);
+  await assert.rejects(x.writer.initialize({deadline:now()-1}),DeadlineExceeded);assert.equal(x.state.clients.length,0);await x.writer.close();await x.resource.close();
+});
+
+test('fresh scope revision is checked before new staging and reservation bytes', async () => {
+  const x=setup();
+  await x.writer.initialize(opts());
+  const before=x.state.clients.length;
+  await assert.rejects(x.writer.stage(prepare_stage(input()), {...scope,authorization_revision:'wrong'}, stageOpts()), UnauthorizedScope);
+  assert.equal(x.state.clients.length,before);
+  await x.writer.stage(prepare_stage(input()),scope,stageOpts());
+  await x.writer.acquire_owner(context,opts());
+  const dispatch={dispatch_id:'dispatch-1',sequence:1,credential_generation:'credential-1',operation:'complete_point_upsert',point_ids:fixture.members.map(member=>member.point_id)};
+  await x.writer.reserve_dispatch(context,dispatch,opts());
+  const wrong={...context,scope:{...scope,authorization_revision:'wrong'}};
+  await assert.rejects(x.writer.reserve_dispatch(wrong,dispatch,opts()),UnauthorizedScope);
+  assert.equal(x.state.tables.publication_intents[0].state,'writing');
+  await x.writer.close();await x.resource.close();
+});
+
+test('prepare and publish persist terminal fence outcomes even after another owner replaces them', async () => {
+  for(const method of ['prepare','publish']){
+    for(const failure of ['denied','conflict','scope-only']){
+      const x=setup();await x.writer.initialize(opts());
+      await x.writer.stage(prepare_stage(input()),scope,stageOpts());await x.writer.acquire_owner(context,opts());
+      if(method==='publish')await x.writer.prepare(context,'c'.repeat(64),opts());
+      const before=x.state.queries.length;
+      let current=context;
+      if(failure==='denied')Object.assign(x.state.tables.documents[0],{authorization_revision:'auth-2',mutation_epoch:2,tombstoned:true});
+      if(failure==='conflict'){
+        x.state.tables.documents[0].active_generation_id='other-generation';
+        Object.assign(x.state.tables.document_owners[0],{intent_id:'other-intent',owner_token:'00000000-0000-4000-8000-000000000002'});
+      }
+      if(failure==='scope-only')current={...context,scope:{...scope,authorization_revision:'wrong'}};
+      const run=()=>method==='prepare'?x.writer.prepare(current,'c'.repeat(64),opts()):x.writer.publish(current,opts());
+      if(failure==='scope-only'){
+        await assert.rejects(run(),UnauthorizedScope);
+        assert.equal(x.state.tables.publication_intents[0].state,method==='prepare'?'writing':'prepared');
+      }else{
+        const result=await run();assert.equal(result.state,failure);assert.ok(Object.isFrozen(result));
+        assert.equal((await x.writer.inspect(context,opts())).state,failure);
+      }
+      assert.equal(x.state.queries.slice(before).some(query=>query.text.includes('FOR SHARE')),false);
+      await x.writer.close();await x.resource.close();
+    }
+  }
+});
+
+test('restart load_stage issues a private plan from verified original sidecars without rounded readmission', async () => {
+  const x=setup();await x.writer.initialize(opts());
+  const raw=input();raw.dense_vectors[0][0]=1.00099999;
+  raw.manifest.members[0].dense_input_sha256=encode_dense_replay(raw.dense_vectors[0],config.dense_profile).input_sha256;
+  raw.intent.manifest_sha256=encode_manifest(raw.manifest,raw.canonical_text).sha256;
+  await x.writer.stage(prepare_stage(raw),scope,stageOpts());await x.writer.close();
+  const restarted=new PostgresQdrantWriter(x.resource,config,'instance-fixture');await restarted.initialize(opts());
+  const loaded=await restarted.load_stage(context,opts());
+  assert.ok(Object.isFrozen(loaded));assert.equal(loaded.manifest_sha256,raw.intent.manifest_sha256);
+  assert.equal(JSON.stringify(loaded).includes('café'),false);
+  const data=stage_data(loaded);
+  assert.ok(Object.isFrozen(data.record));assert.ok(data.dense[0].encoded.values[0]-1>0.001);
+  assert.equal(data.dense[0].input_sha256,raw.manifest.members[0].dense_input_sha256);
+  await assert.rejects(restarted.load_stage({...context,scope:{...scope,authorization_revision:'wrong'}},opts()),UnauthorizedScope);
+  x.state.tables.vector_replays[0].dense_blob[40]^=1;
+  await assert.rejects(restarted.load_stage(context,opts()),IntegrityViolation);
+  await restarted.close();await x.resource.close();
+});
+
+test('revocation blocks new dispatch admission but not honest known or unknown outcome records', async () => {
+  for(const outcome of ['dispatch-denied','settled','unknown']){
+    const x=setup();await x.writer.initialize(opts());
+    await x.writer.stage(prepare_stage(input()),scope,stageOpts());await x.writer.acquire_owner(context,opts());
+    await x.writer.reserve_dispatch(context,{dispatch_id:'dispatch-1',sequence:1,credential_generation:'credential-1',
+      operation:'complete_point_upsert',point_ids:fixture.members.map(member=>member.point_id)},opts());
+    if(outcome!=='dispatch-denied')await x.writer.mark_dispatched(context,'dispatch-1',opts());
+    Object.assign(x.state.tables.documents[0],{authorization_revision:'auth-2',mutation_epoch:2,principal_ids:[],grant_ids:[]});
+    if(outcome==='dispatch-denied'){
+      await assert.rejects(x.writer.mark_dispatched(context,'dispatch-1',opts()),UnauthorizedScope);
+      assert.equal(x.state.tables.dispatch_journal[0].state,'reserved');
+    }else if(outcome==='settled'){
+      await x.writer.settle_dispatch(context,'dispatch-1','d'.repeat(64),opts());
+      assert.equal(x.state.tables.dispatch_journal[0].state,'settled');
+    }else{
+      await x.writer.mark_unknown(context,'dispatch-1',opts());
+      assert.equal(x.state.tables.dispatch_journal[0].state,'unknown');
+    }
+    await x.writer.close();await x.resource.close();
+  }
+});
+
+test('CAS refreshes terminal fences after the owner-lock wait before validating the old token', async () => {
+  for(const method of ['prepare','publish']){
+    for(const change of ['denied','conflict','owner-only']){
+      const x=setup();await x.writer.initialize(opts());
+      await x.writer.stage(prepare_stage(input()),scope,stageOpts());await x.writer.acquire_owner(context,opts());
+      if(method==='publish')await x.writer.prepare(context,'e'.repeat(64),opts());
+      const start=x.state.queries.length;
+      x.state.onOwnerLock=state=>{
+        Object.assign(state.tables.document_owners[0],{intent_id:'new-intent',owner_token:'00000000-0000-4000-8000-000000000002'});
+        if(change==='denied')Object.assign(state.tables.documents[0],{authorization_revision:'auth-2',mutation_epoch:2});
+        if(change==='conflict')state.tables.documents[0].active_generation_id='new-generation';
+      };
+      const run=()=>method==='prepare'?x.writer.prepare(context,'e'.repeat(64),opts()):x.writer.publish(context,opts());
+      if(change==='owner-only'){
+        await assert.rejects(run(),ProviderUnavailable);
+        assert.equal(x.state.tables.publication_intents[0].state,method==='prepare'?'writing':'prepared');
+      }else{
+        const receipt=await run();assert.equal(receipt.state,change);
+        assert.equal((await x.writer.inspect(context,opts())).state,change);
+      }
+      const queries=x.state.queries.slice(start);
+      const owner=queries.findIndex(query=>query.text.includes('FROM cragkit_qdrant.document_owners')&&query.text.includes('FOR UPDATE'));
+      const document=queries.findIndex(query=>query.text.includes('FROM cragkit_qdrant.documents')&&query.text.includes('FOR UPDATE'));
+      assert.ok(owner>=0&&document>owner);
+      await x.writer.close();await x.resource.close();
+    }
+  }
+});

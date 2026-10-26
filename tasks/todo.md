@@ -257,6 +257,8 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V5-04C: Additive authority schema, writer privileges and exact reader/catalog compatibility; C1/C2 accepted. Native writer/coordinator/recovery operations remain D-H.
     - [x] V5-04C1: Additive publication migration; 17 local PostgreSQL acceptance groups, 27 focused tests, 1864 Python/tool and 1032 Node regressions plus strict types/build passed. [Evidence](../evaluation/reports/V5/V5-04C1.md).
     - [x] V5-04C2: Exact old/new native reader profiles; 66 focused Python/tool and 17 Node tests, 1899 Python/tool and 1038 Node regressions, strict types/build and 56 final native source-case executions passed. [Evidence](../evaluation/reports/V5/V5-04C2.md).
+  - [x] V5-04D: Native authoritative writers; 70 focused Python/tool and 17 Node cases, 1969 Python/tool and 1055 Node regressions, strict types/build, 42 local SQL/native authority checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04D.md).
+  - [ ] V5-04E-H: Exclusive supervisor, actual bounded writes/readback, repair/security/purge and complete native QW fault matrix.
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
 
@@ -303,6 +305,16 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04D: Native publication writer operations
+
+State: COMPLETE for authoritative writer transactions, with [D evidence](../evaluation/reports/V5/V5-04D.md). Parent V5-04 and full V5 remain incomplete. The user requested uninterrupted completion through V5-EXIT; continue after this accepted child without routine permission prompts.
+
+Sol v5_candidate_contract owned Python _qdrant_writer.py, _qdrant_writer_contract.py and test_qdrant_writer.py and assembled. Sol v5_candidate_fixtures owned Node qdrant-writer.ts, qdrant-writer-contract.ts and qdrant-writer.test.mjs. They coordinated directly and transferred frozen paths to root. Independent Sol v5_manifest_security_review inspected source and native harness paths. Root integrated, resolved concrete parity/fence/role/cleanup findings, added native regressions and owns all D files, tracker and Git. No unresolved material issue required Astra; one transient Sol capacity failure was retried with the same model.
+
+Actual final verification: 70 focused Python/tool cases, 17 Node writer cases, 1969 full Python/tool tests (four existing deliberate serializer warnings), 1055 Node tests, strict mypy40files and TypeScript build; all 16 seals remained valid. Final native-verified-03 passed 42 checks: 14 SQL/role/committed-boundary, 14 native Python and 14 native Node authority checks, including real dedicated LOGINs, an observed gate lock wait/fresh epoch, post-commit dispatch membership freezing, unsafe fixed-capability grants/flags/memberships, complete request/vector/ACL comparison, same-set replay, blocked work, publication/owner interleavings, revocation, historical receipts, stale security denial and purge binding. Administrative setup closes before two runtime clients. All private servers/directories and task clients closed. No Qdrant/provider/hosted call ran. Synthetic completion digests exercise authority SQL only, not actual replica completion or the separate 43-case H matrix.
+
+Changed scope: six native writer/admission/test paths; five native harness/driver/test paths; development/storage guidance, E95-E96, report and tracker. Protected migrations, old/new reader profiles, manifests/locks, 16 sealed inputs and three untracked user audit drafts remain unchanged. Last resource observation: 38 GiB disk, 47 percent system memory free on M4/16 GiB; one test process, native suites serial. Learning practice remains unassessed; historical success versus current active pointer was explained. Root commits this verified scope, immediately pushes and checks synchronization, then continues V5-04E exclusive caller-owned supervisor/credential epochs and the remaining V5 tasks.
 
 ### V5-04C2: Explicit source-reader upgrade
 

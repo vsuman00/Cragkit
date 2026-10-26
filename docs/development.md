@@ -944,3 +944,13 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 The parent evaluates both native SQL permission predicates on a real TLS reader connection, restoring each unsafe grant before source cases. The publication profile also tests catalog drift and disabled internal FK triggers. Each native runtime executes the same fourteen source/provider-gate cases. Private administrative source seeding temporarily disables only the two named new publication constraint triggers inside a transaction, resolves pending FK events and restores them before reading. This creates source fixtures; it is not manager publication. Final fingerprints, owned collection cleanup, process exit and private-directory removal are verified. No hosted database, model call or download is involved.
+
+## V5-04D native authority writer acceptance
+
+The internal native writers borrow a PostgreSQL pool. They perform committed authority transactions without Qdrant HTTP or application authorization callbacks. [D evidence](../evaluation/reports/V5/V5-04D.md) separates those checks from the E-H replica and controller gates. Build Node first, then run the opt-in local command with a fresh output directory:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_writer.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04D/a-new-run
+```
+
+This starts disposable PostgreSQL 17.11 TLS/SCRAM fixtures and runs SQL, Python and Node serially. No hosted configuration, Qdrant service or model is used. Administrative setup closes before two native writer clients run. The checker refuses an existing artifact directory and records success only after cleanup. Its synthetic completion digests exercise authority transitions; actual Qdrant acknowledgment/readback remains later acceptance.

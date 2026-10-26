@@ -1,6 +1,6 @@
 # Managed publication authority
 
-This is the additive V5-04C1 SQL foundation for [QW-r1](../../../contracts/QDRANT_PUBLICATION_V5.md). It defines database constraints and restricted runtime capabilities. It does not demonstrate Qdrant completion, supervisor process exclusion, application write authorization or native publication. Those remain the D through H children. [C2 evidence](../../../evaluation/reports/V5/V5-04C2.md) records the subsequent native reader/catalog compatibility acceptance.
+This is the additive V5-04C1 SQL foundation for [QW-r1](../../../contracts/QDRANT_PUBLICATION_V5.md). It defines database constraints and restricted runtime capabilities. [C2 evidence](../../../evaluation/reports/V5/V5-04C2.md) records native reader/catalog compatibility. [D evidence](../../../evaluation/reports/V5/V5-04D.md) records native authoritative writer transactions. Qdrant completion, supervisor process exclusion, application write authorization and actual replica publication remain E through H acceptance.
 
 For example, a committed `reserved` dispatch prevents a new document owner even when its caller disappears. A supervisor can later settle that historical record during instance recovery without changing the original request or epoch. The database records that decision; the native supervisor must establish that old requests can no longer arrive.
 
