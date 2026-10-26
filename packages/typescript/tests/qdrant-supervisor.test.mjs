@@ -61,6 +61,7 @@ function runtime(){
     request.write=value=>{body=Buffer.from(value);};
     request.destroy=()=>{destroyed=true;};
     request.end=()=>queueMicrotask(async()=>{
+      state.waitStarted?.();
       if(state.wait)await state.wait;
       if(destroyed)return;
       state.requests.push({method:settings.method,path:settings.path,key:settings.headers['api-key']});
@@ -242,4 +243,129 @@ test('transport enforces the remaining response allowance before buffering a lar
     assert.deepEqual(Buffer.from(await handle.request('GET','/',{...options(),max_response_bytes:expected.length})),expected);
     await handle.close();
   }finally{await supervisor.close();fake.restore();}
+});
+
+test('control metadata can block ordinary admission but does not represent fencing', {skip:process.platform!=='darwin'||process.arch!=='arm64'},async()=>{
+  const fake=runtime();
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  try{
+    assert.throws(()=>supervisor.control_binding(),ProviderUnavailable);
+    await supervisor.initialize({...options(),provision});
+    const metadata=supervisor.control_binding();
+    assert.equal(metadata.epoch,1);assert.equal(metadata.alive,true);assert.equal(metadata.recovery,null);
+    assert.equal('api_key'in metadata,false);
+    supervisor.block_ordinary();
+    assert.throws(()=>supervisor.issue_attempt(attempt(),options()),ProviderUnavailable);
+    assert.equal(fake.state.stops,0);
+    fake.state.children.at(-1).kill('SIGKILL');
+    assert.equal(supervisor.control_binding().alive,false);
+  }finally{await supervisor.close();fake.restore();}
+});
+
+test('sealed recovery closes handles and requires private SQL settlement before reopening', {skip:process.platform!=='darwin'||process.arch!=='arm64'},async()=>{
+  const fake=runtime();
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  try{
+    await supervisor.initialize({...options(),provision});
+    const recovery={recovery_id:'r',old_epoch:1,new_epoch:2};
+    const proof=await supervisor.recover(recovery,options());
+    const cap=supervisor.issue_recovery_attempt(proof,{...attempt(2),recovery_id:'r'},options());
+    const handle=supervisor.transport_for(cap);
+    const physical=supervisor.recovery_binding(proof);
+    const barrier=await supervisor.seal_recovery(proof,options());
+    assert.deepEqual(supervisor.barrier_binding(barrier),physical);
+    assert.equal(await supervisor.seal_recovery(proof,options()),barrier);
+    assert.equal(supervisor.control_binding().sealed,true);
+    await assert.rejects(handle.request('GET','/',options()),InvalidRequest);
+    assert.throws(()=>supervisor.recovery_binding(proof),UnsupportedCapability);
+    assert.throws(()=>supervisor.barrier_binding({...barrier}),UnsupportedCapability);
+    assert.throws(()=>supervisor.finish_recovery(barrier,{},options()),UnsupportedCapability);
+    assert.throws(()=>supervisor.issue_attempt(attempt(2),options()),ProviderUnavailable);
+    const replacement=await supervisor.recover(recovery,options());
+    assert.notEqual(supervisor.recovery_binding(replacement).credential_generation,physical.credential_generation);
+    assert.throws(()=>supervisor.barrier_binding(barrier),UnsupportedCapability);
+    assert.equal(supervisor.control_binding().sealed,false);
+  }finally{await supervisor.close();fake.restore();}
+});
+
+test('exclusive sessions do not authorize raw calls in the callback or inherited sibling context', {skip:process.platform!=='darwin'||process.arch!=='arm64'},async()=>{
+  const fake=runtime();
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let escaped;
+  try{
+    await supervisor.initialize({...options(),provision});
+    const cap=supervisor.issue_attempt(attempt(),options());
+    const handle=supervisor.transport_for(cap);
+    await supervisor.control_session(async control=>{
+      escaped=control;
+      await assert.rejects(supervisor.control_session(async()=>{}),ProviderUnavailable);
+      assert.throws(()=>supervisor.block_ordinary(),ProviderUnavailable);
+      assert.throws(()=>supervisor.issue_attempt(attempt(),options()),ProviderUnavailable);
+      assert.throws(()=>supervisor.transport_for(cap),ProviderUnavailable);
+      await assert.rejects(supervisor.close(),ProviderUnavailable);
+      await assert.rejects(handle.request('GET','/',options()),ProviderUnavailable);
+      const request={recovery_id:'r',old_epoch:1,new_epoch:2};
+      await assert.rejects(supervisor.recover(request,options()),ProviderUnavailable);
+      await assert.rejects(Promise.resolve().then(()=>supervisor.recover(request,options())),ProviderUnavailable);
+      control.block_ordinary();
+    });
+    assert.throws(()=>escaped.block_ordinary(),ProviderUnavailable);
+    await supervisor.control_session(async()=>{});
+    await handle.close();
+  }finally{await supervisor.close();fake.restore();}
+});
+
+test('an existing raw lifecycle excludes new shared admission', {skip:process.platform!=='darwin'||process.arch!=='arm64'},async()=>{
+  const fake=runtime();
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let release;
+  try{
+    await supervisor.initialize({...options(),provision});
+    const started=new Promise(resolve=>{fake.state.waitStarted=resolve;});
+    fake.state.wait=new Promise(resolve=>{release=resolve;});
+    const work=supervisor.recover({recovery_id:'r',old_epoch:1,new_epoch:2},options());
+    await started;
+    await assert.rejects(supervisor.control_session(async()=>{}),ProviderUnavailable);
+    release();await work;
+  }finally{release?.();await supervisor.close();fake.restore();}
+});
+
+test('session release waits for started facade work even when its callback returned', {skip:process.platform!=='darwin'||process.arch!=='arm64'},async()=>{
+  const fake=runtime();
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let release,escaped,finished=false;
+  try{
+    await supervisor.initialize({...options(),provision});
+    const started=new Promise(resolve=>{fake.state.waitStarted=resolve;});
+    fake.state.wait=new Promise(resolve=>{release=resolve;});
+    const work=supervisor.control_session(async control=>{
+      escaped=control;
+      void control.recover({recovery_id:'r',old_epoch:1,new_epoch:2},options());
+      await started;
+    }).then(()=>{finished=true;});
+    await started;await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(finished,false);
+    await assert.rejects(supervisor.control_session(async()=>{}),ProviderUnavailable);
+    assert.throws(()=>escaped.block_ordinary(),ProviderUnavailable);
+    release();await work;
+    assert.throws(()=>escaped.block_ordinary(),ProviderUnavailable);
+  }finally{release?.();await supervisor.close();fake.restore();}
+});
+
+test('cancellation retains native unwind before another session can enter', {skip:process.platform!=='darwin'||process.arch!=='arm64'},async()=>{
+  const fake=runtime();
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let release;
+  try{
+    await supervisor.initialize({...options(),provision});
+    const started=new Promise(resolve=>{fake.state.waitStarted=resolve;});
+    fake.state.wait=new Promise(resolve=>{release=resolve;});
+    const cancellation=new AbortController();
+    const work=supervisor.control_session(async control=>{
+      await control.recover({recovery_id:'r',old_epoch:1,new_epoch:2},{...options(),signal:cancellation.signal});
+    });
+    await started;cancellation.abort();
+    await assert.rejects(work,error=>error.name==='AbortError');
+    await supervisor.control_session(async control=>{control.block_ordinary();});
+  }finally{release?.();await supervisor.close();fake.restore();}
 });

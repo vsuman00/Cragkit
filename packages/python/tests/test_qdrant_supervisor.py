@@ -313,3 +313,143 @@ async def test_close_cancels_tracked_work_and_stops_only_owned_child(tmp_path,mo
     await owner.close()
     assert task.cancelled() and owner._closed and owner._cleaned
     assert events==[]
+
+
+@run_async
+async def test_control_metadata_closes_admission_without_claiming_physical_fencing(tmp_path,monkeypatch):
+    owner=supervisor(tmp_path,monkeypatch)
+    metadata=owner.control_binding()
+    assert metadata['epoch']==1 and metadata['alive'] and not metadata['sealed']
+    assert metadata['recovery'] is None and 'SECRET' not in repr(metadata)
+    owner.block_ordinary()
+    with pytest.raises(ProviderUnavailable):
+        owner.issue_attempt(BINDING,deadline=asyncio.get_running_loop().time()+1)
+    assert owner._process.returncode is None
+    owner._process.returncode=-9
+    assert owner.control_binding()['alive'] is False
+
+
+@run_async
+async def test_recovery_barrier_seals_handles_and_requires_private_committed_settlement(tmp_path,monkeypatch):
+    owner=supervisor(tmp_path,monkeypatch)
+    await recovery_doubles(owner,monkeypatch)
+    request={'recovery_id':'r','old_epoch':1,'new_epoch':2}
+    deadline=asyncio.get_running_loop().time()+2
+    proof=await owner.recover(request,deadline=deadline)
+    cap=owner.issue_recovery_attempt(proof,{**BINDING,'epoch':2,'recovery_id':'r'},deadline=deadline)
+    handle=owner.transport_for(cap)
+    physical=dict(owner.recovery_binding(proof))
+    barrier=await owner.seal_recovery(proof,deadline=deadline)
+    assert dict(owner.barrier_binding(barrier))==physical
+    assert owner.control_binding()['sealed'] and not owner._transports
+    assert await owner.seal_recovery(proof,deadline=deadline) is barrier
+    with pytest.raises(UnsupportedCapability):owner.recovery_binding(proof)
+    with pytest.raises(UnsupportedCapability):owner.barrier_binding(dict(physical))
+    with pytest.raises(ProviderUnavailable):
+        await handle.request('GET','/',deadline=deadline)
+    with pytest.raises(UnsupportedCapability):owner.finish_recovery(barrier,{},deadline=deadline)
+    assert owner.control_binding()['sealed'] and not owner._gate
+    replacement=await owner.recover(request,deadline=deadline)
+    assert owner.recovery_binding(replacement)['credential_generation']!=physical['credential_generation']
+    with pytest.raises(UnsupportedCapability):owner.barrier_binding(barrier)
+    assert not owner.control_binding()['sealed'] and not owner._gate
+
+
+@run_async
+async def test_seal_refuses_inflight_work_and_preserves_failed_cleanup_as_closed(tmp_path,monkeypatch):
+    owner=supervisor(tmp_path,monkeypatch)
+    await recovery_doubles(owner,monkeypatch)
+    deadline=asyncio.get_running_loop().time()+2
+    proof=await owner.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},deadline=deadline)
+    task=asyncio.current_task();owner._requests.add(task)
+    try:
+        with pytest.raises(ProviderUnavailable):await owner.seal_recovery(proof,deadline=deadline)
+        assert not owner.control_binding()['sealed']
+    finally:owner._requests.discard(task)
+    cap=owner.issue_recovery_attempt(proof,{**BINDING,'epoch':2,'recovery_id':'r'},deadline=deadline)
+    handle=owner.transport_for(cap)
+    async def fail_close(value):raise RuntimeError('PRIVATE_CLOSE')
+    monkeypatch.setattr(owner,'_close_transport',fail_close)
+    with pytest.raises(ProviderUnavailable) as caught:
+        await owner.seal_recovery(proof,deadline=deadline)
+    assert 'PRIVATE' not in str(caught.value)
+    assert owner._active is None and owner.control_binding()['sealed'] and owner._barrier is None
+    with pytest.raises(UnsupportedCapability):owner.recovery_binding(proof)
+
+
+@run_async
+async def test_control_session_is_exclusive_and_raw_calls_do_not_inherit_its_permission(tmp_path,monkeypatch):
+    owner=supervisor(tmp_path,monkeypatch)
+    deadline=asyncio.get_running_loop().time()+2
+    cap=owner.issue_attempt(BINDING,deadline=deadline)
+    handle=owner.transport_for(cap)
+    async with owner.control_session() as control:
+        with pytest.raises(ProviderUnavailable):
+            async with owner.control_session():pass
+        with pytest.raises(ProviderUnavailable):owner.block_ordinary()
+        with pytest.raises(ProviderUnavailable):owner.issue_attempt(BINDING,deadline=deadline)
+        with pytest.raises(ProviderUnavailable):owner.transport_for(cap)
+        with pytest.raises(ProviderUnavailable):await owner.close()
+        with pytest.raises(ProviderUnavailable):await handle.request('GET','/',deadline=deadline)
+        async def raw():
+            with pytest.raises(ProviderUnavailable):
+                await owner.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},deadline=deadline)
+        await raw()
+        await asyncio.create_task(raw())
+        control.block_ordinary()
+        assert not owner._gate
+    with pytest.raises(ProviderUnavailable):control.block_ordinary()
+    async with owner.control_session():pass
+    await handle.close()
+
+
+@run_async
+async def test_existing_raw_lifecycle_cannot_be_joined_by_a_control_session(tmp_path,monkeypatch):
+    owner=supervisor(tmp_path,monkeypatch)
+    await recovery_doubles(owner,monkeypatch)
+    started,released=asyncio.Event(),asyncio.Event()
+    stop=owner._stop
+    async def paused_stop():
+        started.set();await released.wait();await stop()
+    monkeypatch.setattr(owner,'_stop',paused_stop)
+    task=asyncio.create_task(owner.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},
+        deadline=asyncio.get_running_loop().time()+2))
+    await started.wait()
+    try:
+        with pytest.raises(ProviderUnavailable):
+            async with owner.control_session():pass
+    finally:
+        released.set();await task
+
+
+@pytest.mark.parametrize('cancel',[False,True])
+@run_async
+async def test_control_session_drains_started_facade_work_before_expiring(tmp_path,monkeypatch,cancel):
+    owner=supervisor(tmp_path,monkeypatch)
+    await recovery_doubles(owner,monkeypatch)
+    started,released=asyncio.Event(),asyncio.Event()
+    stop=owner._stop
+    async def paused_stop():
+        started.set();await released.wait();await stop()
+    monkeypatch.setattr(owner,'_stop',paused_stop)
+    escaped=[]
+    async def operation():
+        async with owner.control_session() as control:
+            escaped.append(control)
+            asyncio.create_task(control.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},
+                deadline=asyncio.get_running_loop().time()+2))
+            await started.wait()
+            if cancel:await asyncio.Event().wait()
+    task=asyncio.create_task(operation())
+    await started.wait();await asyncio.sleep(0)
+    if cancel:task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    with pytest.raises(ProviderUnavailable):
+        async with owner.control_session():pass
+    released.set()
+    if cancel:
+        with pytest.raises(asyncio.CancelledError):await task
+    else:await task
+    assert owner._active is None and owner._control_token is None
+    with pytest.raises(ProviderUnavailable):escaped[0].block_ordinary()

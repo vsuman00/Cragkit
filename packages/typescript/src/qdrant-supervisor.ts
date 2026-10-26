@@ -9,10 +9,18 @@ import { dirname, basename, isAbsolute, join } from 'node:path';
 import { bounded, now, type LeaseOptions } from './postgres-pool.js';
 import { parse_config, parse_response, same, type QdrantConfig } from './qdrant-contract.js';
 import { fields, metadata, native_array, options as lease_options, text, uuid, count } from './qdrant-writer-contract.js';
-import { DeadlineExceeded, IndexNotReady, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from './errors.js';
+import { DeadlineExceeded, IndexNotReady, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from './errors.js';
+import { settlement_data } from './qdrant-recovery.js';
 
 export type Attempt = Readonly<Record<never, never>>;
 export type PhysicalRecovery = Readonly<Record<never, never>>;
+export type RecoveryBarrier = Readonly<Record<never, never>>;
+export type SupervisorControlSession = Readonly<{
+  block_ordinary():void;
+  recover(input:unknown,options:unknown):Promise<PhysicalRecovery>;
+  seal_recovery(proof:unknown,options:unknown):Promise<RecoveryBarrier>;
+  finish_recovery(barrier:unknown,settlement:unknown,options:unknown):void;
+}>;
 type ProbeSpec = Readonly<{collection:string;collection_config:Readonly<Record<string,unknown>>;point:Readonly<Record<string,unknown>>}>;
 type Identity = Readonly<{instance_id:string;storage_identity:string;supervisor_id:string;endpoint:string;probe_spec:ProbeSpec}>;
 type Binding = Readonly<{intent_id:string;owner_token:string;epoch:number;dispatch_id:string;recovery_id?:string}>;
@@ -93,17 +101,23 @@ export class ManagedQdrantSupervisor {
   #credentialGeneration='';
   #epoch=1;
   #ordinaryOpen=false;
-  #state:'new'|'initializing'|'open'|'recovering'|'recovery_only'|'failed'|'closed'='new';
+  #state:'new'|'initializing'|'open'|'recovering'|'recovery_only'|'recovery_sealed'|'failed'|'closed'='new';
   #active?:Readonly<{controller:AbortController;done:Promise<void>}>;
   #closing?:Promise<void>;
   #recovery?:ProofData;
   #recoveryOldKey?:string;
   #currentProof?:PhysicalRecovery;
+  #currentBarrier?:RecoveryBarrier;
+  readonly #barriers=new WeakMap<object,Readonly<{proof:PhysicalRecovery;binding:Readonly<Record<string,unknown>>}>>();
+  #controlToken?:object;
+  #controlDraining=false;
+  readonly #controlWork=new Set<Promise<unknown>>();
   constructor(binary:unknown,work_dir:unknown,instance_id:unknown,config:unknown){
     this.#binary=path_string(binary);this.#requestedWork=path_string(work_dir);this.#instance=text(instance_id);
     const primary=parse_config(metadata(config));this.#profiles.set(primary.physical_collection,primary);
   }
   register_profile(input:unknown):void {
+    this.#controlAccess();
     if(this.#state!=='new')throw new InvalidRequest();
     const profile=parse_config(metadata(input)),primary=this.#profiles.values().next().value!;
     if(profile.backend_namespace!==primary.backend_namespace)throw new InvalidRequest();
@@ -116,6 +130,71 @@ export class ManagedQdrantSupervisor {
     if(!this.#identity)throw new IndexNotReady();
     return this.#identity;
   }
+  control_binding():Readonly<Record<string,unknown>> {
+    if(!this.#identity||this.#state==='new'||this.#state==='initializing'||this.#state==='closed'){
+      throw new ProviderUnavailable();
+    }
+    const identity=this.#identity;
+    const recovery=this.#recovery?Object.freeze({
+      recovery_id:this.#recovery.recovery_id,
+      old_epoch:this.#recovery.old_epoch,
+      new_epoch:this.#recovery.new_epoch,
+    }):null;
+    return Object.freeze({
+      instance_id:identity.instance_id,
+      backend_namespace:this.#profiles.values().next().value!.backend_namespace,
+      storage_identity:identity.storage_identity,
+      supervisor_id:identity.supervisor_id,
+      epoch:this.#epoch,
+      credential_generation:this.#credentialGeneration,
+      recovery,
+      sealed:this.#state==='recovery_sealed',
+      alive:this.#alive(),
+    });
+  }
+  #controlAccess(token?:object):void {
+    if(token!==this.#controlToken||(token!==undefined&&this.#controlDraining)){
+      throw new ProviderUnavailable();
+    }
+  }
+  async control_session<T>(body:(control:SupervisorControlSession)=>Promise<T>):Promise<T> {
+    if(typeof body!=='function')throw new InvalidRequest();
+    if(this.#controlToken||this.#active||this.#closing||this.#state==='closed')throw new ProviderUnavailable();
+    const token=Object.freeze({});
+    this.#controlToken=token;
+    const track=<R>(operation:()=>Promise<R>):Promise<R>=>{
+      this.#controlAccess(token);
+      const work=operation();
+      this.#controlWork.add(work);
+      void work.then(()=>this.#controlWork.delete(work),()=>this.#controlWork.delete(work));
+      return work;
+    };
+    const control:SupervisorControlSession=Object.freeze({
+      block_ordinary:()=>this.block_ordinary(token),
+      recover:(input,options)=>track(()=>this.recover(input,options,token)),
+      seal_recovery:(proof,options)=>track(()=>this.seal_recovery(proof,options,token)),
+      finish_recovery:(barrier,settlement,options)=>this.finish_recovery(barrier,settlement,options,token),
+    });
+    try{
+      return await body(control);
+    }finally{
+      this.#controlDraining=true;
+      let failed=false;
+      try{
+        const outcomes=await Promise.allSettled([...this.#controlWork]);
+        failed=outcomes.some(outcome=>outcome.status==='rejected');
+      }finally{
+        this.#controlToken=undefined;
+        this.#controlDraining=false;
+      }
+      if(failed)throw new ProviderUnavailable();
+    }
+  }
+  block_ordinary(_control?:object):void {
+    this.#controlAccess(_control);
+    this.control_binding();
+    this.#ordinaryOpen=false;
+  }
   async #run<T>(options:Options,task:(options:Options)=>Promise<T>):Promise<T>{
     if(this.#closing||this.#state==='closed'||this.#active)throw new ProviderUnavailable();
     const controller=new AbortController(),relay=()=>controller.abort();
@@ -123,8 +202,17 @@ export class ManagedQdrantSupervisor {
     if(options.signal?.aborted)controller.abort();
     let finish!:()=>void;
     const done=new Promise<void>(resolve=>{finish=resolve;});this.#active={controller,done};
-    try{return await bounded(task({deadline:options.deadline,signal:controller.signal}),{deadline:options.deadline,signal:controller.signal});}
-    catch(error){controller.abort();this.#ordinaryOpen=false;if(!this.#closing)this.#state='failed';throw safe(error);}
+    const operation=Promise.resolve().then(()=>task({deadline:options.deadline,signal:controller.signal}));
+    try{return await bounded(operation,{deadline:options.deadline,signal:controller.signal});}
+    catch(error){
+      controller.abort();
+      // Retain lifecycle and session ownership until the actual native body
+      // finishes unwinding; a timeout race alone cannot release admission.
+      try{await operation;}catch{ /* The primary error remains redacted below. */ }
+      this.#ordinaryOpen=false;
+      if(!this.#closing)this.#state='failed';
+      throw safe(error);
+    }
     finally{options.signal?.removeEventListener('abort',relay);this.#active=undefined;finish();}
   }
   async #port(options:Options):Promise<number>{
@@ -304,6 +392,7 @@ export class ManagedQdrantSupervisor {
     let closed=false,active:Readonly<{controller:AbortController;done:Promise<void>}>|undefined;
     const handle:ManagedHandle={
       request:async(method,path,rawOptions)=>{
+        this.#controlAccess();
         if(closed)throw new InvalidRequest();
         if(active)throw new ProviderUnavailable();
         const value=fields(rawOptions,['deadline'],['body','signal','max_response_bytes']);
@@ -377,6 +466,7 @@ export class ManagedQdrantSupervisor {
     await this.#verifyProbe(options);
   }
   async initialize(rawOptions:unknown):Promise<void>{
+    this.#controlAccess();
     if(this.#state!=='new')throw new InvalidRequest();
     const value=fields(rawOptions,['deadline'],['signal','provision']);
     if(value.provision!==undefined&&typeof value.provision!=='function')throw new InvalidRequest();
@@ -403,6 +493,7 @@ export class ManagedQdrantSupervisor {
     }
   }
   issue_attempt(input:unknown,rawOptions:unknown):Attempt {
+    this.#controlAccess();
     lease_options(rawOptions);const bound=binding(input);
     if(this.#state!=='open'||!this.#ordinaryOpen||!this.#alive())throw new ProviderUnavailable();
     if(bound.epoch!==this.#epoch)throw new InvalidRequest();
@@ -426,10 +517,12 @@ export class ManagedQdrantSupervisor {
       credential_generation:data.credential_generation,...data.binding});
   }
   transport_for(input:unknown):SupervisorTransport {
+    this.#controlAccess();
     const attempt=this.#attempt(input);
     return this.#transport(attempt.key);
   }
   async deliver_worker_credential(input:unknown,sink:unknown,rawOptions:unknown):Promise<void>{
+    this.#controlAccess();
     const options=lease_options(rawOptions);
     if(typeof input==='object'&&input!==null&&this.#attempts.get(input)?.recovery)throw new UnsupportedCapability();
     const data=this.#attempt(input);
@@ -454,7 +547,57 @@ export class ManagedQdrantSupervisor {
     const proof=this.#proof(input),identity=this.identity();
     return Object.freeze({instance_id:identity.instance_id,storage_identity:identity.storage_identity,supervisor_id:identity.supervisor_id,...proof});
   }
+  barrier_binding(input:unknown):Readonly<Record<string,unknown>> {
+    if(typeof input!=='object'||input===null||input!==this.#currentBarrier||this.#state!=='recovery_sealed'){
+      throw new UnsupportedCapability();
+    }
+    const barrier=this.#barriers.get(input);
+    if(!barrier||barrier.proof!==this.#currentProof||!this.#alive()||this.#active
+      ||barrier.binding.new_epoch!==this.#epoch||barrier.binding.credential_generation!==this.#credentialGeneration
+      ||[...this.#handles].some(handle=>handle.inflight())){
+      throw new ProviderUnavailable();
+    }
+    return barrier.binding;
+  }
+  async seal_recovery(proof:unknown,rawOptions:unknown,_control?:object):Promise<RecoveryBarrier> {
+    this.#controlAccess(_control);
+    const options=lease_options(rawOptions);
+    if(this.#currentBarrier&&this.#barriers.get(this.#currentBarrier)?.proof===proof){
+      this.barrier_binding(this.#currentBarrier);
+      return this.#currentBarrier;
+    }
+    const physical=this.recovery_binding(proof);
+    this.#ordinaryOpen=false;
+    this.#state='recovery_sealed';
+    return this.#run(options,async lease=>{
+      for(const handle of [...this.#handles]){
+        await bounded(handle.close(),lease);
+      }
+      lease_options(lease);
+      if(!this.#alive())throw new ProviderUnavailable();
+      const barrier=Object.freeze({});
+      this.#barriers.set(barrier,Object.freeze({proof:proof as PhysicalRecovery,binding:physical}));
+      this.#currentBarrier=barrier;
+      return barrier;
+    });
+  }
+  finish_recovery(barrier:unknown,settlement:unknown,rawOptions:unknown,_control?:object):void {
+    this.#controlAccess(_control);
+    lease_options(rawOptions);
+    const physical=this.barrier_binding(barrier);
+    const committed=settlement_data(settlement,this,barrier);
+    if(!same(physical,committed))throw new IntegrityViolation();
+    lease_options(rawOptions);
+    if(this.#currentBarrier)this.#barriers.delete(this.#currentBarrier);
+    this.#currentBarrier=undefined;
+    this.#currentProof=undefined;
+    this.#recovery=undefined;
+    this.#recoveryOldKey=undefined;
+    this.#state='open';
+    this.#ordinaryOpen=true;
+  }
   issue_recovery_attempt(proof:unknown,input:unknown,rawOptions:unknown):Attempt {
+    this.#controlAccess();
     lease_options(rawOptions);const physical=this.#proof(proof),bound=binding(input,true);
     if(bound.epoch!==physical.new_epoch||bound.recovery_id!==physical.recovery_id)throw new InvalidRequest();
     const capability=Object.freeze({});
@@ -462,7 +605,8 @@ export class ManagedQdrantSupervisor {
       recovery:true,proof:proof as PhysicalRecovery}));
     return capability;
   }
-  async recover(input:unknown,rawOptions:unknown):Promise<PhysicalRecovery>{
+  async recover(input:unknown,rawOptions:unknown,_control?:object):Promise<PhysicalRecovery>{
+    this.#controlAccess(_control);
     const options=lease_options(rawOptions),value=fields(input,['recovery_id','old_epoch','new_epoch']);
     const recovery_id=text(value.recovery_id),old_epoch=count(value.old_epoch,1),new_epoch=count(value.new_epoch,1);
     if(new_epoch!==old_epoch+1||!this.#identity||this.#state==='new'||this.#state==='closed')throw new InvalidRequest();
@@ -472,6 +616,7 @@ export class ManagedQdrantSupervisor {
     return this.#run(options,async lease=>{
       this.#state='recovering';
       this.#currentProof=undefined;
+      this.#currentBarrier=undefined;
       const retiredKey=this.#key;
       if(!this.#recoveryOldKey)this.#recoveryOldKey=this.#key;
       const generation=randomUUID();
@@ -497,6 +642,7 @@ export class ManagedQdrantSupervisor {
     });
   }
   async close():Promise<void>{
+    this.#controlAccess();
     if(!this.#closing){
       this.#ordinaryOpen=false;this.#state='closed';this.#active?.controller.abort();
       this.#closing=(async()=>{

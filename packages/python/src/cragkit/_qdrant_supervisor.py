@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 import hashlib
 import json
@@ -17,7 +18,7 @@ import stat
 import sys
 from types import MappingProxyType
 from collections.abc import Mapping
-from typing import Any, Awaitable, Callable, cast
+from typing import Any, AsyncIterator, Awaitable, Callable, cast
 from uuid import uuid4
 from weakref import WeakKeyDictionary
 
@@ -87,6 +88,50 @@ class _Attempt(_Opaque):
 
 class _Proof(_Opaque):
     __slots__=()
+
+
+class _Barrier(_Opaque):
+    __slots__=()
+
+
+class _ControlSession(_Opaque):
+    """Sequencing permission, not evidence of fencing or SQL completion."""
+    __slots__ = ('_owner', '_token')
+    _owner: ManagedQdrantSupervisor
+    _token: object
+
+    def __init__(self, owner: ManagedQdrantSupervisor, token: object) -> None:
+        object.__setattr__(self, '_owner', owner)
+        object.__setattr__(self, '_token', token)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError('Immutable control session')
+
+    def block_ordinary(self) -> None:
+        self._owner.block_ordinary(_control=self._token)
+
+    async def recover(self, request: object, *, deadline: float) -> _Proof:
+        self._owner._control_access(self._token)
+        task = asyncio.current_task()
+        assert task is not None
+        self._owner._control_work.add(task)
+        try:
+            return await self._owner.recover(request, deadline=deadline, _control=self._token)
+        finally:
+            self._owner._control_work.discard(task)
+
+    async def seal_recovery(self, proof: object, *, deadline: float) -> _Barrier:
+        self._owner._control_access(self._token)
+        task = asyncio.current_task()
+        assert task is not None
+        self._owner._control_work.add(task)
+        try:
+            return await self._owner.seal_recovery(proof, deadline=deadline, _control=self._token)
+        finally:
+            self._owner._control_work.discard(task)
+
+    def finish_recovery(self, barrier: object, settlement: object, *, deadline: float) -> None:
+        self._owner.finish_recovery(barrier, settlement, deadline=deadline, _control=self._token)
 
 
 @dataclass(frozen=True,slots=True)
@@ -159,11 +204,18 @@ class ManagedQdrantSupervisor:
         self._owned: tuple[int,int] | None=None
         self._storage_inode: tuple[int,int] | None=None
         self._recovery: dict[str,Any] | None=None
+        self._sealed = False
+        self._barrier: _Barrier | None = None
+        self._barriers: WeakKeyDictionary[_Barrier, tuple[_Proof, dict[str, Any]]] = WeakKeyDictionary()
+        self._control_token: object | None = None
+        self._control_draining = False
+        self._control_work: set[asyncio.Task[Any]] = set()
 
     def __repr__(self) -> str:
         return 'ManagedQdrantSupervisor()'
 
     def register_profile(self,value: object) -> None:
+        self._control_access()
         if self._active is not None or self._owned is not None or self._closed:
             raise InvalidRequest()
         profile=_config(value)
@@ -182,6 +234,65 @@ class ManagedQdrantSupervisor:
         return {'instance_id':self._instance,'storage_identity':self._storage_id,
                 'supervisor_id':self._supervisor_id,'endpoint':self._endpoint,
                 'probe_spec':json.loads(json.dumps(self._probe))}
+
+    def control_binding(self) -> Mapping[str, Any]:
+        """Owned local metadata, including failed recovery; never physical proof."""
+        if not self._initialized or self._closed:
+            raise ProviderUnavailable()
+        self._assert_owner()
+        recovery = None if self._recovery is None else MappingProxyType({
+            key: self._recovery[key] for key in ('recovery_id', 'old_epoch', 'new_epoch')
+        })
+        return MappingProxyType({
+            'instance_id': self._instance,
+            'backend_namespace': next(iter(self._profiles.values())).backend_namespace,
+            'storage_identity': self._storage_id,
+            'supervisor_id': self._supervisor_id,
+            'epoch': self._epoch,
+            'credential_generation': self._credential_generation,
+            'recovery': recovery,
+            'sealed': self._sealed,
+            'alive': self._process is not None and self._process.returncode is None,
+        })
+
+    def _control_access(self, token: object | None = None) -> None:
+        if token is not self._control_token or token is not None and self._control_draining:
+            raise ProviderUnavailable()
+
+    @asynccontextmanager
+    async def control_session(self) -> AsyncIterator[_ControlSession]:
+        if self._control_token is not None or self._active is not None or self._closed:
+            raise ProviderUnavailable()
+        token = object()
+        self._control_token = token
+        try:
+            yield _ControlSession(self, token)
+        finally:
+            self._control_draining = True
+            pending = [task for task in self._control_work if task is not asyncio.current_task()]
+            cancelled = False
+            failures = []
+            try:
+                if pending:
+                    drain = asyncio.gather(*pending, return_exceptions=True)
+                    while not drain.done():
+                        try:
+                            await asyncio.shield(drain)
+                        except asyncio.CancelledError:
+                            cancelled = True
+                    failures = [result for result in drain.result() if isinstance(result, BaseException)]
+            finally:
+                self._control_token = None
+                self._control_draining = False
+            if cancelled:
+                raise asyncio.CancelledError()
+            if failures:
+                raise ProviderUnavailable() from None
+
+    def block_ordinary(self, *, _control: object | None = None) -> None:
+        self._control_access(_control)
+        self.control_binding()
+        self._gate = False
 
     def _assert_owner(self) -> None:
         if self._owned is None:
@@ -416,6 +527,7 @@ class ManagedQdrantSupervisor:
             raise IntegrityViolation()
 
     async def initialize(self,*,deadline: float,provision: Callable[[_Transport,dict[str,Any]],Awaitable[object]] | None=None) -> None:
+        self._control_access()
         deadline=deadline_value(deadline)
         if self._active is not None or self._owned is not None or self._closed:
             raise ProviderUnavailable()
@@ -458,6 +570,7 @@ class ManagedQdrantSupervisor:
         return _Binding(_identity(value['intent_id']),token,_count(value['epoch']),_identity(value['dispatch_id']),recovery_id)
 
     def issue_attempt(self,binding: object,*,deadline: float) -> _Attempt:
+        self._control_access()
         deadline_value(deadline)
         if not self._initialized:
             raise IndexNotReady()
@@ -471,6 +584,7 @@ class ManagedQdrantSupervisor:
         return cap
 
     def transport_for(self,capability: object) -> _Transport:
+        self._control_access()
         if type(capability) is not _Attempt or capability not in self._attempts or self._closed:
             raise InvalidRequest()
         self._assert_live()
@@ -485,6 +599,7 @@ class ManagedQdrantSupervisor:
         return self._new_transport(key,'recovery' if proof else 'ordinary',proof)
 
     async def deliver_worker_credential(self,capability: object,sink: Callable[[dict[str,Any]],Awaitable[object]],*,deadline: float) -> None:
+        self._control_access()
         deadline=deadline_value(deadline)
         if not callable(sink) or type(capability) is not _Attempt or capability not in self._attempts:
             raise InvalidRequest()
@@ -509,6 +624,7 @@ class ManagedQdrantSupervisor:
             self._requests.discard(task)
 
     async def _transport_request(self,handle: _Transport,method: str,path: str,body: bytes | None,deadline: float,maximum: int) -> bytes:
+        self._control_access()
         deadline=deadline_value(deadline)
         state=self._transports.get(handle)
         if state is None or state.closed or self._closed:
@@ -590,7 +706,8 @@ class ManagedQdrantSupervisor:
         if process.returncode is None:
             raise ProviderUnavailable()
 
-    async def recover(self,request: object,*,deadline: float) -> _Proof:
+    async def recover(self,request: object,*,deadline: float,_control: object | None=None) -> _Proof:
+        self._control_access(_control)
         deadline=deadline_value(deadline)
         metadata_guard(request)
         if type(request) is not dict or set(request)!={'recovery_id','old_epoch','new_epoch'}:
@@ -609,6 +726,9 @@ class ManagedQdrantSupervisor:
         if self._epoch not in (old,new):
             raise ProviderUnavailable()
         self._gate=False
+        self._sealed = False
+        self._barrier = None
+        self._barriers.clear()
         if state is None:
             self._recovery=state={'recovery_id':recovery_id,'old_epoch':old,'new_epoch':new,'proof':None}
         # A later unknown recovery mutation requires another physical fence,
@@ -655,6 +775,7 @@ class ManagedQdrantSupervisor:
             self._active=None
 
     def issue_recovery_attempt(self,proof: object,binding: object,*,deadline: float) -> _Attempt:
+        self._control_access()
         deadline_value(deadline)
         self.recovery_binding(proof)
         assert isinstance(proof,_Proof)
@@ -668,7 +789,7 @@ class ManagedQdrantSupervisor:
         return cap
 
     def recovery_binding(self,proof: object) -> Mapping[str,Any]:
-        if type(proof) is not _Proof or proof not in self._proofs or self._closed or self._gate:
+        if type(proof) is not _Proof or proof not in self._proofs or self._closed or self._gate or self._sealed:
             raise UnsupportedCapability()
         self._assert_owner()
         record=self._proofs[proof]
@@ -676,6 +797,71 @@ class ManagedQdrantSupervisor:
             or self._process is None or self._process.returncode is not None or self._requests or self._active is not None):
             raise ProviderUnavailable()
         return MappingProxyType(dict(record))
+
+    def barrier_binding(self, barrier: object) -> Mapping[str, Any]:
+        if (type(barrier) is not _Barrier or barrier not in self._barriers
+                or barrier is not self._barrier or not self._sealed or self._gate
+                or self._closed):
+            raise UnsupportedCapability()
+        self._assert_live()
+        proof, physical = self._barriers[barrier]
+        if (proof not in self._proofs or self._proofs[proof] != physical
+                or physical['new_epoch'] != self._epoch
+                or physical['credential_generation'] != self._credential_generation
+                or self._active is not None or self._requests):
+            raise ProviderUnavailable()
+        return MappingProxyType(dict(physical))
+
+    async def seal_recovery(self, proof: object, *, deadline: float, _control: object | None = None) -> _Barrier:
+        self._control_access(_control)
+        deadline = deadline_value(deadline)
+        if self._barrier is not None:
+            recorded_proof, _ = self._barriers[self._barrier]
+            if recorded_proof is proof:
+                self.barrier_binding(self._barrier)
+                return self._barrier
+        physical = dict(self.recovery_binding(proof))
+        assert type(proof) is _Proof
+        self._sealed = True
+        self._gate = False
+        self._attempts.clear()
+        self._active = asyncio.current_task()
+        try:
+            async with asyncio.timeout_at(deadline):
+                for handle in list(self._transports):
+                    await handle.close()
+                deadline_value(deadline)
+                self._assert_live()
+                barrier = _Barrier()
+                self._barriers[barrier] = (proof, physical)
+                self._barrier = barrier
+                return barrier
+        except asyncio.CancelledError:
+            raise
+        except TimeoutError:
+            raise DeadlineExceeded() from None
+        except Exception as error:
+            raise _safe(error) from None
+        finally:
+            self._active = None
+
+    def finish_recovery(self, barrier: object, settlement: object, *, deadline: float,
+                        _control: object | None = None) -> None:
+        self._control_access(_control)
+        from ._qdrant_recovery import settlement_data
+        deadline_value(deadline)
+        physical = self.barrier_binding(barrier)
+        committed = settlement_data(settlement, self, barrier)
+        if dict(committed) != dict(physical):
+            raise IntegrityViolation()
+        deadline_value(deadline)
+        self._proofs.clear()
+        self._attempts.clear()
+        self._barriers.clear()
+        self._barrier = None
+        self._recovery = None
+        self._sealed = False
+        self._gate = True
 
     def attempt_binding(self,capability: object) -> Mapping[str,Any]:
         if type(capability) is not _Attempt or capability not in self._attempts or self._closed:
@@ -700,6 +886,7 @@ class ManagedQdrantSupervisor:
         return MappingProxyType(result)
 
     async def close(self) -> None:
+        self._control_access()
         try:
             async with asyncio.timeout(8):
                 await self._close_owned()

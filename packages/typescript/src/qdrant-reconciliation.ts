@@ -35,6 +35,20 @@ type Issued = Readonly<{
   data: ReceiptData;
 }>;
 const receipts = new WeakMap<object, Issued>();
+const verifiers = new WeakMap<object, Readonly<{
+  writer: PostgresQdrantWriter;
+  supervisor: ManagedQdrantSupervisor;
+}>>();
+
+export function verifier_authority(input: unknown, supervisor: unknown): PostgresQdrantWriter {
+  if (typeof input !== 'object' || input === null || types.isProxy(input)
+      || Object.getPrototypeOf(input) !== QdrantReconciliationVerifier.prototype) {
+    throw new InvalidRequest();
+  }
+  const binding = verifiers.get(input);
+  if (!binding || binding.supervisor !== supervisor) throw new InvalidRequest();
+  return binding.writer;
+}
 const MAX_CALLS = 17;
 const MAX_PAGE = 8;
 const MAX_RESPONSE = 1048576;
@@ -159,6 +173,7 @@ export class QdrantReconciliationVerifier {
     }
     this.#writer = writer;
     this.#supervisor = supervisor;
+    verifiers.set(this, Object.freeze({writer, supervisor}));
   }
   async verify(proof: unknown, input: unknown, rawOptions: unknown): Promise<ReconciliationReceipt> {
     const context = parse_context(input);

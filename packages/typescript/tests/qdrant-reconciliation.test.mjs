@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {PoolResource,parse_pool_config,bounded,now} from '../dist/postgres-pool.js';
 import {PostgresQdrantWriter,projection_data,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
-import {QdrantReconciliationVerifier,receipt_data} from '../dist/qdrant-reconciliation.js';
+import {QdrantReconciliationVerifier,receipt_data,verifier_authority} from '../dist/qdrant-reconciliation.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {encode_dense_replay,encode_sparse_replay} from '../dist/qdrant-manifest.js';
@@ -249,5 +249,20 @@ test('verifier requires exact native components and rejects proxies without invo
       assert.throws(()=>new QdrantReconciliationVerifier(writer,supervisor),InvalidRequest);
     }
     assert.equal(hooks,0);assert.equal(x.state.clients.length,clients);assert.equal(x.state.requests.length,requests);
+  }finally{await x.close();}
+});
+
+test('internal authority binding requires the exact registered verifier and supervisor pair',async()=>{
+  const x=await setup();try{
+    assert.equal(verifier_authority(x.verifier,x.supervisor),x.writer);
+    class DerivedVerifier extends QdrantReconciliationVerifier{}
+    let hooks=0;
+    const proxy=new Proxy(x.verifier,{getPrototypeOf(){hooks++;throw Error('private');}});
+    for(const [verifier,supervisor] of [[x.verifier,{}],[{},x.supervisor],
+      [Object.create(QdrantReconciliationVerifier.prototype),x.supervisor],
+      [new DerivedVerifier(x.writer,x.supervisor),x.supervisor],[proxy,x.supervisor]]){
+      assert.throws(()=>verifier_authority(verifier,supervisor),InvalidRequest);
+    }
+    assert.equal(hooks,0);assert.equal(x.state.requests.length,0);
   }finally{await x.close();}
 });

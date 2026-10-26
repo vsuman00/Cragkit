@@ -258,11 +258,11 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
     - [x] V5-04C1: Additive publication migration; 17 local PostgreSQL acceptance groups, 27 focused tests, 1864 Python/tool and 1032 Node regressions plus strict types/build passed. [Evidence](../evaluation/reports/V5/V5-04C1.md).
     - [x] V5-04C2: Exact old/new native reader profiles; 66 focused Python/tool and 17 Node tests, 1899 Python/tool and 1038 Node regressions, strict types/build and 56 final native source-case executions passed. [Evidence](../evaluation/reports/V5/V5-04C2.md).
   - [x] V5-04D: Native authoritative writers; 70 focused Python/tool and 17 Node cases, 1969 Python/tool and 1055 Node regressions, strict types/build, 42 local SQL/native authority checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04D.md).
-  - [ ] V5-04E: Exclusive supervisor and durable instance recovery.
+  - [x] V5-04E: Exclusive supervisor and durable instance recovery; E1/E2 accepted within the selected native profile.
     - [x] V5-04E1: Native controller/immutable credentials; 32 focused Python/tool and nine Node groups, 2001 Python/tool and 1064 Node regressions, strict types/build, 18 actual process/key checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E1.md).
-    - [ ] V5-04E2: Durable recovery gate, per-document authorized reconciliation and private settlement admission.
+    - [x] V5-04E2: Durable recovery gate, per-document authorized reconciliation and private settlement admission.
       - [x] V5-04E2a: Authority-bound full readback; 2054 Python/tool and 1078 Node regressions, strict types/build, 36 native readback checks, normalized witness parity, 42 native D regression checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E2a.md).
-      - [ ] V5-04E2b: Durable instance control, retired-dispatch settlement and private admission handoff.
+      - [x] V5-04E2b: Durable instance control and private admission; 2108 Python/tool and 1094 Node regressions, strict types/build, 50 native SQL/recovery checks, 54 native controller/readback regression checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E2b.md).
   - [ ] V5-04F: Actual bounded staged writes and full readback/publication.
   - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
@@ -312,6 +312,18 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04E2b: Durable recovery settlement and admission
+
+State: COMPLETE within the selected native controller profile; E2 and parent E are complete. V5-04 and full V5 remain incomplete. [E2b evidence](../evaluation/reports/V5/V5-04E2b.md). E2a was accepted/committed/pushed as 791ebb8c090b66a46ad6d980dbfc2a15d2cfd8f6, synchronized 0/0. Continue through V5-EXIT without routine permission prompts.
+
+Shared outcome: exact restricted supervisor SQL control commits the instance block before actual fencing, advances only existing owners, settles retired-credential effects using actual scoped receipts and reopens native admission only through a sealed private committed handoff. Current-generation and foreign-document uncertainty remain blocked. Sol `/root/v5_candidate_contract` owned new Python recovery source/tests and assembled; Sol `/root/v5_candidate_fixtures` owned corresponding Node paths. Sol `/root/v5_manifest_security_review` owned the Node native consumer, transferred it, then reviewed independently authored control/guard code. Peers coordinated API, privilege map and findings directly. Root owned supervisor barriers/session hooks and tests (I1), private verifier-authority helpers/tests (I2), shared contract, remaining native tools/tests, documentation/tracker, serial validation and Git. All paths transferred to root before final checks.
+
+Serial checks exposed no failure, but root and peers then found a cross-coordinator race. Root reproduced a failed native competing-reopen refusal and added E2b-r2: an actual-supervisor exclusive session spans the whole SQL/physical/handoff operation. Its expiring private facade rejects competing/nested/raw/inherited calls, preexisting native lifecycle work and stale authority, and drains started native work before release. Pair/reviewer consensus resolved the fix; no material issue required Astra. This sequencing guard is separate from actual physical proof and private SQL settlement.
+
+Root passed 124 focused Python/tool cases, 35 Node groups, full suites of 2108 Python/tool tests (four existing deliberate warnings) and 1094 Node tests, mypy43files, build and all 16 seals. Final native E2b passed 50 checks: eight SQL permission groups plus 21 real recovery cases per runtime. Actual SQL commit acknowledgment loss was injected after the real commit; read-only reconciliation, a sealed native gate and one open UPDATE were observed. Competing coordinators were paused at the real durable-block/physical boundary; competing/raw calls were refused before SQL, then manager handoff resumed. Existing native E1 and E2a checks passed again (18 and 36). These are not H's 43 process/fault cases or model-quality evidence.
+
+Changed scope: two native recovery modules/tests, root supervisor/barrier/session and verifier-authority source/tests, four native checker/consumer/test paths, QW/development guidance, E101, report and tracker. Migrations, existing writer/codec/reader source, shared fixtures, manifests/locks, seals and all three user audits remain unchanged. At most two clients after setup, one test process and serial services; final resource observation 36 GiB disk/44 percent memory free on M4/16 GiB. Successful runs verified listener absence and removed owned fixture storage; the failed concurrency fixture was separately removed only after independent absence verification. No hosted mutation, provider call, install/download, registry publication or persistent service. Learning practice unassessed. Root commits/pushes this accepted scope and continues V5-04F bounded staged writes, full readback and safe generation publication, then G/H and remaining V5 tasks.
 
 ### V5-04E2a: Authority-bound recovery readback
 

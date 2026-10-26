@@ -57,6 +57,7 @@ _PROJECTIONS: WeakKeyDictionary[
 _RECEIPTS: WeakKeyDictionary[
     ReconciliationReceipt, tuple[object, object, Mapping[str, Any]]
 ] = WeakKeyDictionary()
+_VERIFIERS: WeakKeyDictionary[object, tuple[object, ManagedQdrantSupervisor]] = WeakKeyDictionary()
 _UUID = re.compile('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 _PHYSICAL = (
     'instance_id', 'storage_identity', 'supervisor_id', 'recovery_id',
@@ -112,6 +113,17 @@ def receipt_data(receipt: object, verifier: object) -> Mapping[str, Any]:
     if current != dict(data['physical_binding']):
         raise UnsupportedCapability()
     return data
+
+
+def verifier_authority(verifier: object, supervisor: object) -> PostgresQdrantWriter:
+    """Resolve the exact constructor-bound authority for internal recovery."""
+    from ._qdrant_writer import PostgresQdrantWriter
+    if type(verifier) is not QdrantReconciliationVerifier or verifier not in _VERIFIERS:
+        raise InvalidRequest()
+    writer, actual_supervisor = _VERIFIERS[verifier]
+    if actual_supervisor is not supervisor or type(writer) is not PostgresQdrantWriter:
+        raise InvalidRequest()
+    return writer
 
 
 def witness(data: Mapping[str, Any]) -> tuple[Any, ...]:
@@ -297,6 +309,7 @@ class QdrantReconciliationVerifier:
             raise InvalidRequest()
         self.writer = writer
         self.supervisor = supervisor
+        _VERIFIERS[self] = (writer, supervisor)
         self._active: asyncio.Task[Any] | None = None
 
     async def verify(self, proof: object, context: object, *,

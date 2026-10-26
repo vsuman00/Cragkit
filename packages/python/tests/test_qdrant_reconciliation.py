@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from cragkit._qdrant_reconciliation import (ExpectedProjection, QdrantReconciliationVerifier,
-    ReconciliationReceipt, projection_data, receipt_data)
+    ReconciliationReceipt, projection_data, receipt_data, verifier_authority)
 from cragkit._qdrant_supervisor import ManagedQdrantSupervisor, _Proof
 from cragkit._qdrant_writer import PostgresQdrantWriter, prepare_stage
 from cragkit._qdrant_writer_contract import stage_data
@@ -264,6 +264,19 @@ async def test_slow_final_physical_check_cannot_issue_a_receipt_after_deadline(m
     with pytest.raises(DeadlineExceeded):
         await QdrantReconciliationVerifier(writer,supervisor).verify(
             proof,ctx(),deadline=asyncio.get_running_loop().time()+0.1)
+
+
+@run_async
+async def test_internal_authority_binding_requires_the_exact_registered_pair(monkeypatch,tmp_path):
+    writer,supervisor,_,_,handle,_,_=await setup(monkeypatch,tmp_path)
+    verifier=QdrantReconciliationVerifier(writer,supervisor)
+    assert verifier_authority(verifier,supervisor) is writer
+    class DerivedVerifier(QdrantReconciliationVerifier):pass
+    for value,target in [(verifier,object()),(object(),supervisor),
+            (object.__new__(QdrantReconciliationVerifier),supervisor),
+            (DerivedVerifier(writer,supervisor),supervisor)]:
+        with pytest.raises(InvalidRequest):verifier_authority(value,target)
+    assert not handle.calls
 
 
 @run_async
