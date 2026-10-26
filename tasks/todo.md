@@ -258,7 +258,12 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
     - [x] V5-04C1: Additive publication migration; 17 local PostgreSQL acceptance groups, 27 focused tests, 1864 Python/tool and 1032 Node regressions plus strict types/build passed. [Evidence](../evaluation/reports/V5/V5-04C1.md).
     - [x] V5-04C2: Exact old/new native reader profiles; 66 focused Python/tool and 17 Node tests, 1899 Python/tool and 1038 Node regressions, strict types/build and 56 final native source-case executions passed. [Evidence](../evaluation/reports/V5/V5-04C2.md).
   - [x] V5-04D: Native authoritative writers; 70 focused Python/tool and 17 Node cases, 1969 Python/tool and 1055 Node regressions, strict types/build, 42 local SQL/native authority checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04D.md).
-  - [ ] V5-04E-H: Exclusive supervisor, actual bounded writes/readback, repair/security/purge and complete native QW fault matrix.
+  - [ ] V5-04E: Exclusive supervisor and durable instance recovery.
+    - [x] V5-04E1: Native controller/immutable credentials; 32 focused Python/tool and nine Node groups, 2001 Python/tool and 1064 Node regressions, strict types/build, 18 actual process/key checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E1.md).
+    - [ ] V5-04E2: Durable recovery gate, per-document authorized reconciliation and private settlement admission.
+  - [ ] V5-04F: Actual bounded staged writes and full readback/publication.
+  - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
+  - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
 
@@ -305,6 +310,18 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04E1: Exclusive controller and credential capabilities
+
+State: COMPLETE for the physical controller primitive; parent E and full V5 remain incomplete. [E1 evidence](../evaluation/reports/V5/V5-04E1.md). D was accepted/pushed as bfbf6980376a1699f429b5dccb5c50edd23a18b4, synchronized 0/0. Continue through V5-EXIT without routine confirmation prompts.
+
+Sol v5_candidate_contract wrote Python _qdrant_supervisor.py/test_qdrant_supervisor.py and assembled. Sol v5_candidate_fixtures wrote Node qdrant-supervisor.ts/test and coordinated directly. Sol v5_manifest_security_review wrote only tools/check_typescript_qdrant_supervisor.mjs, then independently reviewed the other peers' controllers. All paths transferred to root before final integration; root added Python consumer/parent/harness tests, fixed review findings and owns tracker/Git. No worker executed code or used services/network/install/Git. No unresolved material issue required Astra.
+
+Final checks: 26 Python controller plus six harness tests, nine Node groups, full 2001 Python/tool tests (four existing deliberate warnings), 1064 Node tests, mypy41files/TypeScript build and 16 unchanged seals. Actual native-verified-01 ran nine Python and nine Node physical checks serially: explicit provisioning/profile/listener ownership, competing-controller refusal, immutable ordinary key delivery, same-storage restart, captured old-key 401, recovery-only admission, copied-proof rejection, current-key full point/vector readback, forbidden recovery-key delivery and repeated same-ID physical fencing. Both controllers closed, listener absence checked independently and fixture storage removed. No SQL settlement, actual manager/supervisor kill, full H matrix, provider/hosted call, download, registry publication or persistent service is claimed.
+
+Native probes first failed the design's incorrect 403 assumption: unchanged real HTTP and pinned authentication/HTTP source proved retired invalid-key 401. QW and implementations now require exactly 401 for this profile; generic 401/403 transport errors remain authorization failures. Earlier Python typing and Node mock cleanup failures were fixed. Independent review corrected invalid-epoch admission poisoning, retained closed handles and known-dead-child guards, with regressions before final acceptance. These were concrete failures/corrections, not passing earlier runs.
+
+Changed scope: four native controller/test paths, four acceptance/consumer/test paths, QW factual status correction, development guidance, E97-E98, report and tracker. Existing migrations, writer/reader source, manifests/locks, all seals and three untracked user audit drafts remain unchanged. Reference profile: macOS arm64/pinned Qdrant, new private directory, no supervisor takeover or adoption, surviving caller-owned controller. Physical proof never implies SQL quiescence and has no ordinary reopen API. Last resource observation: 36 GiB disk/61 percent memory free, one test process and serial services. Learning practice unassessed. Next E2 supplies durable gating, authorized per-document reconciliation and the private verified settlement handoff; unavailable foreign document owners keep the whole instance blocked. Root commits/pushes this accepted scope and continues.
 
 ### V5-04D: Native publication writer operations
 

@@ -954,3 +954,13 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 This starts disposable PostgreSQL 17.11 TLS/SCRAM fixtures and runs SQL, Python and Node serially. No hosted configuration, Qdrant service or model is used. Administrative setup closes before two native writer clients run. The checker refuses an existing artifact directory and records success only after cleanup. Its synthetic completion digests exercise authority transitions; actual Qdrant acknowledgment/readback remains later acceptance.
+
+## V5-04E1 controller acceptance
+
+The optional internal controllers have a macOS arm64 reference profile with the existing pinned Qdrant 1.20.0 binary. [E1 evidence](../evaluation/reports/V5/V5-04E1.md) separates physical credential/process fencing from later SQL recovery settlement. Build Node, then explicitly run:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_supervisor.py --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04E1/a-new-run
+```
+
+Use a fresh artifact directory. The native runtimes run serially and explicitly provision synthetic collections; retired invalid keys must receive HTTP 401. The controller preserves storage, refuses directory adoption and leaves ordinary admission closed after recovery. The checker removes only its fixture directory after verified shutdown. No hosted configuration or SQL settlement is used in E1.
