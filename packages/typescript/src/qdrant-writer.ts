@@ -919,6 +919,11 @@ export class PostgresQdrantWriter {
     return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
       const document=await this.#document(tx,context);
       if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+      return this.#dispatchStatus(tx,context,dispatch_id);
+    }));
+  }
+
+  async #dispatchStatus(tx:Tx,context:WriterContext,dispatch_id:string):Promise<DispatchStatus|null> {
       const journal=await this.#journal(tx,context,dispatch_id);
       if(!journal)return null;
       try {
@@ -972,6 +977,56 @@ export class PostgresQdrantWriter {
         if(!same(ids,view.point_ids))throw new IntegrityViolation();
         return Object.freeze({dispatch_id,sequence,owner_token,backend_epoch,credential_generation,operation,state,
           completion_sha256,request_sha256:view.request_sha256,point_ids:view.point_ids});
+      } catch(error) {
+        if(error instanceof InvalidRequest)throw new IntegrityViolation();
+        throw error;
+      }
+  }
+
+  async publication_preparation(input:unknown,rawOptions:unknown):Promise<Readonly<{
+    preparation:Readonly<{owner_token:string;backend_epoch:number;authorization_revision:string;mutation_epoch:number;
+      manifest_sha256:string;readback_sha256:string}>;dispatch:DispatchStatus;
+  }>|null> {
+    const context=parseContext(input),options=parseOptions(rawOptions);
+    return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
+      const document=await this.#document(tx,context);
+      if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+      const backend=await this.#managerBackend(tx);
+      const intent=await this.#intent(tx,context);
+      if(!intent||intent.action!=='stage')throw new InvalidRequest();
+      const rows=await this.#select(tx,'preparations',['instance_id','owner_token','backend_epoch','authorization_revision','mutation_epoch','manifest_sha256','readback_sha256'],context,
+        ' AND intent_id=$4',[context.intent_id],2);
+      if(rows.length===0){
+        if(intent.state==='prepared'||intent.state==='published')throw new IntegrityViolation();
+        return null;
+      }
+      if(rows.length!==1)throw new IntegrityViolation();
+      try {
+        const row=rows[0];
+        const preparation=Object.freeze({owner_token:uuid(row.owner_token),backend_epoch:db_count(row.backend_epoch),
+          authorization_revision:text(row.authorization_revision),mutation_epoch:db_count(row.mutation_epoch),
+          manifest_sha256:digest(row.manifest_sha256),readback_sha256:digest(row.readback_sha256)});
+        if(row.instance_id!==this.#instance||preparation.backend_epoch<1||preparation.manifest_sha256!==intent.manifest_sha256
+          ||preparation.authorization_revision!==intent.expected_authorization_revision
+          ||preparation.mutation_epoch!==db_count(intent.expected_mutation_epoch))throw new IntegrityViolation();
+        if(backend.state!=='open'||backend.epoch!==preparation.backend_epoch)throw new ProviderUnavailable();
+        if(await this.#managerPending(tx,context))throw new ProviderUnavailable();
+        await this.#loadStage(tx,context);
+        const journals=await this.#select(tx,'dispatch_journal',['dispatch_id','sequence','state'],context,' AND intent_id=$4',[context.intent_id],257);
+        if(journals.length<1||journals.length>256)throw new IntegrityViolation();
+        const ids=new Set<string>(),sequences=new Set<number>();
+        let selected:string|null=null,max=0;
+        for(const journal of journals){
+          const id=text(journal.dispatch_id),sequence=db_count(journal.sequence);
+          if(sequence<1||sequence>256||ids.has(id)||sequences.has(sequence))throw new IntegrityViolation();
+          ids.add(id);sequences.add(sequence);
+          if(journal.state!=='settled')throw new ProviderUnavailable();
+          if(sequence>max){max=sequence;selected=id;}
+        }
+        const dispatch=await this.#dispatchStatus(tx,context,selected!);
+        if(!dispatch||dispatch.state!=='settled'||dispatch.operation!=='complete_point_upsert'
+          ||dispatch.owner_token!==preparation.owner_token||dispatch.backend_epoch!==preparation.backend_epoch)throw new IntegrityViolation();
+        return Object.freeze({preparation,dispatch});
       } catch(error) {
         if(error instanceof InvalidRequest)throw new IntegrityViolation();
         throw error;

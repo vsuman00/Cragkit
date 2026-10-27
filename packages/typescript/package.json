@@ -74,6 +74,10 @@
     "./qdrant-source": {
       "types": "./dist/qdrant-source.d.ts",
       "import": "./dist/qdrant-source.js"
+    },
+    "./qdrant-publication": {
+      "types": "./dist/qdrant-publication.d.ts",
+      "import": "./dist/qdrant-publication.js"
     }
   },
   "files": [

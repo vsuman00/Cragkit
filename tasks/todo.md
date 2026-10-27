@@ -267,9 +267,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
     - [x] V5-04F1: Ordinary current-authority projections and private full-readback receipts; 2,136 Python/tool and 1,106 Node regressions, strict types/build, 38 native ordinary cases with witness parity, 36 native readback regression cases and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F1.md).
     - [ ] V5-04F2: Authenticated dispatch and public stage/publish manager operations.
       - [x] V5-04F2a1: Private manager authority snapshot, original-fence admission and dispatch outcome lookup; 2,157 Python/tool and 1,117 Node regressions, strict types/build, 58 native SQL checks with ordered case parity and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a1.md).
-      - [ ] V5-04F2a2: Native attempt transport and public in-process stage/publish manager.
+      - [x] V5-04F2a2: Native attempt transport and public in-process stage/publish manager; accepted within the in-process native profile, with worker/process and repair dependencies still open.
         - [x] V5-04F2a2i: Private native dependency and registered-profile bindings; 2,173 Python/tool and 1,123 Node regressions, strict types/build, 68 native controller/recovery checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a2i.md).
-        - [ ] V5-04F2a2ii: Bounded native transport and public stage/publish operations.
+        - [x] V5-04F2a2ii: Bounded native transport and public stage/publish operations; 2,207 Python/tool and 1,136 Node regressions, strict types/build, 28 actual public-manager cases with nineteen-result parity and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a2ii.md).
       - [ ] V5-04F2b: Explicit native ordinary-worker channel for a surviving supervisor.
     - [ ] V5-04F3: Native staged-publication acceptance and previous-generation preservation.
   - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
@@ -321,6 +321,12 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04F2a2ii: Public ordinary stage/publish manager
+
+State: COMPLETE for public in-process stage/publish; F2b/F3/G/H and full V5 remain incomplete. [Evidence](../evaluation/reports/V5/V5-04F2a2ii.md). Started after F2a2i accepted/pushed as 387102384ec07ed928cb7dde2fdda54cf74f6a0c, synchronized 0/0. Frozen QW native manager dependency profile and F2a2ii-r1 assignment define actual stage/publish, explicit borrowed authority/transport, strict acknowledgment provenance, original-fence CAS, same-epoch prepared resume and supervisor session during final SQL. Sol Python `/root/v5_candidate_contract` owns new public module/test plus writer source/test (four paths) and assembles; Sol Node `/root/v5_candidate_fixtures` owns corresponding four. Root owns package export, shared/native contracts/harnesses, docs/tracker, serial checks and Git. Controller/recovery/F1, migrations/codecs/readers/locks/seals/user audits protected. No worker tests/services/network/database/providers/installs/Git. At most two native database clients and one test process; synthetic vectors only. Cross-epoch attestation remains G0; worker actual process-crash profile F2b/H. Handoff pending.
+
+Final F2a2ii handoff: Sol runtime pair transferred its public modules/tests and writer helper/tests; Python assembled, independent Sol reviewed critical ACK, cancellation and prepared/finalization paths, and delivered the Node native consumer. Root integrated the Python consumer, closed parent protocol, shared synthetic inputs, package export, guide/report and native comparison. Final evidence: 130 focused Python/tool, mypy 45 files, 50 focused Node/build, 2,207 Python/tool (four existing deliberate warnings), 1,136 Node, fourteen actual public-manager cases per runtime and nineteen exact public-result tuples with matching hashes, plus 16 seals. Cancellation suppression was a real source bug and now has a latched-stop regression; a Node SQL-double predicate bug and native Python pool/cleanup setup errors were corrected. Native failed storage was removed only after independent listener absence; successful fixtures removed their owned storage. Source readers, controllers, recovery, F1, codecs, migrations, locks, seals and user audits remain protected. Resource snapshot: 34 GiB disk/54 percent memory free; no task-owned listener, hosted/provider call, install/download, release or persistent service. Practice unassessed. Root commits/pushes and verifies synchronization, then proceeds to the native worker channel/finalization lease, source-facing F3 acceptance, G0 attestation/repair/security/purge, H actual fault matrix and remaining V5 examples/MCP/parity/packaging; no V5 completion claim yet.
 
 ### V5-04F2a2i: Native dependency bindings
 

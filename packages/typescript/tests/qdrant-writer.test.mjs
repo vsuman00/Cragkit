@@ -383,6 +383,70 @@ test('dispatch status requires a currently authorized document even for missing 
   }finally{await f.writer.close();await f.resource.close();}
 });
 
+test('preparation lookup returns original fences and selected settled dispatch under fresh caller scope',async()=>{
+  const f=await ordinarySetup();
+  try{
+    assert.equal(await f.writer.publication_preparation(context,opts()),null);
+    await f.writer.reserve_dispatch(context,dispatchRequest,opts());
+    await f.writer.settle_dispatch(context,dispatchRequest.dispatch_id,'a'.repeat(64),opts());
+    await f.writer.prepare(context,'b'.repeat(64),opts());
+    const prepared=await f.writer.publication_preparation(context,opts());
+    assert.equal(prepared.preparation.readback_sha256,'b'.repeat(64));
+    assert.equal(prepared.dispatch.dispatch_id,dispatchRequest.dispatch_id);
+    assert.equal(prepared.preparation.owner_token,token);
+    assert.equal('request_bytes'in prepared.dispatch,false);
+    assert.ok(Object.isFrozen(prepared.preparation));
+    Object.assign(f.state.tables.documents[0],{authorization_revision:'auth-2',mutation_epoch:2,tombstoned:true});
+    await assert.rejects(f.writer.publication_preparation(context,opts()),UnauthorizedScope);
+    const fresh={...context,scope:{...scope,authorization_revision:'auth-2'}};
+    assert.deepEqual(await f.writer.publication_preparation(fresh,opts()),prepared);
+    assert.equal((await f.writer.admit_publication(fresh,opts())).intent.state,'denied');
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('preparation lookup rejects retired epochs and contradictory original metadata',async()=>{
+  for(const [change,error] of [
+    [f=>{f.state.tables.backend_instances[0].epoch=2;},ProviderUnavailable],
+    [f=>{f.state.tables.preparations[0].authorization_revision='wrong';},IntegrityViolation],
+    [f=>{f.state.tables.dispatch_journal[0].owner_token='00000000-0000-4000-8000-000000000002';},IntegrityViolation],
+    [f=>{f.state.tables.preparations=[];},IntegrityViolation],
+  ]){
+    const f=await ordinarySetup();
+    try{
+      await f.writer.reserve_dispatch(context,dispatchRequest,opts());
+      await f.writer.settle_dispatch(context,dispatchRequest.dispatch_id,'a'.repeat(64),opts());
+      await f.writer.prepare(context,'b'.repeat(64),opts());
+      change(f);
+      await assert.rejects(f.writer.publication_preparation(context,opts()),error);
+    }finally{await f.writer.close();await f.resource.close();}
+  }
+});
+
+test('preparation metadata does not authorize owner takeover after its read',async()=>{
+  const f=await ordinarySetup();
+  try{
+    await f.writer.reserve_dispatch(context,dispatchRequest,opts());
+    await f.writer.settle_dispatch(context,dispatchRequest.dispatch_id,'a'.repeat(64),opts());
+    await f.writer.prepare(context,'b'.repeat(64),opts());
+    const replacement='00000000-0000-4000-8000-000000000002';
+    Object.assign(f.state.tables.document_owners[0],{intent_id:'replacement-intent',owner_token:replacement});
+    const lookup={...context,owner_token:'00000000-0000-4000-8000-000000000003'};
+    const metadata=await f.writer.publication_preparation(lookup,opts());
+    assert.equal(metadata.preparation.owner_token,token);
+    assert.equal(f.state.tables.document_owners[0].owner_token,replacement,'metadata does not mutate current owner');
+    f.state.tables.dispatch_journal.push({tenant_id:scope.tenant_id,collection:'docs',document_id:'doc-1',
+      intent_id:'replacement-intent',dispatch_id:'pending-replacement',sequence:1,state:'unknown'});
+    await assert.rejects(f.writer.publication_preparation(lookup,opts()),ProviderUnavailable);
+    await assert.rejects(f.writer.admit_publication(context,opts()),ProviderUnavailable);
+    assert.equal(f.state.tables.document_owners[0].owner_token,replacement);
+    f.state.tables.dispatch_journal.pop();
+    const admitted=await f.writer.admit_publication(context,opts());
+    assert.equal(admitted.intent.state,'prepared');
+    assert.equal(admitted.owner.owner_token,token);
+    assert.equal(f.state.tables.document_owners[0].owner_token,token);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
 test('dispatch status rejects malformed journal, membership and self-hashed wrong IDs',async()=>{
   for(const change of [
     f=>{f.state.tables.dispatch_journal[0].sequence=257;},

@@ -1024,3 +1024,16 @@ node --test --test-concurrency=1 packages/typescript/tests/qdrant-writer.test.mj
 ```
 
 The existing `check_qdrant_supervisor.py` and `check_qdrant_recovery.py` commands also verify these bindings on their real native graphs. Use their previously documented arguments with fresh output directories under `artifacts/V5/V5-04F2a2i/`. Accessor success does not open ordinary admission or authorize settlement; existing actual capabilities and current SQL checks still apply.
+
+## V5-04F2a2ii public stage and publish
+
+The optional modules expose the public managed stage/publish path and explicit native dependencies. Read [the API guide](qdrant-publication.md) and [acceptance evidence](../evaluation/reports/V5/V5-04F2a2ii.md) before configuring a managed writer. Pools and the supervisor open explicitly; imports and constructors apply no migrations or network side effects.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_publication.py packages/python/tests/test_qdrant_writer.py tools/tests/test_qdrant_publication_manager_native.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-publication.test.mjs packages/typescript/tests/qdrant-writer.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_manager.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04F2a2ii/a-new-run
+```
+
+Use a fresh directory. The checker opens two restricted resources, runs actual public manager code against isolated PostgreSQL/Qdrant, and compares nineteen exact public-result snapshots. It withholds one real preparation COMMIT acknowledgment and one real completed HTTP response; it does not fabricate successful writes. Prepared cancellation/object restart is narrower than the pending process-kill matrix. Keep native languages and other integration suites serial. Successful cleanup verifies listener absence before removing only owned fixture storage.

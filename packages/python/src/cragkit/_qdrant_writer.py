@@ -547,6 +547,11 @@ class PostgresQdrantWriter:
                               deadline: float) -> Mapping[str, Any] | None:
         ctx = context(value)
         identity = _identity(dispatch_id)
+        return await self._run(ctx, deadline,
+            lambda connection: self._dispatch_status(connection, ctx, identity))
+
+    async def _dispatch_status(self, connection: SessionConnection, ctx: WriterContext,
+                               identity: str) -> Mapping[str, Any] | None:
 
         async def status(connection: SessionConnection) -> Mapping[str, Any] | None:
             document = await self._manager_document(connection, ctx)
@@ -643,7 +648,87 @@ class PostgresQdrantWriter:
                       ('request_bytes', 'instance_id', 'recovery')}
             result.update(dispatch_id=identity, point_ids=ids)
             return MappingProxyType(result)
-        return await self._run(ctx, deadline, status)
+        return await status(connection)
+
+    async def publication_preparation(self, value: object, *,
+                                      deadline: float) -> Mapping[str, Any] | None:
+        ctx = context(value)
+
+        async def read(connection: SessionConnection) -> Mapping[str, Any] | None:
+            document = await self._manager_document(connection, ctx)
+            if document is None:
+                raise UnauthorizedScope()
+            intent = await self._manager_intent(connection, ctx)
+            if intent is None or intent['action'] != 'stage':
+                raise InvalidRequest()
+            backend = await self._manager_backend(connection)
+            columns = ('owner_token', 'backend_epoch', 'authorization_revision', 'mutation_epoch',
+                       'manifest_sha256', 'readback_sha256')
+            rows = await self._query(connection,
+                'SELECT owner_token::text,backend_epoch,authorization_revision,mutation_epoch,'
+                'manifest_sha256,readback_sha256 FROM cragkit_qdrant.preparations WHERE '
+                + _INTENT + ' LIMIT 2', _key(ctx))
+            if not rows:
+                if intent['state'] == 'prepared':
+                    raise IntegrityViolation()
+                return None
+            if len(rows) != 1 or len(rows[0]) != len(columns):
+                raise IntegrityViolation()
+            preparation = dict(zip(columns, rows[0], strict=True))
+            _stored_uuid(preparation['owner_token'])
+            _stored_count(preparation['backend_epoch'], 1)
+            _stored_identity(preparation['authorization_revision'])
+            _stored_count(preparation['mutation_epoch'])
+            try:
+                _digest(preparation['manifest_sha256'])
+                _digest(preparation['readback_sha256'])
+            except InvalidRequest:
+                raise IntegrityViolation() from None
+            fences = await self._query(connection,
+                'SELECT expected_authorization_revision,expected_mutation_epoch,manifest_sha256 '
+                'FROM cragkit_qdrant.publication_intents WHERE ' + _INTENT, _key(ctx))
+            if (len(fences) != 1 or fences[0] != (preparation['authorization_revision'],
+                    preparation['mutation_epoch'], preparation['manifest_sha256'])
+                    or intent['manifest_sha256'] != preparation['manifest_sha256']):
+                raise IntegrityViolation()
+            # Validate the original immutable intent bytes; current authority may
+            # have advanced and is classified separately by admit_publication.
+            payloads = await self._query(connection,
+                'SELECT payload_bytes,payload_sha256,manifest_bytes FROM '
+                'cragkit_qdrant.publication_intents WHERE ' + _INTENT, _key(ctx))
+            if len(payloads) != 1 or len(payloads[0]) != 3:
+                raise IntegrityViolation()
+            payload, digest, manifest = payloads[0]
+            if (type(payload) is not bytes or type(manifest) is not bytes
+                    or not 1 <= len(payload) <= 1048576 or not 1 <= len(manifest) <= 1048576
+                    or hashlib.sha256(payload).hexdigest() != digest
+                    or digest != intent['payload_sha256']
+                    or hashlib.sha256(manifest).hexdigest() != preparation['manifest_sha256']):
+                raise IntegrityViolation()
+            if backend['state'] != 'open' or backend['epoch'] != preparation['backend_epoch']:
+                raise ProviderUnavailable()
+            # Metadata lookup does not require the caller or current owner to
+            # own this preparation. Admission performs the authoritative CAS.
+            await self._require_settled(connection, ctx)
+            await self._load_stage(connection, ctx)
+            journals = await self._query(connection,
+                'SELECT dispatch_id,sequence FROM cragkit_qdrant.dispatch_journal WHERE '
+                + _INTENT + " AND state='settled' ORDER BY sequence DESC LIMIT 2", _key(ctx))
+            if not journals or any(len(row) != 2 for row in journals):
+                raise IntegrityViolation()
+            selected_id = _stored_identity(journals[0][0])
+            assert selected_id is not None
+            selected_sequence = _stored_count(journals[0][1], 1, 256)
+            if len(journals) > 1 and _stored_count(journals[1][1], 1, 256) >= selected_sequence:
+                raise IntegrityViolation()
+            dispatch = await self._dispatch_status(connection, ctx, selected_id)
+            if (dispatch is None or dispatch['state'] != 'settled'
+                    or dispatch['operation'] != 'complete_point_upsert'
+                    or dispatch['owner_token'] != preparation['owner_token']
+                    or dispatch['backend_epoch'] != preparation['backend_epoch']):
+                raise IntegrityViolation()
+            return MappingProxyType({'preparation': MappingProxyType(preparation), 'dispatch': dispatch})
+        return await self._run(ctx, deadline, read)
 
     async def _ensure(self, connection: SessionConnection, table: str, values: dict[str, Any],
                       keys: tuple[str, ...], json_columns: tuple[str, ...] = ()) -> None:

@@ -674,6 +674,15 @@ class ManagerConnection(Connection):
         if sql.startswith('SELECT expected_authorization_revision,expected_mutation_epoch,expected_active_generation_id FROM'):
             assert self.state.get('owner_locked') is True
             return Cursor([self.state['fences']])
+        if sql.startswith('SELECT owner_token::text,backend_epoch,authorization_revision,mutation_epoch,manifest_sha256,readback_sha256'):
+            return Cursor(self.state.get('preparations', []))
+        if sql.startswith('SELECT expected_authorization_revision,expected_mutation_epoch,manifest_sha256 FROM'):
+            return Cursor([(self.state['fences'][0], self.state['fences'][1],
+                            self.state['intent']['manifest_sha256'])])
+        if sql.startswith('SELECT payload_bytes,payload_sha256,manifest_bytes FROM'):
+            return Cursor(self.state['original_payloads'])
+        if sql.startswith('SELECT dispatch_id,sequence FROM cragkit_qdrant.dispatch_journal'):
+            return Cursor(self.state['selected_dispatches'])
         if sql.startswith('INSERT INTO cragkit_qdrant.document_owners'):
             self.state['owner'] = (params[3], params[4], params[5], params[6])
             self.state['owner_writes'] += 1
@@ -894,3 +903,100 @@ async def test_dispatch_status_rejects_contradictory_durable_metadata(monkeypatc
     state['dispatch'] = [tuple(row)]
     with pytest.raises(IntegrityViolation):
         await writer.dispatch_status(ctx(), 'dispatch-1', deadline=asyncio.get_running_loop().time() + 5)
+
+
+def manager_prepared(state):
+    manager_dispatch(state)
+    graph = stage_data(prepare_stage(stage_input()))
+    state['intent']['state'] = 'prepared'
+    state['owner'] = ('instance-1', ctx()['intent_id'], ctx()['owner_token'], 1)
+    state['preparations'] = [(ctx()['owner_token'], 1, 'auth-1', 1,
+                              state['intent']['manifest_sha256'], 'd' * 64)]
+    state['original_payloads'] = [(graph.intent_encoding.encoded_bytes,
+        graph.intent_encoding.sha256, graph.manifest_encoding.encoded_bytes)]
+    state['selected_dispatches'] = [('dispatch-1', 1)]
+    row = list(state['dispatch'][0])
+    point = state['dispatch_members'][0][3]
+    body = json.dumps({'points': [{'id': point, 'payload': {}, 'vector': {}}]},
+                      separators=(',', ':')).encode()
+    row[4], row[7], row[8] = 'complete_point_upsert', sha256(body).hexdigest(), body
+    state['dispatch'] = [tuple(row)]
+
+
+@run_async
+async def test_publication_preparation_preserves_original_fences_under_fresh_current_scope(monkeypatch):
+    writer, state, connections, _ = manager_writer(monkeypatch)
+    manager_prepared(state)
+    deadline = asyncio.get_running_loop().time() + 5
+    metadata = await writer.publication_preparation(ctx(), deadline=deadline)
+    assert metadata['preparation']['owner_token'] == ctx()['owner_token']
+    assert metadata['dispatch']['dispatch_id'] == 'dispatch-1'
+    assert 'request_bytes' not in metadata['dispatch']
+    with pytest.raises(TypeError):
+        metadata['preparation']['readback_sha256'] = 'e' * 64
+    state['document'].update(authorization_revision='auth-2', mutation_epoch=2)
+    fresh = copy.deepcopy(ctx())
+    fresh['scope']['authorization_revision'] = 'auth-2'
+    original = await writer.publication_preparation(fresh, deadline=deadline)
+    assert original['preparation']['authorization_revision'] == 'auth-1'
+    outcome = await writer.admit_publication(fresh, deadline=deadline)
+    assert outcome['intent']['state'] == 'denied' and outcome['owner'] is None
+    assert all(not sql.startswith(('INSERT ', 'UPDATE ', 'DELETE '))
+               for sql, _ in connections[0].calls)
+
+
+@run_async
+async def test_preparation_metadata_allows_different_current_owner_then_fresh_admission(monkeypatch):
+    writer, state, _, loads = manager_writer(monkeypatch)
+    manager_prepared(state)
+    state['owner'] = ('instance-1', 'quiescent-other-intent',
+                      '22222222-2222-4222-8222-222222222222', 1)
+    original_preparation = state['preparations'][0]
+    deadline = asyncio.get_running_loop().time() + 5
+    metadata = await writer.publication_preparation(ctx(), deadline=deadline)
+    assert metadata['preparation']['owner_token'] == ctx()['owner_token']
+    assert state['owner'][1] == 'quiescent-other-intent' and state['owner_writes'] == 0
+    assert len(loads) == 1
+    admitted = await writer.admit_publication(ctx(), deadline=deadline)
+    assert admitted['owner']['owner_token'] == ctx()['owner_token']
+    assert state['owner'][1:3] == (ctx()['intent_id'], ctx()['owner_token'])
+    assert state['preparations'][0] == original_preparation
+
+
+@pytest.mark.parametrize('failure,error', [('pending', ProviderUnavailable), ('graph', IntegrityViolation)])
+@run_async
+async def test_preparation_lookup_requires_full_graph_and_document_wide_settled_work(monkeypatch, failure, error):
+    writer, state, _, _ = manager_writer(monkeypatch)
+    manager_prepared(state)
+    if failure == 'pending':
+        state['pending'] = [('other-intent-unknown',)]
+    else:
+        state['graph_error'] = True
+    with pytest.raises(error):
+        await writer.publication_preparation(ctx(), deadline=asyncio.get_running_loop().time() + 5)
+    assert state['owner_writes'] == 0
+
+
+@pytest.mark.parametrize('failure,error', [('missing', IntegrityViolation), ('retired', ProviderUnavailable),
+    ('manifest', IntegrityViolation), ('owner', IntegrityViolation), ('digest', IntegrityViolation)])
+@run_async
+async def test_publication_preparation_rejects_corruption_and_retired_bindings(monkeypatch, failure, error):
+    writer, state, _, _ = manager_writer(monkeypatch)
+    manager_prepared(state)
+    if failure == 'missing':
+        state['preparations'] = []
+    elif failure == 'retired':
+        state['backend'] = [(*state['backend'][0][:4], 2, 'open', None)]
+    elif failure == 'manifest':
+        row = state['original_payloads'][0]
+        state['original_payloads'] = [(row[0], row[1], b'changed')]
+    elif failure == 'owner':
+        row = list(state['dispatch'][0])
+        row[1] = '22222222-2222-4222-8222-222222222222'
+        state['dispatch'] = [tuple(row)]
+    else:
+        row = list(state['preparations'][0])
+        row[5] = 'invalid'
+        state['preparations'] = [tuple(row)]
+    with pytest.raises(error):
+        await writer.publication_preparation(ctx(), deadline=asyncio.get_running_loop().time() + 5)
