@@ -377,3 +377,12 @@ test('borrowed transport factory close refuses new sessions without closing the 
     assert.equal(f.supervisor.profile_binding(config).alive,true);
   }finally{await f.close();}
 });
+
+test('null recovery bundle cannot initialize under actual in-process supervisor',async()=>{
+  const f=setup();
+  try{
+    const workerOnly=new PostgresQdrantPublicationAuthority(f.writer,null);
+    assert.throws(()=>new QdrantPublicationManager(workerOnly,f.transport,config,f.supervisor,f.authorizer),InvalidRequest);
+    assert.equal(f.state.queries.length,0);
+  }finally{await f.close();}
+});

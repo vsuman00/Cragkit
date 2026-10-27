@@ -14,6 +14,7 @@ from ._qdrant_reconciliation import _Readback, _ReadbackTransport, _safe, _verif
 from ._qdrant_source import metadata_guard
 from ._qdrant_supervisor import ManagedQdrantSupervisor
 from ._qdrant_transport import deadline_value
+from ._qdrant_publication_worker import is_controller, controller_attempt, OrdinaryWorkerController
 from .errors import (DeadlineExceeded, InvalidRequest, ProviderUnavailable,
                      UnsupportedCapability)
 
@@ -43,7 +44,7 @@ class PublicationReadbackReceipt:
 
 _PROJECTIONS: WeakKeyDictionary[PublicationProjection, tuple[object, Mapping[str, Any]]] = WeakKeyDictionary()
 _RECEIPTS: WeakKeyDictionary[PublicationReadbackReceipt, tuple[object, object, Mapping[str, Any]]] = WeakKeyDictionary()
-_VERIFIERS: WeakKeyDictionary[object, tuple[object, ManagedQdrantSupervisor]] = WeakKeyDictionary()
+_VERIFIERS: WeakKeyDictionary[object, tuple[object, ManagedQdrantSupervisor | OrdinaryWorkerController]] = WeakKeyDictionary()
 _ATTEMPT_FIELDS = ('instance_id', 'storage_identity', 'supervisor_id', 'epoch',
                    'credential_generation', 'intent_id', 'owner_token', 'dispatch_id')
 _CLEANUP_SECONDS = 1.0
@@ -126,16 +127,29 @@ def publication_receipt_data(value: object, verifier: object) -> Mapping[str, An
     assert isinstance(verifier, QdrantPublicationVerifier)
     _, attempt, data = _RECEIPTS[value]
     supervisor = _VERIFIERS[verifier][1]
+    if type(supervisor) is not ManagedQdrantSupervisor:
+        raise InvalidRequest()
     if dict(supervisor.attempt_binding(attempt)) != dict(data['attempt_binding']):
+        raise UnsupportedCapability()
+    return data
+
+
+async def validate_publication_receipt(value: object, verifier: object, *, deadline: float) -> Mapping[str, Any]:
+    if (type(value) is not PublicationReadbackReceipt or value not in _RECEIPTS
+            or _RECEIPTS[value][0] is not verifier or type(verifier) is not QdrantPublicationVerifier):
+        raise InvalidRequest()
+    _, attempt, data = _RECEIPTS[value]
+    controller = _VERIFIERS[verifier][1]
+    if dict(await controller_attempt(controller, attempt, deadline=deadline)) != dict(data['attempt_binding']):
         raise UnsupportedCapability()
     return data
 
 
 class QdrantPublicationVerifier:
     def __init__(self, writer: PostgresQdrantWriter,
-                 supervisor: ManagedQdrantSupervisor) -> None:
+                 supervisor: ManagedQdrantSupervisor | OrdinaryWorkerController) -> None:
         from ._qdrant_writer import PostgresQdrantWriter
-        if type(writer) is not PostgresQdrantWriter or type(supervisor) is not ManagedQdrantSupervisor:
+        if type(writer) is not PostgresQdrantWriter or not is_controller(supervisor):
             raise InvalidRequest()
         self.writer = writer
         self.supervisor = supervisor
@@ -152,7 +166,7 @@ class QdrantPublicationVerifier:
         handle = None
         try:
             async with asyncio.timeout_at(deadline):
-                binding = dict(self.supervisor.attempt_binding(attempt))
+                binding = dict(await controller_attempt(self.supervisor, attempt, deadline=deadline))
                 if 'recovery_id' in binding:
                     raise UnsupportedCapability()
                 projection = await self.writer.project_publication(context, binding, deadline=deadline)
@@ -163,7 +177,7 @@ class QdrantPublicationVerifier:
                 await _close_handle(handle)
                 handle = None
                 await self.writer.validate_publication_projection(projection, deadline=deadline)
-                if dict(self.supervisor.attempt_binding(attempt)) != binding:
+                if dict(await controller_attempt(self.supervisor, attempt, deadline=deadline)) != binding:
                     raise UnsupportedCapability()
                 deadline_value(deadline)
                 fields = ('context', 'attempt_binding', 'manifest_sha256', 'revision_id',

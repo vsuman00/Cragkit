@@ -1,6 +1,6 @@
 # Native Qdrant stage and publish
 
-The optional Python module `cragkit.qdrant_publication` and Node subpath `cragkit/qdrant-publication` provide the managed stage/publish path. [Acceptance evidence](../evaluation/reports/V5/V5-04F2a2ii.md) records the exact native tests. Repair, security convergence, purge and the worker-process profile remain separate V5 tasks; this module does not yet establish full QD-r1 compatibility.
+The optional Python module `cragkit.qdrant_publication` and Node subpath `cragkit/qdrant-publication` provide the managed stage/publish path. [In-process evidence](../evaluation/reports/V5/V5-04F2a2ii.md) and [worker evidence](../evaluation/reports/V5/V5-04F2b.md) record their native checks. Repair, security convergence, purge and the complete fault matrix remain separate V5 tasks; this module does not yet establish full QD-r1 compatibility.
 
 For example, G1 remains active while G2 is staged, written and verified. Only the final SQL commit switches the active generation to G2. If that work fails first, G1 remains active.
 
@@ -69,3 +69,38 @@ A completed HTTP acknowledgment and SQL settlement are separate. If SQL's respon
 The final supervisor session excludes raw lifecycle changes and competing recovery while fresh authorization, verification and SQL finalization unwind. Callbacks remain outside SQL. If a callback suppresses cancellation, cancellation stays latched: it cannot later continue into publication, and new work remains refused while unfinished work drains.
 
 A preparation tied to a retired epoch needs the planned additive attestation repair path. It cannot be made current by changing its hash, owner, generation or intent in place. See the [tracker](../tasks/todo.md) for remaining V5 work.
+
+## Running publication in an owned worker
+
+For example, an application can keep the supervisor alive while a child publisher is killed after recording a dispatch. The durable journal remains unresolved; killing the child does not prove that an external write was undone. The application uses managed recovery before admitting conflicting work.
+
+`ManagedQdrantPublicationWorkerHost(supervisor, authorize_write)` runs the actual native publisher in one owned child. Stage the complete intent first using the in-process manager. Keep the original actual supervisor in the parent and pass only the restricted writer pool configuration to the child. The fixed entry creates and closes its own pool, writer, transport and manager. Python launches Python; Node launches Node. Import and construction start no process.
+
+Given a durable stage, an initialized supervisor, a native trusted scope, JSON-compatible QC configuration, validated pool configuration and request limits:
+
+```python
+from cragkit.qdrant_publication import ManagedQdrantPublicationWorkerHost
+
+host = ManagedQdrantPublicationWorkerHost(supervisor, authorize_write)
+job = {
+    "writer_pool": writer_pool_config.model_dump(mode="json"),
+    "config": config,
+    "scope": scope.model_dump(mode="json"),
+    "reference": {
+        "collection": collection,
+        "document_id": document_id,
+        "intent_id": intent_id,
+    },
+    "limits": limits.model_dump(mode="json"),
+}
+result = await host.publish(job, ledger, deadline=deadline)
+await host.close()
+```
+
+Node reexports the same host and uses `host.publish(job, ledger, {deadline, signal?})`. The job has exactly those five fields. Pool configuration contains private credential-file and CA paths, never a password or DSN. The host reserves one attempt on the caller's original ledger before spawning; the child enforces a local mirror under the same parent-controlled deadline. Storage work consumes no model calls or search candidates. One job runs at a time, without a queue.
+
+The private inherited channel carries bounded control metadata. Actual supervisor capabilities stay in the parent. Each attempt receives one immutable key; child HTTP uses that key directly and cannot refresh it after recovery. Private readback receipts stay local to the child. The parent holds its real supervisor finalization session while the child's final SQL work runs. On channel loss, timeout or cancellation it reaps the owned child before releasing that exclusion. A failed reap or callback drain leaves the host unavailable and preserves ownership for explicit cleanup.
+
+An optional asynchronous observer receives a closed `before_write` or `write_observed` event and an `OwnedPublicationWorker`. Its bounded pause/resume/terminate methods operate only on that exact spawned child. Terminate uses SIGKILL and waits for exit; pause confirms SIGSTOP. These diagnostics support fault testing and do not authorize SQL, prove completion or accept arbitrary PIDs/signals.
+
+Native acceptance exercised successful child publication, historical retries, actual SIGKILL after a committed dispatch, fixed-entry channel EOF and a paused old child receiving actual HTTP 401 after same-supervisor recovery. The channel-loss case does not kill the parent process. Installed-artifact execution and the complete supervisor/process fault matrix remain later gates. Closing the host never closes the borrowed supervisor.

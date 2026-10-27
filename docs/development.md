@@ -1047,4 +1047,17 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 
 Use a fresh artifact directory. The command starts only disposable local servers with synthetic fixtures, runs runtimes serially, compares deterministic observation hashes and verifies listener shutdown. It performs no hosted/provider calls and requires no model installation.
 
+## V5-04F2b native publication workers
+
+The optional publication module now includes the fixed native worker host. [The guide](qdrant-publication.md#running-publication-in-an-owned-worker) describes resource ownership; [F2b evidence](../evaluation/reports/V5/V5-04F2b.md) distinguishes actual process tests from protocol doubles.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_publication_worker.py tools/tests/test_qdrant_publication_worker_native.py tools/tests/test_qdrant_source_native.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-publication-worker.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_worker.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04F2b/a-new-run
+```
+
+Use a fresh directory. This test owns disposable local processes and synthetic data. Ordinary windows use at most two database clients. The paused-child recovery experiment permits three max-one clients; its PostgreSQL fixture uses six total slots while preserving three reserved superuser slots. Other fixtures retain their five-slot default. No provider/model, hosted mutation or automatic supervisor takeover occurs. Full H acceptance, managed repair and installed artifacts remain separate gates.
+
 Use a fresh directory. The checker opens two restricted resources, runs actual public manager code against isolated PostgreSQL/Qdrant, and compares nineteen exact public-result snapshots. It withholds one real preparation COMMIT acknowledgment and one real completed HTTP response; it does not fabricate successful writes. Prepared cancellation/object restart is narrower than the pending process-kill matrix. Keep native languages and other integration suites serial. Successful cleanup verifies listener absence before removing only owned fixture storage.

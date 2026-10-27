@@ -263,15 +263,15 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
     - [x] V5-04E2: Durable recovery gate, per-document authorized reconciliation and private settlement admission.
       - [x] V5-04E2a: Authority-bound full readback; 2054 Python/tool and 1078 Node regressions, strict types/build, 36 native readback checks, normalized witness parity, 42 native D regression checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E2a.md).
       - [x] V5-04E2b: Durable instance control and private admission; 2108 Python/tool and 1094 Node regressions, strict types/build, 50 native SQL/recovery checks, 54 native controller/readback regression checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04E2b.md).
-  - [ ] V5-04F: Actual bounded staged writes and full readback/publication.
+  - [x] V5-04F: Actual bounded staged writes, full readback/publication and native ordinary worker profile; F1/F2/F3 accepted. Repair and the full fault matrix remain G/H.
     - [x] V5-04F1: Ordinary current-authority projections and private full-readback receipts; 2,136 Python/tool and 1,106 Node regressions, strict types/build, 38 native ordinary cases with witness parity, 36 native readback regression cases and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F1.md).
-    - [ ] V5-04F2: Authenticated dispatch and public stage/publish manager operations.
+    - [x] V5-04F2: Authenticated dispatch and public stage/publish manager operations, including fixed native workers.
       - [x] V5-04F2a1: Private manager authority snapshot, original-fence admission and dispatch outcome lookup; 2,157 Python/tool and 1,117 Node regressions, strict types/build, 58 native SQL checks with ordered case parity and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a1.md).
-      - [x] V5-04F2a2: Native attempt transport and public in-process stage/publish manager; accepted within the in-process native profile, with worker/process and repair dependencies still open.
+      - [x] V5-04F2a2: Native attempt transport and public in-process stage/publish manager; accepted within the in-process native profile. F2b supplies the separately accepted worker profile; repair remains G.
         - [x] V5-04F2a2i: Private native dependency and registered-profile bindings; 2,173 Python/tool and 1,123 Node regressions, strict types/build, 68 native controller/recovery checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a2i.md).
         - [x] V5-04F2a2ii: Bounded native transport and public stage/publish operations; 2,207 Python/tool and 1,136 Node regressions, strict types/build, 28 actual public-manager cases with nineteen-result parity and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a2ii.md).
-      - [ ] V5-04F2b: Explicit native ordinary-worker channel for a surviving supervisor.
-    - [x] V5-04F3: Native staged-publication source acceptance and previous-generation preservation; 16 actual native checks, exact source-observation parity, 167 affected Python/tool and 73 Node regressions, TypeScript build and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F3.md). Worker/process recovery remains F2b/H.
+      - [x] V5-04F2b: Native ordinary-worker channel for a surviving supervisor; 2,245 Python/tool and 1,160 Node regressions, strict types/build, 18 actual process checks with result parity, 44 native manager/source regressions and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2b.md). Installed artifacts and full H remain separate.
+    - [x] V5-04F3: Native staged-publication source acceptance and previous-generation preservation; 16 actual native checks, exact source-observation parity, 167 affected Python/tool and 73 Node regressions, TypeScript build and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F3.md). Full process/fault acceptance remains H.
   - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
     - [ ] V5-04G0: Additive append-only current-epoch preparation attestations and exact authority compatibility, before cross-epoch prepared repair.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
@@ -321,6 +321,10 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04F2b: Native ordinary publisher worker
+
+State: COMPLETE for ordinary-worker-r1 after F3 accepted/pushed as e62374fa6947d17d9da05f149eb10f05d424801c (0/0 synchronized). [Evidence](../evaluation/reports/V5/V5-04F2b.md). Sol f3_python implemented Python worker/public-manager/F1 sources plus worker/manager tests and assembled; Sol f3_node implemented corresponding five Node paths. They agreed wire/API directly and transferred all ownership. Sol f3_review implemented the Node native consumer and reviewed final safety/evidence boundaries. Root owns shared contracts/exports, Python/native parent tools, all serial execution, docs/tracker and Git. Root hardened ownership, channel cleanup/redaction and terminal-result validation, then accepted 2,245 Python/tool and 1,160 Node tests, mypy 46/build, 18 actual worker cases with exact result parity, 28 native manager and 16 source regressions plus 16 seals. Actual SIGKILL/SIGSTOP, fixed child channel EOF and resumed old key HTTP 401 passed; no claim actual parent death or full H or G settlement. Existing applied migrations/reader/writer/recovery/controller sources, locks, seals and audits unchanged; a bounded test-only PostgreSQL fixture option preserves default 5 slots and permits 6 for three runtime clients during paused E2 (three superuser slots remain reserved). Otherwise max 2 clients/one process, synthetic data; no providers/models/install/hosted mutation/release. Native fixtures/listeners/children shut down; owned failed storage removed after absence checks. Resource 44 GiB disk/60 percent free memory; learning unassessed. Root commits/pushes, then G0 current-epoch attestations and repair/security/purge, H and remaining V5 tasks. Full V5 remains incomplete.
 
 ### V5-04F3: Public publication and source acceptance
 

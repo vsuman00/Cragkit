@@ -5,7 +5,8 @@ import {PostgresQdrantWriter,writer_binding,type IntentView,type DispatchStatus,
 import {PostgresQdrantRecovery,recovery_components} from './qdrant-recovery.js';
 import {ManagedQdrantSupervisor,type SupervisorTransport} from './qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from './qdrant-reconciliation.js';
-import {QdrantPublicationVerifier,publication_receipt_data} from './qdrant-publication-verification.js';
+import {QdrantPublicationVerifier,validate_publication_receipt} from './qdrant-publication-verification.js';
+import {is_publication_controller,is_worker_controller,publication_worker_reference,publication_controller_profile,publication_issue_attempt,publication_attempt_binding,publication_transport_for,publication_before_write,publication_finalization,type OrdinaryPublicationController} from './qdrant-publication-worker.js';
 import {ExecutionLedger,BudgetExhausted,type Reservation} from './execution.js';
 import {type TrustedScope} from './requests.js';
 import {same,parse_response,type QdrantConfig} from './qdrant-contract.js';
@@ -16,10 +17,11 @@ import {InvalidRequest,IntegrityViolation,UnauthorizedScope,UnsupportedCapabilit
   DeadlineExceeded,IndexNotReady,EmbeddingProfileMismatch} from './errors.js';
 
 export {PostgresQdrantWriter,PostgresQdrantRecovery,ManagedQdrantSupervisor,QdrantReconciliationVerifier};
+export {ManagedQdrantPublicationWorkerHost,OwnedPublicationWorker} from './qdrant-publication-worker.js';
 
-type Authority=Readonly<{writer:PostgresQdrantWriter;recovery:PostgresQdrantRecovery}>;
+type Authority=Readonly<{writer:PostgresQdrantWriter;recovery:PostgresQdrantRecovery|null}>;
 const authorities=new WeakMap<object,Authority>();
-type TransportRegistration={supervisor:ManagedQdrantSupervisor;closed:boolean;handles:Set<SupervisorTransport>};
+type TransportRegistration={supervisor:OrdinaryPublicationController;closed:boolean;handles:Set<SupervisorTransport>};
 const transports=new WeakMap<object,TransportRegistration>();
 type Session=Readonly<{attempt:unknown;binding:Readonly<Data>;handle:SupervisorTransport;factory:TransportRegistration}>;
 type Ack=Readonly<Record<never,never>>;
@@ -54,9 +56,9 @@ function ack_data(ack:Ack,session:Session):string {
 
 /** This holder is not readiness; the manager checks its full original graph. */
 export class PostgresQdrantPublicationAuthority {
-  constructor(writer:PostgresQdrantWriter,recovery:PostgresQdrantRecovery) {
+  constructor(writer:PostgresQdrantWriter,recovery:PostgresQdrantRecovery|null) {
     writer_binding(writer);
-    if(!exact(recovery,PostgresQdrantRecovery.prototype))throw new InvalidRequest();
+    if(recovery!==null&&!exact(recovery,PostgresQdrantRecovery.prototype))throw new InvalidRequest();
     authorities.set(this,Object.freeze({writer,recovery}));
     Object.freeze(this);
   }
@@ -64,8 +66,8 @@ export class PostgresQdrantPublicationAuthority {
 
 /** The manager opens its own attempt handles on this borrowed native controller. */
 export class ManagedQdrantPublicationTransport {
-  constructor(supervisor:ManagedQdrantSupervisor) {
-    if(!exact(supervisor,ManagedQdrantSupervisor.prototype))throw new InvalidRequest();
+  constructor(supervisor:OrdinaryPublicationController) {
+    if(!is_publication_controller(supervisor))throw new InvalidRequest();
     transports.set(this,{supervisor,closed:false,handles:new Set()});
     Object.freeze(this);
   }
@@ -88,7 +90,7 @@ export class ManagedQdrantPublicationTransport {
 
 export class QdrantPublicationManager {
   readonly #authority:Authority;
-  readonly #supervisor:ManagedQdrantSupervisor;
+  readonly #supervisor:OrdinaryPublicationController;
   readonly #config:QdrantConfig;
   readonly #authorizer:Authorizer;
   readonly #transport:TransportRegistration;
@@ -99,16 +101,17 @@ export class QdrantPublicationManager {
   #pending=new Set<Promise<unknown>>();
 
   constructor(authority:PostgresQdrantPublicationAuthority,transport:ManagedQdrantPublicationTransport,
-    config:unknown,supervisor:ManagedQdrantSupervisor,authorize_write:Authorizer) {
+    config:unknown,supervisor:OrdinaryPublicationController,authorize_write:Authorizer) {
     if(!exact(authority,PostgresQdrantPublicationAuthority.prototype)||!exact(transport,ManagedQdrantPublicationTransport.prototype)
-      ||!exact(supervisor,ManagedQdrantSupervisor.prototype)||typeof authorize_write!=='function'||types.isProxy(authorize_write))throw new InvalidRequest();
+      ||!is_publication_controller(supervisor)||typeof authorize_write!=='function'||types.isProxy(authorize_write))throw new InvalidRequest();
     const original=authorities.get(authority);
     const factory=transports.get(transport);
     if(!original||!factory||factory.supervisor!==supervisor)throw new InvalidRequest();
     this.#config=parse_config(config);
     const writer=writer_binding(original.writer);
     if(!same(writer.config,this.#config))throw new UnsupportedCapability();
-    recovery_components(original.recovery,original.writer,supervisor,this.#config);
+    if(is_worker_controller(supervisor)){if(original.recovery!==null)throw new InvalidRequest();}
+    else {if(original.recovery===null)throw new InvalidRequest();recovery_components(original.recovery,original.writer,supervisor,this.#config);}
     this.#authority=original;
     this.#supervisor=supervisor;
     this.#authorizer=authorize_write;
@@ -156,8 +159,12 @@ export class QdrantPublicationManager {
     }
   }
 
-  #profile(open=false):Readonly<Data> {
-    const profile=metadata(this.#supervisor.profile_binding(this.#config));
+  #profile(options:LeaseOptions,open=false):Promise<Readonly<Data>> {
+    return this.#readProfile(options,open);
+  }
+
+  async #readProfile(options:LeaseOptions,open:boolean):Promise<Readonly<Data>> {
+    const profile=await publication_controller_profile(this.#supervisor,this.#config,options);
     if(profile.instance_id!==writer_binding(this.#authority.writer).instance_id)throw new UnsupportedCapability();
     if(open&&(!profile.alive||profile.sealed||profile.recovery!==null))throw new ProviderUnavailable();
     return profile;
@@ -200,16 +207,25 @@ export class QdrantPublicationManager {
   async initialize(rawOptions:unknown):Promise<void> {
     const options=parse_options(rawOptions);
     await this.#operation(options,async lease=>{
-      this.#profile();
+      await this.#profile(lease);
       await this.#await(this.#authority.writer.initialize(lease),lease);
-      await this.#await(this.#authority.recovery.initialize(lease),lease);
-      this.#profile();
+      if(this.#authority.recovery)await this.#await(this.#authority.recovery.initialize(lease),lease);
+      const profile=await this.#profile(lease);
+      if(is_worker_controller(this.#supervisor)){
+        const captured=publication_worker_reference(this.#supervisor);
+        const context=parse_context({...metadata(captured.reference),scope:captured.scope,owner_token:randomUUID()});
+        const snapshot=await this.#await(this.#authority.writer.manager_snapshot(context,lease),lease);
+        if(snapshot.backend.state!=='open'||snapshot.backend.instance_id!==profile.instance_id
+          ||snapshot.backend.epoch!==profile.epoch||snapshot.backend.storage_identity!==profile.storage_identity
+          ||snapshot.backend.supervisor_id!==profile.supervisor_id)throw new ProviderUnavailable();
+      }
       this.#ready=true;
     },true);
   }
 
   async stage(change:unknown,inputScope:unknown,ledger:ExecutionLedger,rawOptions:unknown):Promise<Result> {
     this.#admit();
+    if(is_worker_controller(this.#supervisor))throw new UnsupportedCapability();
     const plan=prepare_stage(change),data=stage_data(plan),scope=parse_scope(inputScope),options=this.#ledger(ledger,rawOptions);
     if(data.record.tenant_id!==scope.tenant_id)throw new UnauthorizedScope();
     const configured=parse_config(Object.fromEntries(Object.keys(this.#config).map(key=>[key,data.record[key]])));
@@ -224,7 +240,7 @@ export class QdrantPublicationManager {
           ||snapshot.intent.manifest_sha256!==plan.manifest_sha256)throw new IntegrityViolation();
         if(['published','conflict','denied'].includes(snapshot.intent.state))return result(context.intent_id,'stage',snapshot.intent);
       }
-      const profile=this.#profile(true);
+      const profile=await this.#profile(lease,true);
       if(snapshot.backend.state!=='open'||snapshot.backend.epoch!==profile.epoch
         ||snapshot.backend.storage_identity!==profile.storage_identity||snapshot.backend.supervisor_id!==profile.supervisor_id)throw new ProviderUnavailable();
       const staged=await this.#await(this.#authority.writer.stage(plan,scope,{...lease,owner_token:context.owner_token}),lease);
@@ -232,13 +248,17 @@ export class QdrantPublicationManager {
     });
   }
 
-  #session(context:WriterContext,epoch:number,dispatch_id:string,options:LeaseOptions):Session {
+  #session(context:WriterContext,epoch:number,dispatch_id:string,options:LeaseOptions):Promise<Session> {
+    return this.#openSession(context,epoch,dispatch_id,options);
+  }
+
+  async #openSession(context:WriterContext,epoch:number,dispatch_id:string,options:LeaseOptions):Promise<Session> {
     if(this.#transport.closed)throw new ProviderUnavailable();
-    const attempt=this.#supervisor.issue_attempt({intent_id:context.intent_id,owner_token:context.owner_token,epoch,dispatch_id},options);
-    const binding=metadata(this.#supervisor.attempt_binding(attempt));
+    const attempt=await publication_issue_attempt(this.#supervisor,{intent_id:context.intent_id,owner_token:context.owner_token,epoch,dispatch_id},options);
+    const binding=await publication_attempt_binding(this.#supervisor,attempt,options);
     if(Object.hasOwn(binding,'recovery_id')||binding.intent_id!==context.intent_id||binding.owner_token!==context.owner_token
       ||binding.epoch!==epoch||binding.dispatch_id!==dispatch_id)throw new UnsupportedCapability();
-    const handle=this.#supervisor.transport_for(attempt);
+    const handle=publication_transport_for(this.#supervisor,attempt);
     this.#transport.handles.add(handle);
     return Object.freeze({attempt,binding,handle,factory:this.#transport});
   }
@@ -332,11 +352,12 @@ export class QdrantPublicationManager {
   async #writeBatch(context:WriterContext,epoch:number,sequence:number,ids:readonly string[],options:LeaseOptions):Promise<unknown> {
     await this.#authorize(context,options);
     const id='publication-'+randomUUID();
-    const session=this.#session(context,epoch,id,options);
+    const session=await this.#session(context,epoch,id,options);
     let closed=false;
     try {
       const reservation=await this.#reserve(context,session,sequence,ids,options);
       await this.#mark(context,session,sequence,ids,options);
+      await publication_before_write(this.#supervisor,session.attempt,{dispatch_id:String(session.binding.dispatch_id),sequence,request_bytes:reservation.request_bytes},options);
       let ack:Ack;
       try {
         ack=await this.#send(session,reservation,options);
@@ -373,7 +394,7 @@ export class QdrantPublicationManager {
       const admission=await this.#await(writer.admit_publication(context,lease),lease);
       if(!admission.owner)return result(ref.intent_id,'publish',admission.intent);
       const snapshot=await this.#await(writer.manager_snapshot(context,lease),lease);
-      const profile=this.#profile(true);
+      const profile=await this.#profile(lease,true);
       if(snapshot.pending||snapshot.backend.state!=='open'||snapshot.backend.epoch!==profile.epoch
         ||snapshot.backend.storage_identity!==profile.storage_identity||snapshot.backend.supervisor_id!==profile.supervisor_id
         ||snapshot.owner?.owner_token!==context.owner_token||snapshot.owner.intent_id!==context.intent_id
@@ -382,7 +403,7 @@ export class QdrantPublicationManager {
       if(prepared){
         if(prepared.dispatch.credential_generation!==profile.credential_generation
           ||prepared.dispatch.backend_epoch!==profile.epoch)throw new ProviderUnavailable();
-        const session=this.#session(context,prepared.dispatch.backend_epoch,prepared.dispatch.dispatch_id,lease);
+        const session=await this.#session(context,prepared.dispatch.backend_epoch,prepared.dispatch.dispatch_id,lease);
         attempt=session.attempt;
         await this.#closeHandle(session);
       } else {
@@ -395,12 +416,12 @@ export class QdrantPublicationManager {
         }
       }
       const receipt=await this.#await(this.#verifier.verify(attempt,context,lease),lease);
-      const verified=publication_receipt_data(receipt,this.#verifier);
+      const verified=await validate_publication_receipt(receipt,this.#verifier,lease);
       if(prepared&&verified.readback_sha256!==prepared.preparation.readback_sha256)throw new IntegrityViolation();
       let finalization!:Promise<Result>;
-      finalization=this.#supervisor.control_session(async()=>{
+      finalization=publication_finalization(this.#supervisor,attempt,async()=>{
         try {
-          const current=publication_receipt_data(receipt,this.#verifier);
+          const current=await validate_publication_receipt(receipt,this.#verifier,lease);
           await this.#authorize(context,lease);
           await this.#await(writer.validate_publication_projection(current.projection,lease),lease);
           if(!prepared){
@@ -430,7 +451,7 @@ export class QdrantPublicationManager {
           // Exclude this enclosing promise from its own actual-unwind drain.
           await Promise.allSettled([...this.#pending].filter(pending=>pending!==finalization));
         }
-      });
+      },lease);
       return this.#await(finalization,lease);
     });
   }

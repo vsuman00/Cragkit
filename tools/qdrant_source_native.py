@@ -22,7 +22,10 @@ class PostgresSourceFixture:
     The caller creates roles and schemas explicitly. No hosted PostgreSQL target is
     used, and the fixture never reads a password from ambient PostgreSQL variables.
     """
-    def __init__(self, binary_dir: Path, artifacts: Path) -> None:
+    def __init__(self, binary_dir: Path, artifacts: Path, *, max_connections: int = 5) -> None:
+        if type(max_connections) is not int or max_connections not in (5, 6):
+            raise RuntimeError('postgres_fixture_connection_ceiling')
+        self._max_connections = max_connections
         self.binary_dir = Path(binary_dir)
         self.artifacts = Path(artifacts)
         self.process: subprocess.Popen[bytes] | None = None
@@ -146,7 +149,7 @@ class PostgresSourceFixture:
         assert self._data is not None
         configuration = "\n".join((
             "listen_addresses = '127.0.0.1'", 'port = '+str(self._port),
-            'max_connections = 5', "shared_buffers = '16MB'", "work_mem = '1MB'",
+            'max_connections = ' + str(self._max_connections), "shared_buffers = '16MB'", "work_mem = '1MB'",
             "maintenance_work_mem = '16MB'", 'autovacuum = off', 'max_parallel_workers = 0',
             'max_parallel_workers_per_gather = 0','max_parallel_maintenance_workers = 0',
             'max_worker_processes = 0','jit = off',"huge_pages = off", "unix_socket_directories = ''",

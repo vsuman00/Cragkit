@@ -13,13 +13,16 @@ from weakref import WeakKeyDictionary
 
 from ._qdrant_contract import QdrantConfig, decode_response, parse_model
 from ._qdrant_publication_verification import (
-    QdrantPublicationVerifier, publication_receipt_data,
+    QdrantPublicationVerifier, validate_publication_receipt,
 )
 from ._qdrant_reconciliation import QdrantReconciliationVerifier, _ReadbackTransport
 from ._qdrant_recovery import PostgresQdrantRecovery, recovery_components
 from ._qdrant_source import metadata_guard
 from ._qdrant_supervisor import ManagedQdrantSupervisor
 from ._qdrant_transport import deadline_value
+from ._qdrant_publication_worker import (is_controller, is_worker, controller_profile,
+    controller_attempt, controller_issue, controller_finalization,
+    ManagedQdrantPublicationWorkerHost, OwnedPublicationWorker, OrdinaryWorkerController)
 from ._qdrant_writer import PostgresQdrantWriter, writer_binding
 from ._qdrant_writer_contract import context, prepare_stage, stage_data
 from .contracts import TrustedScope
@@ -30,10 +33,11 @@ from .errors import (DeadlineExceeded, IndexNotReady,
 
 __all__ = ('QdrantPublicationManager', 'PostgresQdrantPublicationAuthority',
            'ManagedQdrantPublicationTransport', 'PostgresQdrantWriter',
-           'PostgresQdrantRecovery', 'ManagedQdrantSupervisor', 'QdrantReconciliationVerifier')
+           'PostgresQdrantRecovery', 'ManagedQdrantSupervisor', 'QdrantReconciliationVerifier',
+           'ManagedQdrantPublicationWorkerHost', 'OwnedPublicationWorker')
 
-_AUTHORITIES: WeakKeyDictionary[object, tuple[PostgresQdrantWriter, PostgresQdrantRecovery]] = WeakKeyDictionary()
-_TRANSPORTS: WeakKeyDictionary[object, ManagedQdrantSupervisor] = WeakKeyDictionary()
+_AUTHORITIES: WeakKeyDictionary[object, tuple[PostgresQdrantWriter, PostgresQdrantRecovery | None]] = WeakKeyDictionary()
+_TRANSPORTS: WeakKeyDictionary[object, Any] = WeakKeyDictionary()
 _ACKS: WeakKeyDictionary[object, tuple[object, object, str]] = WeakKeyDictionary()
 _SESSIONS: WeakKeyDictionary[object, tuple[object, object, object]] = WeakKeyDictionary()
 _CLEANUP_SECONDS = 1.0
@@ -41,9 +45,9 @@ _CLEANUP_SECONDS = 1.0
 
 class PostgresQdrantPublicationAuthority:
     """A borrowed nominal pair; it neither initializes nor grants permission."""
-    def __init__(self, writer: PostgresQdrantWriter, recovery: PostgresQdrantRecovery) -> None:
+    def __init__(self, writer: PostgresQdrantWriter, recovery: PostgresQdrantRecovery | None) -> None:
         writer_binding(writer)
-        if type(recovery) is not PostgresQdrantRecovery:
+        if recovery is not None and type(recovery) is not PostgresQdrantRecovery:
             raise InvalidRequest()
         _AUTHORITIES[self] = (writer, recovery)
 
@@ -64,18 +68,18 @@ class _Session:
 
 class ManagedQdrantPublicationTransport:
     """One-send immutable native sessions, never caller-supplied completion."""
-    def __init__(self, supervisor: ManagedQdrantSupervisor) -> None:
-        if type(supervisor) is not ManagedQdrantSupervisor:
+    def __init__(self, supervisor: ManagedQdrantSupervisor | OrdinaryWorkerController) -> None:
+        if not is_controller(supervisor):
             raise InvalidRequest()
         _TRANSPORTS[self] = supervisor
         self._closed = False
 
-    def _open(self, binding: dict[str, Any], *, deadline: float) -> _Session:
+    async def _open(self, binding: dict[str, Any], *, deadline: float) -> _Session:
         if self._closed:
             raise ProviderUnavailable()
         supervisor = _TRANSPORTS[self]
-        attempt = supervisor.issue_attempt(binding, deadline=deadline)
-        session = _Session(self, attempt, supervisor.attempt_binding(attempt),
+        attempt = await controller_issue(supervisor, binding, deadline=deadline)
+        session = _Session(self, attempt, await controller_attempt(supervisor, attempt, deadline=deadline),
                            supervisor.transport_for(attempt))
         _SESSIONS[session] = (self, attempt, session.handle)
         return session
@@ -184,11 +188,11 @@ def _result(intent_id: str, operation: str, intent: Mapping[str, Any]) -> Mappin
 class QdrantPublicationManager:
     def __init__(self, authority: PostgresQdrantPublicationAuthority,
                  transport: ManagedQdrantPublicationTransport, config: object,
-                 supervisor: ManagedQdrantSupervisor,
+                 supervisor: ManagedQdrantSupervisor | OrdinaryWorkerController,
                  authorize_write: Callable[[TrustedScope, str, str], Awaitable[bool]]) -> None:
         if (type(authority) is not PostgresQdrantPublicationAuthority or authority not in _AUTHORITIES
                 or type(transport) is not ManagedQdrantPublicationTransport or transport not in _TRANSPORTS
-                or type(supervisor) is not ManagedQdrantSupervisor or not callable(authorize_write)):
+                or not is_controller(supervisor) or not callable(authorize_write)):
             raise InvalidRequest()
         metadata_guard(config)
         self._config = parse_model(QdrantConfig, config)
@@ -198,8 +202,16 @@ class QdrantPublicationManager:
             raise UnsupportedCapability()
         if _TRANSPORTS[transport] is not supervisor:
             raise InvalidRequest()
-        self._original_verifier = recovery_components(
-            self._recovery, self._writer, supervisor, self._config)
+        self._original_verifier: object | None
+        if self._recovery is None:
+            if not is_worker(supervisor):
+                raise InvalidRequest()
+            self._original_verifier = None
+        else:
+            if is_worker(supervisor):
+                raise InvalidRequest()
+            self._original_verifier = recovery_components(
+                self._recovery, self._writer, cast(ManagedQdrantSupervisor, supervisor), self._config)
         self._supervisor = supervisor
         self._transport = transport
         self._authorize_write = authorize_write
@@ -297,8 +309,8 @@ class QdrantPublicationManager:
         if not allowed:
             raise UnauthorizedScope()
 
-    def _controller(self, snapshot: Mapping[str, Any]) -> Mapping[str, Any]:
-        native = self._supervisor.profile_binding(self._config)
+    async def _controller(self, snapshot: Mapping[str, Any], deadline: float) -> Mapping[str, Any]:
+        native = await controller_profile(self._supervisor, self._config, deadline=deadline)
         backend = snapshot['backend']
         if native['instance_id'] != self._instance:
             raise UnsupportedCapability()
@@ -309,18 +321,25 @@ class QdrantPublicationManager:
                 or native['epoch'] != backend['epoch'] or native['recovery'] is not None
                 or native['sealed'] or not native['alive']):
             raise ProviderUnavailable()
-        return native
+        return cast(Mapping[str, Any], native)
 
     async def initialize(self, *, deadline: float) -> None:
         async def initialize(limit: float) -> None:
             self._check(limit)
-            native = self._supervisor.profile_binding(self._config)
+            native = await controller_profile(self._supervisor, self._config, deadline=limit)
             if native['instance_id'] != self._instance:
                 raise UnsupportedCapability()
-            await self._recovery.initialize(deadline=limit)
+            if self._recovery is not None:
+                await self._recovery.initialize(deadline=limit)
             self._check(limit)
             await self._writer.initialize(deadline=limit)
             self._check(limit)
+            if is_worker(self._supervisor):
+                job = cast(Any, self._supervisor).job
+                lookup = context({**job['reference'], 'scope': job['scope'], 'owner_token': str(uuid4())})
+                snapshot = await self._writer.manager_snapshot(lookup, deadline=limit)
+                self._check(limit)
+                await self._controller(snapshot, limit)
             self._ready = True
         await self._run(initialize, deadline=deadline, initializing=True)
 
@@ -328,6 +347,8 @@ class QdrantPublicationManager:
                     deadline: float) -> Mapping[str, Any]:
         if type(ledger) is not ExecutionLedger:
             raise InvalidRequest()
+        if is_worker(self._supervisor):
+            raise UnsupportedCapability()
         plan = prepare_stage(change)
         graph = stage_data(plan)
         trusted = _scope(scope)
@@ -348,7 +369,7 @@ class QdrantPublicationManager:
                     raise IntegrityViolation()
                 if prior['state'] in ('published', 'conflict', 'denied'):
                     return _result(ctx.intent_id, 'stage', prior)
-            self._controller(snapshot)
+            await self._controller(snapshot, limit)
             result = await self._writer.stage(plan, trusted, owner_token=ctx.owner_token, deadline=limit)
             self._check(limit)
             return _result(ctx.intent_id, 'stage', result)
@@ -378,7 +399,7 @@ class QdrantPublicationManager:
                      deadline: float) -> object:
         await self._authorize(ctx, deadline)
         dispatch_id = 'publication-' + str(uuid4())
-        session = self._transport._open({'intent_id': ctx.intent_id, 'owner_token': ctx.owner_token,
+        session = await self._transport._open({'intent_id': ctx.intent_id, 'owner_token': ctx.owner_token,
             'epoch': epoch, 'dispatch_id': dispatch_id}, deadline=deadline)
         request = {'dispatch_id': dispatch_id, 'sequence': sequence,
             'credential_generation': session.binding['credential_generation'],
@@ -409,6 +430,11 @@ class QdrantPublicationManager:
                 elif status['state'] != 'dispatched':
                     raise ProviderUnavailable() from None
             self._check(deadline)
+            if is_worker(self._supervisor):
+                await cast(Any, self._supervisor).before_write(session.attempt, dict(dispatch_id=dispatch_id,
+                    sequence=sequence, request_sha256=hashlib.sha256(reservation['request_bytes']).hexdigest()),
+                    deadline=deadline)
+                self._check(deadline)
             acknowledgment = await self._transport._send(session, self._config.physical_collection,
                 reservation['request_bytes'], deadline=deadline)
             self._check(deadline)
@@ -475,7 +501,7 @@ class QdrantPublicationManager:
                 return _result(ctx.intent_id, 'publish', admission['intent'])
             snapshot = await self._writer.manager_snapshot(ctx, deadline=limit)
             self._check(limit)
-            native = self._controller(snapshot)
+            native = await self._controller(snapshot, limit)
             if snapshot['pending']:
                 raise ProviderUnavailable()
             epoch = admission['owner']['backend_epoch']
@@ -484,7 +510,7 @@ class QdrantPublicationManager:
                 if (selected['credential_generation'] != native['credential_generation']
                         or selected['backend_epoch'] != epoch):
                     raise ProviderUnavailable()
-                session = self._transport._open({'intent_id': ctx.intent_id,
+                session = await self._transport._open({'intent_id': ctx.intent_id,
                     'owner_token': owner_token, 'epoch': epoch,
                     'dispatch_id': selected['dispatch_id']}, deadline=limit)
                 try:
@@ -510,9 +536,9 @@ class QdrantPublicationManager:
                     raise IntegrityViolation()
             receipt = await self._verifier.verify(attempt, ctx, deadline=limit)
             self._check(limit)
-            async with self._supervisor.control_session():
+            async with controller_finalization(self._supervisor, attempt, deadline=limit):
                 self._check(limit)
-                data = publication_receipt_data(receipt, self._verifier)
+                data = await validate_publication_receipt(receipt, self._verifier, deadline=limit)
                 if prepared is not None and data['readback_sha256'] != prepared['preparation']['readback_sha256']:
                     raise IntegrityViolation()
                 await self._authorize(ctx, limit)

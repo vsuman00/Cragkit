@@ -326,12 +326,12 @@ async def test_constructor_graph_and_public_input_shapes_are_nominal_before_io(m
 @run_async
 async def test_transport_host_close_rejects_sessions_without_closing_supervisor(monkeypatch, tmp_path):
     manager, _, _, supervisor, transport, _, _ = await setup(monkeypatch, tmp_path)
-    session = transport._open({'intent_id': ctx()['intent_id'], 'owner_token': ctx()['owner_token'],
+    session = await transport._open({'intent_id': ctx()['intent_id'], 'owner_token': ctx()['owner_token'],
         'epoch': 2, 'dispatch_id': 'host-close'}, deadline=asyncio.get_running_loop().time() + 5)
     await transport.close()
     assert session.closed and not supervisor._closed
     with pytest.raises(ProviderUnavailable):
-        transport._open({'intent_id': ctx()['intent_id'], 'owner_token': ctx()['owner_token'],
+        await transport._open({'intent_id': ctx()['intent_id'], 'owner_token': ctx()['owner_token'],
             'epoch': 2, 'dispatch_id': 'new'}, deadline=asyncio.get_running_loop().time() + 5)
     await manager.close()
 
