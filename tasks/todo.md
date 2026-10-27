@@ -271,7 +271,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
         - [x] V5-04F2a2i: Private native dependency and registered-profile bindings; 2,173 Python/tool and 1,123 Node regressions, strict types/build, 68 native controller/recovery checks and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a2i.md).
         - [x] V5-04F2a2ii: Bounded native transport and public stage/publish operations; 2,207 Python/tool and 1,136 Node regressions, strict types/build, 28 actual public-manager cases with nineteen-result parity and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a2ii.md).
       - [ ] V5-04F2b: Explicit native ordinary-worker channel for a surviving supervisor.
-    - [ ] V5-04F3: Native staged-publication acceptance and previous-generation preservation.
+    - [x] V5-04F3: Native staged-publication source acceptance and previous-generation preservation; 16 actual native checks, exact source-observation parity, 167 affected Python/tool and 73 Node regressions, TypeScript build and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F3.md). Worker/process recovery remains F2b/H.
   - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
     - [ ] V5-04G0: Additive append-only current-epoch preparation attestations and exact authority compatibility, before cross-epoch prepared repair.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
@@ -321,6 +321,10 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+### V5-04F3: Public publication and source acceptance
+
+State: COMPLETE for in-process source-facing acceptance after verified/pushed F2a2ii (b804d4e). [Evidence](../evaluation/reports/V5/V5-04F3.md). F3-r1 isolated source acceptance while F2b worker ABI remained design-only. Sol Python `f3_python` implemented tools/qdrant_publication_source_cases.py and assembled; Sol Node `f3_node` implemented tools/check_typescript_qdrant_publication_source.mjs; Sol `f3_review` reviewed the evidence boundary. Both writers stopped and transferred ownership. Root owns shared inputs/parent/tests/report/tracker, all execution and Git. Root corrected the final Python callback scope assertion, inspected assembled sources, passed 3 protocol guards, build, 16 actual native checks with identical source-observation hashes, 167 affected Python/tool and 73 Node regressions plus 16 seals. Stage/prepared source denial, current publication admission, retained stale exact evidence and foreign scope refusal passed. No library/migration/lock/seal/user-audit bytes changed. Max 1 writer+supervisor pools, supervisor pool closed before max 1 reader opens; setup admin released; one test process/language at a time. Both native fixtures/listeners shut down and owned private storage removed; no task-owned service remains. Final snapshot 44 GiB disk/62 percent free memory. No hosted/provider calls, model download, install or release. Learning exercise unassessed. Root commits/pushes accepted scope, then F2b native worker isolation/finalization ownership, G0 repair attestations, repair/security/purge, H and remaining V5 gates; full V5 incomplete.
 
 ### V5-04F2a2ii: Public ordinary stage/publish manager
 

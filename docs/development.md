@@ -1036,4 +1036,15 @@ node --test --test-concurrency=1 packages/typescript/tests/qdrant-publication.te
 uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_manager.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04F2a2ii/a-new-run
 ```
 
+## V5-04F3 publication and source visibility
+
+The [F3 report](../evaluation/reports/V5/V5-04F3.md) records sixteen native checks and exact source-observation parity. Prepared physical vectors cannot release source text. Publication changes fresh source admission; retained authorized bindings preserve immutable evidence and report staleness. Worker crash recovery and the full V5 fault matrix remain separate gates.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_publication_source_native.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_source.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04F3/a-new-run
+```
+
+Use a fresh artifact directory. The command starts only disposable local servers with synthetic fixtures, runs runtimes serially, compares deterministic observation hashes and verifies listener shutdown. It performs no hosted/provider calls and requires no model installation.
+
 Use a fresh directory. The checker opens two restricted resources, runs actual public manager code against isolated PostgreSQL/Qdrant, and compares nineteen exact public-result snapshots. It withholds one real preparation COMMIT acknowledgment and one real completed HTTP response; it does not fabricate successful writes. Prepared cancellation/object restart is narrower than the pending process-kill matrix. Keep native languages and other integration suites serial. Successful cleanup verifies listener absence before removing only owned fixture storage.
