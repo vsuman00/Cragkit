@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,recovery_dispatch_plan_data,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,recovery_dispatch_plan_data,security_projection_data,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
@@ -123,6 +123,8 @@ function setup(){
           if(sql.includes('point_id=ANY'))rows=rows.filter(row=>params[3].includes(row.point_id));
           if(sql.includes("state<>'settled'"))rows=rows.filter(row=>row.state!=='settled');
           if(sql.includes('manifest_sha256<>$6'))rows=rows.filter(row=>row.manifest_sha256!==params[5]);
+          if(sql.includes("action='stage'"))rows=rows.filter(row=>row.action==='stage');
+          if(sql.includes("ORDER BY convert_to(intent_id,'UTF8')"))rows.sort((left,right)=>Buffer.compare(Buffer.from(left.intent_id),Buffer.from(right.intent_id)));
           const limit=Number(/LIMIT (\d+)/.exec(sql)?.[1]??65);
           return {rows:rows.slice(0,limit).map(row=>columns.split(',').map(column=>clone(row[column.replace('::text','')])))};
         }
@@ -1353,5 +1355,159 @@ for(const boundary of ['deadline','abort','statement_cancel'])test(`security COM
     assert.equal(queries.filter(query=>query.text.startsWith('BEGIN')).length,1);
     assert.equal(queries.filter(query=>query.text==='COMMIT').length,1);
     assert.equal(f.state.tables.documents[0].authorization_revision,'auth-1');
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+async function securityProjectionFixture(action='update_authorization'){
+  const f=await securitySetup();
+  const second=input();second.intent.intent_id='stage-retained';second.manifest.generation_id='generation-retained';
+  second.intent.initial_authorization=null;
+  for(const member of second.manifest.members)member.point_id=point_id(['cragkit.qdrant.point.v1',
+    second.manifest.backend_namespace,second.manifest.physical_collection,second.manifest.collection_incarnation,
+    second.manifest.tenant_id,second.manifest.collection,second.manifest.document_id,second.manifest.revision_id,
+    second.manifest.generation_id,member.chunk_id,config.dense_profile.profile_id,config.sparse_profile.profile_id]);
+  second.intent.manifest_sha256=encode_manifest(second.manifest,second.canonical_text).sha256;
+  await f.writer.stage(prepare_stage(second),scope,stageOpts());
+  f.state.tables.publication_intents.find(row=>row.intent_id==='stage-retained').state='denied';
+  f.state.tables.generations.find(row=>row.generation_id==='generation-retained').ever_published=true;
+  await f.writer.apply_security(securityChange(action),scope,stageOpts());
+  f.securityContext={...context,intent_id:'security-confirmation',scope:{...scope,authorization_revision:'auth-2'}};
+  Object.assign(f.state.tables.backend_instances[0],{state:'recovery_blocked',epoch:2,recovery_id:'unknown-recovery'});
+  f.state.tables.dispatch_journal=[{tenant_id:'tenant-a',collection:'docs',document_id:'doc-1',state:'unknown'}];
+  return f;
+}
+for(const action of ['update_authorization','tombstone'])test(`security projection ${action} includes all claims with current immutable payloads and no physical admission`,async()=>{
+  const f=await securityProjectionFixture(action);
+  try{
+    const start=f.state.queries.length,token=await f.writer.project_security(f.securityContext,opts());
+    const data=security_projection_data(token,f.writer);
+    assert.deepEqual(Object.keys(data).sort(),['context','intent_sha256','inventory_sha256','authorization_revision','mutation_epoch',
+      'active_generation_id','tombstoned','principal_ids','grant_ids','language','kind','tag','generations','point_ids','points'].sort());
+    assert.equal(data.generations.length,2);assert.equal(data.points.length,4);assert.equal(data.tombstoned,action==='tombstone');
+    assert.deepEqual(data.point_ids,[...data.point_ids].sort());
+    for(const point of data.points){assert.equal(point.payload.authorization_revision,'auth-2');assert.deepEqual(point.payload.grant_ids,[]);assert.equal(Object.isFrozen(point.payload.dense_profile),true);}
+    const inventory=['cragkit.qdrant.security-inventory.v1',config.backend_namespace,config.physical_collection,config.collection_incarnation,
+      scope.tenant_id,'docs','doc-1','instance-fixture',data.generations.map(group=>[group.revision_id,group.generation_id,group.manifest_sha256,group.point_ids])];
+    assert.equal(data.inventory_sha256,digest(JSON.stringify(inventory)));
+    assert.equal(Object.isFrozen(data.generations[0].point_ids),true);assert.throws(()=>data.principal_ids.push('intruder'),TypeError);
+    const queries=f.state.queries.slice(start);
+    const documentLock=queries.findIndex(query=>query.text.includes('FROM cragkit_qdrant.documents ')&&query.text.endsWith('FOR UPDATE'));
+    const rawClaims=queries.findIndex(query=>query.text.includes('FROM cragkit_qdrant.point_claims ')&&query.text.includes('LIMIT 2049'));
+    assert.ok(documentLock>=0&&documentLock<rawClaims);
+    assert.equal(queries.some(query=>/^(INSERT|UPDATE|DELETE) /.test(query.text)),false);
+    assert.equal(queries.some(query=>/FROM cragkit_qdrant\.(backend_instances|document_owners|dispatch_journal)/.test(query.text)),false);
+    const switched=queries.filter(query=>query.text==="SELECT set_config('cragkit_qdrant.writer_intent_id',$1,true)");
+    assert.equal(switched.at(-1).values[0],f.securityContext.intent_id);assert.equal(switched.length,3);
+    await f.writer.validate_security_projection(token,opts());
+    assert.throws(()=>security_projection_data({...token},f.writer),InvalidRequest);
+    const foreign=setup();
+    try{assert.throws(()=>security_projection_data(token,foreign.writer),InvalidRequest);}
+    finally{await foreign.writer.close();await foreign.resource.close();}
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+for(const fault of ['physical','instance','missing_replay','extra_replay','duplicate_replay','source','member','replay_seal','stage_missing'])
+  test(`security projection refuses ${fault} immutable contradiction`,async()=>{
+    const f=await securityProjectionFixture();
+    try{
+      if(fault==='physical')f.state.tables.point_claims[0].physical_collection='foreign';
+      else if(fault==='instance')f.state.tables.point_claims[0].instance_id='foreign';
+      else if(fault==='missing_replay')f.state.tables.vector_replays.pop();
+      else if(fault==='extra_replay')f.state.tables.vector_replays.push({...clone(f.state.tables.vector_replays[0]),chunk_id:'extra'});
+      else if(fault==='duplicate_replay')f.state.tables.vector_replays.push(clone(f.state.tables.vector_replays[0]));
+      else if(fault==='source')f.state.tables.document_revisions[0].canonical_utf8=Buffer.from('wrong bytes');
+      else if(fault==='member')f.state.tables.members[0].text_sha256='f'.repeat(64);
+      else if(fault==='replay_seal')f.state.tables.vector_replays[0].dense_blob_sha256='f'.repeat(64);
+      else f.state.tables.publication_intents=f.state.tables.publication_intents.filter(row=>row.action!=='stage');
+      const start=f.state.queries.length;
+      await assert.rejects(f.writer.project_security(f.securityContext,opts()),IntegrityViolation);
+      assert.equal(f.state.queries.slice(start).some(query=>/^(INSERT|UPDATE|DELETE) /.test(query.text)),false);
+      const switches=f.state.queries.slice(start).filter(query=>query.text==="SELECT set_config('cragkit_qdrant.writer_intent_id',$1,true)");
+      if(switches.length)assert.equal(switches.at(-1).values[0],f.securityContext.intent_id);
+    }finally{await f.writer.close();await f.resource.close();}
+  });
+
+test('security projection supports empty inventory but refuses valid supersession and overflow',async()=>{
+  const f=await securityProjectionFixture();
+  try{
+    f.state.tables.point_claims=[];f.state.tables.vector_replays=[];
+    const token=await f.writer.project_security(f.securityContext,opts()),data=security_projection_data(token,f.writer);
+    assert.deepEqual(data.points,[]);assert.deepEqual(data.generations,[]);
+    f.state.tables.documents[0].authorization_revision='auth-3';
+    await assert.rejects(f.writer.validate_security_projection(token,opts()),UnauthorizedScope);
+  }finally{await f.writer.close();await f.resource.close();}
+  const g=await securityProjectionFixture();
+  try{
+    const claim=g.state.tables.point_claims[0],replay=g.state.tables.vector_replays[0];
+    g.state.tables.point_claims=Array.from({length:2049},(_,index)=>({...clone(claim),
+      point_id:`00000000-0000-4000-8000-${String(index).padStart(12,'0')}`,chunk_id:'chunk-'+index,
+      generation_id:'generation-'+Math.floor(index/64)}));
+    g.state.tables.vector_replays=g.state.tables.point_claims.map(item=>({...clone(replay),point_id:item.point_id,
+      chunk_id:item.chunk_id,generation_id:item.generation_id}));
+    await assert.rejects(g.writer.project_security(g.securityContext,opts()),UnsupportedCapability);
+    g.state.tables.point_claims[1]=clone(g.state.tables.point_claims[0]);
+    await assert.rejects(g.writer.project_security(g.securityContext,opts()),IntegrityViolation);
+  }finally{await g.writer.close();await g.resource.close();}
+});
+
+test('security projection revalidation rejects changed pointer and valid complete inventory',async()=>{
+  const f=await securityProjectionFixture();
+  try{
+    const token=await f.writer.project_security(f.securityContext,opts());
+    f.state.tables.documents[0].active_generation_id='another-active';
+    await assert.rejects(f.writer.validate_security_projection(token,opts()),UnauthorizedScope);
+    f.state.tables.documents[0].active_generation_id=null;
+    const retained='generation-retained';
+    f.state.tables.point_claims=f.state.tables.point_claims.filter(row=>row.generation_id!==retained);
+    f.state.tables.vector_replays=f.state.tables.vector_replays.filter(row=>row.generation_id!==retained);
+    await assert.rejects(f.writer.validate_security_projection(token,opts()),UnauthorizedScope);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('security projection chooses UTF8-first original stage and restores intent after denied-stage loading',async()=>{
+  const f=await securityProjectionFixture();
+  try{
+    // An identical stage is another original binding, not a publication rebase.
+    const original=f.state.tables.publication_intents.find(row=>row.intent_id==='intent-2');
+    const earlier=clone(original);earlier.intent_id='aaa-original';
+    const tuple=JSON.parse(earlier.payload_bytes.toString('utf8'));tuple[2]=earlier.intent_id;
+    earlier.payload_bytes=Buffer.from(JSON.stringify(tuple));earlier.payload_sha256=digest(earlier.payload_bytes);earlier.state='denied';
+    f.state.tables.publication_intents.push(earlier);
+    const start=f.state.queries.length;
+    await f.writer.project_security(f.securityContext,opts());
+    const switches=f.state.queries.slice(start).filter(query=>query.text==="SELECT set_config('cragkit_qdrant.writer_intent_id',$1,true)");
+    assert.ok(switches.some(query=>query.values[0]==='aaa-original'));
+    assert.equal(switches.some(query=>query.values[0]==='intent-2'),false);
+    assert.equal(earlier.state,'denied');assert.equal(original.state,'staged');
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('security raw inventory rejects per-generation and generation-count overflow before stage reads',async()=>{
+  for(const mode of ['members','generations']){
+    const f=await securityProjectionFixture();
+    try{
+      const original=f.state.tables.point_claims[0],replay=f.state.tables.vector_replays[0];
+      f.state.tables.point_claims=Array.from({length:65},(_,index)=>({...clone(original),
+        point_id:`00000000-0000-4000-8000-${String(index).padStart(12,'0')}`,chunk_id:'chunk-'+index,
+        generation_id:mode==='generations'?'generation-'+index:original.generation_id}));
+      f.state.tables.vector_replays=f.state.tables.point_claims.map(claim=>({...clone(replay),point_id:claim.point_id,
+        chunk_id:claim.chunk_id,generation_id:claim.generation_id}));
+      const start=f.state.queries.length;
+      await assert.rejects(f.writer.project_security(f.securityContext,opts()),UnsupportedCapability);
+      assert.equal(f.state.queries.slice(start).some(query=>query.text.includes('FROM cragkit_qdrant.members ')),false);
+    }finally{await f.writer.close();await f.resource.close();}
+  }
+});
+
+for(const malformed of ['payload','expected_fence','uncommitted','scope'])test(`security projection validates ${malformed} authority binding`,async()=>{
+  const f=await securityProjectionFixture();
+  try{
+    const row=f.state.tables.publication_intents.find(item=>item.intent_id==='security-confirmation');
+    if(malformed==='payload'){row.payload_bytes=Buffer.from('[]');row.payload_sha256=digest(row.payload_bytes);}
+    if(malformed==='expected_fence')row.expected_mutation_epoch=7;
+    if(malformed==='uncommitted'){row.authority_committed=false;row.state='staged';}
+    if(malformed==='scope')f.securityContext.scope={...scope};
+    await assert.rejects(f.writer.project_security(f.securityContext,opts()),
+      ['uncommitted','scope'].includes(malformed)?UnauthorizedScope:IntegrityViolation);
   }finally{await f.writer.close();await f.resource.close();}
 });

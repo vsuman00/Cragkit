@@ -214,3 +214,48 @@ def test_writer_failure_diagnostics_do_not_overwrite_an_unowned_artifacts_direct
     assert json.loads(capsys.readouterr().out)['ok'] is False
     assert diagnostic.read_text()=='user-owned'
     assert list(directory.iterdir())==[diagnostic] and starts==[]
+
+
+def security_observation_fixture():
+    from hashlib import sha256
+    inputs=writer_input()
+    ids=sorted(member['point_id'] for member in inputs['stage']['manifest']['members'])
+    groups=[dict(revision_id='\ue000',generation_id='g-a',manifest_sha256='a'*64,point_ids=[ids[0]]),
+            dict(revision_id='\U00010000',generation_id='g-b',manifest_sha256='b'*64,point_ids=[ids[1]])]
+    config=inputs['config'];manifest=inputs['stage']['manifest']
+    witness=['cragkit.qdrant.security-inventory.v1',config['backend_namespace'],config['physical_collection'],
+        config['collection_incarnation'],inputs['scope']['tenant_id'],manifest['collection'],manifest['document_id'],inputs['instance_id'],
+        [[group['revision_id'],group['generation_id'],group['manifest_sha256'],group['point_ids']] for group in groups]]
+    value=dict(inventory_sha256=sha256(json.dumps(witness,separators=(',',':'),ensure_ascii=False).encode()).hexdigest(),
+        point_ids=ids,generations=groups,authorization_revision='auth-5',mutation_epoch=5,tombstoned=True)
+    return value,inputs
+
+
+def test_security_observation_enforces_utf8_group_order_exact_inventory_and_hash():
+    from copy import deepcopy
+    from check_qdrant_writer import validate_security_observation
+    value,inputs=security_observation_fixture()
+    assert validate_security_observation(value,inputs)==value
+    returned=validate_security_observation(value,inputs)
+    value['generations'][0]['point_ids'].clear()
+    assert len(returned['generations'][0]['point_ids'])==1
+    valid,_=security_observation_fixture()
+    mutations=[dict(valid,private='secret'),dict(valid,mutation_epoch=True),dict(valid,tombstoned=1),
+        dict(valid,authorization_revision='bad\x00revision'),dict(valid,authorization_revision='\ud800'),
+        dict(valid,point_ids=list(reversed(valid['point_ids']))),dict(valid,point_ids=valid['point_ids']*2),
+        dict(valid,generations=list(reversed(valid['generations']))),dict(valid,inventory_sha256='0'*64)]
+    group=deepcopy(valid);group['generations'][1]['point_ids']=group['generations'][0]['point_ids'][:];mutations.append(group)
+    group=deepcopy(valid);group['generations'][0]['manifest_sha256']='private';mutations.append(group)
+    for changed in mutations:
+        with pytest.raises(RuntimeError,match='writer_security_observation_'):
+            validate_security_observation(changed,inputs)
+
+
+def test_security_observation_empty_inventory_is_bounded_but_not_physical_absence():
+    from check_qdrant_writer import validate_security_observation
+    value,_=security_observation_fixture()
+    value.update(point_ids=[],generations=[])
+    assert validate_security_observation(value)['point_ids']==[]
+    value['point_ids']=['00000000-0000-4000-8000-000000000001']*2049
+    with pytest.raises(RuntimeError,match='writer_security_observation_shape'):
+        validate_security_observation(value)

@@ -90,6 +90,21 @@ class _AckConnection:
     def __getattr__(self, key):
         return getattr(self.connection, key)
 
+    async def execute(self,statement,params=None,**options):
+        document_lock=(type(statement) is str and statement.startswith('SELECT ')
+            and 'FROM cragkit_qdrant.documents ' in statement and statement.endswith('FOR UPDATE'))
+        if document_lock and self.observations.get('watch_stage'):
+            self.observations['watch_stage']=False
+            self.observations['stage_pid']=self.connection.info.backend_pid
+            self.observations['stage_entered'].set()
+        result=await self.connection.execute(statement,params,**options)
+        if document_lock and self.observations.get('pause_document'):
+            self.observations['pause_document']=False
+            self.observations['locked_connection']=self.connection
+            self.observations['locked'].set()
+            await self.observations['resume'].wait()
+        return result
+
     def transaction(self):
         connection = self.connection
         transaction, observations = connection.transaction(), self.observations
@@ -136,7 +151,7 @@ async def python_writer_cases(config, inputs):
     from pathlib import Path
     from cragkit._postgres_pool import PoolConfig, PoolResource
     from cragkit._qdrant_contract import QdrantConfig, parse_model
-    from cragkit._qdrant_writer import PostgresQdrantWriter, prepare_stage
+    from cragkit._qdrant_writer import PostgresQdrantWriter, prepare_stage, security_projection_data
     from cragkit.contracts import TrustedScope, Limits
     from cragkit.execution import ExecutionLedger
     from cragkit.qdrant_publication import QdrantSecurityManager
@@ -149,7 +164,9 @@ async def python_writer_cases(config, inputs):
     resource = PoolResource(PoolConfig.model_validate(private_config),
         factory=lambda cfg: _AckPool(cfg, acknowledgment))
     writer = PostgresQdrantWriter(resource, parse_model(QdrantConfig, inputs['config']), inputs['instance_id'])
-    other_resource = PoolResource(PoolConfig.model_validate(private_config))
+    stage_observations = dict(armed=False,fired=0)
+    other_resource = PoolResource(PoolConfig.model_validate(private_config),
+        factory=lambda cfg: _AckPool(cfg,stage_observations))
     other = PostgresQdrantWriter(other_resource, parse_model(QdrantConfig, inputs['config']), inputs['instance_id'])
     scope = parse_model(TrustedScope, inputs['scope'])
     context = dict(scope=scope, collection=inputs['stage']['manifest']['collection'],
@@ -355,6 +372,43 @@ async def python_writer_cases(config, inputs):
         if replay != stale_receipt:
             raise RuntimeError('writer_stale_security_replay_changed')
         checks.append('stale_security_intent_denied_without_overwriting_current_authority')
+        security_context=dict(context,scope=current_scope,intent_id=revocation['intent_id'])
+        acknowledgment.update(pause_document=True,locked=asyncio.Event(),resume=asyncio.Event())
+        stage_observations.update(watch_stage=True,stage_entered=asyncio.Event())
+        projecting=asyncio.create_task(writer.project_security(security_context,deadline=deadline))
+        staging=None
+        try:
+            await asyncio.wait_for(acknowledgment['locked'].wait(),3)
+            staging=asyncio.create_task(other.stage(prepare_stage(inputs['security_successor']),current_scope,
+                owner_token='00000000-0000-4000-8000-000000000002',deadline=deadline))
+            await asyncio.wait_for(stage_observations['stage_entered'].wait(),3)
+            waiting=False
+            for _ in range(100):
+                cursor=await acknowledgment['locked_connection'].execute(
+                    "SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks WHERE pid=%s AND NOT granted AND locktype='transactionid')",
+                    (stage_observations['stage_pid'],))
+                if await cursor.fetchall()==[(True,)]:
+                    waiting=True;break
+                await asyncio.sleep(.01)
+            if not waiting or staging.done():
+                raise RuntimeError('security_projection_staging_lock_not_observed')
+            checks.append('security_projection_document_lock_blocks_actual_staging')
+        finally:
+            acknowledgment['resume'].set()
+            initial_projection=await projecting
+            if staging is not None:
+                await staging
+        initial_data=security_projection_data(initial_projection,writer)
+        new_ids={member['point_id'] for member in inputs['security_successor']['manifest']['members']}
+        if new_ids.intersection(initial_data['point_ids']):
+            raise RuntimeError('security_projection_included_uncommitted_claims')
+        await expect(UnauthorizedScope,lambda:writer.validate_security_projection(initial_projection,deadline=deadline))
+        checks.append('security_projection_fresh_inventory_rejects_later_stage')
+        current_projection=await writer.project_security(security_context,deadline=deadline)
+        if not new_ids.issubset(security_projection_data(current_projection,writer)['point_ids']):
+            raise RuntimeError('security_projection_omitted_committed_stage')
+        await writer.validate_security_projection(current_projection,deadline=deadline)
+        checks.append('security_projection_includes_drafts_without_rebasing_stage_fences')
         security = dict(action='tombstone', intent_id='native-tombstone', tenant_id=scope.tenant_id,
             collection=inputs['stage']['manifest']['collection'], document_id=context['document_id'],
             expected_authorization_revision='auth-2', expected_mutation_epoch=2,
@@ -450,7 +504,36 @@ async def python_writer_cases(config, inputs):
                 or after_security['backend']['state']!='recovery_blocked'):
             raise RuntimeError('security_public_changed_recovery_ownership')
         checks.append('public_security_commits_with_blocked_backend_and_uncertain_purge')
-        return dict(runtime='python', checks=checks, publication_proof='authority_transactions_only')
+        projection_context=dict(context,scope=latest_scope,intent_id=public_tombstone['intent_id'])
+        stage_records=[inputs['stage'],*inputs['successors'].values(),inputs['security_successor']]
+        states_before={stage['intent']['intent_id']:dict(await writer.inspect(dict(context,intent_id=stage['intent']['intent_id']),deadline=deadline)) for stage in stage_records}
+        projected=await writer.project_security(projection_context,deadline=deadline)
+        data=security_projection_data(projected,writer)
+        expected_ids=sorted(member['point_id'] for stage in stage_records for member in stage['manifest']['members'])
+        if (set(data)!={'context','intent_sha256','inventory_sha256','authorization_revision','mutation_epoch',
+                'active_generation_id','tombstoned','principal_ids','grant_ids','language','kind','tag','generations','point_ids','points'}
+                or list(data['point_ids'])!=expected_ids or not data['tombstoned'] or data['authorization_revision']!='auth-5'
+                or data['mutation_epoch']!=5 or data['language']!='de' or data['principal_ids'] or data['grant_ids']):
+            raise RuntimeError('security_projection_complete_current_graph')
+        for point in data['points']:
+            if (point.payload.authorization_revision!='auth-5' or point.payload.principal_ids or point.payload.grant_ids
+                    or point.payload.language!='de'):
+                raise RuntimeError('security_projection_stale_payload')
+        await writer.validate_security_projection(projected,deadline=deadline)
+        states_after={stage['intent']['intent_id']:dict(await writer.inspect(dict(context,intent_id=stage['intent']['intent_id']),deadline=deadline)) for stage in stage_records}
+        if states_before!=states_after:
+            raise RuntimeError('security_projection_mutated_original_stages')
+        checks.append('security_projection_complete_tombstone_graph_preserves_stage_history')
+        observation=dict(inventory_sha256=data['inventory_sha256'],point_ids=list(data['point_ids']),
+            generations=[dict(group,point_ids=list(group['point_ids'])) for group in data['generations']],
+            authorization_revision=data['authorization_revision'],mutation_epoch=data['mutation_epoch'],tombstoned=data['tombstoned'])
+        superseding=dict(public_tombstone,intent_id='native-projection-superseded',
+            expected_authorization_revision='auth-5',expected_mutation_epoch=5,
+            authorization=dict(public_tombstone['authorization'],authorization_revision='auth-6'))
+        await writer.apply_security(superseding,latest_scope,owner_token=OWNER_TOKEN,deadline=deadline)
+        await expect(UnauthorizedScope,lambda:writer.validate_security_projection(projected,deadline=deadline))
+        checks.append('security_projection_revalidation_rejects_later_authority')
+        return dict(runtime='python', checks=checks, publication_proof='authority_transactions_only',security_projection=observation)
     except BaseException as error:
         primary = error
         raise

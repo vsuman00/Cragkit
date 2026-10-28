@@ -1,8 +1,8 @@
 import {QdrantSecurityManager} from '../packages/typescript/dist/qdrant-publication.js';
 import {ExecutionLedger} from '../packages/typescript/dist/execution.js';
 /** Native authority transaction cases. Actual Qdrant completion is checked in F/H. */
-import {PoolResource, parse_pool_config, now} from '../packages/typescript/dist/postgres-pool.js';
-import {PostgresQdrantWriter, prepare_stage} from '../packages/typescript/dist/qdrant-writer.js';
+import {PoolResource, parse_pool_config, now, bounded} from '../packages/typescript/dist/postgres-pool.js';
+import {PostgresQdrantWriter, prepare_stage, security_projection_data} from '../packages/typescript/dist/qdrant-writer.js';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {IntegrityViolation, UnauthorizedScope, IndexNotReady, ProviderUnavailable} from '../packages/typescript/dist/errors.js';
@@ -37,6 +37,9 @@ async function cases(value) {
   const {config, inputs} = value;
   const resource = new PoolResource(parse_pool_config(config));
   const acknowledgment = {armed: false, fired: 0, destroyed: 0};
+  const lock={};
+  const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
+  const documentLock=sql=>sql.startsWith('SELECT ')&&sql.includes('FROM cragkit_qdrant.documents ')&&sql.endsWith('FOR UPDATE');
   const withLease = resource.withLease.bind(resource);
   // Forward every query to the owned native driver. Withhold one real COMMIT
   // acknowledgment during alternate-owner admission and security commit below.
@@ -45,6 +48,7 @@ async function cases(value) {
     return operation({
       async query(query) {
         const result = await client.query(query);
+        if(lock.pause&&documentLock(query.text)){lock.pause=false;lock.connection=client;lock.locked.resolve();await lock.resume.promise;}
         if (query.text === 'COMMIT' && acknowledgment.armed) {
           acknowledgment.armed = false;
           acknowledgment.fired++;
@@ -66,6 +70,17 @@ async function cases(value) {
   });
   const writer = new PostgresQdrantWriter(resource, inputs.config, inputs.instance_id);
   const otherResource = new PoolResource(parse_pool_config(config));
+  const otherLease=otherResource.withLease.bind(otherResource);
+  otherResource.withLease=(leaseOptions,operation)=>otherLease(leaseOptions,(client,signal)=>operation({
+    async query(query){
+      if(lock.watchStage&&documentLock(query.text)){
+        lock.watchStage=false;
+        const pid=await client.query({text:'SELECT pg_backend_pid()',rowMode:'array'});
+        lock.stagePid=pid.rows[0][0];lock.stageEntered.resolve();
+      }
+      return client.query(query);
+    },getTransactionStatus:()=>client.getTransactionStatus(),release:destroy=>client.release(destroy),
+  },signal));
   const other = new PostgresQdrantWriter(otherResource, inputs.config, inputs.instance_id);
   const scope = inputs.scope;
   const context = {scope, collection: inputs.stage.manifest.collection,
@@ -244,6 +259,31 @@ async function cases(value) {
     if (!isDeepStrictEqual(await writer.apply_security(stale, currentScope, {...options, owner_token: OWNER_TOKEN}), staleReceipt)) throw new Error('stale_security_replay_changed');
     checks.push('stale_security_intent_denied_without_overwriting_current_authority');
     phase = 'security';
+    const securityContext={...context,scope:currentScope,intent_id:revocation.intent_id};
+    Object.assign(lock,{pause:true,locked:deferred(),resume:deferred(),watchStage:true,stageEntered:deferred()});
+    const projecting=writer.project_security(securityContext,options);void projecting.catch(()=>{});let staging,initialProjection;
+    try{
+      await bounded(lock.locked.promise,{deadline:Math.min(now()+3,options.deadline)});
+      staging=other.stage(prepare_stage(inputs.security_successor),currentScope,{...options,owner_token:tokenB});
+      void staging.catch(()=>{});
+      await bounded(lock.stageEntered.promise,{deadline:Math.min(now()+3,options.deadline)});
+      let waiting=false;
+      for(let index=0;index<100;index++){
+        const found=await lock.connection.query({text:"SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks WHERE pid=$1 AND NOT granted AND locktype='transactionid')",values:[lock.stagePid],rowMode:'array'});
+        if(found.rows[0][0]===true){waiting=true;break;}
+        await new Promise(resolve=>setTimeout(resolve,10));
+      }
+      if(!waiting)throw new Error('security_projection_staging_lock_not_observed');
+      checks.push('security_projection_document_lock_blocks_actual_staging');
+    }finally{lock.resume.resolve();initialProjection=await projecting;if(staging)await staging;}
+    const initialData=security_projection_data(initialProjection,writer),newIds=inputs.security_successor.manifest.members.map(member=>member.point_id);
+    if(newIds.some(id=>initialData.point_ids.includes(id)))throw new Error('security_projection_included_uncommitted_claims');
+    await expect(UnauthorizedScope,()=>writer.validate_security_projection(initialProjection,options));
+    checks.push('security_projection_fresh_inventory_rejects_later_stage');
+    const currentProjection=await writer.project_security(securityContext,options);
+    if(newIds.some(id=>!security_projection_data(currentProjection,writer).point_ids.includes(id)))throw new Error('security_projection_omitted_committed_stage');
+    await writer.validate_security_projection(currentProjection,options);
+    checks.push('security_projection_includes_drafts_without_rebasing_stage_fences');
     const security = {action: 'tombstone', intent_id: 'native-tombstone', tenant_id: scope.tenant_id,
       collection: context.collection, document_id: context.document_id,
       expected_authorization_revision: 'auth-2', expected_mutation_epoch: 2,
@@ -317,7 +357,25 @@ async function cases(value) {
     const afterSecurity=await writer.manager_snapshot({...purgeContext,scope:{...scope,authorization_revision:'auth-5'}},options);
     if(!afterSecurity.pending||!isDeepStrictEqual(afterSecurity.owner,beforeSecurity.owner)||afterSecurity.backend.state!=='recovery_blocked')throw new Error('security_public_changed_recovery_ownership');
     checks.push('public_security_commits_with_blocked_backend_and_uncertain_purge');
-    return {runtime: 'typescript', checks, publication_proof: 'authority_transactions_only'};
+    const latestScope={...scope,authorization_revision:'auth-5'},projectionContext={...context,scope:latestScope,intent_id:publicTombstone.intent_id};
+    const stageRecords=[inputs.stage,...Object.values(inputs.successors),inputs.security_successor],statesBefore=[];
+    for(const stage of stageRecords)statesBefore.push(await writer.inspect({...context,intent_id:stage.intent.intent_id},options));
+    const projected=await writer.project_security(projectionContext,options),data=security_projection_data(projected,writer);
+    const expectedIds=stageRecords.flatMap(stage=>stage.manifest.members.map(member=>member.point_id)).sort();
+    if(!isDeepStrictEqual(Object.keys(data).sort(),['context','intent_sha256','inventory_sha256','authorization_revision','mutation_epoch','active_generation_id','tombstoned','principal_ids','grant_ids','language','kind','tag','generations','point_ids','points'].sort())
+      ||!isDeepStrictEqual(data.point_ids,expectedIds)||!data.tombstoned||data.authorization_revision!=='auth-5'||data.mutation_epoch!==5||data.language!=='de'||data.principal_ids.length||data.grant_ids.length)throw new Error('security_projection_complete_current_graph');
+    for(const point of data.points)if(point.payload.authorization_revision!=='auth-5'||point.payload.principal_ids.length||point.payload.grant_ids.length||point.payload.language!=='de')throw new Error('security_projection_stale_payload');
+    await writer.validate_security_projection(projected,options);
+    const statesAfter=[];for(const stage of stageRecords)statesAfter.push(await writer.inspect({...context,intent_id:stage.intent.intent_id},options));
+    if(!isDeepStrictEqual(statesBefore,statesAfter))throw new Error('security_projection_mutated_original_stages');
+    checks.push('security_projection_complete_tombstone_graph_preserves_stage_history');
+    const observation={inventory_sha256:data.inventory_sha256,point_ids:[...data.point_ids],generations:data.generations.map(group=>({...group,point_ids:[...group.point_ids]})),
+      authorization_revision:data.authorization_revision,mutation_epoch:data.mutation_epoch,tombstoned:data.tombstoned};
+    await writer.apply_security({...publicTombstone,intent_id:'native-projection-superseded',expected_authorization_revision:'auth-5',expected_mutation_epoch:5,
+      authorization:{...publicTombstone.authorization,authorization_revision:'auth-6'}},latestScope,{...options,owner_token:OWNER_TOKEN});
+    await expect(UnauthorizedScope,()=>writer.validate_security_projection(projected,options));
+    checks.push('security_projection_revalidation_rejects_later_authority');
+    return {runtime: 'typescript', checks, publication_proof: 'authority_transactions_only',security_projection:observation};
   } catch (error) {
     primary = error;
     throw error;

@@ -5,6 +5,8 @@ import argparse
 import asyncio
 import json
 import os
+import re
+from hashlib import sha256
 from pathlib import Path
 
 from qdrant_authority_schema import ROOT
@@ -109,6 +111,52 @@ async def node_writer_role_query():
             raise CleanupFailure([('child_stop', failure)], primary=primary, stage='typescript_runtime') from None
 
 
+def _observation_identity(value):
+    if type(value) is not str:
+        return False
+    try:
+        return '\x00' not in value and bool(value.strip(' \t\r\n\f\v')) and 1<=len(value.encode('utf-8'))<=256
+    except UnicodeError:
+        return False
+
+
+def validate_security_observation(value, inputs=None):
+    fields={'inventory_sha256','point_ids','generations','authorization_revision','mutation_epoch','tombstoned'}
+    if (type(value) is not dict or set(value)!=fields
+            or type(value['inventory_sha256']) is not str or re.fullmatch('[0-9a-f]{64}',value['inventory_sha256']) is None
+            or not _observation_identity(value['authorization_revision'])
+            or type(value['mutation_epoch']) is not int or not 0<=value['mutation_epoch']<=9007199254740991
+            or type(value['tombstoned']) is not bool or type(value['point_ids']) is not list
+            or len(value['point_ids'])>2048 or type(value['generations']) is not list or len(value['generations'])>64):
+        raise RuntimeError('writer_security_observation_shape')
+    ids=value['point_ids']
+    if (any(type(item) is not str or re.fullmatch('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',item) is None for item in ids)
+            or ids!=sorted(set(ids))):
+        raise RuntimeError('writer_security_observation_shape')
+    groups=[];members=[];keys=[]
+    for group in value['generations']:
+        if (type(group) is not dict or set(group)!={'revision_id','generation_id','manifest_sha256','point_ids'}
+                or any(not _observation_identity(group[key]) for key in ('revision_id','generation_id'))
+                or type(group['manifest_sha256']) is not str or re.fullmatch('[0-9a-f]{64}',group['manifest_sha256']) is None
+                or type(group['point_ids']) is not list or not 1<=len(group['point_ids'])<=64
+                or any(type(item) is not str or item not in ids for item in group['point_ids'])
+                or group['point_ids']!=sorted(set(group['point_ids']))):
+            raise RuntimeError('writer_security_observation_shape')
+        keys.append((group['revision_id'].encode('utf-8'),group['generation_id'].encode('utf-8')))
+        members.extend(group['point_ids'])
+        groups.append([group['revision_id'],group['generation_id'],group['manifest_sha256'],group['point_ids']])
+    if keys!=sorted(set(keys)) or sorted(members)!=ids:
+        raise RuntimeError('writer_security_observation_shape')
+    if inputs is not None:
+        config=inputs['config'];manifest=inputs['stage']['manifest']
+        witness=['cragkit.qdrant.security-inventory.v1',config['backend_namespace'],config['physical_collection'],
+            config['collection_incarnation'],inputs['scope']['tenant_id'],manifest['collection'],manifest['document_id'],inputs['instance_id'],groups]
+        digest=sha256(json.dumps(witness,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+        if digest!=value['inventory_sha256']:
+            raise RuntimeError('writer_security_observation_hash')
+    return json.loads(json.dumps(value))
+
+
 async def node_writer_cases(config, inputs):
     """Pass private connection paths over stdin, with bounded output and teardown."""
     environment = {key: value for key, value in os.environ.items()
@@ -138,7 +186,7 @@ async def node_writer_cases(config, inputs):
         if status != 0 or stderr or len(stdout) > 65536:
             raise RuntimeError('writer_node_failed_or_output_exceeded')
         result = json.loads(stdout)
-        if (type(result) is not dict or set(result) != {'runtime', 'checks', 'publication_proof'}
+        if (type(result) is not dict or set(result) != {'runtime', 'checks', 'publication_proof', 'security_projection'}
                 or result['runtime'] != 'typescript' or type(result['checks']) is not list
                 or not 1 <= len(result['checks']) <= 64
                 or any(type(check) is not str or not check or len(check) > 128
@@ -146,6 +194,7 @@ async def node_writer_cases(config, inputs):
                     for check in result['checks'])
                 or result['publication_proof'] != 'authority_transactions_only'):
             raise RuntimeError('writer_node_result_shape')
+        validate_security_observation(result['security_projection'],inputs)
         return result
     except BaseException as error:
         primary = error
@@ -200,6 +249,9 @@ async def check(fixture, runtime):
                     ('race-b', inputs['stage']['manifest']['generation_id']), ('denied', 'gen-race-b'),
                     ('manager-conflict', inputs['stage']['manifest']['generation_id']),
                     ('manager-denied', 'gen-race-b'))}
+            security_successor=successor_stage(inputs,'security-new','gen-race-b')
+            security_successor['intent'].update(expected_authorization_revision='auth-2',expected_mutation_epoch=2)
+            inputs['security_successor']=security_successor
             runtime_config = database.config('writer')
             inputs['supervisor_config'] = database.config('supervisor')
             # Each runtime exercises two independent writer clients. Setup is
@@ -209,6 +261,8 @@ async def check(fixture, runtime):
                 result = await python_writer_cases(runtime_config, inputs)
             else:
                 result = await node_writer_cases(runtime_config, inputs)
+        if runtime!='sql':
+            validate_security_observation(result['security_projection'],inputs)
         result['fixture_checks'] = list(database.checks)
         return result
 
@@ -234,6 +288,9 @@ def main(argv=None):
                 result = asyncio.run(asyncio.wait_for(check(fixture, runtime), 120))
             result['process_checks'] = fixture.checks
             results.append(result)
+        native=[item for item in results if item['runtime']!='sql']
+        if len(native)==2 and (native[0]['checks']!=native[1]['checks'] or native[0]['security_projection']!=native[1]['security_projection']):
+            raise RuntimeError('writer_native_security_parity')
         result_path.write_text(json.dumps(dict(ok=True, results=results, cleanup_verified=True), indent=2) + '\n')
         print(json.dumps(dict(ok=True, runtimes=[result['runtime'] for result in results],
             checks=sum(len(result['checks']) for result in results), cleanup_verified=True)))

@@ -165,6 +165,234 @@ def security_writer(monkeypatch):
     return writer,state,connections
 
 
+def security_projection_writer(monkeypatch, *, tombstone=False):
+    from test_qdrant_manifest import reidentify
+    from cragkit._qdrant_manifest import encode_manifest, encode_security_intent
+    plans = {}
+    for index in range(3):
+        raw = stage_input()
+        manifest = raw['manifest']
+        manifest.update(revision_id=f'revision-{index}',generation_id=f'generation-{index}')
+        for member in manifest['members']:
+            reidentify(manifest,member)
+        raw['intent'].update(intent_id=f'original-stage-{index}',
+            manifest_sha256=encode_manifest(manifest,raw['canonical_text']).sha256)
+        plans[raw['intent']['intent_id']] = prepare_stage(raw)
+    security = security_record(action='tombstone' if tombstone else 'update_authorization')
+    security['authorization']['tombstoned'] = tombstone
+    encoded = encode_security_intent(security)
+    desired = security['authorization']
+    document = dict(active_generation_id='generation-1',authorization_revision='auth-2',mutation_epoch=2,
+        principal_ids=implementation._acl(desired['principal_ids']),grant_ids=implementation._acl(desired['grant_ids']),
+        language=desired['language'],kind=desired['kind'],tag=desired['tag'],tombstoned=tombstone)
+    state = dict(plans=plans,document=document,raw=('instance-1',security['action'],encoded.encoded_bytes,
+        encoded.sha256,'auth-1',1,True,None,None,None,None,None),claims=[],replays=[],loads=[],selected=None,graph_error=False,
+        original_missing=False)
+    physical = (config()['backend_namespace'],config()['physical_collection'],config()['collection_incarnation'])
+    def inventories():
+        state['claims'] = []
+        state['replays'] = []
+        for plan in state['plans'].values():
+            manifest = stage_data(plan).manifest
+            for member in manifest.members:
+                identity = (manifest.revision_id,manifest.generation_id,member.chunk_id,member.point_id)
+                state['claims'].append((*identity,'instance-1',*physical))
+                state['replays'].append((*identity,*physical))
+        state['claims'].reverse()
+    inventories()
+    state['inventories'] = inventories
+    connections = []
+    class ProjectionConnection(Connection):
+        async def execute(self,sql,params=None):
+            if sql == implementation._SCOPE_SQL:
+                state['selected'] = params[6]
+            if sql == "SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)":
+                self.calls.append((sql,params));state['selected'] = params[0]
+                return Cursor([])
+            if sql.startswith('SELECT active_generation_id,authorization_revision,mutation_epoch,principal_ids'):
+                self.calls.append((sql,params))
+                assert sql.endswith(' FOR UPDATE')
+                return Cursor([tuple(state['document'].values())])
+            if sql.startswith('SELECT instance_id,action,payload_bytes'):
+                self.calls.append((sql,params));return Cursor([state['raw']])
+            if sql.startswith('SELECT revision_id,generation_id,chunk_id,point_id::text,'):
+                self.calls.append((sql,params))
+                assert params == ('tenant-a','docs','doc-1') and sql.endswith(' LIMIT 2049')
+                assert ' JOIN ' not in sql and ' AND ' not in sql.split(' WHERE ')[1].replace(' AND collection=%s','').replace(' AND document_id=%s','')
+                return Cursor(state['claims'] if 'point_claims' in sql else state['replays'])
+            if sql.startswith('SELECT intent_id FROM cragkit_qdrant.publication_intents'):
+                self.calls.append((sql,params))
+                assert "ORDER BY convert_to(intent_id,'UTF8') LIMIT 1" in sql
+                selected = sorted((key for key,plan in state['plans'].items()
+                    if (stage_data(plan).manifest.revision_id,stage_data(plan).manifest.generation_id) == params[-2:]),
+                    key=lambda key:key.encode('utf-8'))
+                return Cursor([] if state['original_missing'] or not selected else [(selected[0],)])
+            return await super().execute(sql,params)
+    pool = PoolResource(PoolConfig(host='localhost',dbname='fixture',user='writer',
+        sslrootcert=Path('/fixture/ca'),passfile=Path('/fixture/pass')))
+    @asynccontextmanager
+    async def lease(self,*,deadline):
+        connection = ProjectionConnection();connections.append(connection);yield connection
+    monkeypatch.setattr(PoolResource,'lease',lease)
+    writer = PostgresQdrantWriter(pool,config(),'instance-1');writer._ready = True
+    async def load(connection,selected):
+        assert state['selected'] == selected.intent_id
+        state['loads'].append(selected.intent_id)
+        if state['graph_error']:raise IntegrityViolation()
+        from dataclasses import replace
+        graph=stage_data(state['plans'][selected.intent_id])
+        dense=tuple(replace(item,encoded=implementation.restore_dense_replay(item.blob,item.blob_sha256,item.input_sha256,
+            graph.manifest.dense_profile.model_dump())) for item in graph.dense)
+        sparse=tuple(None if item is None else replace(item,encoded=implementation.restore_sparse_replay(item.blob,item.blob_sha256,
+            item.input_sha256,graph.manifest.sparse_profile.model_dump())) for item in graph.sparse)
+        return implementation.issue_stage(replace(graph,dense=dense,sparse=sparse))
+    monkeypatch.setattr(writer,'_load_stage',load)
+    target = copy.deepcopy(ctx());target['intent_id'] = 'acl-2';target['scope']['authorization_revision'] = 'auth-2'
+    return writer,state,connections,target
+
+
+@pytest.mark.parametrize('tombstone',[False,True])
+@run_async
+async def test_security_projection_current_payload_all_claimed_graphs_and_exact_inventory_hash(monkeypatch,tombstone):
+    writer,state,connections,target = security_projection_writer(monkeypatch,tombstone=tombstone)
+    projection = await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5)
+    data = implementation.security_projection_data(projection,writer)
+    assert set(data) == {'context','intent_sha256','inventory_sha256','authorization_revision','mutation_epoch',
+        'active_generation_id','tombstoned','principal_ids','grant_ids','language','kind','tag','generations','point_ids','points'}
+    assert len(data['generations']) == 3 and len(data['point_ids']) == 6
+    assert data['point_ids'] == tuple(sorted(data['point_ids']))
+    assert data['tombstoned'] is tombstone
+    assert state['selected'] == target['intent_id']
+    assert state['loads'] == ['original-stage-0','original-stage-1','original-stage-2']
+    for point in data['points']:
+        assert point.payload.authorization_revision == 'auth-2'
+        assert tuple(point.payload.principal_ids) == data['principal_ids']
+        assert point.payload.language == 'en'
+    groups = [[group['revision_id'],group['generation_id'],group['manifest_sha256'],list(group['point_ids'])]
+              for group in data['generations']]
+    expected = ['cragkit.qdrant.security-inventory.v1',config()['backend_namespace'],
+        config()['physical_collection'],config()['collection_incarnation'],'tenant-a','docs','doc-1','instance-1',groups]
+    assert data['inventory_sha256'] == sha256(json.dumps(expected,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+    with pytest.raises(TypeError):data['generations'][0]['manifest_sha256'] = 'changed'
+    with pytest.raises((TypeError,FrozenInstanceError,ValueError)):data['points'][0].payload.language = 'changed'
+    assert not any(sql.startswith(('INSERT','UPDATE','DELETE')) for connection in connections for sql,_ in connection.calls)
+    assert not any('FROM cragkit_qdrant.'+table in sql for connection in connections for sql,_ in connection.calls
+                   for table in ('backend_instances','document_owners','dispatch_journal'))
+    fresh=implementation.security_projection_data(await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5),writer)
+    assert fresh['points'][0].dense is not data['points'][0].dense
+    await writer.validate_security_projection(projection,deadline=asyncio.get_running_loop().time()+5)
+
+
+@run_async
+async def test_security_projection_empty_inventory_and_private_provenance(monkeypatch):
+    import pickle
+    writer,state,connections,target = security_projection_writer(monkeypatch)
+    state['claims'] = [];state['replays'] = []
+    projection = await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5)
+    assert implementation.security_projection_data(projection,writer)['points'] == ()
+    with pytest.raises(TypeError):pickle.dumps(projection)
+    for token in (object(),implementation.SecurityProjection()):
+        with pytest.raises(InvalidRequest):implementation.security_projection_data(token,writer)
+    other = PostgresQdrantWriter(writer.resource,config(),'instance-1')
+    with pytest.raises(InvalidRequest):implementation.security_projection_data(projection,other)
+    with pytest.raises(InvalidRequest):implementation.security_projection_data(projection,object())
+    assert state['loads'] == [] and len(connections) == 1
+
+
+@pytest.mark.parametrize('failure',['claim_duplicate','replay_duplicate','replay_missing','physical','uuid','missing_stage','graph'])
+@run_async
+async def test_security_projection_rejects_raw_corruption_and_restores_stage_scope(monkeypatch,failure):
+    writer,state,connections,target = security_projection_writer(monkeypatch)
+    if failure == 'claim_duplicate':state['claims'].append(state['claims'][0])
+    elif failure == 'replay_duplicate':state['replays'].append(state['replays'][0])
+    elif failure == 'replay_missing':state['replays'].pop()
+    elif failure in ('physical','uuid'):
+        row = list(state['claims'][0]);row[4 if failure == 'physical' else 3] = 'wrong';state['claims'][0] = tuple(row)
+    elif failure == 'missing_stage':state['original_missing'] = True
+    else:state['graph_error'] = True
+    with pytest.raises(IntegrityViolation):
+        await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5)
+    assert state['selected'] == target['intent_id']
+    assert connections[0].rollbacks == 1
+
+
+@pytest.mark.parametrize('failure',['authority','inventory'])
+@run_async
+async def test_security_projection_revalidation_rejects_changed_valid_fences_or_inventory(monkeypatch,failure):
+    writer,state,connections,target = security_projection_writer(monkeypatch)
+    projection = await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5)
+    if failure == 'authority':state['document']['mutation_epoch'] += 1
+    else:
+        state['plans'].pop('original-stage-2');state['inventories']()
+    with pytest.raises(UnauthorizedScope):
+        await writer.validate_security_projection(projection,deadline=asyncio.get_running_loop().time()+5)
+
+
+@pytest.mark.parametrize('failure',['ids','generations','members'])
+@run_async
+async def test_security_projection_profile_overflow_precedes_stage_reconstruction(monkeypatch,failure):
+    writer,state,connections,target = security_projection_writer(monkeypatch)
+    physical = (config()['backend_namespace'],config()['physical_collection'],config()['collection_incarnation'])
+    size = 2049 if failure == 'ids' else 65
+    state['claims'] = [];state['replays'] = []
+    for index in range(size):
+        identity = ('revision',f'generation-{index if failure == "generations" else 0}',f'chunk-{index}',
+                    f'00000000-0000-4000-8000-{index:012x}')
+        state['claims'].append((*identity,'instance-1',*physical));state['replays'].append((*identity,*physical))
+    with pytest.raises(UnsupportedCapability):
+        await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5)
+    assert state['loads'] == []
+
+
+@run_async
+async def test_security_projection_aggregate_reconstruction_bytes_are_shared_across_generations(monkeypatch):
+    writer,state,connections,target = security_projection_writer(monkeypatch)
+    graphs = [stage_data(plan) for plan in state['plans'].values()]
+    two_graphs = sum(len(graph.source)+len(graph.manifest_encoding.encoded_bytes) for graph in graphs[:2])
+    monkeypatch.setattr(implementation,'_SECURITY_GRAPH_BYTES',two_graphs)
+    with pytest.raises(UnsupportedCapability):
+        await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5)
+    assert len(state['loads']) == 3 and state['selected'] == target['intent_id']
+
+
+@run_async
+async def test_security_projection_chooses_utf8_first_stage_without_rebinding_old_security(monkeypatch):
+    from test_qdrant_manifest import reidentify
+    from cragkit._qdrant_manifest import encode_manifest
+    writer,state,connections,target = security_projection_writer(monkeypatch)
+    raw = stage_input()
+    raw['manifest'].update(revision_id='revision-0',generation_id='generation-0')
+    for member in raw['manifest']['members']:reidentify(raw['manifest'],member)
+    raw['intent'].update(intent_id='aaa-original',
+        manifest_sha256=encode_manifest(raw['manifest'],raw['canonical_text']).sha256)
+    state['plans']['aaa-original'] = prepare_stage(raw)
+    await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5)
+    assert state['loads'][0] == 'aaa-original' and 'original-stage-0' not in state['loads']
+    assert stage_data(state['plans']['aaa-original']).intent.expected_authorization_revision == 'auth-1'
+    assert state['document']['authorization_revision'] == 'auth-2' and state['selected'] == 'acl-2'
+
+
+@pytest.mark.parametrize('failure',['hash','bytes','instance','original_revision','original_epoch','uncommitted','scope','desired','hidden_manifest'])
+@run_async
+async def test_security_projection_requires_exact_security_record_and_current_tuple(monkeypatch,failure):
+    writer,state,connections,target = security_projection_writer(monkeypatch)
+    row = list(state['raw'])
+    if failure == 'hash':row[3] = '0'*64
+    elif failure == 'bytes':
+        row[2] += b' ';row[3] = sha256(row[2]).hexdigest()
+    elif failure == 'instance':row[0] = 'foreign-instance'
+    elif failure == 'original_revision':row[4] = 'other-auth'
+    elif failure == 'original_epoch':row[5] = 0
+    elif failure == 'uncommitted':row[6] = False
+    elif failure == 'scope':target['scope']['authorization_revision'] = 'old-auth'
+    elif failure == 'hidden_manifest':row[7] = b'private-stage-manifest'
+    else:state['document']['tag'] = 'new-current-tag'
+    state['raw'] = tuple(row)
+    with pytest.raises(UnauthorizedScope if failure in ('uncommitted','scope','desired') else IntegrityViolation):
+        await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5)
+    assert state['loads'] == []
+
+
 @pytest.mark.parametrize('action', ['update_authorization','tombstone'])
 @run_async
 async def test_security_lost_commit_confirms_read_only_after_revision_superseded(monkeypatch,action):

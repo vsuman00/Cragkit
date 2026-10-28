@@ -71,6 +71,20 @@ export function projection_data(input:unknown,writer:PostgresQdrantWriter):Proje
   if(!found||found.issuer!==writer)throw new InvalidRequest();
   return found.data;
 }
+export type SecurityProjection=Readonly<Record<never,never>>;
+export type SecurityProjectionData=Readonly<{context:WriterContext;intent_sha256:string;inventory_sha256:string;
+  authorization_revision:string;mutation_epoch:number;active_generation_id:string|null;tombstoned:boolean;
+  principal_ids:readonly string[];grant_ids:readonly string[];language:string|null;kind:string|null;tag:string|null;
+  generations:readonly Readonly<{revision_id:string;generation_id:string;manifest_sha256:string;point_ids:readonly string[]}>[];
+  point_ids:readonly string[];points:readonly ProjectionPoint[]}>;
+const securityProjections=new WeakMap<object,Readonly<{issuer:PostgresQdrantWriter;data:SecurityProjectionData}>>();
+export function security_projection_data(input:unknown,writer:PostgresQdrantWriter):SecurityProjectionData {
+  writer_binding(writer);
+  if(typeof input!=='object'||input===null||types.isProxy(input))throw new InvalidRequest();
+  const found=securityProjections.get(input);
+  if(!found||found.issuer!==writer)throw new InvalidRequest();
+  return found.data;
+}
 export type RecoveryDispatchPlan=Readonly<Record<never,never>>;
 export type RecoveryDispatchPlanData=Readonly<{context:WriterContext;physical_binding:Readonly<Data>;attempt_binding:Readonly<Data>;sequence:number;
   point_ids:readonly string[];request_bytes:readonly number[];request_sha256:string;manifest_sha256:string;revision_id:string;generation_id:string;
@@ -889,6 +903,106 @@ export class PostgresQdrantWriter {
     const current=await this.project_recovery_dispatch(authorization,original.context,original.point_ids,options);
     if(!same(recovery_dispatch_plan_data(current,authorization,this,options),original))throw new UnauthorizedScope();
     recovery_dispatch_authorization(authorization,this,options);
+  }
+  async #projectSecurity(tx:Tx,context:WriterContext):Promise<SecurityProjectionData>{
+    try{return await this.#securityGraph(tx,context);}
+    catch(error){if(error instanceof InvalidRequest||error instanceof EmbeddingProfileMismatch)throw new IntegrityViolation();throw error;}
+  }
+  async #securityGraph(tx:Tx,context:WriterContext):Promise<SecurityProjectionData>{
+    const document=await this.#document(tx,context,true);
+    if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+    const intent=await this.#intent(tx,context);
+    if(!intent||!['update_authorization','tombstone'].includes(String(intent.action))||!intent.authority_committed)throw new UnauthorizedScope();
+    if(['manifest_bytes','manifest_sha256','revision_id','generation_id','expected_active_generation_id'].some(key=>intent[key]!==null))throw new IntegrityViolation();
+    let desired:unknown[];
+    try{
+      const tuple=this.#payloadTuple(intent);
+      if(tuple.length!==9)throw new IntegrityViolation();
+      desired=native_array(tuple[8],7,7);
+      const canonical=parseOperation({action:intent.action,intent_id:context.intent_id,tenant_id:context.scope.tenant_id,
+        collection:context.collection,document_id:context.document_id,expected_authorization_revision:intent.expected_authorization_revision,
+        expected_mutation_epoch:db_count(intent.expected_mutation_epoch),authorization:{authorization_revision:desired[0],
+          principal_ids:desired[1],grant_ids:desired[2],language:desired[3],kind:desired[4],tag:desired[5],tombstoned:desired[6]==='true'}},
+        context.scope,context.owner_token);
+      if(canonical.encoded.sha256!==intent.payload_sha256
+        ||!Buffer.from(canonical.encoded.encoded_bytes).equals(db_bytes(intent.payload_bytes,1048576)))throw new IntegrityViolation();
+    }catch(error){if(error instanceof InvalidRequest||error instanceof UnauthorizedScope)throw new IntegrityViolation();throw error;}
+    const current=[document.authorization_revision,document.principal_ids,document.grant_ids,document.language,document.kind,document.tag,
+      document.tombstoned?'true':'false'];
+    if(!same(desired,current)||db_count(document.mutation_epoch)!==db_count(intent.expected_mutation_epoch)+1)throw new UnauthorizedScope();
+    const columns=['revision_id','generation_id','chunk_id','point_id','instance_id','backend_namespace','physical_collection','collection_incarnation'];
+    const claims=await this.#select(tx,'point_claims',columns,context,'',[],2049);
+    const replayColumns=columns.filter(key=>key!=='instance_id');
+    const replays=await this.#select(tx,'vector_replays',replayColumns,context,'',[],2049);
+    const identities=new Set<string>(),ids=new Set<string>(),groups=new Map<string,{revision_id:string;generation_id:string;claims:Data[]}>();
+    const identity=(row:Data):string=>JSON.stringify(replayColumns.map(key=>row[key]));
+    const validate=(row:Data):void=>{
+      for(const key of replayColumns)text(row[key]);uuid(row.point_id);
+      if(row.backend_namespace!==this.#config.backend_namespace||row.physical_collection!==this.#config.physical_collection
+        ||row.collection_incarnation!==this.#config.collection_incarnation)throw new IntegrityViolation();
+    };
+    try{
+      for(const claim of claims){
+        validate(claim);
+        if(claim.instance_id!==this.#instance||ids.has(String(claim.point_id))||identities.has(identity(claim)))throw new IntegrityViolation();
+        ids.add(String(claim.point_id));identities.add(identity(claim));
+        const key=JSON.stringify([claim.revision_id,claim.generation_id]);
+        let group=groups.get(key);
+        if(!group){group={revision_id:String(claim.revision_id),generation_id:String(claim.generation_id),claims:[]};groups.set(key,group);}
+        group.claims.push(claim);
+      }
+      const replayIds=new Set<string>();
+      for(const replay of replays){validate(replay);const key=identity(replay);if(replayIds.has(key))throw new IntegrityViolation();replayIds.add(key);}
+      if(claims.length>2048||replays.length>2048)throw new UnsupportedCapability();
+      if(replayIds.size!==identities.size||[...replayIds].some(key=>!identities.has(key)))throw new IntegrityViolation();
+    }catch(error){if(error instanceof InvalidRequest)throw new IntegrityViolation();throw error;}
+    if(groups.size>64||[...groups.values()].some(group=>group.claims.length>64))throw new UnsupportedCapability();
+    const ordered=[...groups.values()].sort((left,right)=>Buffer.compare(Buffer.from(left.revision_id),Buffer.from(right.revision_id))
+      ||Buffer.compare(Buffer.from(left.generation_id),Buffer.from(right.generation_id)));
+    const generations:SecurityProjectionData['generations'][number][]=[],points:ProjectionPoint[]=[];
+    let bytes=0;
+    try{
+      for(const group of ordered){
+        const stages=await this.#select(tx,'publication_intents',['intent_id'],context,
+          " AND revision_id=$4 AND generation_id=$5 AND action='stage' ORDER BY convert_to(intent_id,'UTF8')",[group.revision_id,group.generation_id],1);
+        if(stages.length!==1)throw new IntegrityViolation();
+        const stageContext=parseContext({...context,intent_id:text(stages[0].intent_id)});
+        await tx.query("SELECT set_config('cragkit_qdrant.writer_intent_id',$1,true)",[stageContext.intent_id],1);
+        const stage=await this.#loadStage(tx,stageContext);
+        bytes+=Buffer.byteLength(stage.data.canonical_text,'utf8')+stage.manifest.encoded_bytes.length;
+        if(bytes>67108864)throw new UnsupportedCapability();
+        const expected=group.claims.map(claim=>String(claim.point_id)).sort();
+        const actual=stage.points.map(point=>String(point.claim.point_id)).sort();
+        if(!same(expected,actual)||stage.points.some(point=>!identities.has(identity(point.claim))))throw new IntegrityViolation();
+        const projected=this.#projectionPoints(context,document,stage.points);points.push(...projected);
+        generations.push(Object.freeze({revision_id:group.revision_id,generation_id:group.generation_id,
+          manifest_sha256:stage.manifest.sha256,point_ids:Object.freeze(expected)}));
+      }
+    }finally{await tx.query("SELECT set_config('cragkit_qdrant.writer_intent_id',$1,true)",[context.intent_id],1);}
+    points.sort((left,right)=>Buffer.compare(Buffer.from(left.point_id),Buffer.from(right.point_id)));
+    const inventory=['cragkit.qdrant.security-inventory.v1',this.#config.backend_namespace,this.#config.physical_collection,
+      this.#config.collection_incarnation,context.scope.tenant_id,context.collection,context.document_id,this.#instance,
+      generations.map(group=>[group.revision_id,group.generation_id,group.manifest_sha256,group.point_ids])];
+    return Object.freeze({context,intent_sha256:digest(intent.payload_sha256),inventory_sha256:hash(JSON.stringify(inventory)),
+      authorization_revision:String(document.authorization_revision),mutation_epoch:db_count(document.mutation_epoch),
+      active_generation_id:document.active_generation_id as string|null,tombstoned:document.tombstoned as boolean,
+      principal_ids:document.principal_ids as readonly string[],grant_ids:document.grant_ids as readonly string[],
+      language:document.language as string|null,kind:document.kind as string|null,tag:document.tag as string|null,
+      generations:Object.freeze(generations),point_ids:Object.freeze(points.map(point=>point.point_id)),points:Object.freeze(points)});
+  }
+  async project_security(input:unknown,rawOptions:unknown):Promise<SecurityProjection>{
+    const context=parseContext(input),options=parseOptions(rawOptions);
+    return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
+      const data=await this.#projectSecurity(tx,context),projection=Object.freeze({});
+      securityProjections.set(projection,Object.freeze({issuer:this,data}));return projection;
+    }));
+  }
+  async validate_security_projection(input:unknown,rawOptions:unknown):Promise<void>{
+    const previous=security_projection_data(input,this),options=parseOptions(rawOptions);
+    await this.#work(options,lease=>this.#tx(previous.context,lease,async tx=>{
+      const current=await this.#projectSecurity(tx,previous.context);
+      if(!same(current,previous))throw new UnauthorizedScope();
+    }));
   }
   async project_stage(input:unknown,rawPhysical:unknown,rawOptions:unknown):Promise<ExpectedProjection>{
     const context=parseContext(input),options=parseOptions(rawOptions),physical=metadata(rawPhysical);
