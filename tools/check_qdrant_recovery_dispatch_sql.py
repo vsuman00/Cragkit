@@ -11,19 +11,21 @@ from pathlib import Path
 from check_qdrant_publication_schema import owned_connection
 from qdrant_authority_schema import ROOT, catalog_queries, migration as source_migration
 from qdrant_publication_schema import CAPABILITY_ROLES, migration as publication_migration
-from qdrant_recovery_dispatch_sql import CHECKS, PROOF_SCOPE
+from qdrant_recovery_dispatch_sql import CHECKS, PROOF_SCOPE, SECURITY_CHECKS, SECURITY_PROOF_SCOPE
 from qdrant_source_native import PostgresSourceFixture
 from runtime_diagnostics import CleanupFailure, describe_error
 
 STAGE = 'configuration'
 
 
-async def check(fixture):
+async def check(fixture, *, security_owner=False):
     """Check fixed installed profiles and roll back every metadata mutation."""
     global STAGE
     import psycopg
     from qdrant_attestation_schema import migration, seed_pre_upgrade
-    from qdrant_recovery_dispatch_sql import run_probes
+    from qdrant_recovery_dispatch_sql import run_probes, run_security_probes
+    if type(security_owner) is not bool:
+        raise ValueError('recovery_dispatch_security_mode')
 
     config = fixture.config
     STAGE = 'connection'
@@ -86,7 +88,7 @@ async def check(fixture):
             if await rows(fingerprint_query) != [(expected_profile['catalog_fingerprint'],)]:
                 raise RuntimeError('recovery_dispatch_fixture_attestation_profile_mismatch')
             STAGE = 'recovery_dispatch_permission_probes'
-            checks = await run_probes(connection, state)
+            checks = await (run_security_probes(connection,state) if security_owner else run_probes(connection,state))
             await connection.execute('RESET ROLE')
             STAGE = 'unchanged_catalog'
             fingerprint = (await rows(fingerprint_query))[0][0]
@@ -98,9 +100,10 @@ async def check(fixture):
             raise RuntimeError('recovery_dispatch_fixture_schema_remains')
         result = dict(checks=checks + ['tls_verified', 'complete_schema_roles_memberships_defaults_rollback'],
             migrations=[[item.version, item.checksum] for item in (source, publication, attestation)],
-            catalog_fingerprint=fingerprint, proof_scope=PROOF_SCOPE)
+            catalog_fingerprint=fingerprint, proof_scope=SECURITY_PROOF_SCOPE if security_owner else PROOF_SCOPE)
         validate_result(result, expected_migrations=[[item.version, item.checksum]
-            for item in (source, publication, attestation)], expected_fingerprint=expected_profile['catalog_fingerprint'])
+            for item in (source, publication, attestation)], expected_fingerprint=expected_profile['catalog_fingerprint'],
+            security_owner=security_owner)
         return result
 
 
@@ -110,13 +113,17 @@ def assert_rollback_inventory(before, after):
         raise RuntimeError('recovery_dispatch_fixture_inventory_rollback_mismatch')
 
 
-def validate_result(result, *, expected_migrations, expected_fingerprint):
+def validate_result(result, *, expected_migrations, expected_fingerprint, security_owner=False):
     """Reject open diagnostics or invented physical-proof labels in artifacts."""
+    if type(security_owner) is not bool:
+        raise ValueError('recovery_dispatch_security_mode')
     if type(result) is not dict or set(result) != {'checks', 'migrations', 'catalog_fingerprint', 'proof_scope'}:
         raise ValueError('recovery_dispatch_result_shape')
-    if result['checks'] != list(CHECKS) + ['tls_verified', 'complete_schema_roles_memberships_defaults_rollback']:
+    expected_checks = SECURITY_CHECKS if security_owner else CHECKS
+    expected_scope = SECURITY_PROOF_SCOPE if security_owner else PROOF_SCOPE
+    if result['checks'] != list(expected_checks) + ['tls_verified', 'complete_schema_roles_memberships_defaults_rollback']:
         raise ValueError('recovery_dispatch_result_checks')
-    if result['proof_scope'] != PROOF_SCOPE:
+    if result['proof_scope'] != expected_scope:
         raise ValueError('recovery_dispatch_result_scope')
     if (type(result['catalog_fingerprint']) is not str
             or re.fullmatch(r'[0-9a-f]{64}', result['catalog_fingerprint']) is None
@@ -134,13 +141,17 @@ def main(argv=None):
     parser.add_argument('--postgres-bin', type=Path, required=True)
     parser.add_argument('--artifacts-dir', type=Path, required=True)
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
+    parser.add_argument('--security-owner', action='store_true')
     args = parser.parse_args(argv)
+    owned_artifacts = False
     try:
         if args.artifacts_dir.exists():
             raise RuntimeError('recovery_dispatch_fixture_fresh_artifacts_required')
         fixture = PostgresSourceFixture(args.postgres_bin, args.artifacts_dir)
         with fixture:
-            result = asyncio.run(asyncio.wait_for(check(fixture), 110))
+            owned_artifacts = True
+            operation = check(fixture,security_owner=True) if args.security_owner else check(fixture)
+            result = asyncio.run(asyncio.wait_for(operation, 110))
             STAGE = 'fixture_cleanup'
         result['fixture_checks'] = fixture.checks
         args.artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -153,10 +164,13 @@ def main(argv=None):
             if Path(frame.tb_frame.f_code.co_filename).name in ('qdrant_recovery_dispatch_sql.py', 'check_qdrant_recovery_dispatch_sql.py'):
                 locations.append(frame.tb_lineno)
             frame = frame.tb_next
-        if args.artifacts_dir.is_dir() and locations:
+        if owned_artifacts and args.artifacts_dir.is_dir() and locations:
             # Fixture code locations only; no SQL, error text, values or locals.
-            (args.artifacts_dir/'recovery-dispatch-sql-failure-locations.json').write_text(
-                json.dumps(dict(lines=locations[:32]))+'\n')
+            try:
+                (args.artifacts_dir/'recovery-dispatch-sql-failure-locations.json').write_text(
+                    json.dumps(dict(lines=locations[:32]))+'\n')
+            except Exception:
+                pass
         diagnostic = error.to_dict() if isinstance(error, CleanupFailure) else describe_error(error,
             operation='primary', stage='fixture_setup')
         print(json.dumps(dict(ok=False, stage=STAGE, error=diagnostic)))

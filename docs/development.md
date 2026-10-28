@@ -1142,3 +1142,14 @@ Use a fresh directory. The parent runs runtimes serially with actual disposable 
 [Projection evidence](../evaluation/reports/V5/V5-04G2b1.md) covers private read-only claim inventories and original graph validation, separately from physical recovery. Run the existing Python and Node writer test files and `tools/tests/test_qdrant_publication_native.py` serially after the strict Node build. The existing native `tools/check_qdrant_writer.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --artifacts-dir` command requires a fresh directory and now checks ordered cross-runtime projection observations and their independently recomputed inventory hash.
 
 Its 78 checks include two actual database connections: one holds the projection's document row lock while the other stages a generation; the fixture observes the wait in `pg_catalog.pg_locks` before releasing it. Fresh validation then rejects the older inventory. The fixture uses 14 synthetic points across seven generations, not the maximum supported history or a physical Qdrant index. It closes both clients and its disposable server. A projection or matching inventory hash cannot settle an unknown write or certify current physical replicas.
+
+## V5-04G2b2a denied-owner recovery SQL proof
+
+[SQL permission evidence](../evaluation/reports/V5/V5-04G2b2a.md) distinguishes actual database mechanics from runtime/physical proof. Run these commands serially:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_recovery_dispatch_sql.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_recovery_dispatch_sql.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --security-owner --artifacts-dir artifacts/V5/V5-04G2b/a-new-security-sql-run
+```
+
+Use a fresh directory. The opt-in mode performs 15 checks on one disposable PostgreSQL connection with restricted SQL roles, explicit synthetic metadata and mandatory savepoint/outer rollback. It runs no Qdrant service or provider and creates no genuine recovery proof or completed HTTP acknowledgment. Omitting `--security-owner` retains the prior 12-check B0 profile. Pre-existing output directories are refused without overwriting their diagnostic files.
