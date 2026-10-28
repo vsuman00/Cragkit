@@ -8,6 +8,8 @@ import {QdrantPublicationManager,PostgresQdrantPublicationAuthority,ManagedQdran
 import {WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL,prepare_stage} from '../dist/qdrant-writer.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
+import {QdrantPublicationVerifier} from '../dist/qdrant-publication-verification.js';
+import {VerificationBudget} from '../dist/qdrant-reconciliation.js';
 import {InvalidRequest,UnauthorizedScope,UnsupportedCapability,ProviderUnavailable,IndexNotReady,IntegrityViolation} from '../dist/errors.js';
 
 const fixture=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_publication.json',import.meta.url),'utf8'));
@@ -516,6 +518,12 @@ test('repair partial unknown full-readback failure remains blocked without settl
 
 test('repair complete unknown settles before authorized bounded ordinary rewrite with current journal',async()=>{
   const f=setup(async()=>true,true);
+  let sharedBudget;
+  const original=QdrantPublicationVerifier.prototype.verify;
+  QdrantPublicationVerifier.prototype.verify=function(attempt,context,lease,budget){
+    assert.equal(budget,sharedBudget);assert(budget instanceof VerificationBudget);
+    return original.call(this,attempt,context,lease,budget);
+  };
   try{
     await f.manager.initialize(options());await f.manager.stage(change(),scope,ledger(),options());f.state.ackMode='lost';
     await assert.rejects(f.manager.publish(ref,scope,ledger(),options()),ProviderUnavailable);
@@ -525,7 +533,7 @@ test('repair complete unknown settles before authorized bounded ordinary rewrite
       Object.assign(f.state.tables.backend_instances[0],{epoch:2,state:'recovery_blocked',recovery_id:id});return Object.freeze({});
     };
     f.recovery.advance_owner=async()=>{order.push('advance');f.state.tables.document_owners[0].backend_epoch=2;};
-    f.verifier.verify=async()=>{order.push('verify');return Object.freeze({});};
+    f.verifier.verify=async(proof,context,lease,budget)=>{sharedBudget=budget;assert(budget instanceof VerificationBudget);order.push('verify');return Object.freeze({});};
     f.recovery.settle_retired=async()=>{order.push('settle');f.state.tables.dispatch_journal[0].state='settled';f.state.tables.dispatch_journal[0].completion_sha256='a'.repeat(64);};
     f.recovery.reopen=async()=>{order.push('reopen');Object.assign(f.state.tables.backend_instances[0],{state:'open',recovery_id:null});};
     const puts=f.state.http.filter(call=>call.method==='PUT').length;
@@ -534,7 +542,7 @@ test('repair complete unknown settles before authorized bounded ordinary rewrite
     assert.equal(f.state.tables.document_owners[0].owner_token,owner.owner_token);
     assert.equal(f.state.tables.dispatch_journal.length,2);assert.equal(f.state.tables.dispatch_journal[1].backend_epoch,2);
     assert.equal(f.state.http.filter(call=>call.method==='PUT').length,puts+1);
-  }finally{await f.close();}
+  }finally{QdrantPublicationVerifier.prototype.verify=original;await f.close();}
 });
 
 test('repair callback denial, malformed input, exhausted attempt and cancellation do not mutate authority',async()=>{

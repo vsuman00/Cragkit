@@ -16,7 +16,7 @@ from ._qdrant_contract import QdrantConfig, decode_response, parse_model
 from ._qdrant_publication_verification import (
     QdrantPublicationVerifier, validate_publication_receipt,
 )
-from ._qdrant_reconciliation import QdrantReconciliationVerifier, _ReadbackTransport
+from ._qdrant_reconciliation import QdrantReconciliationVerifier, _ReadbackTransport, VerificationBudget
 from ._qdrant_recovery import PostgresQdrantRecovery, recovery_components
 from ._qdrant_source import metadata_guard
 from ._qdrant_supervisor import ManagedQdrantSupervisor
@@ -480,7 +480,9 @@ class QdrantPublicationManager:
 
     async def _publish_body(self, lookup: Any, target: Mapping[str, Any], trusted: TrustedScope,
                             limit: float, operation: str = 'publish',
-                            preserved_owner: str | None = None) -> Mapping[str, Any]:
+                            preserved_owner: str | None = None,
+                            budget: VerificationBudget | None = None) -> Mapping[str, Any]:
+        budget = VerificationBudget() if budget is None else budget
         await self._authorize(lookup, limit)
         snapshot = await self._writer.manager_snapshot(lookup, deadline=limit)
         self._check(limit)
@@ -535,12 +537,14 @@ class QdrantPublicationManager:
                 raise BudgetExhausted()
             attempt = None
             for index, start in enumerate(range(0, len(ids), 8), 1):
+                if budget.remaining_bytes <= 0:
+                    raise ProviderUnavailable()
                 attempt = await self._batch(ctx, ids[start:start + 8],
                     snapshot['max_sequence'] + index, epoch, limit)
                 self._check(limit)
             if attempt is None:
                 raise IntegrityViolation()
-        receipt = await self._verifier.verify(attempt, ctx, deadline=limit)
+        receipt = await self._verifier.verify(attempt, ctx, deadline=limit, budget=budget)
         self._check(limit)
         async with controller_finalization(self._supervisor, attempt, deadline=limit):
             self._check(limit)
@@ -591,6 +595,7 @@ class QdrantPublicationManager:
         lookup = context({**target, 'scope': trusted, 'owner_token': str(uuid4())})
 
         async def repair(limit: float) -> Mapping[str, Any]:
+            budget = VerificationBudget()
             await self._authorize(lookup, limit)
             preflight = await self._writer.preflight_repair(lookup, deadline=limit)
             self._check(limit)
@@ -619,7 +624,7 @@ class QdrantPublicationManager:
                 self._check(limit)
                 if preflight['pending']:
                     reconciliation_receipt = await cast(QdrantReconciliationVerifier, self._original_verifier).verify(
-                        proof, ctx, deadline=limit)
+                        proof, ctx, deadline=limit, budget=budget)
                     self._check(limit)
                     await recovery.settle_retired(proof, reconciliation_receipt, deadline=limit)
                     self._check(limit)
@@ -631,7 +636,7 @@ class QdrantPublicationManager:
                 if intent['state'] in ('published', 'conflict', 'denied'):
                     return _result(ctx.intent_id, 'repair', intent)
             if not prepared:
-                return await self._publish_body(ctx, target, trusted, limit, 'repair', token)
+                return await self._publish_body(ctx, target, trusted, limit, 'repair', token, budget)
             snapshot = await self._writer.manager_snapshot(ctx, deadline=limit)
             self._check(limit)
             native = await self._controller(snapshot, limit)
@@ -641,7 +646,7 @@ class QdrantPublicationManager:
             if original['backend_epoch'] == backend['epoch']:
                 if original['owner_token'] != token:
                     raise ProviderUnavailable()
-                return await self._publish_body(ctx, target, trusted, limit, 'repair', token)
+                return await self._publish_body(ctx, target, trusted, limit, 'repair', token, budget)
             if original['backend_epoch'] > backend['epoch']:
                 raise IntegrityViolation()
             if attestation is not None:
@@ -655,7 +660,7 @@ class QdrantPublicationManager:
             attempt = await controller_issue(self._supervisor, {'intent_id': ctx.intent_id,
                 'owner_token': token, 'epoch': backend['epoch'], 'dispatch_id': dispatch}, deadline=limit)
             self._check(limit)
-            receipt = await self._verifier.verify(attempt, ctx, deadline=limit)
+            receipt = await self._verifier.verify(attempt, ctx, deadline=limit, budget=budget)
             self._check(limit)
             async with controller_finalization(self._supervisor, attempt, deadline=limit):
                 await self._authorize(ctx, limit)

@@ -180,27 +180,65 @@ class _ReadbackTransport(Protocol):
     async def close(self) -> None: ...
 
 
+_VERIFICATION_BUDGETS: WeakKeyDictionary[VerificationBudget, int] = WeakKeyDictionary()
+
+
+class VerificationBudget:
+    """Fixed aggregate allowance shared by bounded readback passes."""
+    __slots__ = ('__weakref__',)
+
+    def __init__(self) -> None:
+        if self in _VERIFICATION_BUDGETS:
+            raise InvalidRequest()
+        _VERIFICATION_BUDGETS[self] = 8388608
+
+    @property
+    def remaining_bytes(self) -> int:
+        if type(self) is not VerificationBudget or self not in _VERIFICATION_BUDGETS:
+            raise InvalidRequest()
+        return _VERIFICATION_BUDGETS[self]
+
+    def _charge(self, count: int) -> None:
+        if type(count) is not int or count < 0:
+            raise InvalidRequest()
+        remaining = self.remaining_bytes
+        _VERIFICATION_BUDGETS[self] = max(0, remaining - count)
+        if count > remaining:
+            raise ProviderUnavailable()
+
+
+def verification_budget(value: object = None) -> VerificationBudget:
+    if value is None:
+        return VerificationBudget()
+    if type(value) is not VerificationBudget or value not in _VERIFICATION_BUDGETS:
+        raise InvalidRequest()
+    return value
+
+
 class _Readback:
-    def __init__(self, transport: _ReadbackTransport, deadline: float) -> None:
+    def __init__(self, transport: _ReadbackTransport, deadline: float,
+                 budget: VerificationBudget | None = None) -> None:
         self.transport = transport
         self.deadline = deadline
         self.calls = 0
         self.response_bytes = 0
+        self.budget = verification_budget(budget)
 
     async def request(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        if self.calls >= 17 or self.response_bytes >= 8388608:
+        if self.calls >= 17 or self.response_bytes >= 8388608 or self.budget.remaining_bytes <= 0:
             raise ProviderUnavailable()
         self.calls += 1
         encoded = json.dumps(body, separators=(',', ':'), allow_nan=False).encode('utf-8')
-        remaining = min(1048576, 8388608 - self.response_bytes)
+        remaining = min(1048576, 8388608 - self.response_bytes, self.budget.remaining_bytes)
         raw = await self.transport.request(
             'POST', path, body=encoded, deadline=self.deadline, max_response_bytes=remaining,
         )
-        if type(raw) is not bytes or len(raw) > 1048576:
+        if type(raw) is not bytes:
             raise IntegrityViolation()
         self.response_bytes += len(raw)
-        if self.response_bytes > 8388608:
-            raise ProviderUnavailable()
+        self.budget._charge(len(raw))
+        if len(raw) > remaining:
+            raise IntegrityViolation()
         value = decode_response(raw)
         if type(value) is not dict or value.get('status') != 'ok':
             raise IntegrityViolation()
@@ -238,9 +276,30 @@ def _verify_point(value: object, expected: dict[str, ExpectedPoint]) -> str:
     return identity
 
 
-async def _verify_readback(readback: _Readback, path: str, data: Mapping[str, Any]) -> None:
+async def _inspect_readback(readback: _Readback, path: str, data: Mapping[str, Any],
+                            *, allow_missing: bool) -> tuple[str, ...]:
+    if allow_missing and type(data['tombstoned']) is not bool:
+        raise InvalidRequest()
+    if allow_missing and data['tombstoned']:
+        raise UnsupportedCapability()
+    if allow_missing and (not 1 <= len(data['points']) <= 64
+            or any(type(point.point_id) is not str or _UUID.fullmatch(point.point_id) is None
+                   for point in data['points'])
+            or len({point.point_id for point in data['points']}) != len(data['points'])):
+        raise InvalidRequest()
+    fields = (
+        'backend_namespace', 'physical_collection', 'collection_incarnation', 'tenant_id',
+        'collection', 'document_id', 'revision_id', 'generation_id',
+    )
+    if allow_missing:
+        sample = data['points'][0].payload
+        if (path != '/collections/' + sample.physical_collection + '/points'
+                or any(any(getattr(point.payload, field) != getattr(sample, field) for field in fields)
+                       for point in data['points'])):
+            raise InvalidRequest()
     expected = {point.point_id: point for point in data['points']}
     identities = tuple(sorted(expected))
+    retrieved: set[str] = set()
     for start in range(0, len(identities), 8):
         batch = identities[start:start + 8]
         response = await readback.request(path, {
@@ -254,14 +313,13 @@ async def _verify_readback(readback: _Readback, path: str, data: Mapping[str, An
                 raise IntegrityViolation()
         else:
             observed = [_verify_point(point, expected) for point in points]
-            if len(set(observed)) != len(observed) or set(observed) != set(batch):
+            present = set(observed)
+            if (len(present) != len(observed) or not present <= set(batch)
+                    or not allow_missing and present != set(batch)):
                 raise IntegrityViolation()
+            retrieved.update(present)
 
     sample = data['points'][0].payload
-    fields = (
-        'backend_namespace', 'physical_collection', 'collection_incarnation', 'tenant_id',
-        'collection', 'document_id', 'revision_id', 'generation_id',
-    )
     filters = [{'key': field, 'match': {'value': getattr(sample, field)}} for field in fields]
     offset: str | None = None
     offsets: set[str] = set()
@@ -288,9 +346,9 @@ async def _verify_readback(readback: _Readback, path: str, data: Mapping[str, An
                 raise IntegrityViolation()
         following = result['next_page_offset']
         if following is None:
-            if not data['tombstoned'] and seen != set(identities):
+            if not data['tombstoned'] and seen != (retrieved if allow_missing else set(identities)):
                 raise IntegrityViolation()
-            return
+            return tuple(identity for identity in identities if identity not in seen)
         if not points:
             raise IntegrityViolation()
         if (type(following) is not str or _UUID.fullmatch(following) is None
@@ -299,6 +357,16 @@ async def _verify_readback(readback: _Readback, path: str, data: Mapping[str, An
         offsets.add(following)
         offset = following
     raise ProviderUnavailable()
+
+
+async def _verify_readback(readback: _Readback, path: str, data: Mapping[str, Any]) -> None:
+    await _inspect_readback(readback, path, data, allow_missing=False)
+
+
+async def inspect_missing_readback(readback: _Readback, path: str,
+                                   data: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return diagnostic absence only; this never creates a receipt or proof."""
+    return await _inspect_readback(readback, path, data, allow_missing=True)
 
 
 class QdrantReconciliationVerifier:
@@ -313,7 +381,8 @@ class QdrantReconciliationVerifier:
         self._active: asyncio.Task[Any] | None = None
 
     async def verify(self, proof: object, context: object, *,
-                     deadline: float) -> ReconciliationReceipt:
+                     deadline: float, budget: VerificationBudget | None = None) -> ReconciliationReceipt:
+        budget = verification_budget(budget)
         deadline = deadline_value(deadline)
         if self._active is not None:
             raise ProviderUnavailable()
@@ -335,7 +404,7 @@ class QdrantReconciliationVerifier:
                 capability = self.supervisor.issue_recovery_attempt(proof, binding, deadline=deadline)
                 handle = self.supervisor.transport_for(capability)
                 path = '/collections/' + self.writer.config.physical_collection + '/points'
-                await _verify_readback(_Readback(handle, deadline), path, data)
+                await _verify_readback(_Readback(handle, deadline, budget), path, data)
                 await handle.close()
                 handle = None
                 await self.writer.validate_projection(projection, deadline=deadline)

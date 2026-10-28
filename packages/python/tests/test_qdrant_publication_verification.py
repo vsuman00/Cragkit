@@ -318,3 +318,62 @@ async def test_hanging_handle_cleanup_is_bounded_operational_failure(monkeypatch
     assert entered.is_set() and asyncio.get_running_loop().time() - started < 0.5
     assert verifier._active is None
     assert not writer._closed and not supervisor._closed
+
+
+@run_async
+async def test_f1_shared_budget_depletes_across_verifier_calls_and_caps_remaining_transport(monkeypatch, tmp_path):
+    from cragkit._qdrant_reconciliation import VerificationBudget
+    writer, supervisor, attempt, verifier, handle, _, _, _ = await setup(monkeypatch, tmp_path)
+    budget = VerificationBudget()
+    handle.padding = True
+    handle.padding_size = 1048576 - 1000
+    end = asyncio.get_running_loop().time() + 5
+    for _ in range(4):
+        receipt = await verifier.verify(attempt, ctx(), deadline=end, budget=budget)
+        assert publication_receipt_data(receipt, verifier)['projection'] is not None
+    assert budget.remaining_bytes == 8000 and len(handle.calls) == 8
+    with pytest.raises(ProviderUnavailable):
+        await verifier.verify(attempt, ctx(), deadline=end, budget=budget)
+    assert handle.response_limits[-1] == 8000
+    assert budget.remaining_bytes == 8000
+    # Default callers get a new allowance; the shared object remains depleted.
+    handle.padding = False
+    receipt = await verifier.verify(attempt, ctx(), deadline=end)
+    assert publication_receipt_data(receipt, verifier)['readback_sha256']
+    assert budget.remaining_bytes == 8000
+
+
+@run_async
+async def test_f1_malformed_response_charges_shared_budget_before_parse(monkeypatch, tmp_path):
+    from cragkit._qdrant_reconciliation import VerificationBudget
+    writer, supervisor, attempt, verifier, handle, _, _, _ = await setup(monkeypatch, tmp_path)
+    budget = VerificationBudget()
+    caps = []
+    async def malformed(method, path, *, body, deadline, max_response_bytes):
+        caps.append(max_response_bytes)
+        return b'!' + b' ' * 1048575
+    monkeypatch.setattr(handle, 'request', malformed)
+    end = asyncio.get_running_loop().time() + 5
+    for index in range(8):
+        with pytest.raises(IntegrityViolation):
+            await verifier.verify(attempt, ctx(), deadline=end, budget=budget)
+        assert budget.remaining_bytes == 8388608 - (index + 1) * 1048576
+    assert caps == [1048576] * 8
+    with pytest.raises(ProviderUnavailable):
+        await verifier.verify(attempt, ctx(), deadline=end, budget=budget)
+    assert len(caps) == 8 and budget.remaining_bytes == 0
+
+
+@run_async
+async def test_f1_foreign_and_forged_budget_rejected_before_projection_or_http(monkeypatch, tmp_path):
+    from cragkit._qdrant_reconciliation import VerificationBudget
+    writer, supervisor, attempt, verifier, handle, _, _, _ = await setup(monkeypatch, tmp_path)
+    class ForeignBudget(VerificationBudget):
+        pass
+    async def forbidden(*args, **kwargs):
+        pytest.fail('invalid budget reached source projection')
+    monkeypatch.setattr(writer, 'project_publication', forbidden)
+    for budget in ({'remaining_bytes': 8388608}, object(), object.__new__(VerificationBudget), ForeignBudget()):
+        with pytest.raises(InvalidRequest):
+            await verifier.verify(attempt, ctx(), deadline=asyncio.get_running_loop().time() + 5, budget=budget)
+    assert handle.calls == [] and handle.close_count == 0

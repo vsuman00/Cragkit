@@ -4,7 +4,7 @@ import {types} from 'node:util';
 import {PostgresQdrantWriter,writer_binding,type IntentView,type DispatchStatus,type DispatchView} from './qdrant-writer.js';
 import {PostgresQdrantRecovery,recovery_components} from './qdrant-recovery.js';
 import {ManagedQdrantSupervisor,type SupervisorTransport} from './qdrant-supervisor.js';
-import {QdrantReconciliationVerifier} from './qdrant-reconciliation.js';
+import {QdrantReconciliationVerifier,VerificationBudget} from './qdrant-reconciliation.js';
 import {QdrantPublicationVerifier,validate_publication_receipt} from './qdrant-publication-verification.js';
 import {is_publication_controller,is_worker_controller,publication_worker_reference,publication_controller_profile,publication_issue_attempt,publication_attempt_binding,publication_transport_for,publication_before_write,publication_finalization,type OrdinaryPublicationController} from './qdrant-publication-worker.js';
 import {ExecutionLedger,BudgetExhausted,type Reservation} from './execution.js';
@@ -381,7 +381,7 @@ export class QdrantPublicationManager {
     return this.#attempt(ledger,options,lease=>this.#publishBody(ref,lookup,lease,'publish'));
   }
 
-  async #publishBody(ref:Reference,lookup:WriterContext,lease:LeaseOptions,operation:'publish'|'repair'):Promise<Result> {
+  async #publishBody(ref:Reference,lookup:WriterContext,lease:LeaseOptions,operation:'publish'|'repair',budget=new VerificationBudget()):Promise<Result> {
       await this.#authorize(lookup,lease);
       const writer=this.#authority.writer;
       const initial=await this.#await(writer.manager_snapshot(lookup,lease),lease);
@@ -415,10 +415,11 @@ export class QdrantPublicationManager {
         const batches=Math.ceil(members.length/8);
         if(snapshot.max_sequence+batches>256)throw new BudgetExhausted();
         for(let start=0;start<members.length;start+=8){
+          if(budget.remaining_bytes<=0)throw new ProviderUnavailable();
           attempt=await this.#writeBatch(context,snapshot.backend.epoch,snapshot.max_sequence+1+start/8,Object.freeze(members.slice(start,start+8)),lease);
         }
       }
-      const receipt=await this.#await(this.#verifier.verify(attempt,context,lease),lease);
+      const receipt=await this.#await(this.#verifier.verify(attempt,context,lease,budget),lease);
       const verified=await validate_publication_receipt(receipt,this.#verifier,lease);
       if(prepared&&verified.readback_sha256!==prepared.preparation.readback_sha256)throw new IntegrityViolation();
       let finalization!:Promise<Result>;
@@ -464,6 +465,7 @@ export class QdrantPublicationManager {
     const ref=reference(input),scope=parse_scope(inputScope),options=this.#ledger(ledger,rawOptions);
     const lookup=parse_context({...ref,scope,owner_token:randomUUID()});
     return this.#attempt(ledger,options,async lease=>{
+      const budget=new VerificationBudget();
       const writer=this.#authority.writer,recovery=this.#authority.recovery!;
       // Authorize before scoped source inspection; preflight gates the exact profile.
       await this.#authorize(lookup,lease);
@@ -485,16 +487,16 @@ export class QdrantPublicationManager {
         await this.#await(recovery.advance_owner(proof,context,lease),lease);
         if(uncertain){
           const verifier=recovery_components(recovery,writer,this.#supervisor,this.#config);
-          const receipt=await this.#await(verifier.verify(proof,context,lease),lease);
+          const receipt=await this.#await(verifier.verify(proof,context,lease,budget),lease);
           await this.#await(recovery.settle_retired(proof,receipt,lease),lease);
         }
         await this.#await(recovery.reopen(proof,lease),lease);
         snapshot=await this.#await(writer.preflight_repair(context,lease),lease);
         if(['published','denied','conflict'].includes(snapshot.intent.state))return result(ref.intent_id,'repair',snapshot.intent);
       }
-      if(snapshot.intent.state!=='prepared')return this.#publishBody(ref,context,lease,'repair');
+      if(snapshot.intent.state!=='prepared')return this.#publishBody(ref,context,lease,'repair',budget);
       const durable=await this.#await(writer.attestation_snapshot(context,lease),lease);
-      if(durable.preparation.backend_epoch===snapshot.backend.epoch)return this.#publishBody(ref,context,lease,'repair');
+      if(durable.preparation.backend_epoch===snapshot.backend.epoch)return this.#publishBody(ref,context,lease,'repair',budget);
       const profile=await this.#profile(lease,true),epoch=count(profile.epoch,1);
       if(durable.preparation.backend_epoch>snapshot.backend.epoch)throw new IntegrityViolation();
       if(epoch!==snapshot.backend.epoch||durable.preparation.backend_epoch>=epoch)throw new ProviderUnavailable();
@@ -504,7 +506,7 @@ export class QdrantPublicationManager {
         String(profile.epoch),profile.credential_generation,snapshot.intent.manifest_sha256])).digest('hex');
       const session=await this.#session(context,epoch,id,lease);
       await this.#closeHandle(session);
-      const receipt=await this.#await(this.#verifier.verify(session.attempt,context,lease),lease);
+      const receipt=await this.#await(this.#verifier.verify(session.attempt,context,lease,budget),lease);
       let finalization!:Promise<Result>;
       finalization=publication_finalization(this.#supervisor,session.attempt,async()=>{
         try{

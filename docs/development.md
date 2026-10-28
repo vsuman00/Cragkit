@@ -1102,3 +1102,16 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory. The parent runs native languages serially with actual isolated Qdrant and synthetic vectors. It checks listener absence before removing owned storage. Cancellation/drain timing has unit coverage; the five native cases per runtime do not simulate a stalled wire response or establish SQL settlement. Existing native controller/recovery regressions remain separate runs.
+
+## V5-04G1b-B2a readback inspection and shared bytes
+
+[B2a evidence](../evaluation/reports/V5/V5-04G1b-B2a.md) distinguishes missing diagnostics from proof and records the multi-phase budget fix.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_reconciliation.py packages/python/tests/test_qdrant_publication_verification.py packages/python/tests/test_qdrant_publication.py tools/tests/test_qdrant_missing_readback_native.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-reconciliation.test.mjs packages/typescript/tests/qdrant-publication-verification.test.mjs packages/typescript/tests/qdrant-publication.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_missing_readback.py --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --artifacts-dir artifacts/V5/V5-04G1/a-new-inspection-run
+```
+
+Use a fresh directory. Native languages run serially against actual isolated Qdrant with synthetic vectors, without PostgreSQL or provider calls. The consumer injects faults through actual backend writes and compares actual returned bytes across passes. It closes owned sessions/controllers and checks listener absence before removing private fixture storage. It does not claim SQL settlement or complete partial repair.

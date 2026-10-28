@@ -10,7 +10,8 @@ from types import MappingProxyType
 from typing import Any, TYPE_CHECKING
 from weakref import WeakKeyDictionary
 
-from ._qdrant_reconciliation import _Readback, _ReadbackTransport, _safe, _verify_readback
+from ._qdrant_reconciliation import (_Readback, _ReadbackTransport, _safe, _verify_readback,
+    VerificationBudget, verification_budget)
 from ._qdrant_source import metadata_guard
 from ._qdrant_supervisor import ManagedQdrantSupervisor
 from ._qdrant_transport import deadline_value
@@ -184,7 +185,8 @@ class QdrantPublicationVerifier:
         self._closed = False
 
     async def verify(self, attempt: object, context: object, *,
-                     deadline: float) -> PublicationReadbackReceipt:
+                     deadline: float, budget: VerificationBudget | None = None) -> PublicationReadbackReceipt:
+        budget = verification_budget(budget)
         deadline = deadline_value(deadline)
         if self._closed or self._active is not None:
             raise ProviderUnavailable()
@@ -199,7 +201,7 @@ class QdrantPublicationVerifier:
                 data = publication_projection_data(projection, self.writer)
                 handle = self.supervisor.transport_for(attempt)
                 path = '/collections/' + self.writer.config.physical_collection + '/points'
-                await _verify_readback(_Readback(handle, deadline), path, data)
+                await _verify_readback(_Readback(handle, deadline, budget), path, data)
                 await _close_handle(handle)
                 handle = None
                 await self.writer.validate_publication_projection(projection, deadline=deadline)

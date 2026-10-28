@@ -593,7 +593,7 @@ async def test_repair_uncertainty_uses_actual_dependency_order_and_stays_failed(
         return proof
     async def advance(actual, context, *, deadline):
         assert actual is proof and context.owner_token == ctx()['owner_token']; events.append('advance')
-    async def verify(actual, context, *, deadline):
+    async def verify(actual, context, *, deadline, budget=None):
         assert actual is proof; events.append('verify')
         if failure == 'incomplete': raise IntegrityViolation()
         return receipt
@@ -682,3 +682,53 @@ async def test_repair_current_prepared_reuses_selected_binding_without_attestati
     result=await manager.repair(reference,ctx()['scope'],ledger(),deadline=limit)
     assert result['published'] and result['operation']=='repair'
     assert state['mutations']==before and state['preparation']==original
+
+
+@run_async
+@pytest.mark.parametrize('exhausted',[False,True])
+async def test_repair_shares_verification_bytes_across_recovery_and_publication(monkeypatch,tmp_path,exhausted):
+    from cragkit._qdrant_reconciliation import VerificationBudget,_Readback
+    manager,writer,recovery,supervisor,state,document,reference,limit=await repair_setup(monkeypatch,tmp_path)
+    await manager.stage(stage_input(),ctx()['scope'],ledger(),deadline=limit)
+    state['faults'].add('http_ack')
+    with pytest.raises(ProviderUnavailable):
+        await manager.publish(reference,ctx()['scope'],ledger(),deadline=limit)
+    state['faults'].clear()
+    prior=document['active_generation_id'];writes=state['mutations'];observed=[]
+    proof,receipt=object(),object()
+    async def recover(identity,*,deadline):return proof
+    async def advance(actual,context,*,deadline):assert actual is proof
+    async def verify(actual,context,*,deadline,budget=None):
+        assert actual is proof and type(budget) is VerificationBudget
+        observed.append(budget)
+        raw=b'{"status":"ok","result":[]}'
+        if exhausted:raw=b' '*(1048576-len(raw))+raw
+        class Response:
+            async def request(self,*args,**kwargs):return raw
+        reader=_Readback(Response(),deadline,budget)
+        for _ in range(8 if exhausted else 1):await reader.request('/fixture',{})
+        return receipt
+    async def settle(actual,observed_receipt,*,deadline):
+        assert actual is proof and observed_receipt is receipt
+        for dispatch in state['dispatches'].values():dispatch.update(state='settled',completion_sha256='a'*64)
+        state['pending']=False
+    async def reopen(actual,*,deadline):assert actual is proof
+    for name,method in [('recover',recover),('advance_owner',advance),('settle_retired',settle),('reopen',reopen)]:
+        monkeypatch.setattr(recovery,name,method)
+    monkeypatch.setattr(manager._original_verifier,'verify',verify)
+    original=manager._verifier.verify
+    async def ordinary(attempt,context,*,deadline,budget=None):
+        assert budget is observed[0]
+        observed.append(budget)
+        return await original(attempt,context,deadline=deadline,budget=budget)
+    monkeypatch.setattr(manager._verifier,'verify',ordinary)
+    if exhausted:
+        with pytest.raises(ProviderUnavailable):
+            await manager.repair(reference,ctx()['scope'],ledger(),deadline=limit)
+        assert state['mutations']==writes and document['active_generation_id']==prior
+        assert len(observed)==1 and observed[0].remaining_bytes==0
+    else:
+        result=await manager.repair(reference,ctx()['scope'],ledger(),deadline=limit)
+        assert result['published'] and state['mutations']==writes+1
+        assert len(observed)==2 and observed[0] is observed[1]
+        assert observed[0].remaining_bytes<8388608

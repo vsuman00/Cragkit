@@ -350,3 +350,104 @@ async def test_projection_separates_backend_identity_corruption_from_operational
     monkeypatch.setattr(writer,'_query',query)
     if fault=='instance':physical={**physical,'instance_id':'different-instance'}
     with pytest.raises(error):await writer.project_stage(ctx(),physical,deadline=asyncio.get_running_loop().time()+2)
+
+
+@pytest.mark.parametrize('remaining',[0,1,2])
+@run_async
+async def test_missing_inspection_returns_only_sorted_absent_expected_ids(monkeypatch,tmp_path,remaining):
+    from cragkit._qdrant_reconciliation import _Readback,inspect_missing_readback
+    writer,_,_,projection,handle,_,_=await setup(monkeypatch,tmp_path)
+    data=projection_data(projection,writer);expected=set(data['point_ids'])
+    handle.points=handle.points[:remaining]
+    result=await inspect_missing_readback(_Readback(handle,asyncio.get_running_loop().time()+5),'/collections/'+config()['physical_collection']+'/points',data)
+    assert result==tuple(sorted(expected-{point['id'] for point in handle.points}))
+    assert type(result) is tuple and len(handle.calls)==2
+
+
+@pytest.mark.parametrize('fault',['dense','scope','extra','duplicate','get_scroll_drift','offset'])
+@run_async
+async def test_missing_inspection_does_not_adopt_corruption_or_inconsistent_enumeration(monkeypatch,tmp_path,fault):
+    from cragkit._qdrant_reconciliation import _Readback,inspect_missing_readback
+    writer,_,_,projection,handle,_,_=await setup(monkeypatch,tmp_path)
+    data=projection_data(projection,writer)
+    if fault=='dense':handle.points[0]['vector']['dense'][0]=-1
+    elif fault=='scope':handle.points[0]['payload']['tenant_id']='foreign'
+    elif fault=='extra':
+        point=copy.deepcopy(handle.points[0]);point['id']='ffffffff-ffff-4fff-8fff-ffffffffffff';handle.points.append(point)
+    elif fault=='duplicate':handle.points.append(copy.deepcopy(handle.points[0]))
+    elif fault=='get_scroll_drift':handle.get_patch=lambda points:points[:1]
+    else:handle.scroll_patch=lambda result,page:{'points':[],'next_page_offset':'ffffffff-ffff-4fff-8fff-ffffffffffff'}
+    with pytest.raises(IntegrityViolation):
+        await inspect_missing_readback(_Readback(handle,asyncio.get_running_loop().time()+5),'/collections/'+config()['physical_collection']+'/points',data)
+
+
+@run_async
+async def test_missing_inspection_rejects_tombstone_before_dispatch(monkeypatch,tmp_path):
+    from cragkit._qdrant_reconciliation import _Readback,inspect_missing_readback
+    writer,_,_,projection,handle,_,_=await setup(monkeypatch,tmp_path,tombstoned=True)
+    with pytest.raises(UnsupportedCapability):
+        await inspect_missing_readback(_Readback(handle,asyncio.get_running_loop().time()+5),'/collections/'+config()['physical_collection']+'/points',projection_data(projection,writer))
+    assert not handle.calls
+
+
+@run_async
+async def test_shared_verification_budget_survives_separate_readback_passes(monkeypatch,tmp_path):
+    from cragkit._qdrant_reconciliation import _Readback,VerificationBudget,inspect_missing_readback
+    writer,_,_,projection,handle,_,_=await setup(monkeypatch,tmp_path)
+    data=projection_data(projection,writer);budget=VerificationBudget();handle.padding=True;handle.padding_size=1048576-1000
+    for _ in range(4):
+        assert await inspect_missing_readback(_Readback(handle,asyncio.get_running_loop().time()+5,budget),'/collections/'+config()['physical_collection']+'/points',data)==()
+    assert budget.remaining_bytes==8000
+    with pytest.raises(ProviderUnavailable):
+        await inspect_missing_readback(_Readback(handle,asyncio.get_running_loop().time()+5,budget),'/collections/'+config()['physical_collection']+'/points',data)
+    assert handle.response_limits[-1]==8000
+    with pytest.raises(AttributeError):budget.remaining_bytes=8388608
+    with pytest.raises(InvalidRequest):budget.__init__()
+    with pytest.raises(InvalidRequest):_Readback(handle,asyncio.get_running_loop().time()+5,object.__new__(VerificationBudget))
+    with pytest.raises(InvalidRequest):_Readback(handle,asyncio.get_running_loop().time()+5,object())
+
+
+@run_async
+async def test_malformed_bytes_are_charged_and_exhaustion_prevents_dispatch():
+    from cragkit._qdrant_reconciliation import _Readback,VerificationBudget
+    class Malformed:
+        def __init__(self):self.calls=0
+        async def request(self,*args,**options):self.calls+=1;return b'!'+b' '*1048575
+        async def close(self):pass
+    handle=Malformed();budget=VerificationBudget()
+    for _ in range(8):
+        readback=_Readback(handle,asyncio.get_running_loop().time()+5,budget)
+        with pytest.raises(IntegrityViolation):await readback.request('/collections/docs/points',{})
+    assert budget.remaining_bytes==0 and handle.calls==8
+    with pytest.raises(ProviderUnavailable):
+        await _Readback(handle,asyncio.get_running_loop().time()+5,budget).request('/collections/docs/points',{})
+    assert handle.calls==8
+
+
+@run_async
+async def test_missing_inspection_get_cannot_return_another_expected_batch(monkeypatch,tmp_path):
+    from cragkit._qdrant_reconciliation import _Readback,inspect_missing_readback
+    writer,_,_,projection,handle,_,_=await setup(monkeypatch,tmp_path,member_count=9)
+    last=copy.deepcopy(sorted(handle.points,key=lambda point:point['id'])[-1])
+    handle.get_patch=lambda points:[last]
+    with pytest.raises(IntegrityViolation):
+        await inspect_missing_readback(_Readback(handle,asyncio.get_running_loop().time()+5),'/collections/'+config()['physical_collection']+'/points',projection_data(projection,writer))
+
+
+@run_async
+async def test_reconciliation_verify_accepts_only_native_shared_budget_before_projection(monkeypatch,tmp_path):
+    from cragkit._qdrant_reconciliation import VerificationBudget,verification_budget
+    writer,supervisor,proof,_,handle,_,_=await setup(monkeypatch,tmp_path)
+    verifier=QdrantReconciliationVerifier(writer,supervisor);budget=VerificationBudget()
+    assert verification_budget(budget) is budget
+    assert verification_budget() is not budget
+    original=writer.project_stage;projected=[]
+    async def tracked(*args,**kwargs):projected.append(True);return await original(*args,**kwargs)
+    monkeypatch.setattr(writer,'project_stage',tracked)
+    with pytest.raises(InvalidRequest):
+        await verifier.verify(proof,ctx(),deadline=asyncio.get_running_loop().time()+5,budget=object())
+    assert not projected and not handle.calls
+    handle.padding=True;handle.padding_size=1048576-1000
+    await verifier.verify(proof,ctx(),deadline=asyncio.get_running_loop().time()+5,budget=budget)
+    await verifier.verify(proof,ctx(),deadline=asyncio.get_running_loop().time()+5,budget=budget)
+    assert budget.remaining_bytes==8388608-4*(1048576-1000)

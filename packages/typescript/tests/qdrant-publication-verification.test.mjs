@@ -7,6 +7,7 @@ import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantPublicationVerifier,publication_receipt_data,attestation_receipt_data,
   publication_verifier_controller} from '../dist/qdrant-publication-verification.js';
 import {publication_finalization} from '../dist/qdrant-publication-worker.js';
+import {VerificationBudget} from '../dist/qdrant-reconciliation.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {encode_dense_replay,encode_sparse_replay} from '../dist/qdrant-manifest.js';
@@ -120,7 +121,9 @@ async function setup(){
       if(state.afterHttp){const change=state.afterHttp;state.afterHttp=null;change();}
       const response={status:'ok',result:path.endsWith('/scroll')?{points:observed,next_page_offset:null}:
         observed.filter(point=>body.ids.includes(point.id))};
-      const bytes=Buffer.from(JSON.stringify(response));
+      const encoded=Buffer.from(JSON.stringify(response));
+      const bytes=state.malformedBudget?Buffer.concat([Buffer.from('!'),Buffer.alloc(1048575,32)]):
+        state.paddingBytes?Buffer.concat([encoded,Buffer.alloc(Math.max(0,state.paddingBytes-encoded.length),32)]):encoded;
       if(bytes.length>request.max_response_bytes)throw new ProviderUnavailable();
       return Object.freeze(Array.from(bytes));
     }};
@@ -308,4 +311,56 @@ test('handle cleanup timeout is operational while native cleanup abort is preser
       assert.equal(f.state.closed,2,'failed normal close is followed by bounded cleanup');
     }finally{f.state.closeError=null;await f.close();}
   }
+});
+
+test('F1 shares native verification bytes across passes and sends only the remaining cap',async()=>{
+  const fixture=await setup();
+  try{
+    const {state,verifier}=fixture,budget=new VerificationBudget();
+    state.paddingBytes=1048576-1000;
+    for(let pass=0;pass<4;pass++){
+      const receipt=await verifier.verify(state.attempt,context,options(),budget);
+      assert.ok(publication_receipt_data(receipt,verifier).projection);
+    }
+    assert.equal(budget.remaining_bytes,8000);
+    assert.equal(state.requests.length,8);
+    await assert.rejects(verifier.verify(state.attempt,context,options(),budget),ProviderUnavailable);
+    assert.equal(state.requests.at(-1).cap,8000);
+    assert.equal(budget.remaining_bytes,8000);
+    state.paddingBytes=0;
+    const receipt=await verifier.verify(state.attempt,context,options());
+    assert.ok(publication_receipt_data(receipt,verifier).readback_sha256);
+    assert.equal(budget.remaining_bytes,8000);
+  }finally{await fixture.close();}
+});
+
+test('F1 malformed replies consume shared bytes before parsing and exhaustion prevents another HTTP request',async()=>{
+  const fixture=await setup();
+  try{
+    const {state,verifier}=fixture,budget=new VerificationBudget();
+    state.malformedBudget=true;
+    for(let pass=0;pass<8;pass++){
+      await assert.rejects(verifier.verify(state.attempt,context,options(),budget),IntegrityViolation);
+      assert.equal(budget.remaining_bytes,8388608-(pass+1)*1048576);
+    }
+    assert.equal(state.requests.length,8);
+    await assert.rejects(verifier.verify(state.attempt,context,options(),budget),ProviderUnavailable);
+    assert.equal(state.requests.length,8);
+    assert.equal(budget.remaining_bytes,0);
+  }finally{await fixture.close();}
+});
+
+test('F1 forged or foreign byte budgets fail before controller binding, source lease or HTTP',async()=>{
+  const fixture=await setup();
+  try{
+    const {state,verifier}=fixture;
+    class ForeignBudget extends VerificationBudget{}
+    const beforeClients=state.clients.length,beforeBindings=state.bindingCalls;
+    for(const budget of [{remaining_bytes:8388608},Object.create(VerificationBudget.prototype),new ForeignBudget(),null]){
+      await assert.rejects(verifier.verify(state.attempt,context,options(),budget),InvalidRequest);
+    }
+    assert.equal(state.clients.length,beforeClients);
+    assert.equal(state.bindingCalls,beforeBindings);
+    assert.equal(state.requests.length,0);
+  }finally{await fixture.close();}
 });

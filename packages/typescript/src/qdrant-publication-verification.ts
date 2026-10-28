@@ -4,7 +4,7 @@ import { ManagedQdrantSupervisor, type SupervisorTransport } from './qdrant-supe
 import {is_publication_controller,is_worker_controller,publication_attempt_binding,publication_transport_for,require_publication_finalization,type OrdinaryPublicationController} from './qdrant-publication-worker.js';
 import { PostgresQdrantWriter, publication_projection_data,
   type PublicationProjection, type PublicationProjectionData } from './qdrant-writer.js';
-import { verify_projection_readback } from './qdrant-reconciliation.js';
+import { verify_projection_readback, verification_budget, type VerificationBudget } from './qdrant-reconciliation.js';
 import { context as parse_context, options as parse_options, metadata, fields, text, uuid, count,
   type Data, type WriterContext } from './qdrant-writer-contract.js';
 import { same } from './qdrant-contract.js';
@@ -111,7 +111,8 @@ export class QdrantPublicationVerifier {
     verifierOrigins.set(this,Object.freeze({writer,controller:supervisor}));
   }
 
-  async verify(attempt:unknown,input:unknown,rawOptions:unknown):Promise<PublicationReadbackReceipt> {
+  async verify(attempt:unknown,input:unknown,rawOptions:unknown,inputBudget?:VerificationBudget):Promise<PublicationReadbackReceipt> {
+    const budget=verification_budget(inputBudget);
     const context:WriterContext=parse_context(input);
     const options=parse_options(rawOptions);
     if(this.#closed||this.#active)throw new ProviderUnavailable();
@@ -131,7 +132,7 @@ export class QdrantPublicationVerifier {
       const expected=publication_projection_data(projection,this.#writer);
       transport=publication_transport_for(this.#supervisor,attempt);
       const collection=String(expected.points[0].payload.physical_collection);
-      await verify_projection_readback(transport,collection,expected,lease);
+      await verify_projection_readback(transport,collection,expected,lease,budget);
       await close_handle(transport);
       transport=undefined;
       // A source lease is never held across HTTP, and authority is fresh after it.

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {PoolResource,parse_pool_config,bounded,now} from '../dist/postgres-pool.js';
 import {PostgresQdrantWriter,projection_data,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
-import {QdrantReconciliationVerifier,receipt_data,verifier_authority} from '../dist/qdrant-reconciliation.js';
+import {QdrantReconciliationVerifier,receipt_data,verifier_authority,VerificationBudget,verification_budget,inspect_missing_readback,verify_projection_readback} from '../dist/qdrant-reconciliation.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {encode_dense_replay,encode_sparse_replay} from '../dist/qdrant-manifest.js';
@@ -264,5 +264,149 @@ test('internal authority binding requires the exact registered verifier and supe
       assert.throws(()=>verifier_authority(verifier,supervisor),InvalidRequest);
     }
     assert.equal(hooks,0);assert.equal(x.state.requests.length,0);
+  }finally{await x.close();}
+});
+
+function diagnosticTransport(expected,{missing=[],mode=null,padding=0}={}){
+  const calls=[];
+  const records=expected.points.map(point=>({id:point.point_id,payload:clone(point.payload),vector:{dense:[...point.dense.values],
+    ...(point.sparse?{sparse:{indices:[...point.sparse.indices],values:[...point.sparse.values]}}:{})}}));
+  return {calls,async close(){},async request(method,path,options){
+    const body=JSON.parse(Buffer.from(options.body));calls.push({method,path,body,maximum:options.max_response_bytes});
+    let present=clone(records.filter(point=>!missing.includes(point.id)));
+    if(mode==='dense'&&present.length)present[0].vector.dense[0]=-1;
+    if(mode==='sparse'&&present.length)present[0].vector.sparse.values[0]=9;
+    if(mode==='payload'&&present.length)present[0].payload.authorization_revision='stale';
+    if(mode==='profile'&&present.length)present[0].payload.dense_profile={...present[0].payload.dense_profile,revision:'wrong'};
+    if(mode==='duplicate'&&present.length)present.push(clone(present[0]));
+    const scroll=path.endsWith('/scroll');
+    if(mode==='extra'&&scroll){const extra=clone(records[0]);extra.id='ffffffff-ffff-5fff-8fff-ffffffffffff';present.push(extra);}
+    if(mode==='get-scroll-drift'&&scroll)present=present.filter(point=>point.id!==records[0].id);
+    if(mode==='get-wrong-batch'&&!scroll)present=[clone(records.at(-1))];
+    if(!scroll)present=mode==='get-wrong-batch'?present:present.filter(point=>body.ids.includes(point.id));
+    const start=scroll&&body.offset!==undefined?present.findIndex(point=>point.id===body.offset)+1:0;
+    const page=scroll?present.slice(start,start+8):present;
+    const next=mode==='cycle'&&scroll?records[0].id:scroll&&page.length===8?page.at(-1).id:null;
+    const value={status:'ok',result:scroll?{points:page,next_page_offset:next}:page};
+    if(mode==='bad-offset'&&scroll)value.result.next_page_offset='bad';
+    if(mode==='bad-envelope')return jsonBytes({result:[]});
+    if(mode==='malformed-json')return Object.freeze([123,110,111]);
+    if(mode==='invalid-byte')return Object.freeze([256]);
+    const raw=Buffer.from(JSON.stringify(value));
+    const length=padding?Math.min(padding,options.max_response_bytes):raw.length;
+    if(raw.length>length)throw new ProviderUnavailable();
+    return Object.freeze(Array.from(Buffer.concat([raw,Buffer.alloc(length-raw.length,32)])));
+  }};
+}
+
+test('missing inspection reports only exact missing UUIDs and never changes strict completeness',async()=>{
+  const x=await setup();try{
+    const ids=x.expected.points.map(point=>point.point_id);
+    for(const absent of [[],[ids[0]],ids]){
+      const transport=diagnosticTransport(x.expected,{missing:absent});
+      const missing=await inspect_missing_readback(transport,config.physical_collection,x.expected,options());
+      assert.deepEqual(missing,[...absent].sort());assert(Object.isFrozen(missing));
+      assert.equal(transport.calls.length,2);
+      const scroll=transport.calls[1].body;
+      assert.equal(scroll.limit,8);assert.equal(scroll.filter.must.length,8);
+      assert.equal(scroll.filter.must.some(item=>['has_id','id','dense_profile','dense_profile_id'].includes(item.key)),false);
+      if(absent.length)await assert.rejects(verify_projection_readback(transport,config.physical_collection,x.expected,options()),IntegrityViolation);
+      else await verify_projection_readback(transport,config.physical_collection,x.expected,options());
+    }
+  }finally{await x.close();}
+});
+
+test('missing inspection refuses present corruption extras duplicates and inconsistent observation sets',async()=>{
+  const x=await setup();try{
+    for(const mode of ['dense','sparse','payload','profile','duplicate','extra','get-scroll-drift','cycle','bad-offset','bad-envelope']){
+      const transport=diagnosticTransport(x.expected,{mode});
+      await assert.rejects(inspect_missing_readback(transport,config.physical_collection,x.expected,options()),IntegrityViolation,mode);
+    }
+  }finally{await x.close();}
+});
+
+test('missing inspection rejects unsupported tombstones and invalid expected membership before HTTP',async()=>{
+  const x=await setup();try{
+    const transport=diagnosticTransport(x.expected);
+    await assert.rejects(inspect_missing_readback(transport,config.physical_collection,{...x.expected,tombstoned:true},options()),UnsupportedCapability);
+    for(const points of [[],Array.from({length:65},()=>x.expected.points[0]),[x.expected.points[0],x.expected.points[0]],
+      [{...x.expected.points[0],payload:{...x.expected.points[0].payload,physical_collection:'foreign'}}]]){
+      await assert.rejects(inspect_missing_readback(transport,config.physical_collection,{...x.expected,points},options()),InvalidRequest);
+    }
+    assert.equal(transport.calls.length,0);
+  }finally{await x.close();}
+});
+
+test('missing inspection enforces each GET batch and complete 64-member scoped enumeration',async()=>{
+  const x=await setup(false,64);try{
+    const transport=diagnosticTransport(x.expected);
+    assert.deepEqual(await inspect_missing_readback(transport,config.physical_collection,x.expected,{deadline:now()+10}),[]);
+    assert.equal(transport.calls.length,17);assert.equal(transport.calls.at(-1).body.offset,x.expected.points.at(-1).point_id);
+    const drift=diagnosticTransport(x.expected,{mode:'get-wrong-batch'});
+    await assert.rejects(inspect_missing_readback(drift,config.physical_collection,x.expected,options()),IntegrityViolation);
+    assert.equal(drift.calls.length,1);
+  }finally{await x.close();}
+});
+
+test('shared nominal verification budget shrinks across separate passes and zero forbids another HTTP',async()=>{
+  const x=await setup();try{
+    const budget=new VerificationBudget(),transport=diagnosticTransport(x.expected,{missing:x.expected.points.map(point=>point.point_id),padding:900000});
+    assert.equal(budget.remaining_bytes,8388608);assert.equal(verification_budget(budget),budget);
+    assert.equal(verification_budget().remaining_bytes,8388608);
+    for(let pass=0;pass<5;pass++)await inspect_missing_readback(transport,config.physical_collection,x.expected,{deadline:now()+30},budget);
+    assert.equal(transport.calls.length,10);assert.equal(transport.calls.at(-1).maximum,8388608-9*900000);
+    assert.equal(budget.remaining_bytes,0);
+    await assert.rejects(inspect_missing_readback(transport,config.physical_collection,x.expected,options(),budget),ProviderUnavailable);
+    await assert.rejects(verify_projection_readback(transport,config.physical_collection,x.expected,options(),budget),ProviderUnavailable);
+    assert.equal(transport.calls.length,10);
+    assert.throws(()=>{budget.remaining_bytes=8388608;},TypeError);
+    assert.throws(()=>new VerificationBudget(1),InvalidRequest);
+  }finally{await x.close();}
+});
+
+test('malformed returned bytes consume budget before parsing and fabricated budgets cause no HTTP',async()=>{
+  const x=await setup();try{
+    const budget=new VerificationBudget();
+    for(const [mode,length] of [['malformed-json',3],['invalid-byte',1]]){
+      const before=budget.remaining_bytes,transport=diagnosticTransport(x.expected,{mode});
+      await assert.rejects(inspect_missing_readback(transport,config.physical_collection,x.expected,options(),budget),IntegrityViolation);
+      assert.equal(budget.remaining_bytes,before-length);
+    }
+    const transport=diagnosticTransport(x.expected);let hooks=0;
+    const proxy=new Proxy(new VerificationBudget(),{getPrototypeOf(){hooks++;throw Error('hook');}});
+    for(const fake of [{remaining_bytes:8388608},Object.create(VerificationBudget.prototype),proxy,null]){
+      await assert.rejects(inspect_missing_readback(transport,config.physical_collection,x.expected,options(),fake),InvalidRequest);
+      await assert.rejects(x.verifier.verify(x.proof,context,options(),fake),InvalidRequest);
+    }
+    assert.equal(hooks,0);assert.equal(transport.calls.length,0);
+  }finally{await x.close();}
+});
+
+test('strict E2 verifier shares an explicitly supplied verification budget across receipt passes',async()=>{
+  const x=await setup();try{
+    const budget=new VerificationBudget();
+    await x.verifier.verify(x.proof,context,options(),budget);const after=budget.remaining_bytes;
+    assert(after<8388608);
+    await x.verifier.verify(x.proof,context,options(),budget);assert(budget.remaining_bytes<after);
+    assert.equal(x.state.requests.length,4);
+  }finally{await x.close();}
+});
+
+test('missing inspection rejects empty continuation and 65th member rather than claiming missing diagnostics',async()=>{
+  const x=await setup(false,64);try{
+    const extra=diagnosticTransport(x.expected,{mode:'extra'});
+    await assert.rejects(inspect_missing_readback(extra,config.physical_collection,x.expected,{deadline:now()+10}),IntegrityViolation);
+    assert.equal(extra.calls.length,17);
+    const empty=diagnosticTransport(x.expected,{mode:'cycle',missing:x.expected.points.map(point=>point.point_id)});
+    await assert.rejects(inspect_missing_readback(empty,config.physical_collection,x.expected,options()),IntegrityViolation);
+  }finally{await x.close();}
+});
+
+test('response ceiling violations consume returned byte allowance before failure',async()=>{
+  const x=await setup();try{
+    const budget=new VerificationBudget();let calls=0;
+    const transport={async close(){},async request(){calls++;return new Array(1048577).fill(32);}};
+    await assert.rejects(inspect_missing_readback(transport,config.physical_collection,x.expected,options(),budget),IntegrityViolation);
+    assert.equal(calls,1);assert.equal(budget.remaining_bytes,8388608-1048577);
   }finally{await x.close();}
 });

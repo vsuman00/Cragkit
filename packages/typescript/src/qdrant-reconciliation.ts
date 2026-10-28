@@ -3,7 +3,7 @@ import { ManagedQdrantSupervisor, type SupervisorTransport } from './qdrant-supe
 import { randomUUID } from 'node:crypto';
 import { types } from 'node:util';
 import { PostgresQdrantWriter, projection_data, type ExpectedProjection, type ProjectionData, type ProjectionPoint } from './qdrant-writer.js';
-import { context as parse_context, options as parse_options, fields, native_array, metadata, uuid, count, hash,
+import { context as parse_context, options as parse_options, fields, native_array, metadata, uuid, count, hash, text,
   type Data, type WriterContext } from './qdrant-writer-contract.js';
 import { parse_response, same } from './qdrant-contract.js';
 import { verify_dense_readback, verify_sparse_readback } from './qdrant-vectors.js';
@@ -53,6 +53,30 @@ const MAX_CALLS = 17;
 const MAX_PAGE = 8;
 const MAX_RESPONSE = 1048576;
 const MAX_AGGREGATE = 8388608;
+
+const verificationBudgets=new WeakMap<object,{remaining:number}>();
+/** One operation's fixed response-byte allowance, shared across readback passes. */
+export class VerificationBudget {
+  constructor(...args:unknown[]) {
+    if(args.length)throw new InvalidRequest();
+    verificationBudgets.set(this,{remaining:MAX_AGGREGATE});Object.freeze(this);
+  }
+  get remaining_bytes():number {return budget_state(this).remaining;}
+}
+function budget_state(input:unknown):{remaining:number} {
+  if(typeof input!=='object'||input===null||types.isProxy(input)
+    ||Object.getPrototypeOf(input)!==VerificationBudget.prototype||!verificationBudgets.has(input))throw new InvalidRequest();
+  return verificationBudgets.get(input)!;
+}
+export function verification_budget(value?:unknown):VerificationBudget {
+  if(value===undefined)return new VerificationBudget();
+  budget_state(value);return value as VerificationBudget;
+}
+function charge_budget(budget:VerificationBudget,length:number):void {
+  const state=budget_state(budget),remaining=state.remaining;
+  state.remaining=Math.max(0,remaining-length);
+  if(length>remaining)throw new ProviderUnavailable();
+}
 
 export function receipt_data(input: unknown, verifier: QdrantReconciliationVerifier): ReceiptData {
   if (typeof input !== 'object' || input === null) {
@@ -148,19 +172,57 @@ export async function verify_projection_readback(
   collection: string,
   expected: Readonly<{points: readonly ProjectionPoint[]; tombstoned: boolean}>,
   rawOptions: unknown,
+  budget?:VerificationBudget,
 ): Promise<void> {
+  await projection_readback(transport,collection,expected,rawOptions,budget,false);
+}
+
+/** Missing IDs are diagnostics, never a receipt or permission to settle. */
+export async function inspect_missing_readback(
+  transport:SupervisorTransport,collection:string,
+  expected:Readonly<{points:readonly ProjectionPoint[];tombstoned:boolean}>,
+  rawOptions:unknown,budget?:VerificationBudget,
+):Promise<readonly string[]> {
+  if(expected.tombstoned)throw new UnsupportedCapability();
+  if(expected.tombstoned!==false)throw new InvalidRequest();
+  const points=native_array(expected.points,1,64) as ProjectionPoint[];
+  const ids=new Set<string>(),keys=['backend_namespace','physical_collection','collection_incarnation',
+    'tenant_id','collection','document_id','revision_id','generation_id'];
+  text(collection,true);
+  for(const point of points){
+    const id=uuid(point.point_id),payload=metadata(point.payload);
+    if(ids.has(id)||payload.physical_collection!==collection)throw new InvalidRequest();
+    ids.add(id);
+    for(const key of keys)if(typeof payload[key]!=='string'||payload[key]!==points[0].payload[key])throw new InvalidRequest();
+  }
+  return projection_readback(transport,collection,expected,rawOptions,budget,true);
+}
+
+async function projection_readback(
+  transport:SupervisorTransport,collection:string,
+  expected:Readonly<{points:readonly ProjectionPoint[];tombstoned:boolean}>,rawOptions:unknown,
+  inputBudget:VerificationBudget|undefined,allowMissing:boolean,
+):Promise<readonly string[]> {
+  const budget=verification_budget(inputBudget);
   const options = parse_options(rawOptions);
   const lease = {deadline: options.deadline, signal: options.signal};
   let calls = 0;
-  let aggregate = 0;
   const request = async (path: string, body: unknown): Promise<Data> => {
-    if (calls >= MAX_CALLS || aggregate >= MAX_AGGREGATE) throw new ProviderUnavailable();
+    const remaining=budget_state(budget).remaining;
+    if (calls >= MAX_CALLS || remaining===0) throw new ProviderUnavailable();
     calls++;
+    const maximum=Math.min(MAX_RESPONSE,remaining);
     const raw = await transport.request('POST', path, {
       body: Object.freeze(Array.from(Buffer.from(JSON.stringify(body)))),
-      max_response_bytes: Math.min(MAX_RESPONSE, MAX_AGGREGATE - aggregate),
+      max_response_bytes: maximum,
       ...lease,
     });
+    // Count returned bytes before validating their values or parsing JSON.
+    // Array length is an own data property; reject proxies before inspecting it.
+    if(!Array.isArray(raw)||types.isProxy(raw))throw new IntegrityViolation();
+    const length=Object.getOwnPropertyDescriptor(raw,'length')!.value as number;
+    charge_budget(budget,length);
+    if(length>maximum)throw new IntegrityViolation();
     let bytes: unknown[];
     try {
       bytes = native_array(raw, 0, MAX_RESPONSE);
@@ -168,8 +230,6 @@ export async function verify_projection_readback(
       if (error instanceof InvalidRequest) throw new IntegrityViolation();
       throw error;
     }
-    if (bytes.length > MAX_AGGREGATE - aggregate) throw new ProviderUnavailable();
-    aggregate += bytes.length;
     const buffer = Buffer.from(bytes.map(value => {
       try {
         return count(value, 0, 255);
@@ -182,6 +242,7 @@ export async function verify_projection_readback(
   };
   const base = '/collections/' + collection + '/points';
   const byId = new Map(expected.points.map(point => [point.point_id, point]));
+  const present=new Set<string>();
   for (let start = 0; start < expected.points.length; start += MAX_PAGE) {
     const ids = expected.points.slice(start, start + MAX_PAGE).map(point => point.point_id);
     const parsed = await request(base, {ids, with_payload: true, with_vector: true});
@@ -191,10 +252,10 @@ export async function verify_projection_readback(
     for (const row of observed) {
       const id = point_id(row);
       if (!ids.includes(id) || seen.has(id)) throw new IntegrityViolation();
-      seen.add(id);
+      seen.add(id);present.add(id);
       verify_point(byId.get(id)!, row);
     }
-    if (!expected.tombstoned && seen.size !== ids.length) throw new IntegrityViolation();
+    if (!allowMissing && !expected.tombstoned && seen.size !== ids.length) throw new IntegrityViolation();
   }
   const filterKeys = ['backend_namespace', 'physical_collection', 'collection_incarnation',
     'tenant_id', 'collection', 'document_id', 'revision_id', 'generation_id'];
@@ -236,7 +297,12 @@ export async function verify_projection_readback(
     offsets.add(next);
     offset = next;
   }
+  if(allowMissing){
+    if(seen.size!==present.size||[...seen].some(id=>!present.has(id)))throw new IntegrityViolation();
+    return Object.freeze([...byId.keys()].filter(id=>!seen.has(id)).sort());
+  }
   if (seen.size !== (expected.tombstoned ? 0 : expected.points.length)) throw new IntegrityViolation();
+  return Object.freeze([]);
 }
 
 function canonical_acl(ids: readonly string[]): readonly string[] {
@@ -272,9 +338,10 @@ export class QdrantReconciliationVerifier {
     this.#supervisor = supervisor;
     verifiers.set(this, Object.freeze({writer, supervisor}));
   }
-  async verify(proof: unknown, input: unknown, rawOptions: unknown): Promise<ReconciliationReceipt> {
+  async verify(proof: unknown, input: unknown, rawOptions: unknown, budget?:VerificationBudget): Promise<ReconciliationReceipt> {
     const context = parse_context(input);
     const options = parse_options(rawOptions);
+    const allowance=verification_budget(budget);
     if (this.#closed || this.#active) throw new ProviderUnavailable();
     const physical = metadata(this.#supervisor.recovery_binding(proof));
     const controller = new AbortController();
@@ -295,7 +362,7 @@ export class QdrantReconciliationVerifier {
       }, lease);
       transport = this.#supervisor.transport_for(capability);
       await verify_projection_readback(
-        transport, String(expected.points[0].payload.physical_collection), expected, lease,
+        transport, String(expected.points[0].payload.physical_collection), expected, lease, allowance,
       );
       await transport.close();
       transport = undefined;

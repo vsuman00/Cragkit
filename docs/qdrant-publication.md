@@ -135,3 +135,9 @@ Complete uncertain writes undergo real recovery and settlement before any ordina
 The actual supervisor control facade now exposes `issue_recovery_attempt(proof, binding, deadline/options)` and `recovery_transport_for(attempt)`. It accepts only its own genuine current recovery attempts. These operations are prerequisites for the recovery dispatcher; they do not settle SQL uncertainty or publish a generation.
 
 A session owns at most eight live recovery handles. Its exit rejects new work, drains admitted request bodies, closes its handles and then releases control. Unrelated borrowed handles survive. Reusing an expired facade or a copied proof fails. [B1 evidence](../evaluation/reports/V5/V5-04G1b-B1.md) separates native write/readback observations from unit cancellation timing and remaining partial-repair work.
+
+## Missing-point inspection and verification limits
+
+For example, two MiB consumed by recovery readback leaves six MiB for later generation verification in that same repair operation. Native managers now share one fixed eight-MiB budget across E2/F1 phases. Malformed returned bytes also consume it, and exhaustion stops the next verification request or ordinary point batch.
+
+The private missing-only inspector returns sorted missing IDs after validating present points and consistent full-scope enumeration. Wrong vectors, foreign payloads, extras and GET/scroll drift remain integrity failures. Missing IDs grant no write, settlement or publication authority. [B2a evidence](../evaluation/reports/V5/V5-04G1b-B2a.md) records the tests and the remaining recovery-dispatch gate.
