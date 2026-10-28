@@ -1276,6 +1276,69 @@ async def test_attestation_rejects_already_published_intent_instead_of_null_term
     assert state['attestations']==[]
 
 
+async def recovery_plan_writer(monkeypatch,tmp_path):
+    """Unit graph/controller doubles; these do not establish native recovery."""
+    from test_qdrant_reconciliation import setup
+    writer,supervisor,proof,projection,handle,document,physical=await setup(monkeypatch,tmp_path)
+    writer._schema_profile=3
+    stage=prepare_stage(stage_input())
+    state={'action':'stage','state':'writing','manifest_sha256':stage.manifest_sha256,
+           'payload_sha256':stage.payload_sha256,'generation_id':'gen-2','revision_id':'rev-2'}
+    async def inspect(connection,value):return dict(state)
+    async def fences(connection,value,record,operation=None):
+        return ('stage','auth-1',1,'gen-1','gen-2','rev-2',False,b'',stage.payload_sha256,'writing')
+    monkeypatch.setattr(writer,'_inspect',inspect)
+    monkeypatch.setattr(writer,'_operation_fences',fences)
+    return writer,supervisor,proof,projection,handle,document,physical,state
+
+
+@run_async
+async def test_recovery_dispatch_plan_validates_exact_claims_and_opaque_issuer(monkeypatch,tmp_path):
+    import cragkit._qdrant_recovery as recovery_module
+    from cragkit._qdrant_writer_contract import context as parse_context
+    writer,_,_,projection,_,_,physical,_=await recovery_plan_writer(monkeypatch,tmp_path)
+    from cragkit._qdrant_reconciliation import projection_data
+    source=projection_data(projection,writer);token=object();deadline=asyncio.get_running_loop().time()+5
+    auth={'context':parse_context(ctx()),'physical_binding':physical,'attempt_binding':{'dispatch_id':'recovery-new'},'sequence':2}
+    def unit_authorization(value,expected_writer,*,deadline):
+        if value is not token or expected_writer is not writer:raise InvalidRequest()
+        return auth
+    monkeypatch.setattr(recovery_module,'recovery_dispatch_authorization',unit_authorization)
+    plan=await writer.project_recovery_dispatch(token,ctx(),source['point_ids'][:1],deadline=deadline)
+    data=implementation.recovery_dispatch_plan_data(plan,token,writer,deadline=deadline)
+    assert data['point_ids']==source['point_ids'][:1] and data['manifest_sha256']==source['manifest_sha256']
+    body=json.loads(data['request_bytes']);assert len(body['points'])==1
+    assert body['points'][0]['id']==source['point_ids'][0] and body['points'][0]['vector']['dense']
+    await writer.validate_recovery_dispatch(plan,token,deadline=deadline)
+    for wrong in (object(),implementation._RecoveryDispatchPlan()):
+        with pytest.raises(InvalidRequest):implementation.recovery_dispatch_plan_data(wrong,token,writer,deadline=deadline)
+    with pytest.raises(TypeError):data['request_sha256']='changed'
+    with pytest.raises(IntegrityViolation):
+        await writer.project_recovery_dispatch(token,ctx(),['ffffffff-ffff-4fff-8fff-ffffffffffff'],deadline=deadline)
+
+
+@run_async
+async def test_recovery_dispatch_plan_refuses_stale_authorization_before_sql(monkeypatch):
+    writer,state,connections,_,_,_,_=attestation_writer(monkeypatch)
+    with pytest.raises(InvalidRequest):
+        await writer.project_recovery_dispatch(object(),ctx(),[FIXTURE['members'][0]['point_id']],deadline=asyncio.get_running_loop().time()+5)
+    assert connections==[]
+
+
+@run_async
+async def test_recovery_dispatch_plan_revalidation_detects_current_payload_change(monkeypatch,tmp_path):
+    import cragkit._qdrant_recovery as recovery_module
+    from cragkit._qdrant_writer_contract import context as parse_context
+    from cragkit._qdrant_reconciliation import projection_data
+    writer,_,_,projection,_,document,physical,_=await recovery_plan_writer(monkeypatch,tmp_path)
+    token=object();deadline=asyncio.get_running_loop().time()+5
+    auth={'context':parse_context(ctx()),'physical_binding':physical,'attempt_binding':{},'sequence':2}
+    monkeypatch.setattr(recovery_module,'recovery_dispatch_authorization',lambda *args,**kwargs:auth)
+    plan=await writer.project_recovery_dispatch(token,ctx(),projection_data(projection,writer)['point_ids'][:1],deadline=deadline)
+    document['tag']='changed'
+    with pytest.raises(UnauthorizedScope):await writer.validate_recovery_dispatch(plan,token,deadline=deadline)
+
+
 @run_async
 @pytest.mark.parametrize('outcome', ['prepared', 'denied', 'conflict', 'published'])
 async def test_repair_preflight_locks_without_owner_or_epoch_mutation(monkeypatch, outcome):

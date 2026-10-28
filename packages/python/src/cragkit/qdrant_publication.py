@@ -623,8 +623,19 @@ class QdrantPublicationManager:
                 await recovery.advance_owner(proof, ctx, deadline=limit)
                 self._check(limit)
                 if preflight['pending']:
-                    reconciliation_receipt = await cast(QdrantReconciliationVerifier, self._original_verifier).verify(
-                        proof, ctx, deadline=limit, budget=budget)
+                    verifier = cast(QdrantReconciliationVerifier, self._original_verifier)
+                    try:
+                        reconciliation_receipt = await verifier.verify(proof, ctx, deadline=limit, budget=budget)
+                    except IntegrityViolation:
+                        self._check(limit)
+                        async def authorize_recovery(selected: TrustedScope, collection: str, document_id: str) -> bool:
+                            if selected != ctx.scope or collection != ctx.collection or document_id != ctx.document_id:
+                                raise InvalidRequest()
+                            await self._authorize(ctx, limit)
+                            return True
+                        await recovery.dispatch_stage_recovery(proof, ctx, authorize_recovery, deadline=limit, budget=budget)
+                        self._check(limit)
+                        reconciliation_receipt = await verifier.verify(proof, ctx, deadline=limit, budget=budget)
                     self._check(limit)
                     await recovery.settle_retired(proof, reconciliation_receipt, deadline=limit)
                     self._check(limit)

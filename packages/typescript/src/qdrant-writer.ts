@@ -8,6 +8,7 @@ import { AUTHORITY_FINGERPRINT_SQL, AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION
   AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,publication_schema_profile,type PublicationSchemaProfile } from './qdrant-authority.js';
 import {attestation_receipt_data,publication_verifier_controller,type QdrantPublicationVerifier} from './qdrant-publication-verification.js';
 import {require_publication_finalization} from './qdrant-publication-worker.js';
+import {recovery_dispatch_authorization} from './qdrant-recovery.js';
 import { encode_manifest, encode_stage_intent, restore_dense_replay, restore_sparse_replay } from './qdrant-manifest.js';
 import { same, point_id, parse_response, type QdrantConfig } from './qdrant-contract.js';
 import { type TrustedScope } from './requests.js';
@@ -69,6 +70,21 @@ export function projection_data(input:unknown,writer:PostgresQdrantWriter):Proje
   const found=projections.get(input);
   if(!found||found.issuer!==writer)throw new InvalidRequest();
   return found.data;
+}
+export type RecoveryDispatchPlan=Readonly<Record<never,never>>;
+export type RecoveryDispatchPlanData=Readonly<{context:WriterContext;physical_binding:Readonly<Data>;attempt_binding:Readonly<Data>;sequence:number;
+  point_ids:readonly string[];request_bytes:readonly number[];request_sha256:string;manifest_sha256:string;revision_id:string;generation_id:string;
+  expected_active_generation_id:string|null;expected_authorization_revision:string;expected_mutation_epoch:number}>;
+const recoveryPlans=new WeakMap<object,Readonly<{issuer:PostgresQdrantWriter;authorization:unknown;data:RecoveryDispatchPlanData}>>();
+export function recovery_dispatch_plan_data(plan:unknown,authorization:unknown,writer:PostgresQdrantWriter,rawOptions:unknown):RecoveryDispatchPlanData {
+  const parsed=parseOptions(rawOptions),options={deadline:parsed.deadline,signal:parsed.signal};
+  const binding=recovery_dispatch_authorization(authorization,writer,options);
+  if(typeof plan!=='object'||plan===null||types.isProxy(plan))throw new InvalidRequest();
+  const stored=recoveryPlans.get(plan);
+  if(!stored||stored.issuer!==writer||stored.authorization!==authorization)throw new InvalidRequest();
+  if(!same(stored.data.context,binding.context)||!same(stored.data.physical_binding,binding.physical_binding)
+    ||!same(stored.data.attempt_binding,binding.attempt_binding)||stored.data.sequence!==binding.sequence)throw new IntegrityViolation();
+  return stored.data;
 }
 export type PublicationProjection=Readonly<Record<never,never>>;
 export type PublicationProjectionData=Readonly<Omit<ProjectionData,'physical_binding'|'tombstoned'>&{
@@ -838,6 +854,42 @@ export class PostgresQdrantWriter {
     points.sort((left,right)=>Buffer.compare(Buffer.from(left.point_id),Buffer.from(right.point_id)));
     return Object.freeze(points);
   }
+  #completePointRequest(points:readonly ProjectionPoint[]):Buffer {
+    const value=points.map(point=>({id:point.point_id,vector:{dense:point.dense.values,
+      ...(point.sparse?{sparse:{indices:point.sparse.indices,values:point.sparse.values}}:{})},payload:point.payload}));
+    const bytes=Buffer.from(JSON.stringify({points:value}));
+    if(bytes.length>1048576)throw new InvalidRequest();
+    return bytes;
+  }
+  async project_recovery_dispatch(authorization:unknown,input:unknown,rawIds:unknown,rawOptions:unknown):Promise<RecoveryDispatchPlan> {
+    const context=parseContext(input),parsed=parseOptions(rawOptions),options={deadline:parsed.deadline,signal:parsed.signal};this.#requireAttestationProfile();
+    const binding=recovery_dispatch_authorization(authorization,this,options);
+    if(!same(context,binding.context))throw new InvalidRequest();
+    const ids=Object.freeze(native_array(rawIds,1,8).map(id=>uuid(id)).sort());
+    if(new Set(ids).size!==ids.length)throw new InvalidRequest();
+    const data=await this.#work(options,lease=>this.#tx(context,lease,async tx=>{
+      const projected=await this.#project(tx,context,binding.physical_binding);
+      const intent=await this.#intent(tx,context);
+      if(!intent||intent.action!=='stage'||!['writing','prepared'].includes(String(intent.state)))throw new InvalidRequest();
+      const failure=await this.#fence(tx,context,intent,false);
+      if(failure)throw failure==='denied'?new UnauthorizedScope():new ProviderUnavailable();
+      const points=ids.map(id=>{const point=projected.points.find(point=>point.point_id===id);if(!point)throw new IntegrityViolation();return point;});
+      const request=this.#completePointRequest(points);
+      return Object.freeze({context,physical_binding:binding.physical_binding,attempt_binding:binding.attempt_binding,sequence:binding.sequence,
+        point_ids:ids,request_bytes:Object.freeze([...request]),request_sha256:hash(request),manifest_sha256:projected.manifest_sha256,
+        revision_id:projected.revision_id,generation_id:projected.generation_id,expected_active_generation_id:intent.expected_active_generation_id as string|null,
+        expected_authorization_revision:text(intent.expected_authorization_revision),expected_mutation_epoch:db_count(intent.expected_mutation_epoch)});
+    }));
+    recovery_dispatch_authorization(authorization,this,options);
+    const plan=Object.freeze({});recoveryPlans.set(plan,Object.freeze({issuer:this,authorization,data}));return plan;
+  }
+  async validate_recovery_dispatch(plan:unknown,authorization:unknown,rawOptions:unknown):Promise<void> {
+    const parsed=parseOptions(rawOptions),options={deadline:parsed.deadline,signal:parsed.signal};
+    const original=recovery_dispatch_plan_data(plan,authorization,this,options);
+    const current=await this.project_recovery_dispatch(authorization,original.context,original.point_ids,options);
+    if(!same(recovery_dispatch_plan_data(current,authorization,this,options),original))throw new UnauthorizedScope();
+    recovery_dispatch_authorization(authorization,this,options);
+  }
   async project_stage(input:unknown,rawPhysical:unknown,rawOptions:unknown):Promise<ExpectedProjection>{
     const context=parseContext(input),options=parseOptions(rawOptions),physical=metadata(rawPhysical);
     const keys=['instance_id','storage_identity','supervisor_id','recovery_id','old_epoch','new_epoch','credential_generation'];
@@ -1238,31 +1290,17 @@ export class PostgresQdrantWriter {
       if(pending.length)throw new ProviderUnavailable();
       const claims=await this.#select(tx,'point_claims',CLAIM_COLUMNS,context,' AND point_id=ANY($4::uuid[])',[point_ids],9);
       if(claims.length!==point_ids.length||new Set(claims.map(claim=>claim.point_id)).size!==point_ids.length)throw new IntegrityViolation();
-      const points:Data[]=[];
+      const points:PointData[]=[];
       for(const id of point_ids){
-        const claim=claims.find(value=>value.point_id===id);
-        if(!claim)throw new IntegrityViolation();
-        if(dispatch.operation==='delete_points'){
-          await this.#point(tx,context,claim);
-          continue;
-        }
-        if(intent.action==='stage'&&(claim.revision_id!==intent.revision_id||claim.generation_id!==intent.generation_id))throw new IntegrityViolation();
+        const claim=claims.find(value=>value.point_id===id);if(!claim)throw new IntegrityViolation();
         const restored=await this.#point(tx,context,claim);
-        const payload:Data={backend_namespace:claim.backend_namespace,physical_collection:claim.physical_collection,
-          collection_incarnation:claim.collection_incarnation,tenant_id:context.scope.tenant_id,collection:context.collection,
-          document_id:context.document_id,revision_id:claim.revision_id,generation_id:claim.generation_id,chunk_id:claim.chunk_id,
-          start_byte:db_count(claim.start_byte),end_byte:db_count(claim.end_byte),source_sha256:digest(claim.source_sha256),text_sha256:digest(claim.text_sha256),
-          dense_profile_id:this.#config.dense_profile.profile_id,sparse_profile_id:this.#config.sparse_profile?.profile_id??'',
-          dense_profile:this.#config.dense_profile,sparse_profile:this.#config.sparse_profile,
-          authorization_revision:text(document.authorization_revision),principal_ids:db_json(document.principal_ids),grant_ids:db_json(document.grant_ids)};
-        for(const key of ['language','kind','tag'])if(document[key]!==null)payload[key]=document[key];
-        const vector:Data={dense:restored.dense.values};
-        if(restored.sparse)vector.sparse={indices:restored.sparse.indices,values:restored.sparse.values};
-        points.push({id,vector,payload});
+        if(dispatch.operation==='delete_points')continue;
+        if(intent.action==='stage'&&(claim.revision_id!==intent.revision_id||claim.generation_id!==intent.generation_id))throw new IntegrityViolation();
+        points.push(restored);
       }
-      const body=JSON.stringify(dispatch.operation==='delete_points'?{points:point_ids}:{points});
-      if(Buffer.byteLength(body)>1048576)throw new InvalidRequest();
-      const bytes=Buffer.from(body);
+      const bytes=dispatch.operation==='delete_points'?Buffer.from(JSON.stringify({points:point_ids}))
+        :this.#completePointRequest(this.#projectionPoints(context,document,points));
+      if(bytes.length>1048576)throw new InvalidRequest();
       const record:Data={...Object.fromEntries(TARGET.map((key,i)=>[key,this.#key(context)[i]])),intent_id:context.intent_id,
         dispatch_id:dispatch.dispatch_id,instance_id:this.#instance,sequence:dispatch.sequence,owner_token:context.owner_token,
         backend_epoch:epoch,credential_generation:dispatch.credential_generation,operation:dispatch.operation,

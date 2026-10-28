@@ -68,7 +68,7 @@ A completed HTTP acknowledgment and SQL settlement are separate. If SQL's respon
 
 The final supervisor session excludes raw lifecycle changes and competing recovery while fresh authorization, verification and SQL finalization unwind. Callbacks remain outside SQL. If a callback suppresses cancellation, cancellation stays latched: it cannot later continue into publication, and new work remains refused while unfinished work drains.
 
-A preparation tied to a retired epoch needs the planned additive attestation repair path. It cannot be made current by changing its hash, owner, generation or intent in place. See the [tracker](../tasks/todo.md) for remaining V5 work.
+A preparation tied to a retired epoch uses the additive attestation repair path. It cannot be made current by changing its hash, owner, generation or intent in place. See the [tracker](../tasks/todo.md) for remaining V5 work.
 
 ## Running publication in an owned worker
 
@@ -111,7 +111,7 @@ For example, an instance-wide recovery can advance the backend epoch while a doc
 
 The native writer and recovery authority accept the exact two-migration publication profile and the exact three-migration attestation profile. Source readers also retain the original source-only profile. Applications must apply the selected migration explicitly; initialization only verifies history, structure, catalog and role permissions. The attestation table grants writers SELECT/INSERT only and grants no new access to readers or supervisors.
 
-Private `attestation_snapshot` and `attest_prepared` support the subsequent managed repair implementation. They preserve the intent, generation and original expected pointer. Same-row retry is idempotent; another verification binding for an already attested owner/epoch is an integrity failure. A stale or copied receipt, raw supervisor session or expired helper context cannot authorize insertion. These private operations do not yet provide the public repair/security/purge workflow. [G0 evidence](../evaluation/reports/V5/V5-04G0.md) distinguishes native acceptance from the remaining gates.
+Private `attestation_snapshot` and `attest_prepared` support native managed repair. They preserve the intent, generation and original expected pointer. Same-row retry is idempotent; another verification binding for an already attested owner/epoch is an integrity failure. A stale or copied receipt, raw supervisor session or expired helper context cannot authorize insertion. These private operations support public repair; security-replica and purge workflows remain separate. [G0 evidence](../evaluation/reports/V5/V5-04G0.md) distinguishes native acceptance from the remaining gates.
 
 ## Native managed repair
 
@@ -128,7 +128,7 @@ result = await manager.repair(
 
 Node uses `manager.repair(reference, scope, ledger, {deadline, signal?})`. This operation requires the exact three-migration attestation schema and native supervisor/recovery authority. Worker repair is unsupported. It accepts no owner, proof or replacement generation from caller input and reserves one logical attempt.
 
-Complete uncertain writes undergo real recovery and settlement before any ordinary replay. A prepared retry performs fresh verification without resending points. Foreign uncertainty prevents reopening; missing physical points remain blocked until the recovery-write dispatcher is implemented. Existing same-epoch attestations cannot be replaced after credential rotation. [G1a evidence](../evaluation/reports/V5/V5-04G1a.md) records supported cases and the remaining G1b/security/purge gates.
+Uncertain writes undergo real recovery and settlement before ordinary replay. Missing-only recovery can fill absent members of the original generation after inspecting every present member and the full scoped set. Corruption, extra members and inconsistent enumeration stop repair before a recovery write. Each new batch has a durable reservation and dispatch marker; only its actual completed acknowledgment settles that new row. A lost acknowledgment remains uncertain until another actual credential refence. Fresh complete verification is still required before retired settlement and reopening. A prepared retry performs fresh verification without resending points. Foreign uncertainty prevents reopening, and existing same-epoch attestations cannot be replaced after credential rotation. [Partial-repair evidence](../evaluation/reports/V5/V5-04G1b-B2b-B3.md) records the native cases; ACL/filter replication, tombstones, purge and full V5 acceptance remain separate.
 
 ## Recovery session transport
 

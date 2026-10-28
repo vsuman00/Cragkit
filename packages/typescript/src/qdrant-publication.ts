@@ -487,7 +487,17 @@ export class QdrantPublicationManager {
         await this.#await(recovery.advance_owner(proof,context,lease),lease);
         if(uncertain){
           const verifier=recovery_components(recovery,writer,this.#supervisor,this.#config);
-          const receipt=await this.#await(verifier.verify(proof,context,lease,budget),lease);
+          let receipt;
+          try{receipt=await this.#await(verifier.verify(proof,context,lease,budget),lease);}
+          catch(error){
+            if(!(error instanceof IntegrityViolation))throw error;
+            const authorize=async(selected:TrustedScope,collection:string,document_id:string):Promise<boolean>=>{
+              if(!same(selected,context.scope)||collection!==context.collection||document_id!==context.document_id)throw new InvalidRequest();
+              await this.#authorize(context,lease);return true;
+            };
+            await this.#await(recovery.dispatch_stage_recovery(proof,context,authorize,lease,budget),lease);
+            receipt=await this.#await(verifier.verify(proof,context,lease,budget),lease);
+          }
           await this.#await(recovery.settle_retired(proof,receipt,lease),lease);
         }
         await this.#await(recovery.reopen(proof,lease),lease);

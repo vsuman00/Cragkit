@@ -1115,3 +1115,16 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory. Native languages run serially against actual isolated Qdrant with synthetic vectors, without PostgreSQL or provider calls. The consumer injects faults through actual backend writes and compares actual returned bytes across passes. It closes owned sessions/controllers and checks listener absence before removing private fixture storage. It does not claim SQL settlement or complete partial repair.
+
+## V5-04G1b partial-stage repair
+
+For example, a nine-member generation can lose the reply to its first eight-point write. Repair inspects that set, fills the missing member under a new fenced credential, then requires complete verification before publication. [B2b/B3 evidence](../evaluation/reports/V5/V5-04G1b-B2b-B3.md) records the native fault scope.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_partial_repair_native.py packages/python/tests/test_qdrant_writer.py packages/python/tests/test_qdrant_recovery.py packages/python/tests/test_qdrant_publication.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-writer.test.mjs packages/typescript/tests/qdrant-recovery.test.mjs packages/typescript/tests/qdrant-publication.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_partial_repair.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --artifacts-dir artifacts/V5/V5-04G1/a-new-partial-run
+```
+
+Use a fresh directory. The parent runs runtimes serially with actual disposable PostgreSQL 17 and Qdrant 1.20, synthetic vectors and at most one writer plus one supervisor database client. Its explicit extended development profile allows 240 seconds for business work, 15 seconds for cleanup and 280 seconds for the Node child; it does not change library defaults or establish default-budget performance. Faults withhold genuine completed SQL/HTTP replies. The tools read only their generated owner-only fixture credential to inject scoped loopback corruption and test old-key rejection; credentials never enter reports or command arguments. Listener shutdown and fixture cleanup are checked. Full H crash-matrix, replica-security/purge and release acceptance remain separate.

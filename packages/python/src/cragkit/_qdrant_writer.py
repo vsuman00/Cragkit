@@ -125,6 +125,37 @@ def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
 
 
+def _complete_point_request(points: list[dict[str, Any]]) -> bytes:
+    encoded = _json({'points': points}).encode('utf-8')
+    if len(encoded) > 1048576:
+        raise InvalidRequest()
+    return encoded
+
+
+class _RecoveryDispatchPlan:
+    __slots__ = ('__weakref__',)
+    def __repr__(self) -> str:
+        return 'RecoveryDispatchPlan()'
+    def __reduce__(self) -> Any:
+        raise TypeError('Dispatch plans cannot be serialized')
+
+
+_RECOVERY_PLANS: WeakKeyDictionary[_RecoveryDispatchPlan, tuple[object, object, Mapping[str, Any]]] = WeakKeyDictionary()
+
+
+def recovery_dispatch_plan_data(plan: object, authorization: object, expected_writer: object,
+                                *, deadline: float) -> Mapping[str, Any]:
+    from ._qdrant_recovery import recovery_dispatch_authorization
+    data = recovery_dispatch_authorization(authorization, expected_writer, deadline=deadline)
+    if type(plan) is not _RecoveryDispatchPlan or plan not in _RECOVERY_PLANS:
+        raise InvalidRequest()
+    writer, issued, result = _RECOVERY_PLANS[plan]
+    if (writer is not expected_writer or issued is not authorization
+            or any(result[key] != data[key] for key in ('context','physical_binding','attempt_binding','sequence'))):
+        raise InvalidRequest()
+    return result
+
+
 def _acl(value: tuple[str, ...]) -> list[str]:
     return sorted(set(value),key=lambda item:item.encode('utf-8'))
 
@@ -1039,7 +1070,8 @@ class PostgresQdrantWriter:
                     if document[field] is not None:
                         payload[field] = document[field]
                 points.append({'id':point,'vector':vectors,'payload':payload})
-            body = _json({'points':points if operation == 'complete_point_upsert' else list(ids)}).encode('utf-8')
+            body = (_complete_point_request(points) if operation == 'complete_point_upsert'
+                    else _json({'points':list(ids)}).encode('utf-8'))
             if len(body) > 1048576:
                 raise InvalidRequest()
             digest = hashlib.sha256(body).hexdigest()
@@ -1356,6 +1388,72 @@ class PostgresQdrantWriter:
         if (original['witness'] != current['witness']
                 or tuple(point.payload.model_dump(mode='json') for point in original['points'])
                 != tuple(point.payload.model_dump(mode='json') for point in current['points'])):
+            raise UnauthorizedScope()
+
+    async def project_recovery_dispatch(self, authorization: object, value: object, point_ids: object,
+                                        *, deadline: float) -> _RecoveryDispatchPlan:
+        from ._qdrant_recovery import recovery_dispatch_authorization
+        self._attestation_profile()
+        auth = recovery_dispatch_authorization(authorization, self, deadline=deadline)
+        ctx = context(value)
+        ids = tuple(sorted(sequence(point_ids, 8)))
+        if (ctx != auth['context'] or len(set(ids)) != len(ids)
+                or any(type(item) is not str or re.fullmatch('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',item) is None for item in ids)):
+            raise InvalidRequest()
+        physical = auth['physical_binding']
+        async def project(connection: SessionConnection) -> Mapping[str, Any]:
+            rows = await self._query(connection,'SELECT backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id FROM cragkit_qdrant.backend_instances WHERE instance_id=%s FOR SHARE',(self.instance_id,))
+            expected = (self.config.backend_namespace,physical['storage_identity'],physical['supervisor_id'],physical['new_epoch'],'recovery_blocked',physical['recovery_id'])
+            if len(rows) != 1 or len(rows[0]) != 6:
+                raise ProviderUnavailable()
+            if rows[0][:3] != expected[:3]:
+                raise IntegrityViolation()
+            if rows[0][3:] != expected[3:]:
+                raise ProviderUnavailable()
+            owners = await self._query(connection,'SELECT owner_token::text,intent_id,backend_epoch,instance_id FROM cragkit_qdrant.document_owners WHERE '+_DOC+' FOR UPDATE',_doc(ctx))
+            if owners != [(ctx.owner_token,ctx.intent_id,physical['new_epoch'],self.instance_id)]:
+                raise ProviderUnavailable()
+            document = await self._document(connection,ctx)
+            existing = await self._inspect(connection,ctx)
+            if existing is None or existing['action'] != 'stage' or existing['state'] not in ('writing','prepared'):
+                raise InvalidRequest()
+            if document['tombstoned']:
+                raise UnsupportedCapability()
+            fences = await self._operation_fences(connection,ctx,document,'complete_point_upsert')
+            plan = await self._load_stage(connection,ctx)
+            graph = stage_data(plan)
+            self._attestation_intent(plan,(fences[1],fences[2],fences[3],existing['manifest_sha256'],existing['generation_id'],existing['revision_id'],existing['state']),existing)
+            available = {point.point_id:point for point in self._projection_points(graph,document)}
+            if any(identity not in available for identity in ids):
+                raise IntegrityViolation()
+            points = []
+            for identity in ids:
+                point = available[identity]
+                vector: dict[str, Any] = {'dense':list(point.dense.values)}
+                if point.sparse is not None:
+                    vector['sparse'] = {'indices':list(point.sparse.indices),'values':list(point.sparse.values)}
+                payload=point.payload.model_dump(mode='json')
+                for field in ('language','kind','tag'):
+                    if payload[field] is None:
+                        del payload[field]
+                points.append({'id':identity,'vector':vector,'payload':payload})
+            body = _complete_point_request(points)
+            return MappingProxyType({**dict(auth),'point_ids':ids,'request_bytes':body,
+                'request_sha256':hashlib.sha256(body).hexdigest(),'manifest_sha256':plan.manifest_sha256,
+                'revision_id':graph.manifest.revision_id,'generation_id':graph.manifest.generation_id,
+                'expected_active_generation_id':fences[3],'expected_authorization_revision':fences[1],
+                'expected_mutation_epoch':fences[2]})
+        result = await self._run(ctx,deadline,project)
+        recovery_dispatch_authorization(authorization,self,deadline=deadline)
+        token = _RecoveryDispatchPlan()
+        _RECOVERY_PLANS[token] = (self,authorization,result)
+        return token
+
+    async def validate_recovery_dispatch(self, plan: object, authorization: object, *, deadline: float) -> None:
+        original = recovery_dispatch_plan_data(plan,authorization,self,deadline=deadline)
+        fresh = await self.project_recovery_dispatch(authorization,original['context'],original['point_ids'],deadline=deadline)
+        current = recovery_dispatch_plan_data(fresh,authorization,self,deadline=deadline)
+        if dict(current) != dict(original):
             raise UnauthorizedScope()
 
     async def project_stage(self,value: object,binding: object,*,deadline: float) -> ExpectedProjection:

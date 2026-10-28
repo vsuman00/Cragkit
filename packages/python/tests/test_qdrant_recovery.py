@@ -31,6 +31,183 @@ def run_async(function):
     return run
 
 
+async def dispatch_fixture(monkeypatch,tmp_path):
+    """In-memory supervisor SQL/HTTP doubles; no physical fencing evidence."""
+    import json
+    from test_qdrant_writer import recovery_plan_writer
+    from cragkit._qdrant_reconciliation import projection_data
+    writer,supervisor,proof,projection,handle,document,physical,intent=await recovery_plan_writer(monkeypatch,tmp_path)
+    resource=PoolResource(writer.resource.config)
+    verifier=QdrantReconciliationVerifier(writer,supervisor)
+    owner=PostgresQdrantRecovery(resource,config(),supervisor,verifier)
+    owner._ready=True;owner._identity=MappingProxyType({key:physical[key] for key in ('instance_id','storage_identity','supervisor_id')})
+    source=projection_data(projection,writer);journals={};members={}
+    state={'sql':False,'puts':0,'reservations':0,'unknown':False,'ack_loss':False,'commit_losses':0}
+    original_transport=ManagedQdrantSupervisor.transport_for.__get__(supervisor)
+    monkeypatch.setattr(supervisor,'transport_for',original_transport)
+    async def http(key,method,path,body,deadline,maximum,transport):
+        assert not state['sql']
+        if method=='PUT':
+            state['puts']+=1
+            incoming=json.loads(body)['points']
+            merged={point['id']:point for point in handle.points};merged.update({point['id']:point for point in incoming})
+            handle.points=list(merged.values())
+            if state['unknown']:raise ProviderUnavailable()
+            return 200,b'{"status":"ok","result":{"status":"completed"}}'
+        return 200,await handle.request(method,path,body=body,deadline=deadline,max_response_bytes=maximum)
+    monkeypatch.setattr(supervisor,'_http',http)
+    async def blocked(connection,binding):
+        assert dict(binding)==physical
+        return dict(state='recovery_blocked',epoch=2,recovery_id=physical['recovery_id'])
+    async def read_owner(connection,target):return ('instance-1',target.intent_id,target.owner_token,2)
+    monkeypatch.setattr(owner,'_blocked',blocked);monkeypatch.setattr(owner,'_owner',read_owner)
+    async def query(connection,sql,params=()):
+        if sql.startswith('SELECT 1 FROM cragkit_qdrant.dispatch_journal'):return [(1,)] if state.get('foreign') else []
+        if sql.startswith('SELECT action,state,manifest_sha256'):
+            return [('stage',intent['state'],source['manifest_sha256'],source['revision_id'],source['generation_id'],
+                source['authorization_revision'],source['mutation_epoch'],source['active_generation_id'],'instance-1')]
+        if sql.startswith('SELECT dispatch_id,instance_id,sequence'):
+            return [(key,row[9],row[0],row[1],row[2],row[3],row[4],row[5],row[7],row[8],row[6]) for key,row in journals.items()]
+        if sql.startswith('SELECT dispatch_id,backend_namespace'):
+            return [(key,config()['backend_namespace'],config()['physical_collection'],config()['collection_incarnation'],point)
+                for key,points in members.items() for point in points]
+        if sql.startswith('SELECT point_id::text FROM cragkit_qdrant.point_claims'):
+            selected=params[3] if 'ANY' in sql else source['point_ids']
+            return [(point,) for point in sorted(selected)]
+        if sql.startswith('SELECT sequence,owner_token::text'):
+            return [journals[params[-1]]] if params[-1] in journals else []
+        if sql.startswith('SELECT point_id::text,backend_namespace'):
+            return [(point,config()['backend_namespace'],config()['physical_collection'],config()['collection_incarnation'])
+                for point in sorted(members.get(params[-1],[]))]
+        if sql.startswith('SELECT completion_sha256'):
+            return [(journals[params[-1]][8],)]
+        raise AssertionError('Unexpected restricted dispatch SQL')
+    monkeypatch.setattr(owner,'_query',query)
+    class Connection:
+        async def execute(self,sql,params):
+            if sql.startswith('INSERT INTO cragkit_qdrant.dispatch_journal'):
+                key=params[4];state['reservations']+=1
+                if state.get('body_error'):raise ProviderUnavailable()
+                journals[key]=(params[6],params[7],params[8],params[9],params[10],params[11],params[13],'reserved',None,params[5])
+            elif sql.startswith('INSERT INTO cragkit_qdrant.dispatch_points'):
+                members.setdefault(params[4],[]).append(params[-1])
+            elif sql.startswith('UPDATE cragkit_qdrant.dispatch_journal'):
+                row=list(journals[params[-1]]);row[7]=params[0];row[8]=params[1];journals[params[-1]]=tuple(row)
+            else:raise AssertionError('Unexpected dispatch mutation')
+    async def transaction(deadline,action):
+        assert not state['sql'];state['sql']=True
+        try:result=await action(Connection())
+        finally:state['sql']=False
+        if state['ack_loss'] and state['reservations'] and not state['commit_losses']:
+            state['commit_losses']+=1;raise implementation._CommitUnknown()
+        return result
+    monkeypatch.setattr(owner,'_transaction',transaction)
+    async def authorize(scope,collection,document_id):
+        assert not state['sql'];return True
+    return owner,proof,handle,state,journals,members,authorize,source
+
+
+@pytest.mark.parametrize('missing',[0,1,2])
+@run_async
+async def test_recovery_dispatch_upserts_only_missing_original_claims(monkeypatch,tmp_path,missing):
+    owner,proof,handle,state,journals,members,authorize,source=await dispatch_fixture(monkeypatch,tmp_path)
+    handle.points=handle.points[missing:]
+    result=await owner.dispatch_stage_recovery(proof,ctx(),authorize,deadline=asyncio.get_running_loop().time()+5)
+    assert dict(result)=={'batches':int(missing>0),'points':missing}
+    assert state['puts']==int(missing>0) and state['reservations']==int(missing>0)
+    assert all(row[7]=='settled' and row[5] is True for row in journals.values())
+    assert set(point for values in members.values() for point in values)==set(source['point_ids'][:missing])
+    assert owner.supervisor._gate is False and owner._scoped_control is None
+
+
+@run_async
+async def test_recovery_dispatch_commit_ack_loss_confirms_without_http_resend(monkeypatch,tmp_path):
+    owner,proof,handle,state,journals,_,authorize,_=await dispatch_fixture(monkeypatch,tmp_path)
+    handle.points=[];state['ack_loss']=True
+    result=await owner.dispatch_stage_recovery(proof,ctx(),authorize,deadline=asyncio.get_running_loop().time()+5)
+    assert result['points']==2 and state['commit_losses']==1 and state['reservations']==1 and state['puts']==1
+    assert all(row[7]=='settled' for row in journals.values())
+
+
+@run_async
+async def test_recovery_dispatch_unknown_send_stays_pending_and_cannot_retry_same_proof(monkeypatch,tmp_path):
+    owner,proof,handle,state,journals,_,authorize,_=await dispatch_fixture(monkeypatch,tmp_path)
+    handle.points=[];state['unknown']=True;deadline=asyncio.get_running_loop().time()+5
+    with pytest.raises(ProviderUnavailable):await owner.dispatch_stage_recovery(proof,ctx(),authorize,deadline=deadline)
+    assert state['puts']==1 and all(row[7]=='dispatched' for row in journals.values())
+    state['unknown']=False
+    with pytest.raises(ProviderUnavailable):await owner.dispatch_stage_recovery(proof,ctx(),authorize,deadline=deadline)
+    assert state['puts']==1
+
+
+@pytest.mark.parametrize('fault',['vector','denial','cancel'])
+@run_async
+async def test_recovery_dispatch_never_repairs_corruption_or_latched_callback_denial(monkeypatch,tmp_path,fault):
+    owner,proof,handle,state,journals,_,authorize,_=await dispatch_fixture(monkeypatch,tmp_path)
+    if fault=='vector':handle.points[0]['vector']['dense'][0]=-1
+    else:handle.points=[]
+    async def refused(*args):
+        if fault=='cancel':
+            task=asyncio.current_task();task.cancel()
+            try:await asyncio.sleep(0)
+            except asyncio.CancelledError:pass
+            return True
+        return False
+    error=IntegrityViolation if fault=='vector' else asyncio.CancelledError if fault=='cancel' else UnauthorizedScope
+    with pytest.raises(error):
+        await owner.dispatch_stage_recovery(proof,ctx(),authorize if fault=='vector' else refused,deadline=asyncio.get_running_loop().time()+5)
+    assert not journals and state['puts']==0 and state['reservations']==0
+
+
+@run_async
+async def test_recovery_dispatch_authorization_is_task_lifetime_and_issuer_bound(monkeypatch,tmp_path):
+    owner,proof,handle,state,_,_,authorize,_=await dispatch_fixture(monkeypatch,tmp_path)
+    handle.points=[];captured=[];original=owner._writer.project_recovery_dispatch
+    async def capture(token,value,ids,*,deadline):
+        captured.append(token)
+        data=implementation.recovery_dispatch_authorization(token,owner._writer,deadline=deadline)
+        assert data['context'].intent_id==ctx()['intent_id']
+        with pytest.raises(InvalidRequest):implementation.recovery_dispatch_authorization(token,object(),deadline=deadline)
+        with pytest.raises(InvalidRequest):implementation.recovery_dispatch_authorization(token,owner._writer,deadline=deadline+1)
+        async def inherited():
+            with pytest.raises(InvalidRequest):implementation.recovery_dispatch_authorization(token,owner._writer,deadline=deadline)
+        await asyncio.create_task(inherited())
+        return await original(token,value,ids,deadline=deadline)
+    monkeypatch.setattr(owner._writer,'project_recovery_dispatch',capture)
+    deadline=asyncio.get_running_loop().time()+5
+    await owner.dispatch_stage_recovery(proof,ctx(),authorize,deadline=deadline)
+    for token in captured:
+        with pytest.raises(InvalidRequest):implementation.recovery_dispatch_authorization(token,owner._writer,deadline=deadline)
+    with pytest.raises(InvalidRequest):implementation.recovery_dispatch_authorization(implementation._RecoveryDispatchAuthorization(),owner._writer,deadline=deadline)
+
+
+@pytest.mark.parametrize('fault',['foreign','body_error'])
+@run_async
+async def test_recovery_dispatch_foreign_document_operation_and_body_failure_never_retry(monkeypatch,tmp_path,fault):
+    owner,proof,handle,state,journals,_,authorize,_=await dispatch_fixture(monkeypatch,tmp_path)
+    handle.points=[];state[fault]=True
+    with pytest.raises(ProviderUnavailable):
+        await owner.dispatch_stage_recovery(proof,ctx(),authorize,deadline=asyncio.get_running_loop().time()+5)
+    assert state['puts']==0 and not journals
+    assert state['reservations']==(1 if fault=='body_error' else 0)
+
+
+@pytest.mark.parametrize('missing',[False,True])
+@run_async
+async def test_recovery_dispatch_sequence_exhaustion_does_not_mutate_or_hide_complete_readback(monkeypatch,tmp_path,missing):
+    owner,proof,handle,state,journals,members,authorize,source=await dispatch_fixture(monkeypatch,tmp_path)
+    for number in range(1,257):
+        key='old-'+str(number)
+        journals[key]=(number,ctx()['owner_token'],1,'credential-1','complete_point_upsert',False,'0'*64,'settled','0'*64,'instance-1')
+        members[key]=[source['point_ids'][0]]
+    if missing:handle.points=[]
+    deadline=asyncio.get_running_loop().time()+5
+    if missing:
+        with pytest.raises(ProviderUnavailable):await owner.dispatch_stage_recovery(proof,ctx(),authorize,deadline=deadline)
+    else:assert dict(await owner.dispatch_stage_recovery(proof,ctx(),authorize,deadline=deadline))=={'batches':0,'points':0}
+    assert state['puts']==0 and state['reservations']==0
+
+
 def test_recovery_components_returns_exact_original_verifier_without_io(monkeypatch, tmp_path):
     recovery, supervisor, database, _ = setup(monkeypatch, tmp_path)
     expected = recovery.verifier

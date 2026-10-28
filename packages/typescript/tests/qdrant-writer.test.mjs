@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,recovery_dispatch_plan_data,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
   AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL} from '../dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
 import {QdrantPublicationVerifier} from '../dist/qdrant-publication-verification.js';
 import {publication_finalization} from '../dist/qdrant-publication-worker.js';
 import {encode_dense_replay,encode_manifest} from '../dist/qdrant-manifest.js';
@@ -70,10 +70,12 @@ function setup(){
     const client={status:state.startStatus,releases:[],snapshot:null,getTransactionStatus(){return this.status;},release(value=false){this.releases.push(value);},
       async query(query){
         const sql=query.text,params=query.values??[];state.queries.push(query);
-        if(sql.startsWith('BEGIN')){this.attestationInserted=false;this.snapshot=clone(state.tables);this.status='T';return {rows:[]};}
+        if(sql.startsWith('BEGIN')){this.recoveryInserted=false;this.recoveryMarked=null;this.attestationInserted=false;this.snapshot=clone(state.tables);this.status='T';return {rows:[]};}
         if(sql==='ROLLBACK'){if(state.rollbackFail)throw Error('private rollback');state.tables=this.snapshot;this.status='I';return {rows:[]};}
         if(sql==='COMMIT'){
           this.status='I';
+          if(this.recoveryInserted&&state.recoveryCommitLost){state.recoveryCommitLost=false;throw Object.assign(Error('synthetic recovery commit lost'),{code:'08006'});}
+          if(state.recoveryMarkLost&&this.recoveryMarked===state.recoveryMarkLost){state.recoveryMarkLost=null;throw Object.assign(Error('synthetic marker commit lost'),{code:'08006'});}
           if(this.attestationInserted&&state.attestationCommitLost){state.attestationCommitLost=false;state.onAttestationLost?.();throw Error('synthetic attestation commit acknowledgment loss');}
           if(state.commitError){const failure=state.commitError;state.commitError=null;state.tables=this.snapshot;throw failure;}
           if(state.commitLost){state.commitLost=false;state.onLostCommit?.();throw Error('private lost acknowledgment');}
@@ -91,6 +93,7 @@ function setup(){
           const [,table,columns]=insert;
           if(table==='preparation_attestations'){if(state.attestationBodyError)throw state.attestationBodyError;this.attestationInserted=true;}
           const row=Object.fromEntries(columns.split(',').map((column,i)=>[column,['dense_profile','sparse_profile'].includes(column)&&params[i]!==null?JSON.parse(params[i]):clone(params[i])]));
+          if(table==='dispatch_journal'&&row.recovery){this.recoveryInserted=true;state.recoveryInsertAttempts=(state.recoveryInsertAttempts??0)+1;if(state.recoveryBodyError)throw state.recoveryBodyError;}
           const rows=state.tables[table]??=[];
           if(rows.some(existing=>keys[table].every(key=>existing[key]===row[key])))return {rows:[]};
           if(table==='documents')Object.assign(row,{active_generation_id:null,...row});
@@ -110,6 +113,9 @@ function setup(){
           for(const [column,number] of [...sql.matchAll(/(?:AND |\()((?:intent|dispatch|revision|generation|chunk|point)_id|payload_sha256|backend_namespace|physical_collection|collection_incarnation|backend_epoch|owner_token|instance_id)=\$(\d+)(?!\d)/g)].map(match=>[match[1],Number(match[2])])){
             rows=rows.filter(row=>row[column]===params[number-1]);
           }
+          if(sql.includes('(tenant_id,collection,document_id,intent_id,dispatch_id)='))rows=rows.filter(row=>row.intent_id===params[3]&&row.dispatch_id===params[4]);
+          else if(sql.includes('(tenant_id,collection,document_id,intent_id)='))rows=rows.filter(row=>row.intent_id===params[3]);
+          if(sql.includes('intent_id<>$4'))rows=rows.filter(row=>row.intent_id!==params[3]);
           if(sql.includes('point_id=ANY'))rows=rows.filter(row=>params[3].includes(row.point_id));
           if(sql.includes("state<>'settled'"))rows=rows.filter(row=>row.state!=='settled');
           if(sql.includes('manifest_sha256<>$6'))rows=rows.filter(row=>row.manifest_sha256!==params[5]);
@@ -125,7 +131,7 @@ function setup(){
               if(sql.includes('authority_committed=true'))row.authority_committed=true;if(sql.includes('replica_complete=true'))row.replica_complete=true;}
           }else if(table==='document_owners')for(const row of rows)Object.assign(row,{instance_id:params[3],intent_id:params[4],owner_token:params[5],backend_epoch:params[6]});
           else if(table==='dispatch_journal'){
-            rows=rows.filter(row=>row.intent_id===params[3]&&row.dispatch_id===params[4]);for(const row of rows)Object.assign(row,{state:params[5],completion_sha256:params[6]});
+            rows=rows.filter(row=>row.intent_id===params[3]&&row.dispatch_id===params[4]);for(const row of rows)Object.assign(row,{state:params[5],completion_sha256:params[6]});if(rows.some(row=>row.recovery))this.recoveryMarked=params[5];
           }else if(table==='documents'){
             if(sql.includes('SET active_generation_id'))for(const row of rows)row.active_generation_id=params[3];
             else for(const row of rows)Object.assign(row,{principal_ids:params[3],grant_ids:params[4],authorization_revision:params[5],mutation_epoch:params[6],language:params[7],kind:params[8],tag:params[9],tombstoned:params[10]});
@@ -133,7 +139,7 @@ function setup(){
             for(const row of rows){if(sql.includes('published=false')){if(row.generation_id!==params[3])row.published=false;}
               else if(row.generation_id===params[3]){row.published=true;row.ever_published=true;}}
           }
-          return {rows:sql.includes('RETURNING document_id')?rows.map(row=>[row.document_id]):[]};
+          return {rows:sql.includes('RETURNING document_id')?rows.map(row=>[row.document_id]):sql.includes('RETURNING dispatch_id')?rows.map(row=>[row.dispatch_id]):[]};
         }
         throw Error('unexpected synthetic SQL');
       }};
@@ -1062,4 +1068,195 @@ test('repair preflight denies wrong scope and malformed immutable graph without 
     await assert.rejects(f.writer.preflight_repair(context,opts()),IntegrityViolation);
     assert.equal(f.state.tables.document_owners,undefined);
   }finally{await f.writer.close();await f.resource.close();}
+});
+
+/** Nominal coordinator with SQL/HTTP doubles: not actual physical proof or database acceptance. */
+async function recoveryDispatchSetup(){
+  const f=setup();useAttestationProfile(f);await f.writer.initialize(opts());
+  await f.writer.stage(prepare_stage(input()),scope,stageOpts());await f.writer.acquire_owner(context,opts());
+  await f.writer.reserve_dispatch(context,{...dispatchRequest,point_ids:[fixture.members[0].point_id]},opts());
+  await f.writer.mark_dispatched(context,dispatchRequest.dispatch_id,opts());await f.writer.mark_unknown(context,dispatchRequest.dispatch_id,opts());
+  const physical=blocked(f),proof=Object.freeze({}),attempts=new Map(),points=new Map();
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/recovery-dispatch-fixture','instance-fixture',config);
+  f.state.puts=0;f.state.http=[];let active=null;
+  const expected=projection_data(await f.writer.project_stage(context,physical,opts()),f.writer);
+  const records=expected.points.map(point=>({id:point.point_id,payload:clone(point.payload),vector:{dense:[...point.dense.values],
+    sparse:{indices:[...point.sparse.indices],values:[...point.sparse.values]}}}));
+  points.set(records[0].id,records[0]);
+  supervisor.control_binding=()=>({instance_id:'instance-fixture',backend_namespace:config.backend_namespace,storage_identity:physical.storage_identity,
+    supervisor_id:physical.supervisor_id,epoch:2,credential_generation:physical.credential_generation,
+    recovery:{recovery_id:physical.recovery_id,old_epoch:1,new_epoch:2},sealed:false,alive:true});
+  supervisor.recovery_binding=value=>{if(value!==proof||f.state.retired)throw new UnsupportedCapability();return {...physical};};
+  supervisor.attempt_binding=value=>{const binding=attempts.get(value);if(!binding||f.state.retired)throw new InvalidRequest();return {...binding};};
+  supervisor.control_session=async body=>{
+    if(active)throw new ProviderUnavailable();const token={};active=token;const handles=new Set();
+    const facade={block_ordinary(){},issue_recovery_attempt(actual,input){
+      assert.equal(active,token);supervisor.recovery_binding(actual);const attempt=Object.freeze({});
+      attempts.set(attempt,{instance_id:physical.instance_id,storage_identity:physical.storage_identity,supervisor_id:physical.supervisor_id,
+        credential_generation:physical.credential_generation,...input});return attempt;
+    },recovery_transport_for(attempt){
+      assert.equal(active,token);supervisor.attempt_binding(attempt);let closed=false;
+      const handle={async close(){closed=true;handles.delete(handle);},async request(method,path,options){
+        if(closed||active!==token)throw new ProviderUnavailable();
+        assert(f.state.clients.every(client=>client.status==='I'),'no SQL lease across HTTP');
+        const body=JSON.parse(Buffer.from(options.body));f.state.http.push({method,path,body});
+        if(method==='PUT'){
+          f.state.puts++;for(const point of body.points)points.set(point.id,point);
+          if(f.state.sendLost)throw new ProviderUnavailable();
+          return [...Buffer.from(JSON.stringify({status:'ok',result:{operation_id:1,status:'completed'}}))];
+        }
+        let result=[...points.values()];
+        if(f.state.corrupt&&result.length){result=clone(result);result[0].vector.dense[0]=-1;}
+        if(!path.endsWith('/scroll'))result=result.filter(point=>body.ids.includes(point.id));
+        return [...Buffer.from(JSON.stringify({status:'ok',result:path.endsWith('/scroll')?{points:result,next_page_offset:null}:result}))];
+      }};handles.add(handle);return handle;
+    }};
+    try{return await body(facade);}finally{for(const handle of [...handles])await handle.close();active=null;}
+  };
+  const verifier=new QdrantReconciliationVerifier(f.writer,supervisor),recovery=new PostgresQdrantRecovery(f.resource,config,supervisor,verifier);
+  await recovery.initialize(opts());
+  return {...f,supervisor,recovery,proof,points,expected,
+    async close(){await recovery.close();await verifier.close();await f.writer.close();await f.resource.close();}};
+}
+
+test('recovery dispatcher mints opaque writer-bound plans and writes only inspected missing claims',async()=>{
+  const f=await recoveryDispatchSetup();let captured,capturedPlan,capturedOptions,assertionFailure;
+  try{
+    const project=f.writer.project_recovery_dispatch.bind(f.writer);
+    f.writer.project_recovery_dispatch=async(auth,ctx,ids,options)=>{
+      try{
+      captured=auth;capturedOptions=options;const plan=await project(auth,ctx,ids,options);capturedPlan=plan;
+      const data=recovery_dispatch_plan_data(plan,auth,f.writer,options);
+      assert(Object.isFrozen(plan));assert.deepEqual(JSON.parse(JSON.stringify(plan)),{});
+      assert.equal(Object.keys(data).length,13);assert.equal(data.point_ids.length,1);
+      assert.equal(data.request_sha256,digest(Buffer.from(data.request_bytes)));
+      assert.throws(()=>recovery_dispatch_authorization({...auth},f.writer,options),InvalidRequest);
+      const before=f.state.clients.length;
+      await assert.rejects(project({...auth},ctx,ids,options),InvalidRequest);assert.equal(f.state.clients.length,before);
+      assert.throws(()=>recovery_dispatch_plan_data({...plan},auth,f.writer,options),InvalidRequest);
+      assert.throws(()=>recovery_dispatch_authorization(auth,f.writer,{deadline:options.deadline+1,signal:options.signal}),InvalidRequest);
+      assert.throws(()=>recovery_dispatch_authorization(auth,f.writer,{deadline:options.deadline}),InvalidRequest);
+      return plan;
+      }catch(error){assertionFailure=error;throw error;}
+    };
+    const original=clone(f.state.tables.publication_intents[0]),old=clone(f.state.tables.dispatch_journal[0]);
+    let result;
+    try{result=await f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts());}
+    catch(error){throw assertionFailure??error;}
+    assert.deepEqual(result,{batches:1,points:1});assert.equal(f.state.puts,1);
+    assert.deepEqual(f.state.tables.publication_intents[0],original);assert.deepEqual(f.state.tables.dispatch_journal[0],old);
+    const current=f.state.tables.dispatch_journal[1];assert.equal(current.recovery,true);assert.equal(current.state,'settled');assert.equal(current.backend_epoch,2);
+    assert.equal(f.state.tables.documents[0].active_generation_id,null);assert.equal(f.state.tables.backend_instances[0].state,'recovery_blocked');
+    assert.throws(()=>recovery_dispatch_authorization(captured,f.writer,capturedOptions),InvalidRequest);
+    assert.throws(()=>recovery_dispatch_plan_data(capturedPlan,captured,f.writer,capturedOptions),InvalidRequest);
+    const sql=f.state.queries.map(query=>query.text);
+    assert.equal(sql.some(query=>/^SELECT .*request_bytes.* FROM/.test(query)&&query.includes('dispatch_journal')&&query.includes('(tenant_id,collection,document_id,intent_id,dispatch_id)=')),false);
+  }finally{await f.close();}
+});
+
+test('recovery dispatcher does not reserve for complete readback or corruption',async()=>{
+  for(const corrupt of [false,true]){
+    const f=await recoveryDispatchSetup();try{
+      if(corrupt)f.state.corrupt=true;
+      else for(const point of f.expected.points)f.points.set(point.point_id,{id:point.point_id,payload:clone(point.payload),vector:{dense:[...point.dense.values],sparse:{indices:[...point.sparse.indices],values:[...point.sparse.values]}}});
+      if(corrupt)await assert.rejects(f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts()),IntegrityViolation);
+      else assert.deepEqual(await f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts()),{batches:0,points:0});
+      assert.equal(f.state.puts,0);assert.equal(f.state.tables.dispatch_journal.length,1);
+    }finally{await f.close();}
+  }
+});
+
+test('recovery lost write ACK preserves current uncertainty and retry cannot resend before refence',async()=>{
+  const f=await recoveryDispatchSetup();try{
+    f.state.sendLost=true;await assert.rejects(f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts()),ProviderUnavailable);
+    assert.equal(f.state.puts,1);assert.equal(f.state.tables.dispatch_journal[1].state,'unknown');
+    // Full readback after the lost ACK still cannot retire the current key.
+    await assert.rejects(f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts()),ProviderUnavailable);
+    // A second deficit also cannot trigger a new reservation under that key.
+    f.points.delete(f.expected.points[0].point_id);f.state.sendLost=false;
+    await assert.rejects(f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts()),ProviderUnavailable);
+    assert.equal(f.state.puts,1);assert.equal(f.state.tables.dispatch_journal.length,2);
+  }finally{await f.close();}
+});
+
+test('recovery plan rechecks security and dispatch callback cancellation before another mutation',async()=>{
+  for(const mode of ['denied','malformed','scope','cancel']){
+    const f=await recoveryDispatchSetup();try{
+      const local=new AbortController(),options={...opts(),signal:local.signal};let calls=0;
+      const authorize=async()=>{
+        calls++;
+        if(mode==='denied')return false;
+        if(mode==='malformed')return 'yes';
+        if(calls===3&&mode==='scope')f.state.tables.documents[0].mutation_epoch=2;
+        if(calls===3&&mode==='cancel')local.abort();
+        return true;
+      };
+      await assert.rejects(f.recovery.dispatch_stage_recovery(f.proof,context,authorize,options),error=>
+        mode==='malformed'?error instanceof InvalidRequest:mode==='cancel'?error.name==='AbortError':error instanceof UnauthorizedScope);
+      assert.equal(f.state.puts,0);assert.equal(f.state.tables.dispatch_journal.length,1);
+    }finally{await f.close();}
+  }
+});
+
+test('recovery reservation and marker COMMIT acknowledgment loss confirm same key without HTTP resend',async()=>{
+  for(const boundary of ['reservation','dispatched','settled']){
+    const f=await recoveryDispatchSetup();try{
+      if(boundary==='reservation')f.state.recoveryCommitLost=true;else f.state.recoveryMarkLost=boundary;
+      assert.deepEqual(await f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts()),{batches:1,points:1});
+      assert.equal(f.state.puts,1);assert.equal(f.state.recoveryInsertAttempts,1);
+      assert.equal(f.state.tables.dispatch_journal[1].state,'settled');
+      assert(f.state.clients.some(client=>client.releases.includes(true)));
+    }finally{await f.close();}
+  }
+});
+
+test('recovery reservation body failure never enters COMMIT reconciliation or retries HTTP',async()=>{
+  const f=await recoveryDispatchSetup();try{
+    f.state.recoveryBodyError=new ProviderUnavailable();
+    await assert.rejects(f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts()),ProviderUnavailable);
+    assert.equal(f.state.recoveryInsertAttempts,1);assert.equal(f.state.puts,0);
+    assert.equal(f.state.tables.dispatch_journal.length,1);
+  }finally{await f.close();}
+});
+
+test('recovery writer plan rejects unknown IDs and foreign writer before source checkout',async()=>{
+  const f=await recoveryDispatchSetup();try{
+    const project=f.writer.project_recovery_dispatch.bind(f.writer),foreign=new PostgresQdrantWriter(f.resource,config,'instance-fixture');
+    f.writer.project_recovery_dispatch=async(auth,ctx,ids,options)=>{
+      assert.throws(()=>recovery_dispatch_authorization(auth,foreign,options),InvalidRequest);
+      await assert.rejects(project(auth,ctx,['ffffffff-ffff-5fff-8fff-ffffffffffff'],options),IntegrityViolation);
+      return project(auth,ctx,ids,options);
+    };
+    assert.deepEqual(await f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts()),{batches:1,points:1});
+    await foreign.close();
+  }finally{await f.close();}
+});
+
+test('stalled recovery authorization respects cancellation and cannot dispatch after late completion',async()=>{
+  const f=await recoveryDispatchSetup(),abort=new AbortController();
+  let entered,release;
+  const started=new Promise(resolve=>{entered=resolve;});
+  const pending=new Promise(resolve=>{release=resolve;});
+  try{
+    const before=f.state.queries.length;
+    const operation=f.recovery.dispatch_stage_recovery(f.proof,context,()=>{entered();return pending;},{...opts(),signal:abort.signal});
+    await started;abort.abort();
+    await assert.rejects(operation,error=>error.name==='AbortError');
+    assert.equal(f.state.queries.length,before);assert.equal(f.state.puts,0);
+    release(true);await pending;await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(f.state.queries.length,before);assert.equal(f.state.puts,0);
+    assert.deepEqual(await f.recovery.dispatch_stage_recovery(f.proof,context,async()=>true,opts()),{batches:1,points:1});
+  }finally{release?.(false);await f.close();}
+});
+
+test('stalled recovery authorization respects deadline and observes late rejection',async()=>{
+  const f=await recoveryDispatchSetup();let reject;
+  const pending=new Promise((_resolve,fail)=>{reject=fail;});
+  try{
+    const before=f.state.queries.length;
+    await assert.rejects(f.recovery.dispatch_stage_recovery(f.proof,context,()=>pending,{deadline:now()+0.03}),error=>error.name==='DeadlineExceeded');
+    assert.equal(f.state.queries.length,before);assert.equal(f.state.puts,0);
+    reject(new Error('late_application_failure'));await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(f.state.queries.length,before);assert.equal(f.state.puts,0);
+  }finally{reject?.(new Error('test_cleanup'));await f.close();}
 });

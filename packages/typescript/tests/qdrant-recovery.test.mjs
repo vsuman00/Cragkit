@@ -291,3 +291,22 @@ test('cancelled SQL operation unwinds its session before another coordinator ent
   await other.close();
   await f.coordinator.close();
 });
+
+test('recovery dispatch is inert before initialization and rejects malformed callback without SQL',async()=>{
+  const f=setup();try{
+    const start=f.state.queries.length;
+    await assert.rejects(f.coordinator.dispatch_stage_recovery({},context,async()=>true,options()),IndexNotReady);
+    await assert.rejects(f.coordinator.dispatch_stage_recovery({},context,()=>true,options()),IndexNotReady);
+    await assert.rejects(f.coordinator.dispatch_stage_recovery({},context,null,options()),InvalidRequest);
+    assert.equal(f.state.queries.length,start);
+  }finally{await f.coordinator.close();await f.verifier.close();await f.writer.close();await f.resource.close();}
+});
+
+test('ordinary authority cannot enter recovery dispatcher or invoke its authorizer',async()=>{
+  const f=setup();let calls=0;
+  try{
+    await f.coordinator.initialize(options());const start=f.state.queries.length;
+    await assert.rejects(f.coordinator.dispatch_stage_recovery({},context,async()=>{calls++;return true;},options()),UnsupportedCapability);
+    assert.equal(calls,0);assert.equal(f.state.queries.length,start);
+  }finally{await f.coordinator.close();await f.verifier.close();await f.writer.close();await f.resource.close();}
+});

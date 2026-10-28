@@ -498,7 +498,7 @@ test('repair resumes blocked identity and foreign uncertainty prevents ordinary 
   }finally{await f.close();}
 });
 
-test('repair partial unknown full-readback failure remains blocked without settlement or resend',async()=>{
+test('repair corrupt unknown readback is inspected and rejected without settlement or resend',async()=>{
   const f=setup(async()=>true,true);
   try{
     await f.manager.initialize(options());await f.manager.stage(change(),scope,ledger(),options());f.state.ackMode='lost';
@@ -507,6 +507,7 @@ test('repair partial unknown full-readback failure remains blocked without settl
     f.recovery.recover=async()=>{Object.assign(f.state.tables.backend_instances[0],{epoch:2,state:'recovery_blocked',recovery_id:'fixture'});return Object.freeze({});};
     f.recovery.advance_owner=async()=>{f.state.tables.document_owners[0].backend_epoch=2;};
     f.verifier.verify=async()=>{throw new IntegrityViolation();};
+    f.recovery.dispatch_stage_recovery=async()=>{throw new IntegrityViolation();};
     f.recovery.settle_retired=async()=>{throw Error('must not settle incomplete');};
     f.recovery.reopen=async()=>{throw Error('must not reopen incomplete');};
     await assert.rejects(f.manager.repair(ref,scope,ledger(),options()),IntegrityViolation);

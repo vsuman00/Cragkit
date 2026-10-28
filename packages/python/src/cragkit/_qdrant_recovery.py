@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from types import MappingProxyType
@@ -17,10 +19,12 @@ from ._qdrant_authority import (
 )
 from ._qdrant_reconciliation import (
     QdrantReconciliationVerifier, physical_binding, receipt_data, verifier_authority,
+    VerificationBudget, verification_budget, _Readback, inspect_missing_readback, projection_data,
 )
 from ._qdrant_supervisor import ManagedQdrantSupervisor, _config
 from ._qdrant_transport import deadline_value
-from ._qdrant_writer import PostgresQdrantWriter, writer_binding, _safe as writer_error
+from ._qdrant_writer import (PostgresQdrantWriter, writer_binding, _safe as writer_error,
+    recovery_dispatch_plan_data)
 from ._qdrant_writer_contract import WriterContext, context
 from .contracts.models import Identity
 from ._qdrant_manifest import _parse, _Model
@@ -109,6 +113,48 @@ class _ScopedControl(Protocol):
     async def seal_recovery(self, proof: object, *, deadline: float) -> object: ...
 
     def finish_recovery(self, barrier: object, settlement: object, *, deadline: float) -> None: ...
+
+    def issue_recovery_attempt(self, proof: object, binding: object, *, deadline: float) -> object: ...
+
+    def recovery_transport_for(self, attempt: object) -> Any: ...
+
+
+class _RecoveryDispatchAuthorization:
+    __slots__ = ('__weakref__',)
+    def __repr__(self) -> str:
+        return 'RecoveryDispatchAuthorization()'
+    def __reduce__(self) -> Any:
+        raise TypeError('Dispatch authorizations cannot be serialized')
+
+
+_DISPATCH_AUTHORIZATIONS: WeakKeyDictionary[_RecoveryDispatchAuthorization, dict[str, Any]] = WeakKeyDictionary()
+
+
+def _dispatch_check(deadline: float) -> None:
+    deadline_value(deadline)
+    task = asyncio.current_task()
+    if task is None:
+        raise InvalidRequest()
+    if task.cancelling():
+        raise asyncio.CancelledError()
+
+
+def recovery_dispatch_authorization(value: object, expected_writer: object, *, deadline: float) -> Mapping[str, Any]:
+    _dispatch_check(deadline)
+    if type(value) is not _RecoveryDispatchAuthorization or value not in _DISPATCH_AUTHORIZATIONS:
+        raise InvalidRequest()
+    record = _DISPATCH_AUTHORIZATIONS[value]
+    owner = record['owner']
+    _, writer, supervisor, _, _ = _recovery_origin(owner)
+    if (writer is not expected_writer or not record['active'] or owner._active is not asyncio.current_task()
+            or record['task'] is not asyncio.current_task() or owner._scoped_control is not record['control']
+            or deadline > record['deadline']):
+        raise InvalidRequest()
+    _dispatch_check(record['deadline'])
+    if (dict(supervisor.recovery_binding(record['proof'])) != dict(record['data']['physical_binding'])
+            or dict(supervisor.attempt_binding(record['attempt'])) != dict(record['data']['attempt_binding'])):
+        raise UnsupportedCapability()
+    return cast(Mapping[str, Any], record['data'])
 
 
 class _SQLSettlement:
@@ -281,7 +327,7 @@ class PostgresQdrantRecovery:
                         "SELECT set_config('cragkit_qdrant.backend_instance_id',%s,true)",
                         (self._identity['instance_id'],))
                 result = await action(connection)
-                deadline_value(deadline)
+                _dispatch_check(deadline)
                 committing = True
                 await transaction.__aexit__(None, None, None)
                 entered = False
@@ -289,6 +335,8 @@ class PostgresQdrantRecovery:
                     raise ProviderUnavailable()
                 deadline_value(deadline)
                 return result
+            except (TimeoutError, DeadlineExceeded):
+                raise
             except Exception as error:
                 if committing:
                     try:
@@ -296,7 +344,7 @@ class PostgresQdrantRecovery:
                     except Exception:
                         sqlstate = None
                     if type(sqlstate) is not str or sqlstate not in (
-                        '23502', '23503', '23505', '23514', '40001', '40P01',
+                        '23502', '23503', '23505', '23514', '40001', '40P01', '57014',
                     ):
                         raise _CommitUnknown() from None
                 raise
@@ -612,6 +660,273 @@ class PostgresQdrantRecovery:
                         raise ProviderUnavailable()
                     return MappingProxyType({'settled_count': len(settled)})
                 return await self._transaction(deadline, confirm)
+
+    async def dispatch_stage_recovery(self, proof: object, value: object, authorize: object, *,
+                                      deadline: float, budget: VerificationBudget | None = None) -> Mapping[str, Any]:
+        from ._qdrant_contract import decode_response
+        target = context(value)
+        allowance = verification_budget(budget)
+        self._writer._attestation_profile()
+        if not callable(authorize):
+            raise InvalidRequest()
+        callback = cast(Callable[..., Awaitable[object]], authorize)
+        async with self._operation(deadline):
+            physical = physical_binding(dict(self.supervisor.recovery_binding(proof)))
+            allowed=await callback(target.scope,target.collection,target.document_id)
+            _dispatch_check(deadline)
+            if type(allowed) is not bool:
+                raise InvalidRequest()
+            if not allowed:
+                raise UnauthorizedScope()
+            projection = await self._writer.project_stage(target,dict(physical),deadline=deadline)
+            _dispatch_check(deadline)
+            source = projection_data(projection,self._writer)
+            if source['tombstoned']:
+                raise UnsupportedCapability()
+            ids = tuple(source['point_ids'])
+            if not 1 <= len(ids) <= 64 or len(set(ids)) != len(ids):
+                raise IntegrityViolation()
+            active: list[_RecoveryDispatchAuthorization] = []
+
+            async def permitted() -> None:
+                _dispatch_check(deadline)
+                allowed = await callback(target.scope,target.collection,target.document_id)
+                _dispatch_check(deadline)
+                if type(allowed) is not bool:
+                    raise InvalidRequest()
+                if not allowed:
+                    raise UnauthorizedScope()
+
+            async def fences(connection: SessionConnection, plan: Mapping[str, Any] | None = None) -> tuple[Any, ...]:
+                await self._blocked(connection,physical)
+                owner = await self._owner(connection,target)
+                if owner[3] != physical['new_epoch']:
+                    raise ProviderUnavailable()
+                rows = await self._query(connection,
+                    'SELECT action,state,manifest_sha256,revision_id,generation_id,expected_authorization_revision,'
+                    'expected_mutation_epoch,expected_active_generation_id,instance_id '
+                    'FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_intent(target))
+                if len(rows) != 1 or len(rows[0]) != 9:
+                    raise IntegrityViolation()
+                row = rows[0]
+                if row[0] != 'stage' or row[1] not in ('writing','prepared'):
+                    raise UnsupportedCapability()
+                wanted = (source['manifest_sha256'],source['revision_id'],source['generation_id'],
+                    source['authorization_revision'],source['mutation_epoch'],source['active_generation_id'],physical['instance_id'])
+                if row[2:] != wanted:
+                    raise IntegrityViolation()
+                if plan is not None and tuple(plan[key] for key in ('manifest_sha256','revision_id','generation_id',
+                        'expected_authorization_revision','expected_mutation_epoch','expected_active_generation_id')) != row[2:8]:
+                    raise IntegrityViolation()
+                return row
+
+            async def preflight(connection: SessionConnection) -> tuple[int,str]:
+                row = await fences(connection)
+                foreign=await self._query(connection,'SELECT 1 FROM cragkit_qdrant.dispatch_journal WHERE '+_DOC+
+                    " AND intent_id<>%s AND state<>'settled' LIMIT 1",_intent(target))
+                if foreign:
+                    raise ProviderUnavailable()
+                journals = await self._query(connection,
+                    'SELECT dispatch_id,instance_id,sequence,owner_token::text,backend_epoch,credential_generation,operation,recovery,state,completion_sha256,request_sha256 '
+                    'FROM cragkit_qdrant.dispatch_journal WHERE '+_INTENT+' ORDER BY sequence LIMIT 257',_intent(target))
+                memberships = await self._query(connection,
+                    'SELECT dispatch_id,backend_namespace,physical_collection,collection_incarnation,point_id::text FROM cragkit_qdrant.dispatch_points WHERE '+_INTENT+' LIMIT 2049',_intent(target))
+                if len(journals)>256 or len(memberships)>2048:
+                    raise IntegrityViolation()
+                sequences:set[int]=set();names:set[str]=set()
+                for journal in journals:
+                    if (len(journal)!=11 or type(journal[0]) is not str or type(journal[2]) is not int
+                            or not 1<=journal[2]<=256 or journal[2] in sequences or journal[0] in names
+                            or type(journal[5]) is not str or journal[8] not in ('reserved','dispatched','unknown','settled')
+                            or journal[3]!=target.owner_token or type(journal[4]) is not int
+                            or not 1<=journal[4]<=physical['new_epoch'] or journal[1]!=physical['instance_id']
+                            or journal[6]!='complete_point_upsert' or type(journal[7]) is not bool
+                            or type(journal[10]) is not str or len(journal[10])!=64
+                            or any(character not in '0123456789abcdef' for character in journal[10])
+                            or (journal[8]=='settled') != (journal[9] is not None)):
+                        raise IntegrityViolation()
+                    if journal[8]=='settled' and (type(journal[9]) is not str or len(journal[9])!=64
+                            or any(character not in '0123456789abcdef' for character in journal[9])):
+                        raise IntegrityViolation()
+                    if journal[8]!='settled' and journal[5]==physical['credential_generation']:
+                        raise ProviderUnavailable()
+                    sequences.add(journal[2]);names.add(journal[0])
+                grouped:dict[str,set[str]]={name:set() for name in names}
+                for membership in memberships:
+                    if (len(membership)!=5 or membership[0] not in grouped or type(membership[4]) is not str
+                            or membership[4] not in ids or membership[4] in grouped[membership[0]]
+                            or membership[1:4]!=(self.config.backend_namespace,self.config.physical_collection,self.config.collection_incarnation)):
+                        raise IntegrityViolation()
+                    grouped[membership[0]].add(membership[4])
+                if any(not 1<=len(group)<=8 for group in grouped.values()):
+                    raise IntegrityViolation()
+                claims = await self._query(connection,
+                    'SELECT point_id::text FROM cragkit_qdrant.point_claims WHERE '+_DOC+
+                    ' AND revision_id=%s AND generation_id=%s AND instance_id=%s '
+                    'AND backend_namespace=%s AND physical_collection=%s AND collection_incarnation=%s LIMIT 65',
+                    (*_target(target),source['revision_id'],source['generation_id'],physical['instance_id'],
+                     self.config.backend_namespace,self.config.physical_collection,self.config.collection_incarnation))
+                if (len(claims)!=len(ids) or any(len(item)!=1 for item in claims)
+                        or {item[0] for item in claims}!=set(ids)):
+                    raise IntegrityViolation()
+                return max(sequences,default=0),row[1]
+
+            def issue(number: int, identity: str) -> tuple[object,_RecoveryDispatchAuthorization]:
+                binding=dict(intent_id=target.intent_id,owner_token=target.owner_token,epoch=physical['new_epoch'],
+                    dispatch_id=identity,recovery_id=physical['recovery_id'])
+                attempt=self._control().issue_recovery_attempt(proof,binding,deadline=deadline)
+                actual=MappingProxyType(dict(self.supervisor.attempt_binding(attempt)))
+                token=_RecoveryDispatchAuthorization()
+                _DISPATCH_AUTHORIZATIONS[token]=dict(owner=self,task=asyncio.current_task(),proof=proof,attempt=attempt,
+                    control=self._control(),deadline=deadline,active=True,data=MappingProxyType(dict(
+                        context=target,physical_binding=physical,attempt_binding=actual,sequence=number)))
+                active.append(token)
+                return attempt,token
+
+            async def commit(action: Callable[[SessionConnection], Awaitable[Any]],
+                             confirm: Callable[[SessionConnection], Awaitable[Any]],
+                             before_retry: Callable[[], Awaitable[None]]) -> Any:
+                try:
+                    result=await self._transaction(deadline,action)
+                except _CommitUnknown:
+                    _dispatch_check(deadline)
+                    result=await self._transaction(deadline,confirm)
+                    if result is None:
+                        await before_retry()
+                        _dispatch_check(deadline)
+                        try:result=await self._transaction(deadline,action)
+                        except _CommitUnknown:
+                            result=await self._transaction(deadline,confirm)
+                            if result is None:raise ProviderUnavailable() from None
+                _dispatch_check(deadline)
+                return result
+
+            try:
+                maximum,state=await self._transaction(deadline,preflight)
+                _dispatch_check(deadline)
+                inspect_id='g1b-inspect-'+hashlib.sha256(json.dumps([physical['recovery_id'],target.intent_id,target.owner_token],separators=(',',':')).encode()).hexdigest()
+                attempt,inspection=issue(min(maximum+1,256),inspect_id)
+                await self._writer.project_recovery_dispatch(inspection,target,ids[:8],deadline=deadline)
+                _dispatch_check(deadline)
+                handle=self._control().recovery_transport_for(attempt)
+                try:
+                    missing=await inspect_missing_readback(_Readback(handle,deadline,allowance),
+                        '/collections/'+self.config.physical_collection+'/points',source)
+                    _dispatch_check(deadline)
+                finally:
+                    await handle.close()
+                _dispatch_check(deadline)
+                if not missing:
+                    return MappingProxyType(dict(batches=0,points=0))
+                batches=(len(missing)+7)//8
+                ordinary=0 if state=='prepared' else (len(ids)+7)//8
+                if maximum+batches+ordinary>256:
+                    raise ProviderUnavailable()
+                for index in range(batches):
+                    if allowance.remaining_bytes<=0:
+                        raise ProviderUnavailable()
+                    selected=tuple(missing[index*8:index*8+8]);number=maximum+index+1
+                    identity='g1b-'+hashlib.sha256(json.dumps([physical['instance_id'],physical['recovery_id'],
+                        str(physical['new_epoch']),physical['credential_generation'],target.intent_id,target.owner_token,str(number),selected],
+                        separators=(',',':')).encode()).hexdigest()
+                    attempt,authorization=issue(number,identity)
+                    plan=await self._writer.project_recovery_dispatch(authorization,target,selected,deadline=deadline)
+                    _dispatch_check(deadline)
+                    data=recovery_dispatch_plan_data(plan,authorization,self._writer,deadline=deadline)
+                    async def fresh() -> None:
+                        await permitted()
+                        await self._writer.validate_recovery_dispatch(plan,authorization,deadline=deadline)
+                        _dispatch_check(deadline)
+                    async def exact(connection: SessionConnection) -> str | None:
+                        await fences(connection,data)
+                        rows=await self._query(connection,
+                            'SELECT sequence,owner_token::text,backend_epoch,credential_generation,operation,recovery,request_sha256,state,completion_sha256,instance_id '
+                            'FROM cragkit_qdrant.dispatch_journal WHERE '+_INTENT+' AND dispatch_id=%s',(*_intent(target),identity))
+                        if not rows:return None
+                        expected=(number,target.owner_token,physical['new_epoch'],physical['credential_generation'],
+                            'complete_point_upsert',True,data['request_sha256'])
+                        if (len(rows)!=1 or len(rows[0])!=10 or rows[0][:7]!=expected or rows[0][9]!=physical['instance_id']
+                                or rows[0][7] not in ('reserved','dispatched','unknown','settled')
+                                or (rows[0][7]=='settled') != (rows[0][8] is not None)):
+                            raise IntegrityViolation()
+                        members=await self._query(connection,
+                            'SELECT point_id::text,backend_namespace,physical_collection,collection_incarnation '
+                            'FROM cragkit_qdrant.dispatch_points WHERE '+_INTENT+' AND dispatch_id=%s ORDER BY point_id::text LIMIT 9',(*_intent(target),identity))
+                        if members!=[(point,self.config.backend_namespace,self.config.physical_collection,self.config.collection_incarnation) for point in selected]:
+                            raise IntegrityViolation()
+                        return cast(str,rows[0][7])
+                    async def reserve(connection: SessionConnection) -> str:
+                        await fences(connection,data)
+                        if await exact(connection) is not None:
+                            raise IntegrityViolation()
+                        claims=await self._query(connection,'SELECT point_id::text FROM cragkit_qdrant.point_claims WHERE '+_DOC+
+                            ' AND point_id=ANY(%s::uuid[]) AND revision_id=%s AND generation_id=%s AND instance_id=%s '
+                            'AND backend_namespace=%s AND physical_collection=%s AND collection_incarnation=%s ORDER BY point_id::text LIMIT 9',
+                            (*_target(target),list(selected),data['revision_id'],data['generation_id'],physical['instance_id'],
+                             self.config.backend_namespace,self.config.physical_collection,self.config.collection_incarnation))
+                        if claims!=[(point,) for point in selected]:raise IntegrityViolation()
+                        await connection.execute('INSERT INTO cragkit_qdrant.dispatch_journal '
+                            '(tenant_id,collection,document_id,intent_id,dispatch_id,instance_id,sequence,owner_token,backend_epoch,credential_generation,operation,recovery,request_bytes,request_sha256) '
+                            'VALUES ('+','.join('%s' for _ in range(14))+')',(*_intent(target),identity,physical['instance_id'],number,target.owner_token,
+                             physical['new_epoch'],physical['credential_generation'],'complete_point_upsert',True,data['request_bytes'],data['request_sha256']))
+                        for point in selected:
+                            await connection.execute('INSERT INTO cragkit_qdrant.dispatch_points '
+                                '(tenant_id,collection,document_id,intent_id,dispatch_id,backend_namespace,physical_collection,collection_incarnation,point_id) '
+                                'VALUES ('+','.join('%s' for _ in range(9))+')',(*_intent(target),identity,self.config.backend_namespace,
+                                 self.config.physical_collection,self.config.collection_incarnation,point))
+                        return 'reserved'
+                    await permitted()
+                    await self._writer.validate_recovery_dispatch(plan,authorization,deadline=deadline);_dispatch_check(deadline)
+                    if await commit(reserve,exact,fresh)!='reserved':raise ProviderUnavailable()
+                    async def mark(connection: SessionConnection, desired: str, completion: str | None) -> str:
+                        current=await exact(connection)
+                        needed='reserved' if desired=='dispatched' else 'dispatched'
+                        if current!=needed:raise ProviderUnavailable()
+                        await connection.execute('UPDATE cragkit_qdrant.dispatch_journal SET state=%s,completion_sha256=%s WHERE '+_INTENT+' AND dispatch_id=%s',
+                            (desired,completion,*_intent(target),identity))
+                        return desired
+                    async def confirm_dispatched(connection: SessionConnection) -> str | None:
+                        current=await exact(connection)
+                        if current=='dispatched':return current
+                        if current=='reserved':return None
+                        raise ProviderUnavailable()
+                    await permitted()
+                    await self._writer.validate_recovery_dispatch(plan,authorization,deadline=deadline);_dispatch_check(deadline)
+                    await commit(lambda connection:mark(connection,'dispatched',None),confirm_dispatched,fresh)
+                    await permitted()
+                    await self._writer.validate_recovery_dispatch(plan,authorization,deadline=deadline);_dispatch_check(deadline)
+                    recovery_dispatch_authorization(authorization,self._writer,deadline=deadline)
+                    handle=self._control().recovery_transport_for(attempt)
+                    try:
+                        raw=await handle.request('PUT','/collections/'+self.config.physical_collection+'/points?wait=true&ordering=strong',
+                            body=data['request_bytes'],deadline=deadline,max_response_bytes=1048576)
+                        _dispatch_check(deadline)
+                        response=decode_response(raw)
+                        if (type(response) is not dict or response.get('status')!='ok'
+                                or type(response.get('result')) is not dict or response['result'].get('status')!='completed'
+                                or set(response['result'])-{'status','operation_id'}):
+                            raise IntegrityViolation()
+                        operation_id=response['result'].get('operation_id')
+                        if 'operation_id' in response['result'] and (type(operation_id) not in (int,float)
+                                or not 0<=operation_id<=9007199254740991 or int(operation_id)!=operation_id):
+                            raise IntegrityViolation()
+                        completion=hashlib.sha256(raw).hexdigest()
+                    finally:await handle.close()
+                    _dispatch_check(deadline)
+                    await permitted()
+                    await self._writer.validate_recovery_dispatch(plan,authorization,deadline=deadline);_dispatch_check(deadline)
+                    async def confirm_settled(connection: SessionConnection) -> str | None:
+                        current=await exact(connection)
+                        if current=='dispatched':return None
+                        if current!='settled':raise ProviderUnavailable()
+                        rows=await self._query(connection,'SELECT completion_sha256 FROM cragkit_qdrant.dispatch_journal WHERE '+_INTENT+' AND dispatch_id=%s',(*_intent(target),identity))
+                        if rows!=[(completion,)]:raise IntegrityViolation()
+                        return current
+                    await commit(lambda connection:mark(connection,'settled',completion),confirm_settled,fresh)
+                return MappingProxyType(dict(batches=batches,points=len(missing)))
+            finally:
+                for token in active:
+                    _DISPATCH_AUTHORIZATIONS[token]['active']=False
 
     async def reopen(self, proof: object, *, deadline: float) -> Mapping[str, Any]:
         async with self._operation(deadline):

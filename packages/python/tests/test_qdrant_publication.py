@@ -604,9 +604,14 @@ async def test_repair_uncertainty_uses_actual_dependency_order_and_stays_failed(
     for name, method in [('recover', recover), ('advance_owner', advance), ('settle_retired', settle), ('reopen', reopen)]:
         monkeypatch.setattr(recovery, name, method)
     monkeypatch.setattr(manager._original_verifier, 'verify', verify)
+    async def inspect_corruption(actual, context, authorize, *, deadline, budget=None):
+        assert actual is proof
+        events.append('inspect_corruption')
+        raise IntegrityViolation()
+    monkeypatch.setattr(recovery, 'dispatch_stage_recovery', inspect_corruption)
     with pytest.raises(IntegrityViolation if failure == 'incomplete' else ProviderUnavailable):
         await manager.repair(reference, ctx()['scope'], ledger(), deadline=limit)
-    assert events == (['recover', 'advance', 'verify'] if failure == 'incomplete' else ['recover', 'advance', 'verify', 'settle', 'reopen'])
+    assert events == (['recover', 'advance', 'verify', 'inspect_corruption'] if failure == 'incomplete' else ['recover', 'advance', 'verify', 'settle', 'reopen'])
     assert state['mutations'] == 0 and document['active_generation_id'] == prior_active
 
 
