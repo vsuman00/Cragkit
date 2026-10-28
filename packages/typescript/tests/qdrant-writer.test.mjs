@@ -3,10 +3,16 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,WRITER_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
-  AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
+  AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
+  AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
+import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
+import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL} from '../dist/qdrant-recovery.js';
+import {QdrantPublicationVerifier} from '../dist/qdrant-publication-verification.js';
+import {publication_finalization} from '../dist/qdrant-publication-worker.js';
 import {encode_dense_replay,encode_manifest} from '../dist/qdrant-manifest.js';
 import {point_id} from '../dist/qdrant-contract.js';
 import {OPENAI_PROFILE} from '../dist/embeddings.js';
@@ -59,27 +65,31 @@ function setup(){
     publication_intents:['tenant_id','collection','document_id','intent_id'],point_claims:['backend_namespace','physical_collection','collection_incarnation','point_id'],
     vector_replays:['tenant_id','collection','document_id','revision_id','generation_id','chunk_id'],document_owners:['tenant_id','collection','document_id'],
     dispatch_journal:['tenant_id','collection','document_id','intent_id','dispatch_id'],dispatch_points:['tenant_id','collection','document_id','intent_id','dispatch_id','point_id'],
-    preparations:['tenant_id','collection','document_id','intent_id']};
+    preparations:['tenant_id','collection','document_id','intent_id'],preparation_attestations:['tenant_id','collection','document_id','intent_id','backend_epoch','owner_token']};
   const pool={ends:0,async end(){this.ends++;},async connect(){
     const client={status:state.startStatus,releases:[],snapshot:null,getTransactionStatus(){return this.status;},release(value=false){this.releases.push(value);},
       async query(query){
         const sql=query.text,params=query.values??[];state.queries.push(query);
-        if(sql.startsWith('BEGIN')){this.snapshot=clone(state.tables);this.status='T';return {rows:[]};}
+        if(sql.startsWith('BEGIN')){this.attestationInserted=false;this.snapshot=clone(state.tables);this.status='T';return {rows:[]};}
         if(sql==='ROLLBACK'){if(state.rollbackFail)throw Error('private rollback');state.tables=this.snapshot;this.status='I';return {rows:[]};}
         if(sql==='COMMIT'){
           this.status='I';
+          if(this.attestationInserted&&state.attestationCommitLost){state.attestationCommitLost=false;state.onAttestationLost?.();throw Error('synthetic attestation commit acknowledgment loss');}
           if(state.commitError){const failure=state.commitError;state.commitError=null;state.tables=this.snapshot;throw failure;}
           if(state.commitLost){state.commitLost=false;state.onLostCommit?.();throw Error('private lost acknowledgment');}
           return {rows:[]};
         }
+        if(sql===WRITER_ATTESTATION_ROLE_SQL)return {rows:[[state.role&&state.attestationRole!==false]]};
+        if(sql===RECOVERY_ROLE_SQL)return {rows:[[state.recoveryRole!==false]]};
         if(sql===WRITER_ROLE_SQL){if(state.wait)await state.wait;return {rows:[[state.role]]};}
         if(sql===AUTHORITY_HISTORY_SQL)return {rows:state.history};
-        if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL)return {rows:[[state.catalog]]};
+        if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL||sql===AUTHORITY_ATTESTATION_CATALOG_SQL)return {rows:[[state.catalog]]};
         if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
         if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config'))return {rows:[]};
         const insert=/^INSERT INTO cragkit_qdrant\.(\w+) \(([^)]+)\)/.exec(sql);
         if(insert){
           const [,table,columns]=insert;
+          if(table==='preparation_attestations'){if(state.attestationBodyError)throw state.attestationBodyError;this.attestationInserted=true;}
           const row=Object.fromEntries(columns.split(',').map((column,i)=>[column,['dense_profile','sparse_profile'].includes(column)&&params[i]!==null?JSON.parse(params[i]):clone(params[i])]));
           const rows=state.tables[table]??=[];
           if(rows.some(existing=>keys[table].every(key=>existing[key]===row[key])))return {rows:[]};
@@ -97,7 +107,7 @@ function setup(){
           }
           let rows=(state.tables[table]??[]).filter(row=>table==='backend_instances'?row.instance_id===params[0]:
             row.tenant_id===params[0]&&row.collection===params[1]&&row.document_id===params[2]);
-          for(const [column,number] of [...sql.matchAll(/(?:AND |\()((?:intent|dispatch|revision|generation|chunk|point)_id|payload_sha256|backend_namespace|physical_collection|collection_incarnation)=\$(\d+)(?!\d)/g)].map(match=>[match[1],Number(match[2])])){
+          for(const [column,number] of [...sql.matchAll(/(?:AND |\()((?:intent|dispatch|revision|generation|chunk|point)_id|payload_sha256|backend_namespace|physical_collection|collection_incarnation|backend_epoch|owner_token|instance_id)=\$(\d+)(?!\d)/g)].map(match=>[match[1],Number(match[2])])){
             rows=rows.filter(row=>row[column]===params[number-1]);
           }
           if(sql.includes('point_id=ANY'))rows=rows.filter(row=>params[3].includes(row.point_id));
@@ -832,4 +842,169 @@ test('projection distinguishes unavailable recovery control from immutable physi
     if(change==='wrong-instance')assert.equal(x.state.clients.length,clients);
     await x.writer.close();await x.resource.close();
   }
+});
+
+function useAttestationProfile(f){f.state.history=AUTHORITY_ATTESTATION_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT;}
+/** Actual private F1 provenance/context over deterministic SQL/HTTP doubles, not native proof. */
+async function attestationSetup(){
+  const f=setup();useAttestationProfile(f);await f.writer.initialize(opts());
+  await f.writer.stage(prepare_stage(input()),scope,stageOpts());await f.writer.acquire_owner(context,opts());
+  await f.writer.reserve_dispatch(context,dispatchRequest,opts());await f.writer.settle_dispatch(context,dispatchRequest.dispatch_id,'a'.repeat(64),opts());
+  await f.writer.prepare(context,'b'.repeat(64),opts());
+  const original=clone(f.state.tables.preparations[0]);
+  f.state.tables.backend_instances[0].epoch=2;f.state.tables.document_owners[0].backend_epoch=2;
+  const binding={instance_id:'instance-fixture',storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',epoch:2,credential_generation:'credential-2',intent_id:context.intent_id,owner_token:context.owner_token,dispatch_id:'verification-2'};
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/worker-fixture','instance-fixture',config),attempt=Object.freeze({});
+  f.state.httpCalls=0;f.state.session=false;
+  supervisor.attempt_binding=selected=>{if(selected!==attempt)throw new InvalidRequest();return {...binding};};
+  supervisor.control_binding=()=>({instance_id:binding.instance_id,backend_namespace:config.backend_namespace,storage_identity:binding.storage_identity,supervisor_id:binding.supervisor_id,epoch:binding.epoch,credential_generation:binding.credential_generation,recovery:null,sealed:false,alive:true});
+  supervisor.control_session=async body=>{if(f.state.session)throw new ProviderUnavailable();f.state.session=true;try{return await body({});}finally{f.state.session=false;}};
+  const projection=await f.writer.project_publication(context,binding,opts()),expected=publication_projection_data(projection,f.writer);
+  const records=expected.points.map(point=>({id:point.point_id,payload:clone(point.payload),vector:{dense:[...point.dense.values],sparse:{indices:[...point.sparse.indices],values:[...point.sparse.values]}}}));
+  supervisor.transport_for=selected=>{if(selected!==attempt)throw new InvalidRequest();return {async close(){},async request(method,path,request){
+    assert.equal(f.state.clients.every(client=>client.status==='I'||client.releases.includes(true)),true);f.state.httpCalls++;
+    const body=JSON.parse(Buffer.from(request.body)),response={status:'ok',result:path.endsWith('/scroll')?{points:records,next_page_offset:null}:records.filter(point=>body.ids.includes(point.id))};return [...Buffer.from(JSON.stringify(response))];
+  }};};
+  const verifier=new QdrantPublicationVerifier(f.writer,supervisor),receipt=await verifier.verify(attempt,context,opts());
+  return {...f,original,binding,supervisor,attempt,verifier,receipt,
+    run:async(operation,options=opts())=>publication_finalization(supervisor,attempt,()=>operation(options),options),
+    close:async()=>{await verifier.close();await f.writer.close();await f.resource.close();}};
+}
+
+test('writer selects literal ordinary or attestation permissions only after exact bounded history',async()=>{
+  assert.equal(WRITER_ROLE_SQL.includes('preparation_attestations'),false);
+  assert.equal((WRITER_ATTESTATION_ROLE_SQL.match(/'preparation_attestations'/g)??[]).length,4);
+  for(const attestation of [false,true]){
+    const f=setup();if(attestation)useAttestationProfile(f);
+    try{
+      await f.writer.initialize(opts());const role=attestation?WRITER_ATTESTATION_ROLE_SQL:WRITER_ROLE_SQL;
+      assert(f.state.queries.findIndex(query=>query.text===AUTHORITY_HISTORY_SQL)<f.state.queries.findIndex(query=>query.text===role));
+      const start=f.state.queries.length;await f.writer.inspect(context,opts());assert(f.state.queries.slice(start).some(query=>query.text===role));
+      assert.equal(f.state.queries.slice(start).some(query=>query.text===(attestation?WRITER_ROLE_SQL:WRITER_ATTESTATION_ROLE_SQL)),false);
+      f.state.role=false;await assert.rejects(f.writer.inspect(context,opts()),UnauthorizedScope);
+    }finally{await f.writer.close();await f.resource.close();}
+  }
+});
+test('writer rejects unknown fourth history, incorrect attestation hash/fingerprint and unsafe grants',async()=>{
+  for(const change of [state=>state.history.push(['0004_unknown','a'.repeat(64)]),state=>{state.history[2][1]='a'.repeat(64);},state=>{state.fingerprint=EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;},state=>{state.attestationRole=false;}]){
+    const f=setup();useAttestationProfile(f);change(f.state);
+    try{await assert.rejects(f.writer.initialize(opts()),f.state.attestationRole===false?UnauthorizedScope:UnsupportedCapability);await assert.rejects(f.writer.inspect(context,opts()),IndexNotReady);assert.equal(f.state.queries.some(query=>/^INSERT|^UPDATE/.test(query.text)),false);}finally{await f.writer.close();await f.resource.close();}
+  }
+});
+test('old ordinary profile refuses new attestation entry points before extra SQL or receipt access',async()=>{
+  const f=setup();await f.writer.initialize(opts());const before=f.state.queries.length;
+  try{await assert.rejects(f.writer.attestation_snapshot(context,opts()),UnsupportedCapability);await assert.rejects(f.writer.attest_prepared({}, {},opts()),UnsupportedCapability);assert.equal(f.state.queries.length,before);}finally{await f.writer.close();await f.resource.close();}
+});
+test('attestation snapshot retains original six fields and selects only current exact tuple',async()=>{
+  const f=await attestationSetup();
+  try{
+    const snapshot=await f.writer.attestation_snapshot(context,opts());assert.deepEqual(Object.keys(snapshot).sort(),['attestation','preparation']);assert.equal(snapshot.attestation,null);assert.equal(snapshot.preparation.backend_epoch,1);assert.equal(Object.keys(snapshot.preparation).length,6);
+    f.state.tables.preparation_attestations=[{...context,tenant_id:scope.tenant_id,backend_epoch:99,instance_id:'instance-fixture'}];
+    assert.equal((await f.writer.attestation_snapshot(context,opts())).attestation,null);
+    const query=f.state.queries.findLast(query=>query.text.includes('FROM cragkit_qdrant.preparation_attestations'));
+    assert(query.text.includes('backend_epoch=$5 AND owner_token=$6::uuid AND instance_id=$7'));assert(query.text.includes('LIMIT 2'));assert.equal(/ORDER BY|max\(/i.test(query.text),false);
+    await assert.rejects(f.writer.attestation_snapshot({...context,owner_token:'00000000-0000-4000-8000-000000000003'},opts()),ProviderUnavailable);
+  }finally{await f.close();}
+});
+test('private attestation requires original receipt, verifier, writer and active helper scope before SQL',async()=>{
+  const f=await attestationSetup();
+  try{
+    let before=f.state.queries.length;await assert.rejects(f.writer.attest_prepared(f.receipt,f.verifier,opts()),InvalidRequest);assert.equal(f.state.queries.length,before);
+    await f.run(async options=>{before=f.state.queries.length;await assert.rejects(f.writer.attest_prepared({...f.receipt},f.verifier,options),InvalidRequest);assert.equal(f.state.queries.length,before);});
+    assert.equal(f.state.tables.preparation_attestations,undefined);
+  }finally{await f.close();}
+});
+test('actual issuer-bound ordinary receipt appends exact current attestation and same-key retry preserves old preparation',async()=>{
+  const f=await attestationSetup();
+  try{
+    const calls=f.state.httpCalls;
+    const result=await f.run(options=>f.writer.attest_prepared(f.receipt,f.verifier,options));
+    assert.deepEqual(Object.keys(result).sort(),['attestation','intent']);assert.equal(result.intent.state,'prepared');assert.equal(Object.keys(result.attestation).length,14);assert.equal(result.attestation.backend_epoch,2);assert.equal(result.attestation.verification_id,f.binding.dispatch_id);assert.equal(result.attestation.credential_generation,'credential-2');
+    const retried=await f.run(options=>f.writer.attest_prepared(f.receipt,f.verifier,options));assert.deepEqual(retried,result);assert.equal(f.state.tables.preparation_attestations.length,1);assert.deepEqual(f.state.tables.preparations[0],f.original);assert.equal(f.state.httpCalls,calls);
+    f.state.tables.preparation_attestations[0].readback_sha256='c'.repeat(64);
+    await assert.rejects(f.run(options=>f.writer.attest_prepared(f.receipt,f.verifier,options)),IntegrityViolation);
+  }finally{await f.close();}
+});
+test('actual COMMIT acknowledgement loss confirms one exact tuple without HTTP or insertion replay',async()=>{
+  for(const absent of [false,true]){
+    const f=await attestationSetup();
+    try{
+      f.state.attestationCommitLost=true;if(absent)f.state.onAttestationLost=()=>{f.state.tables.preparation_attestations=[];};
+      const before=f.state.queries.length,calls=f.state.httpCalls;
+      const result=await f.run(options=>f.writer.attest_prepared(f.receipt,f.verifier,options));assert.equal(result.attestation.backend_epoch,2);
+      const inserts=f.state.queries.slice(before).filter(query=>query.text.startsWith('INSERT INTO cragkit_qdrant.preparation_attestations'));
+      assert.equal(inserts.length,absent?2:1);assert.equal(f.state.tables.preparation_attestations.length,1);assert.equal(f.state.httpCalls,calls);assert(f.state.clients.some(client=>client.releases.includes(true)));
+    }finally{await f.close();}
+  }
+});
+test('attestation body operational failure is not an unknown COMMIT and never retries insertion',async()=>{
+  const f=await attestationSetup();
+  try{f.state.attestationBodyError=new ProviderUnavailable();const before=f.state.queries.length;await assert.rejects(f.run(options=>f.writer.attest_prepared(f.receipt,f.verifier,options)),ProviderUnavailable);assert.equal(f.state.queries.slice(before).filter(query=>query.text.startsWith('INSERT INTO cragkit_qdrant.preparation_attestations')).length,1);assert.deepEqual(f.state.tables.preparations[0],f.original);}finally{await f.close();}
+});
+test('changed security or pointer persists terminal fence outcome without publishing or attesting',async()=>{
+  for(const outcome of ['denied','conflict']){
+    const f=await attestationSetup();
+    try{
+      if(outcome==='denied')Object.assign(f.state.tables.documents[0],{authorization_revision:'auth-2',mutation_epoch:2,tombstoned:true});else f.state.tables.documents[0].active_generation_id='other-generation';
+      const prior=f.state.tables.documents[0].active_generation_id;
+      const result=await f.run(options=>f.writer.attest_prepared(f.receipt,f.verifier,options));assert.equal(result.intent.state,outcome);assert.equal(result.attestation,null);assert.equal(f.state.tables.documents[0].active_generation_id,prior);assert.deepEqual(f.state.tables.preparations[0],f.original);
+    }finally{await f.close();}
+  }
+});
+test('publication uses current exact attestation, rejects missing/contradictory tuples and preserves original preparation',async()=>{
+  for(const mode of ['valid','missing','malformed','decoy']){
+    const f=await attestationSetup();
+    try{
+      await f.run(options=>f.writer.attest_prepared(f.receipt,f.verifier,options));
+      if(mode==='missing')f.state.tables.preparation_attestations=[];
+      if(mode==='malformed')f.state.tables.preparation_attestations[0].manifest_sha256='a'.repeat(64);
+      if(mode==='decoy')f.state.tables.preparation_attestations[0].backend_epoch=99;
+      const before=f.state.tables.documents[0].active_generation_id;
+      if(mode==='valid'){assert.equal((await f.writer.publish(context,opts())).state,'published');assert.equal(f.state.tables.documents[0].active_generation_id,f.state.tables.generations[0].generation_id);}
+      else{await assert.rejects(f.writer.publish(context,opts()),mode==='malformed'?IntegrityViolation:ProviderUnavailable);assert.equal(f.state.tables.documents[0].active_generation_id,before);}
+      assert.deepEqual(f.state.tables.preparations[0],f.original);
+    }finally{await f.close();}
+  }
+});
+
+test('supervisor recovery accepts exact ordinary and attestation catalogs without attestation privilege expansion',async()=>{
+  for(const attestation of [false,true]){
+    const f=setup();if(attestation)useAttestationProfile(f);
+    const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/recovery-fixture','instance-fixture',config);
+    const local={instance_id:'instance-fixture',backend_namespace:config.backend_namespace,storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',epoch:1,credential_generation:'credential-1',recovery:null,sealed:false,alive:true};
+    supervisor.control_binding=()=>({...local});supervisor.control_session=async body=>body({block_ordinary(){}});
+    const verifier=new QdrantReconciliationVerifier(f.writer,supervisor),recovery=new PostgresQdrantRecovery(f.resource,config,supervisor,verifier);
+    try{await recovery.initialize(opts());assert(f.state.queries.some(query=>query.text===(attestation?AUTHORITY_ATTESTATION_CATALOG_SQL:AUTHORITY_PUBLICATION_CATALOG_SQL)));assert.equal(RECOVERY_ROLE_SQL.includes("'preparation_attestations'"),false);f.state.recoveryRole=false;await assert.rejects(recovery.initialize(opts()),UnauthorizedScope);}finally{await recovery.close();await verifier.close();await f.writer.close();await f.resource.close();}
+  }
+});
+test('attestation fresh-lease grant drift and invalid deadline/cancellation stop before insertion',async()=>{
+  const f=await attestationSetup();
+  try{
+    f.state.attestationRole=false;await assert.rejects(f.writer.attestation_snapshot(context,opts()),UnauthorizedScope);f.state.attestationRole=true;
+    for(const options of [{deadline:now()-1},{...opts(),signal:AbortSignal.abort()}]){
+      const before=f.state.queries.length;await assert.rejects(f.writer.attest_prepared(f.receipt,f.verifier,options),error=>['DeadlineExceeded','AbortError'].includes(error.name));assert.equal(f.state.queries.length,before);
+    }
+    assert.equal(f.state.tables.preparation_attestations,undefined);
+  }finally{await f.close();}
+});
+
+test('stored stage fence columns cannot contradict immutable intent bytes before attestation or final publication',async()=>{
+  for(const method of ['attestation_snapshot','publish'])for(const field of ['expected_active_generation_id','expected_authorization_revision','expected_mutation_epoch']){
+    const f=await attestationSetup();
+    try{
+      f.state.tables.publication_intents[0][field]=field==='expected_mutation_epoch'?2:'forged';
+      const pointer=f.state.tables.documents[0].active_generation_id;
+      await assert.rejects(f.writer[method](context,opts()),IntegrityViolation);assert.equal(f.state.tables.documents[0].active_generation_id,pointer);assert.equal(f.state.tables.publication_intents[0].state,'prepared');
+    }finally{await f.close();}
+  }
+});
+
+
+test('snapshot rejects an original preparation from a future epoch without an attestation',async()=>{
+  const f=await attestationSetup();
+  try{
+    f.state.tables.preparations[0].backend_epoch=3;
+    await assert.rejects(f.writer.attestation_snapshot(context,opts()),IntegrityViolation);
+    assert.equal(f.state.tables.preparation_attestations,undefined);
+  }finally{await f.close();}
 });

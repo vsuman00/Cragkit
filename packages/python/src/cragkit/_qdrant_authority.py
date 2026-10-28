@@ -109,7 +109,12 @@ SELECT current_setting('server_version_num')::int BETWEEN 170000 AND 179999
       JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant'
       AND t.tgenabled<>'O')
 """
-_HISTORY_SQL = 'SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version LIMIT 3'
+EXPECTED_ATTESTATION_HISTORY = (*EXPECTED_PUBLICATION_HISTORY,
+    ('0003_preparation_attestations', '8c6791cd0fd65ff09758c068ebc90a895a4ac21d9713512486d3daf9cb7c8433'))
+EXPECTED_ATTESTATION_CATALOG_FINGERPRINT = '7ffd3b585b1fe32bc3476a3dc4390b022f5dcfd6c5ed186c9964fec4ffd72848'
+EXPECTED_ATTESTATION_FINGERPRINT = EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
+_ATTESTATION_CATALOG_SQL = _PUBLICATION_CATALOG_SQL.replace('count(*)=13', 'count(*)=14').replace('count(*)=12', 'count(*)=13')
+_HISTORY_SQL = 'SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version LIMIT 4'
 _SCOPE_SQL = """SELECT set_config('cragkit_qdrant.tenant_id',%s,true),
  set_config('cragkit_qdrant.collection',%s,true),set_config('cragkit_qdrant.principal_id',%s,true),
  set_config('cragkit_qdrant.grant_ids',%s,true),set_config('cragkit_qdrant.authorization_revision',%s,true)"""
@@ -253,7 +258,7 @@ class PostgresQdrantAuthority:
                 rows = await query(connection, _HISTORY_SQL, None, deadline)
             except IntegrityViolation:
                 raise UnsupportedCapability() from None
-            if len(rows) not in (1, 2) or any(len(row) != 2 or any(type(value) is not str for value in row)
+            if len(rows) not in (1, 2, 3) or any(len(row) != 2 or any(type(value) is not str for value in row)
                                              for row in rows):
                 raise UnsupportedCapability()
             history = tuple(rows)
@@ -261,6 +266,8 @@ class PostgresQdrantAuthority:
                 catalog_sql, fingerprint = _CATALOG_SQL, EXPECTED_CATALOG_FINGERPRINT
             elif history == EXPECTED_PUBLICATION_HISTORY:
                 catalog_sql, fingerprint = _PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
+            elif history == EXPECTED_ATTESTATION_HISTORY:
+                catalog_sql, fingerprint = _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
             else:
                 raise UnsupportedCapability()
             if await query(connection, catalog_sql, None, deadline) != [(True,)]:

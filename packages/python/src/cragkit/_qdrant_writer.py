@@ -14,7 +14,8 @@ from weakref import WeakKeyDictionary
 from ._postgres_pool import PoolResource
 from ._postgres_session import SessionConnection
 from ._qdrant_authority import (_HISTORY_SQL, _PUBLICATION_CATALOG_SQL, _CATALOG_FINGERPRINT_SQL,
-    EXPECTED_PUBLICATION_HISTORY, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT)
+    EXPECTED_PUBLICATION_HISTORY, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,
+    _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_HISTORY, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT)
 from ._qdrant_contract import (CandidatePayload, QdrantConfig, SPARSE_PROFILE, decode_response,
                                parse_model, point_id)
 from ._qdrant_manifest import (_Security, _Purge, _Manifest, _Stage, _ReplayResult, _parse,
@@ -26,7 +27,8 @@ from ._qdrant_writer_contract import (StagePlan, StageData, WriterContext, bind_
 from ._qdrant_reconciliation import (ExpectedPoint, ExpectedProjection, physical_binding,
     finalize_projection, projection_data)
 from ._qdrant_publication_verification import (PublicationProjection, ordinary_binding,
-    finalize_publication_projection, publication_projection_data)
+    finalize_publication_projection, publication_projection_data, attestation_receipt_data, publication_verifier_controller)
+from ._qdrant_publication_worker import require_publication_finalization
 from ._qdrant_vectors import _DenseVector, _SparseVector
 from ._qdrant_source import IMMUTABLE_FIELDS, metadata_guard
 from .contracts import TrustedScope
@@ -106,6 +108,17 @@ SELECT current_user=session_user
    p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.lock_publication_owner(text,text,text,text,uuid,bigint,boolean)') OR
    p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.assert_publication(text,text,text,text)')))
 """
+
+
+_WRITER_ATTESTATION_ROLE_SQL = _WRITER_ROLE_SQL.replace(
+    "'dispatch_points','preparations')", "'dispatch_points','preparations','preparation_attestations')"
+).replace(" AND has_table_privilege(current_user,'cragkit_qdrant.vector_replays','SELECT,INSERT')",
+    " AND has_table_privilege(current_user,'cragkit_qdrant.vector_replays','SELECT,INSERT')"
+    "\n AND has_table_privilege(current_user,'cragkit_qdrant.preparation_attestations','SELECT,INSERT')")
+_ATTESTATION_FIELDS = ('tenant_id','collection','document_id','intent_id','instance_id','owner_token',
+    'backend_epoch','authorization_revision','mutation_epoch','manifest_sha256',
+    'expected_active_generation_id','credential_generation','verification_id','readback_sha256')
+_PREPARATION_FIELDS = ('owner_token','backend_epoch','authorization_revision','mutation_epoch','manifest_sha256','readback_sha256')
 
 
 def _json(value: object) -> str:
@@ -223,6 +236,7 @@ class PostgresQdrantWriter:
             raise UnsupportedCapability()
         self.instance_id = _identity(instance_id)
         self._ready = False
+        self._schema_profile = 2
         self._closed = False
         self._active: asyncio.Task[Any] | None = None
         _WRITER_ORIGINS[self] = (self.resource, self.config, self.instance_id)
@@ -260,7 +274,17 @@ class PostgresQdrantWriter:
                         await connection.execute('SET LOCAL search_path=pg_catalog')
                         milliseconds = max(1, min(2147483647, int((deadline-asyncio.get_running_loop().time())*1000)))
                         await connection.execute("SELECT set_config('statement_timeout',%s,true)", (str(milliseconds),))
-                        if await self._query(connection, _WRITER_ROLE_SQL) != [(True,)]:
+                        profile = self._schema_profile
+                        if initializing:
+                            history = await self._query(connection, _HISTORY_SQL)
+                            if history == list(EXPECTED_PUBLICATION_HISTORY):
+                                profile = 2
+                            elif history == list(EXPECTED_ATTESTATION_HISTORY):
+                                profile = 3
+                            else:
+                                raise UnsupportedCapability()
+                        role_sql = _WRITER_ATTESTATION_ROLE_SQL if profile == 3 else _WRITER_ROLE_SQL
+                        if await self._query(connection, role_sql) != [(True,)]:
                             raise UnauthorizedScope()
                         if ctx is not None:
                             grants = _json(list(ctx.scope.grant_ids))
@@ -328,14 +352,22 @@ class PostgresQdrantWriter:
             self._active = None
 
     async def initialize(self, *, deadline: float) -> None:
+        if self._closed or self._active is not None:
+            raise ProviderUnavailable()
+        self._ready = False
         async def initialize(connection: SessionConnection) -> None:
             history = await self._query(connection, _HISTORY_SQL)
-            if history != list(EXPECTED_PUBLICATION_HISTORY):
+            if history == list(EXPECTED_PUBLICATION_HISTORY):
+                profile, catalog, fingerprint = 2, _PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
+            elif history == list(EXPECTED_ATTESTATION_HISTORY):
+                profile, catalog, fingerprint = 3, _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
+            else:
                 raise UnsupportedCapability()
-            if await self._query(connection, _PUBLICATION_CATALOG_SQL) != [(True,)]:
+            if await self._query(connection, catalog) != [(True,)]:
                 raise UnsupportedCapability()
-            if await self._query(connection, _CATALOG_FINGERPRINT_SQL) != [(EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,)]:
+            if await self._query(connection, _CATALOG_FINGERPRINT_SQL) != [(fingerprint,)]:
                 raise UnsupportedCapability()
+            self._schema_profile = profile
         await self._run(None, deadline, initialize, initializing=True)
         self._ready = True
 
@@ -1361,6 +1393,207 @@ class PostgresQdrantWriter:
             return result
         return await self._run(ctx,deadline,prepare)
 
+    def _attestation_profile(self) -> None:
+        writer_binding(self)
+        if self._closed or self._active is not None:
+            raise ProviderUnavailable()
+        if not self._ready:
+            raise IndexNotReady()
+        if self._schema_profile != 3:
+            raise UnsupportedCapability()
+
+    @staticmethod
+    def _attestation_intent(plan: StagePlan, intent: tuple[Any, ...], existing: Mapping[str, Any]) -> None:
+        graph = stage_data(plan)
+        if len(intent) != 7:
+            raise IntegrityViolation()
+        if ((graph.intent.expected_authorization_revision,graph.intent.expected_mutation_epoch,
+                graph.intent.expected_active_generation_id,plan.manifest_sha256,
+                graph.manifest.generation_id,graph.manifest.revision_id) != intent[:6]
+                or plan.payload_sha256 != existing['payload_sha256']
+                or plan.manifest_sha256 != existing['manifest_sha256']):
+            raise IntegrityViolation()
+
+    async def _attestation_material(self, connection: SessionConnection, ctx: WriterContext,
+                                    epoch: int, document: Mapping[str, Any],
+                                    intent: tuple[Any, ...]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        rows = await self._query(connection,
+            'SELECT instance_id,owner_token::text,backend_epoch,authorization_revision,mutation_epoch,'
+            'manifest_sha256,readback_sha256 FROM cragkit_qdrant.preparations WHERE ' + _INTENT + ' LIMIT 2', _key(ctx))
+        if len(rows) != 1 or len(rows[0]) != 7:
+            raise IntegrityViolation()
+        instance = _stored_identity(rows[0][0])
+        preparation = dict(zip(_PREPARATION_FIELDS, rows[0][1:], strict=True))
+        _stored_uuid(preparation['owner_token'])
+        _stored_count(preparation['backend_epoch'], 1)
+        _stored_identity(preparation['authorization_revision'])
+        _stored_count(preparation['mutation_epoch'])
+        try:
+            _digest(preparation['manifest_sha256'])
+            _digest(preparation['readback_sha256'])
+        except InvalidRequest:
+            raise IntegrityViolation() from None
+        if (instance != self.instance_id or preparation['backend_epoch'] > epoch
+                or (preparation['authorization_revision'], preparation['mutation_epoch'], preparation['manifest_sha256'])
+                    != (intent[0], intent[1], intent[3])):
+            raise IntegrityViolation()
+        columns = ','.join('owner_token::text' if key == 'owner_token' else key for key in _ATTESTATION_FIELDS)
+        rows = await self._query(connection, 'SELECT ' + columns + ' FROM cragkit_qdrant.preparation_attestations WHERE '
+            + _INTENT + ' AND backend_epoch=%s AND owner_token=%s AND instance_id=%s LIMIT 2',
+            (*_key(ctx), epoch, ctx.owner_token, self.instance_id))
+        if not rows:
+            return preparation, None
+        if len(rows) != 1 or len(rows[0]) != len(_ATTESTATION_FIELDS):
+            raise IntegrityViolation()
+        attestation = dict(zip(_ATTESTATION_FIELDS, rows[0], strict=True))
+        for key in ('tenant_id','collection','document_id','intent_id','instance_id','authorization_revision',
+                    'credential_generation','verification_id'):
+            _stored_identity(attestation[key])
+        _stored_identity(attestation['expected_active_generation_id'], nullable=True)
+        _stored_uuid(attestation['owner_token'])
+        _stored_count(attestation['backend_epoch'], 1)
+        _stored_count(attestation['mutation_epoch'])
+        try:
+            _digest(attestation['manifest_sha256'])
+            _digest(attestation['readback_sha256'])
+        except InvalidRequest:
+            raise IntegrityViolation() from None
+        if (tuple(attestation[key] for key in ('tenant_id','collection','document_id','intent_id')) != _key(ctx)
+                or attestation['instance_id'] != self.instance_id or attestation['owner_token'] != ctx.owner_token
+                or attestation['backend_epoch'] != epoch or epoch <= preparation['backend_epoch']
+                or (attestation['authorization_revision'],attestation['mutation_epoch'],attestation['manifest_sha256'],
+                    attestation['expected_active_generation_id']) != (intent[0],intent[1],intent[3],intent[2])
+                or (attestation['authorization_revision'],attestation['mutation_epoch'],attestation['expected_active_generation_id'])
+                    != (document['authorization_revision'],document['mutation_epoch'],document['active_generation_id'])):
+            raise IntegrityViolation()
+        return preparation, attestation
+
+    async def attestation_snapshot(self, value: object, *, deadline: float) -> Mapping[str, Any]:
+        self._attestation_profile()
+        ctx = context(value)
+        async def snapshot(connection: SessionConnection) -> Mapping[str, Any]:
+            existing = await self._inspect(connection, ctx)
+            if existing is None or existing['action'] != 'stage' or existing['state'] != 'prepared':
+                raise InvalidRequest()
+            epoch, document, intent, failure = await self._fences(connection, ctx)
+            if failure == 'denied':
+                raise UnauthorizedScope()
+            if failure is not None:
+                raise ProviderUnavailable()
+            await self._require_settled(connection, ctx)
+            plan = await self._load_stage(connection, ctx)
+            self._attestation_intent(plan, intent, existing)
+            preparation, attestation = await self._attestation_material(connection, ctx, epoch, document, intent)
+            return MappingProxyType({'preparation': MappingProxyType(preparation),
+                'attestation': MappingProxyType(attestation) if attestation is not None else None})
+        return await self._run(ctx, deadline, snapshot)
+
+    async def attest_prepared(self, receipt: object, verifier: object, *, deadline: float) -> Mapping[str, Any]:
+        self._attestation_profile()
+        deadline = deadline_value(deadline)
+        data = await attestation_receipt_data(receipt, verifier, self, deadline=deadline)
+        projection_failure: UnauthorizedScope | None = None
+        try:
+            await self.validate_publication_projection(data['projection'], deadline=deadline)
+        except UnauthorizedScope as error:
+            projection_failure = error
+        data = await attestation_receipt_data(receipt, verifier, self, deadline=deadline)
+        controller = publication_verifier_controller(verifier, self)
+        require_publication_finalization(controller, deadline=deadline)
+        ctx = context(data['context'])
+        binding = ordinary_binding(dict(data['attempt_binding']))
+        if (binding['instance_id'] != self.instance_id or binding['intent_id'] != ctx.intent_id
+                or binding['owner_token'] != ctx.owner_token):
+            raise UnsupportedCapability()
+        desired: dict[str, Any] | None = None
+
+        async def operation(connection: SessionConnection, *, insert: bool) -> Mapping[str, Any] | None:
+            nonlocal desired
+            require_publication_finalization(controller, deadline=deadline)
+            existing = await self._inspect(connection, ctx)
+            if existing is None or existing['action'] != 'stage':
+                raise InvalidRequest()
+            if existing['state'] in ('conflict','denied'):
+                return MappingProxyType({'intent': existing, 'attestation': None})
+            if existing['state'] != 'prepared':
+                raise InvalidRequest()
+            epoch, document, intent, failure = await self._fences(connection, ctx)
+            require_publication_finalization(controller, deadline=deadline)
+            if failure is not None:
+                return MappingProxyType({'intent': await self._outcome(connection, ctx, failure), 'attestation': None})
+            if intent[6] != 'prepared':
+                raise InvalidRequest()
+            if projection_failure is not None:
+                raise projection_failure
+            if binding['epoch'] != epoch:
+                raise ProviderUnavailable()
+            await self._require_settled(connection, ctx)
+            plan = await self._load_stage(connection, ctx)
+            graph = stage_data(plan)
+            self._attestation_intent(plan, intent, existing)
+            if (data['manifest_sha256'] != plan.manifest_sha256 or data['generation_id'] != graph.manifest.generation_id
+                    or data['revision_id'] != graph.manifest.revision_id
+                    or (data['authorization_revision'],data['mutation_epoch'],data['active_generation_id'],data['tombstoned'])
+                        != (document['authorization_revision'],document['mutation_epoch'],document['active_generation_id'],False)):
+                raise IntegrityViolation()
+            current_projection = finalize_publication_projection(self, {
+                'context': ctx, 'attempt_binding': binding, 'manifest_sha256': plan.manifest_sha256,
+                'revision_id': graph.manifest.revision_id, 'generation_id': graph.manifest.generation_id,
+                'authorization_revision': document['authorization_revision'], 'mutation_epoch': document['mutation_epoch'],
+                'active_generation_id': document['active_generation_id'], 'tombstoned': False,
+                'points': self._projection_points(graph, document),
+                'authority': MappingProxyType({key: tuple(document[key]) if key in ('principal_ids','grant_ids') else document[key]
+                    for key in ('principal_ids','grant_ids','language','kind','tag')}),
+            })
+            if publication_projection_data(current_projection, self)['readback_sha256'] != data['readback_sha256']:
+                raise IntegrityViolation()
+            preparation, stored = await self._attestation_material(connection, ctx, epoch, document, intent)
+            if epoch <= preparation['backend_epoch']:
+                raise ProviderUnavailable()
+            row = dict(zip(('tenant_id','collection','document_id','intent_id'), _key(ctx), strict=True))
+            row.update(instance_id=self.instance_id, owner_token=ctx.owner_token, backend_epoch=epoch,
+                authorization_revision=document['authorization_revision'], mutation_epoch=document['mutation_epoch'],
+                manifest_sha256=intent[3], expected_active_generation_id=intent[2],
+                credential_generation=binding['credential_generation'], verification_id=binding['dispatch_id'],
+                readback_sha256=_digest(data['readback_sha256']))
+            if desired is None:
+                desired = row
+            elif desired != row:
+                raise IntegrityViolation()
+            if stored is not None:
+                if stored != row:
+                    raise IntegrityViolation()
+            elif not insert:
+                return None
+            else:
+                require_publication_finalization(controller, deadline=deadline)
+                await connection.execute('INSERT INTO cragkit_qdrant.preparation_attestations ('
+                    + ','.join(_ATTESTATION_FIELDS) + ') VALUES (' + ','.join('%s' for _ in _ATTESTATION_FIELDS) + ')',
+                    tuple(row[key] for key in _ATTESTATION_FIELDS))
+            require_publication_finalization(controller, deadline=deadline)
+            return MappingProxyType({'intent': existing, 'attestation': MappingProxyType(row)})
+
+        async def insert(connection: SessionConnection) -> Mapping[str, Any]:
+            result = await operation(connection, insert=True)
+            assert result is not None
+            return result
+        async def confirm(connection: SessionConnection) -> Mapping[str, Any] | None:
+            return await operation(connection, insert=False)
+        try:
+            return await self._run(ctx, deadline, insert, detect_commit_unknown=True)
+        except _CommitUnknown:
+            require_publication_finalization(controller, deadline=deadline)
+            confirmed = await self._run(ctx, deadline, confirm)
+            if confirmed is not None:
+                return confirmed
+            try:
+                return await self._run(ctx, deadline, insert, detect_commit_unknown=True)
+            except _CommitUnknown:
+                confirmed = await self._run(ctx, deadline, confirm)
+                if confirmed is not None:
+                    return confirmed
+                raise ProviderUnavailable() from None
+
     async def publish(self, value: object, *, deadline: float) -> Mapping[str, Any]:
         ctx = context(value)
         async def publish(connection: SessionConnection) -> Mapping[str, Any]:
@@ -1369,12 +1602,36 @@ class PostgresQdrantWriter:
                 raise InvalidRequest()
             if existing is not None and existing['state'] in ('published','conflict','denied'):
                 return existing
-            _,document,intent,failure = await self._fences(connection,ctx)
+            epoch,document,intent,failure = await self._fences(connection,ctx)
             if failure is not None:
                 return await self._outcome(connection,ctx,failure)
             if intent[6] != 'prepared':
                 raise InvalidRequest()
             await self._require_settled(connection,ctx)
+            plan = await self._load_stage(connection,ctx)
+            self._attestation_intent(plan, intent, existing)
+            if self._schema_profile == 3:
+                preparation, attestation = await self._attestation_material(connection,ctx,epoch,document,intent)
+                current = (preparation['owner_token'] == ctx.owner_token and preparation['backend_epoch'] == epoch)
+                if not current and attestation is None:
+                    raise ProviderUnavailable()
+            else:
+                rows = await self._query(connection, 'SELECT owner_token::text,backend_epoch,instance_id,'
+                    'manifest_sha256,authorization_revision,mutation_epoch FROM cragkit_qdrant.preparations WHERE '
+                    + _INTENT + ' LIMIT 2', _key(ctx))
+                expected = (ctx.owner_token,epoch,self.instance_id,intent[3],document['authorization_revision'],document['mutation_epoch'])
+                if not rows:
+                    raise IntegrityViolation()
+                if len(rows) != 1 or len(rows[0]) != 6:
+                    raise IntegrityViolation()
+                _stored_uuid(rows[0][0]); _stored_count(rows[0][1],1); _stored_identity(rows[0][2])
+                _stored_identity(rows[0][4]); _stored_count(rows[0][5])
+                try:
+                    _digest(rows[0][3])
+                except InvalidRequest:
+                    raise IntegrityViolation() from None
+                if rows[0] != expected:
+                    raise ProviderUnavailable()
             if document['active_generation_id'] is not None:
                 await connection.execute('UPDATE cragkit_qdrant.generations SET published=false WHERE '+_DOC+' AND generation_id=%s',(*_doc(ctx),document['active_generation_id']))
             await connection.execute('UPDATE cragkit_qdrant.generations SET published=true,ever_published=true WHERE '+_DOC+' AND generation_id=%s',(*_doc(ctx),intent[4]))

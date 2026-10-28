@@ -10,7 +10,7 @@ import {ManagedQdrantPublicationWorkerHost,OwnedPublicationWorker,OrdinaryWorker
   PublicationWorkerFrameDecoder,encode_worker_frame,strict_worker_json,publication_worker_job,
   is_worker_controller,is_publication_controller,publication_attempt_binding,publication_controller_profile,
   publication_issue_attempt,publication_transport_for,publication_before_write,publication_finalization,
-  publication_worker_http_request,publication_worker_http_status} from '../dist/qdrant-publication-worker.js';
+  publication_worker_http_request,publication_worker_http_status,require_publication_finalization} from '../dist/qdrant-publication-worker.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {ExecutionLedger,BudgetExhausted} from '../dist/execution.js';
 import {now} from '../dist/postgres-pool.js';
@@ -27,6 +27,53 @@ const ledger=()=>new ExecutionLedger({limits:{deadline_ms:60000,max_attempts:1,m
 const canonical=value=>Array.isArray(value)?'['+value.map(canonical).join(',')+']':value&&typeof value==='object'?'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical(value[key])).join(',')+'}':JSON.stringify(value);
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const result=()=>({intent_id:reference.intent_id,operation:'publish',state:'published',revision_id:'rev-1',generation_id:'gen-1',authority_committed:true,replica_complete:true,published:true,purge_complete:false});
+
+test('private finalization authority requires the acquired helper, controller and original budget',async()=>{
+  const fixture=supervisor(),other=supervisor(),abort=new AbortController();
+  const lease={deadline:now()+3,signal:abort.signal};
+  assert.throws(()=>require_publication_finalization(fixture.actual,lease),InvalidRequest);
+  await fixture.actual.control_session(async()=>{
+    assert.throws(()=>require_publication_finalization(fixture.actual,lease),InvalidRequest);
+  });
+  await publication_finalization(fixture.actual,{},async()=>{
+    assert.equal(fixture.state.session,true);
+    require_publication_finalization(fixture.actual,lease);
+    require_publication_finalization(fixture.actual,{...lease,deadline:lease.deadline-.01});
+    assert.throws(()=>require_publication_finalization(other.actual,lease),InvalidRequest);
+    assert.throws(()=>require_publication_finalization(fixture.actual,{...lease,deadline:lease.deadline+1}),InvalidRequest);
+    assert.throws(()=>require_publication_finalization(fixture.actual,{deadline:lease.deadline}),InvalidRequest);
+    await assert.rejects(publication_finalization(other.actual,{},async()=>{},lease),InvalidRequest);
+  },lease);
+  assert.equal(fixture.state.session,false);
+  assert.throws(()=>require_publication_finalization(fixture.actual,lease),InvalidRequest);
+});
+
+test('inherited late work cannot retain finalization authority after body unwind',async()=>{
+  const fixture=supervisor(),lease=options();let release;
+  const gate=new Promise(resolve=>{release=resolve;});let late;
+  await publication_finalization(fixture.actual,{},async()=>{
+    late=(async()=>{await gate;assert.throws(()=>require_publication_finalization(fixture.actual,lease),InvalidRequest);})();
+  },lease);
+  assert.equal(fixture.state.session,false);release();await late;
+});
+
+test('abort and expiry revoke append admission while actual finalization drains',async()=>{
+  const fixture=supervisor(),abort=new AbortController(),lease={deadline:now()+3,signal:abort.signal};
+  let release,arrive;const gate=new Promise(resolve=>{release=resolve;}),entered=new Promise(resolve=>{arrive=resolve;});
+  const pending=publication_finalization(fixture.actual,{},async()=>{
+    arrive();await gate;
+    assert.throws(()=>require_publication_finalization(fixture.actual,lease),error=>error.name==='AbortError');
+  },lease);
+  await entered;abort.abort();assert.equal(fixture.state.session,true);release();await pending;
+  assert.equal(fixture.state.session,false);
+  const short={deadline:now()+.02};
+  await publication_finalization(fixture.actual,{},async()=>{
+    await new Promise(resolve=>setTimeout(resolve,25));
+    assert.throws(()=>require_publication_finalization(fixture.actual,short),DeadlineExceeded);
+    assert.equal(fixture.state.session,true);
+  },short);
+  assert.equal(fixture.state.session,false);
+});
 function supervisor(){
   const actual=new ManagedQdrantSupervisor('/tmp/qdrant','/tmp/cragkit-worker-test','instance-fixture',config);
   const state={identity:{instance_id:'instance-fixture',backend_namespace:config.backend_namespace,storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',epoch:1,credential_generation:'generation-1',recovery:null,sealed:false,alive:true},issued:0,credentials:0,closed:0,session:false};

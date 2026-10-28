@@ -5,7 +5,8 @@ import { ManagedQdrantSupervisor, type SupervisorControlSession } from './qdrant
 import { QdrantReconciliationVerifier, receipt_data, verifier_authority } from './qdrant-reconciliation.js';
 import { projection_data, writer_binding, type PostgresQdrantWriter } from './qdrant-writer.js';
 import { AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY, AUTHORITY_PUBLICATION_CATALOG_SQL,
-  AUTHORITY_FINGERPRINT_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT } from './qdrant-authority.js';
+  AUTHORITY_FINGERPRINT_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
+  AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,publication_schema_profile,type PublicationSchemaProfile } from './qdrant-authority.js';
 import { same, type QdrantConfig } from './qdrant-contract.js';
 import { config as parse_config, context as parse_context, options as parse_options, fields, metadata,
   native_array, text, count, db_count, uuid, digest, type Data, type WriterContext } from './qdrant-writer-contract.js';
@@ -145,6 +146,7 @@ export class PostgresQdrantRecovery {
   readonly #writer:PostgresQdrantWriter;
   #identity?:Data;
   #ready=false;
+  #profile:PublicationSchemaProfile|null=null;
   #closed=false;
   #active?:Readonly<{controller:AbortController;done:Promise<void>}>;
   #closing?:Promise<void>;
@@ -284,6 +286,8 @@ export class PostgresQdrantRecovery {
   async initialize(rawOptions:unknown):Promise<void> {
     const options=parse_options(rawOptions);
     await this.#work(options,async (lease,session)=>{
+      this.#ready=false;this.#profile=null;
+      let selected:PublicationSchemaProfile|null=null;
       const local=control(this.#supervisor);
       if (local.backend_namespace!==this.#config.backend_namespace) throw new UnsupportedCapability();
       const verify=async(tx:Tx)=>{
@@ -305,9 +309,10 @@ export class PostgresQdrantRecovery {
         return backend!;
       };
       const verified=await this.#commit(String(local.instance_id),lease,async tx=>{
-        const history=await tx.query(AUTHORITY_HISTORY_SQL,undefined,3);
-        if (history.length!==2||history.some((row,i)=>row.length!==2||row[0]!==AUTHORITY_PUBLICATION_HISTORY[i][0]||row[1]!==AUTHORITY_PUBLICATION_HISTORY[i][1])) throw new UnsupportedCapability();
-        for (const [sql,expected] of [[AUTHORITY_PUBLICATION_CATALOG_SQL,true],[AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT]] as const) {
+        selected=publication_schema_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,4));
+        const catalog=selected==='attestation'?AUTHORITY_ATTESTATION_CATALOG_SQL:AUTHORITY_PUBLICATION_CATALOG_SQL;
+        const fingerprint=selected==='attestation'?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;
+        for (const [sql,expected] of [[catalog,true],[AUTHORITY_FINGERPRINT_SQL,fingerprint]] as const) {
           const rows=await tx.query(sql,undefined,1);
           if (rows.length!==1||rows[0].length!==1||rows[0][0]!==expected) throw new UnsupportedCapability();
         }
@@ -321,7 +326,8 @@ export class PostgresQdrantRecovery {
       },verify);
       if (verified.state==='recovery_blocked') session.block_ordinary();
       this.#identity=local;
-      this.#ready=true;
+      if(selected===null)throw new UnsupportedCapability();
+      this.#profile=selected;this.#ready=true;
     },true);
   }
   async recover(rawRecovery:unknown,rawOptions:unknown):Promise<unknown> {

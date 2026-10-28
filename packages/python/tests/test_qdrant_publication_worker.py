@@ -1,6 +1,7 @@
 """Worker protocol/lifetime unit checks; actual process acceptance is separate."""
 import asyncio
 import copy
+import contextvars
 import hashlib
 import json
 from pathlib import Path
@@ -13,7 +14,7 @@ import cragkit._qdrant_publication_worker as worker
 import cragkit._qdrant_publication_verification as verification
 from cragkit._qdrant_supervisor import ManagedQdrantSupervisor
 from cragkit.contracts import Limits, TrustedScope
-from cragkit.errors import InvalidRequest, ProviderUnavailable, UnsupportedCapability
+from cragkit.errors import DeadlineExceeded, InvalidRequest, ProviderUnavailable, UnsupportedCapability
 from cragkit.execution import BudgetExhausted, ExecutionLedger
 from test_qdrant_reconciliation import run_async
 from test_qdrant_writer import config, ctx
@@ -59,6 +60,90 @@ def frame(value):
 
 def deadline():
     return asyncio.get_running_loop().time() + 5
+
+
+@run_async
+async def test_finalization_requires_helper_exact_controller_task_and_original_budget(tmp_path):
+    supervisor = ManagedQdrantSupervisor(tmp_path/'binary', tmp_path/'work', 'instance', config())
+    foreign = ManagedQdrantSupervisor(tmp_path/'other', tmp_path/'other-work', 'other', config())
+    end = deadline()
+    with pytest.raises(InvalidRequest):
+        worker.require_publication_finalization(supervisor, deadline=end)
+    async with supervisor.control_session():
+        with pytest.raises(InvalidRequest):
+            worker.require_publication_finalization(supervisor, deadline=end)
+    async with worker.controller_finalization(supervisor, object(), deadline=end):
+        copied = contextvars.copy_context()
+        worker.require_publication_finalization(supervisor, deadline=end - 1)
+        with pytest.raises(InvalidRequest):
+            worker.require_publication_finalization(supervisor, deadline=end + 1)
+        with pytest.raises(InvalidRequest):
+            worker.require_publication_finalization(foreign, deadline=end)
+        async def inherited():
+            with pytest.raises(InvalidRequest):
+                worker.require_publication_finalization(supervisor, deadline=end)
+        await asyncio.create_task(inherited())
+        with pytest.raises(InvalidRequest):
+            async with worker.controller_finalization(supervisor, object(), deadline=end):
+                pytest.fail('nested context admitted')
+    assert supervisor._control_token is None
+    with pytest.raises(InvalidRequest):
+        worker.require_publication_finalization(supervisor, deadline=end)
+    with pytest.raises(InvalidRequest):
+        copied.run(worker.require_publication_finalization, supervisor, deadline=end)
+
+
+@run_async
+async def test_finalization_expiry_and_cancellation_keep_session_until_body_unwinds(tmp_path):
+    supervisor = ManagedQdrantSupervisor(tmp_path/'binary', tmp_path/'work', 'instance', config())
+    end = asyncio.get_running_loop().time() + .01
+    async with worker.controller_finalization(supervisor, object(), deadline=end):
+        await asyncio.sleep(.02)
+        with pytest.raises(DeadlineExceeded):
+            worker.require_publication_finalization(supervisor, deadline=end)
+    entered, unwinding, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    async def body():
+        end = deadline()
+        async with worker.controller_finalization(supervisor, object(), deadline=end):
+            entered.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                assert supervisor._control_token is not None and worker._FINALIZATION.get().active
+                with pytest.raises(asyncio.CancelledError):
+                    worker.require_publication_finalization(supervisor, deadline=end)
+                unwinding.set()
+                await release.wait()
+                assert worker._FINALIZATION.get().active
+                raise
+    task = asyncio.create_task(body())
+    await entered.wait()
+    task.cancel()
+    await unwinding.wait()
+    assert supervisor._control_token is not None and not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert supervisor._control_token is None
+
+
+@run_async
+async def test_worker_finalization_context_uses_actual_ipc_begin_end():
+    selected_job = worker._job(job())
+    rpc = RPC([{}, {}, {}, {}])
+    controller = worker.OrdinaryWorkerController(worker._BOOT_TOKEN, rpc, selected_job, identity(), deadline())
+    attempt = worker._Attempt()
+    worker._CONTROLLERS[controller].attempts[attempt] = {'attempt_id': 1}
+    end = deadline()
+    async with controller.finalization(attempt, deadline=end):
+        with pytest.raises(InvalidRequest):
+            worker.require_publication_finalization(controller, deadline=end)
+    async with worker.controller_finalization(controller, attempt, deadline=end):
+        worker.require_publication_finalization(controller, deadline=end)
+        assert [call[0] for call in rpc.calls] == ['finalize_begin', 'finalize_end', 'finalize_begin']
+    assert [call[0] for call in rpc.calls] == ['finalize_begin', 'finalize_end', 'finalize_begin', 'finalize_end']
+    with pytest.raises(InvalidRequest):
+        worker.require_publication_finalization(controller, deadline=end)
 
 
 @pytest.mark.parametrize('changes', [dict(state='prepared', published=False),

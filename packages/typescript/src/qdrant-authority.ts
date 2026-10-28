@@ -11,6 +11,14 @@ export const AUTHORITY_PUBLICATION_HISTORY = Object.freeze([
   ...AUTHORITY_HISTORY,
   Object.freeze(['0002_publication', '386fe01d0d03e35ac35c21bce598b21bff2c5ad510e9cdf0a6fbe56f359b6661']),
 ]);
+export const AUTHORITY_ATTESTATION_HISTORY=Object.freeze([
+  ...AUTHORITY_PUBLICATION_HISTORY,
+  Object.freeze(['0003_preparation_attestations','8c6791cd0fd65ff09758c068ebc90a895a4ac21d9713512486d3daf9cb7c8433']),
+]);
+export const EXPECTED_ATTESTATION_HISTORY=AUTHORITY_ATTESTATION_HISTORY;
+export const EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT='7ffd3b585b1fe32bc3476a3dc4390b022f5dcfd6c5ed186c9964fec4ffd72848';
+export const EXPECTED_ATTESTATION_FINGERPRINT=EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT;
+export const EXPECTED_ATTESTATION_CATALOG_FINGERPRINT=EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT;
 export const EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT = 'e395925257def30b9d143b7210c68583d4cbbb0950d8a8e1bb4f5aba5b8be69b';
 export const AUTHORITY_ROLE_SQL=`SELECT current_user = session_user
  AND EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolcanlogin AND NOT(rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication))
@@ -42,8 +50,16 @@ export const AUTHORITY_PUBLICATION_CATALOG_SQL = `SELECT current_setting('server
  AND NOT EXISTS(SELECT 1 FROM pg_constraint k JOIN pg_namespace n ON n.oid=k.connamespace WHERE n.nspname='cragkit_qdrant' AND NOT k.convalidated)
  AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='cragkit_qdrant' AND p.prosecdef)
  AND NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant' AND t.tgenabled<>'O')`;
+export const AUTHORITY_ATTESTATION_CATALOG_SQL = `SELECT current_setting('server_version_num')::integer BETWEEN 170000 AND 179999
+ AND current_setting('server_encoding')='UTF8'
+ AND (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant' AND c.relkind='r')=14
+ AND (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND c.relname IN('documents','document_revisions','generations','members','schema_migrations','backend_instances','publication_intents','document_owners','point_claims','vector_replays','dispatch_journal','dispatch_points','preparations','preparation_attestations'))=14
+ AND (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND c.relname<>'schema_migrations' AND c.relrowsecurity AND c.relforcerowsecurity)=13
+ AND NOT EXISTS(SELECT 1 FROM pg_constraint k JOIN pg_namespace n ON n.oid=k.connamespace WHERE n.nspname='cragkit_qdrant' AND NOT k.convalidated)
+ AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='cragkit_qdrant' AND p.prosecdef)
+ AND NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant' AND t.tgenabled<>'O')`;
 export const AUTHORITY_FINGERPRINT_SQL="-- QS-r1 PostgreSQL 17 catalog signature. Execute with search_path=pg_catalog.\n-- Runtime role/ownership/permissions are checked separately. This signature\n-- excludes physical OIDs, owners, timestamps and named runtime grants.\nWITH catalog AS (\nSELECT jsonb_build_object(\n 'namespace_public', (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n   FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) x\n   WHERE n.nspname='cragkit_qdrant' AND x.grantee=0),\n 'relations', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,c.relkind,c.relpersistence,c.relrowsecurity,c.relforcerowsecurity,c.reloptions,\n   (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n    FROM aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) x WHERE x.grantee=0)) ORDER BY c.relname),'[]'::jsonb)\n   FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant'),\n 'columns', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,a.attnum,a.attname,format_type(a.atttypid,a.atttypmod),\n   a.attnotnull,a.attidentity,a.attgenerated,a.attisdropped,cn.nspname,co.collname,pg_get_expr(d.adbin,d.adrelid),\n   (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n    FROM aclexplode(a.attacl) x WHERE x.grantee=0)) ORDER BY c.relname,a.attnum),'[]'::jsonb)\n   FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid\n   LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum LEFT JOIN pg_collation co ON co.oid=a.attcollation\n   LEFT JOIN pg_namespace cn ON cn.oid=co.collnamespace WHERE n.nspname='cragkit_qdrant' AND a.attnum>0 AND c.relkind IN ('r','p','v','m','f')),\n 'types', (SELECT COALESCE(jsonb_agg(jsonb_build_array(t.typname,t.typtype,t.typcategory,\n   CASE WHEN t.typbasetype=0 THEN NULL ELSE format_type(t.typbasetype,t.typtypmod) END,t.typnotnull,\n   cn.nspname,co.collname,t.typdefault,\n   (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n    FROM aclexplode(COALESCE(t.typacl,acldefault('T',t.typowner))) x WHERE x.grantee=0)) ORDER BY t.typname),'[]'::jsonb)\n   FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_collation co ON co.oid=t.typcollation\n   LEFT JOIN pg_namespace cn ON cn.oid=co.collnamespace WHERE n.nspname='cragkit_qdrant'),\n 'constraints', (SELECT COALESCE(jsonb_agg(jsonb_build_array(cl.relname,ty.typname,k.conname,k.contype,k.convalidated,k.condeferrable,k.condeferred,\n   pg_get_constraintdef(k.oid,true)) ORDER BY cl.relname NULLS FIRST,ty.typname NULLS FIRST,k.conname),'[]'::jsonb)\n   FROM pg_constraint k JOIN pg_namespace n ON n.oid=k.connamespace LEFT JOIN pg_class cl ON cl.oid=k.conrelid\n   LEFT JOIN pg_type ty ON ty.oid=k.contypid WHERE n.nspname='cragkit_qdrant'),\n 'indexes', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,i.indisvalid,i.indisready,pg_get_indexdef(i.indexrelid)) ORDER BY c.relname),'[]'::jsonb)\n   FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant'),\n 'triggers', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,t.tgname,t.tgenabled,pg_get_triggerdef(t.oid,true)) ORDER BY c.relname,t.tgname),'[]'::jsonb)\n   FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant' AND NOT t.tgisinternal),\n 'policies', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,p.polname,p.polcmd,p.polpermissive,\n   (SELECT jsonb_agg(role_name ORDER BY role_name) FROM (SELECT CASE WHEN role_id=0 THEN 'PUBLIC' ELSE (SELECT rolname::text FROM pg_roles WHERE oid=role_id) END AS role_name FROM unnest(p.polroles) role_id) named_roles),pg_get_expr(p.polqual,p.polrelid),pg_get_expr(p.polwithcheck,p.polrelid)) ORDER BY c.relname,p.polname),'[]'::jsonb)\n   FROM pg_policy p JOIN pg_class c ON c.oid=p.polrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant'),\n 'functions', (SELECT COALESCE(jsonb_agg(jsonb_build_array(p.proname,pg_get_function_identity_arguments(p.oid),p.prokind,\n   p.prosecdef,p.proleakproof,p.provolatile,p.proparallel,p.proisstrict,p.proconfig,CASE WHEN p.prokind='a' THEN NULL ELSE pg_get_functiondef(p.oid) END,\n   (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n    FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) x WHERE x.grantee=0)) ORDER BY p.proname,pg_get_function_identity_arguments(p.oid)),'[]'::jsonb)\n   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='cragkit_qdrant')\n) AS payload\n)\nSELECT encode(sha256(convert_to(payload::text,'UTF8')),'hex') AS schema_fingerprint FROM catalog;\n";
-export const AUTHORITY_HISTORY_SQL='SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version COLLATE pg_catalog."C" LIMIT 3';
+export const AUTHORITY_HISTORY_SQL='SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version COLLATE pg_catalog."C" LIMIT 4';
 export const AUTHORITY_SCOPE_SQL=`SELECT set_config('cragkit_qdrant.tenant_id',$1,true),set_config('cragkit_qdrant.collection',$2,true),set_config('cragkit_qdrant.principal_id',$3,true),set_config('cragkit_qdrant.grant_ids',$4,true),set_config('cragkit_qdrant.authorization_revision',$5,true)`;
 const SELECT_SOURCE=`SELECT m.point_id::text,g.backend_namespace,g.physical_collection,g.collection_incarnation,m.tenant_id,m.collection,m.document_id,m.revision_id,m.generation_id,m.chunk_id,m.start_byte,m.end_byte,m.source_sha256,m.text_sha256,g.dense_profile_id,g.sparse_profile_id,g.dense_profile,g.sparse_profile,d.authorization_revision,d.mutation_epoch,d.principal_ids,d.grant_ids,d.language,d.kind,d.tag,r.source_locator,r.parser_id,g.chunker_profile,octet_length(r.canonical_utf8),CASE WHEN octet_length(r.canonical_utf8)<=$1 AND octet_length(r.canonical_utf8)<=16777216 AND octet_length(m.excerpt_utf8)<=32768 THEN r.canonical_utf8 ELSE NULL END,octet_length(m.excerpt_utf8),CASE WHEN octet_length(r.canonical_utf8)<=$1 AND octet_length(r.canonical_utf8)<=16777216 AND octet_length(m.excerpt_utf8)<=32768 THEN m.excerpt_utf8 ELSE NULL END,d.active_generation_id,g.published,g.ever_published,d.tombstoned
  FROM cragkit_qdrant.members m
@@ -91,7 +107,7 @@ function validated_history(value: unknown): readonly (readonly string[])[] {
     }
     return result;
   }
-  return array(value, 1, 2).map(row => array(row, 2, 2).map(field => {
+  return array(value, 1, 3).map(row => array(row, 2, 2).map(field => {
     if (typeof field !== 'string') throw new UnsupportedCapability();
     return field;
   }));
@@ -100,6 +116,13 @@ function validated_history(value: unknown): readonly (readonly string[])[] {
 function history_matches(actual: readonly (readonly string[])[], expected: readonly (readonly string[])[]): boolean {
   return actual.length === expected.length
     && actual.every((row, index) => row[0] === expected[index][0] && row[1] === expected[index][1]);
+}
+export type PublicationSchemaProfile='publication'|'attestation';
+export function publication_schema_profile(history:unknown):PublicationSchemaProfile{
+  const checked=validated_history(history);
+  if(history_matches(checked,AUTHORITY_PUBLICATION_HISTORY))return 'publication';
+  if(history_matches(checked,AUTHORITY_ATTESTATION_HISTORY))return 'attestation';
+  throw new UnsupportedCapability();
 }
 export class PostgresQdrantAuthority{
   constructor(readonly resource:PoolResource){
@@ -202,6 +225,9 @@ export class PostgresQdrantAuthority{
     } else if (history_matches(checkedHistory, AUTHORITY_PUBLICATION_HISTORY)) {
       catalogSql = AUTHORITY_PUBLICATION_CATALOG_SQL;
       expectedFingerprint = EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;
+    } else if (history_matches(checkedHistory, AUTHORITY_ATTESTATION_HISTORY)) {
+      catalogSql=AUTHORITY_ATTESTATION_CATALOG_SQL;
+      expectedFingerprint=EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT;
     } else {
       throw new UnsupportedCapability();
     }

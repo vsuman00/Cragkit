@@ -181,3 +181,19 @@ def test_child_failure_envelope_preserves_only_closed_primary_and_cleanup_labels
                         cleanup=[dict(operation='writer_close', outcome='internal')])]:
         with pytest.raises(RuntimeError, match='writer_node_failure_shape'):
             failure_observation(malformed)
+
+
+def test_attestation_upgrade_is_explicit_additive_and_checks_committed_catalog():
+    pytest.importorskip('psycopg')
+    database = native.PublicationDatabase(Fixture(), with_attestations=True)
+    database.admin = connection = Connection()
+    async def current_catalog():
+        value=json.loads((native.ROOT / 'contracts/fixtures/qdrant_attestation_catalog.json').read_text())
+        return [(value['catalog_fingerprint'],)]
+    connection.fetchall=current_catalog
+    asyncio.run(database._install())
+    history=[params[0] for _,params,_ in connection.commands if params and str(params[0]).startswith('000')]
+    assert history==['0001_authority','0002_publication','0003_preparation_attestations']
+    assert connection.events[-3:]==['commit','query','query']
+    with pytest.raises(ValueError,match='publication_fixture_profile'):
+        native.PublicationDatabase(Fixture(),with_attestations='yes')

@@ -1,14 +1,14 @@
 /** Ordinary readback evidence. This module neither dispatches nor publishes. */
 import { types } from 'node:util';
 import { ManagedQdrantSupervisor, type SupervisorTransport } from './qdrant-supervisor.js';
-import {is_publication_controller,is_worker_controller,publication_attempt_binding,publication_transport_for,type OrdinaryPublicationController} from './qdrant-publication-worker.js';
+import {is_publication_controller,is_worker_controller,publication_attempt_binding,publication_transport_for,require_publication_finalization,type OrdinaryPublicationController} from './qdrant-publication-worker.js';
 import { PostgresQdrantWriter, publication_projection_data,
   type PublicationProjection, type PublicationProjectionData } from './qdrant-writer.js';
 import { verify_projection_readback } from './qdrant-reconciliation.js';
 import { context as parse_context, options as parse_options, metadata, fields, text, uuid, count,
   type Data, type WriterContext } from './qdrant-writer-contract.js';
 import { same } from './qdrant-contract.js';
-import { bounded, now } from './postgres-pool.js';
+import { bounded, now, type LeaseOptions } from './postgres-pool.js';
 import { DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable,
   UnauthorizedScope, UnsupportedCapability } from './errors.js';
 
@@ -21,6 +21,16 @@ type Issued=Readonly<{
   data:PublicationReceiptData;
 }>;
 const receipts=new WeakMap<object,Issued>();
+const verifierOrigins=new WeakMap<object,Readonly<{writer:PostgresQdrantWriter;controller:OrdinaryPublicationController}>>();
+
+/** Original native metadata only; no pool, receipt or controller permission. */
+export function publication_verifier_controller(verifier:QdrantPublicationVerifier,expectedWriter:PostgresQdrantWriter):OrdinaryPublicationController{
+  if(typeof verifier!=='object'||verifier===null||types.isProxy(verifier)
+      ||Object.getPrototypeOf(verifier)!==QdrantPublicationVerifier.prototype)throw new InvalidRequest();
+  const original=verifierOrigins.get(verifier);
+  if(!original||original.writer!==expectedWriter||!is_publication_controller(original.controller))throw new InvalidRequest();
+  return original.controller;
+}
 
 /** Recovery capabilities cannot be interpreted as ordinary publication attempts. */
 function ordinary_binding(supervisor:ManagedQdrantSupervisor,attempt:unknown):Readonly<Data> {
@@ -50,6 +60,19 @@ export async function validate_publication_receipt(input:unknown,verifier:Qdrant
   if(!issued||issued.issuer!==verifier)throw new InvalidRequest();
   if(!same(await publication_attempt_binding(issued.supervisor,issued.attempt,options),issued.data.attempt_binding))throw new UnsupportedCapability();
   return issued.data;
+}
+
+/** Private append admission requires both live native ownership and receipt provenance. */
+export async function attestation_receipt_data(input:unknown,verifier:QdrantPublicationVerifier,expectedWriter:PostgresQdrantWriter,rawOptions:LeaseOptions):Promise<PublicationReceiptData>{
+  const parsed=parse_options(rawOptions);
+  const options:LeaseOptions={deadline:parsed.deadline,signal:parsed.signal};
+  const controller=publication_verifier_controller(verifier,expectedWriter);
+  require_publication_finalization(controller,options);
+  const data=await validate_publication_receipt(input,verifier,options);
+  if(publication_verifier_controller(verifier,expectedWriter)!==controller)throw new InvalidRequest();
+  publication_projection_data(data.projection,expectedWriter);
+  require_publication_finalization(controller,options);
+  return data;
 }
 
 function safe(error:unknown):Error {
@@ -85,6 +108,7 @@ export class QdrantPublicationVerifier {
       ||!is_publication_controller(supervisor))throw new InvalidRequest();
     this.#writer=writer;
     this.#supervisor=supervisor;
+    verifierOrigins.set(this,Object.freeze({writer,controller:supervisor}));
   }
 
   async verify(attempt:unknown,input:unknown,rawOptions:unknown):Promise<PublicationReadbackReceipt> {

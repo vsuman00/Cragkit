@@ -129,8 +129,8 @@ async def node_publication_source_cases(value):
             raise CleanupFailure(failures, primary=primary, stage='recovery') from None
 
 
-async def check(fixture, runtime, binary, work_dir):
-    async with PublicationDatabase(fixture) as database:
+async def check(fixture, runtime, binary, work_dir, *, with_attestations=False):
+    async with PublicationDatabase(fixture, with_attestations=with_attestations) as database:
         value = dict(binary=str(binary), work_dir=str(work_dir), inputs=publication_source_input(),
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'),
             reader_config=database.config('reader'))
@@ -146,6 +146,7 @@ def main(argv=None):
     parser.add_argument('--binary-sha256', required=True)
     parser.add_argument('--artifacts-dir', type=Path, required=True)
     parser.add_argument('--runtime', choices=('python', 'typescript', 'all'), default='all')
+    parser.add_argument('--with-attestations', action='store_true')
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
     try:
@@ -160,7 +161,7 @@ def main(argv=None):
         for runtime in ('python', 'typescript') if args.runtime == 'all' else (args.runtime,):
             private = Path(tempfile.mkdtemp(prefix=runtime + '-', dir=args.artifacts_dir)).resolve()
             with PostgresSourceFixture(args.postgres_bin, private / 'postgres') as fixture:
-                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed'), 130))
+                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed', with_attestations=args.with_attestations), 130))
             shutil.rmtree(private)
             results.append(result)
         if len(results) == 2:

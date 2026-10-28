@@ -1061,3 +1061,18 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 Use a fresh directory. This test owns disposable local processes and synthetic data. Ordinary windows use at most two database clients. The paused-child recovery experiment permits three max-one clients; its PostgreSQL fixture uses six total slots while preserving three reserved superuser slots. Other fixtures retain their five-slot default. No provider/model, hosted mutation or automatic supervisor takeover occurs. Full H acceptance, managed repair and installed artifacts remain separate gates.
 
 Use a fresh directory. The checker opens two restricted resources, runs actual public manager code against isolated PostgreSQL/Qdrant, and compares nineteen exact public-result snapshots. It withholds one real preparation COMMIT acknowledgment and one real completed HTTP response; it does not fabricate successful writes. Prepared cancellation/object restart is narrower than the pending process-kill matrix. Keep native languages and other integration suites serial. Successful cleanup verifies listener absence before removing only owned fixture storage.
+
+## V5-04G0 preparation attestations
+
+[The publication guide](qdrant-publication.md#preparation-after-recovery) explains the explicit optional migration and private receipt boundary. [G0 evidence](../evaluation/reports/V5/V5-04G0.md) records acceptance scope.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_writer.py packages/python/tests/test_qdrant_publication_verification.py packages/python/tests/test_qdrant_publication_worker.py tools/tests/test_qdrant_attestation_migration.py tools/tests/test_qdrant_attestation_schema.py tools/tests/test_check_qdrant_attestation_schema.py tools/tests/test_qdrant_attestation_native.py tools/tests/test_qdrant_publication_native.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-writer.test.mjs packages/typescript/tests/qdrant-publication-verification.test.mjs packages/typescript/tests/qdrant-publication-worker.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_attestation.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --artifacts-dir artifacts/V5/V5-04G0/a-new-run
+```
+
+The parent runs each language serially against fresh disposable PostgreSQL/Qdrant servers, verifies the explicit three-migration catalog and tests native permission drift before releasing the setup administrator. At most two database clients are active. Its acknowledgment fault occurs after an actual successful SQL commit; same-key confirmation must succeed without another point write. Use a fresh artifact directory and retain the pinned Qdrant binary. This task does not call a model or configure a hosted service.
+
+`tools/check_qdrant_publication_source.py` also accepts `--with-attestations` to run its unchanged source-facing scenarios on the explicit three-migration profile. Omit that option to retain the original two-migration fixture. Neither checker changes an application database or applies a migration on import.

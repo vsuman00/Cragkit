@@ -8,8 +8,9 @@ import pytest
 import cragkit._qdrant_publication_verification as implementation
 from cragkit._qdrant_publication_verification import (
     PublicationProjection, PublicationReadbackReceipt, QdrantPublicationVerifier,
-    publication_projection_data, publication_receipt_data,
+    publication_projection_data, publication_receipt_data, attestation_receipt_data,
 )
+from cragkit._qdrant_publication_worker import controller_finalization
 from cragkit.errors import (DeadlineExceeded, IntegrityViolation, InvalidRequest,
                             ProviderUnavailable, UnauthorizedScope, UnsupportedCapability)
 from test_qdrant_reconciliation import run_async, setup as recovery_setup
@@ -66,6 +67,94 @@ async def test_full_ordinary_readback_private_receipt_and_witness(monkeypatch, t
     supervisor._credential_generation = 'rotated'
     with pytest.raises(ProviderUnavailable):
         publication_receipt_data(receipt, verifier)
+
+
+@run_async
+async def test_attestation_receipt_requires_original_issuer_and_acquired_helper(monkeypatch, tmp_path):
+    writer, supervisor, attempt, verifier, _, _, _, _ = await setup(monkeypatch, tmp_path)
+    end = asyncio.get_running_loop().time() + 5
+    receipt = await verifier.verify(attempt, ctx(), deadline=end)
+    expected = publication_receipt_data(receipt, verifier)
+    with pytest.raises(InvalidRequest):
+        await attestation_receipt_data(receipt, verifier, writer, deadline=end)
+    async with supervisor.control_session():
+        with pytest.raises(InvalidRequest):
+            await attestation_receipt_data(receipt, verifier, writer, deadline=end)
+    other_verifier = QdrantPublicationVerifier(writer, supervisor)
+    async with controller_finalization(supervisor, attempt, deadline=end):
+        actual = await attestation_receipt_data(receipt, verifier, writer, deadline=end - .1)
+        assert actual is expected
+        with pytest.raises(TypeError):
+            actual['readback_sha256'] = 'changed'
+        for forged, issuer, owner in ((PublicationReadbackReceipt(), verifier, writer),
+                (dict(expected), verifier, writer), (receipt, other_verifier, writer),
+                (receipt, verifier, object()), (receipt, object.__new__(QdrantPublicationVerifier), writer)):
+            with pytest.raises(InvalidRequest):
+                await attestation_receipt_data(forged, issuer, owner, deadline=end)
+        for copier in (copy.copy, copy.deepcopy):
+            with pytest.raises(TypeError):
+                copier(receipt)
+        async def inherited():
+            with pytest.raises(InvalidRequest):
+                await attestation_receipt_data(receipt, verifier, writer, deadline=end)
+        await asyncio.create_task(inherited())
+        with pytest.raises(InvalidRequest):
+            await attestation_receipt_data(receipt, verifier, writer, deadline=end + 1)
+    with pytest.raises(InvalidRequest):
+        await attestation_receipt_data(receipt, verifier, writer, deadline=end)
+
+
+@run_async
+async def test_attestation_receipt_rejects_foreign_context_rebound_verifier_and_retired_attempt(monkeypatch, tmp_path):
+    from cragkit._qdrant_supervisor import ManagedQdrantSupervisor
+    from test_qdrant_writer import config
+    writer, supervisor, attempt, verifier, _, _, _, _ = await setup(monkeypatch, tmp_path)
+    end = asyncio.get_running_loop().time() + 5
+    receipt = await verifier.verify(attempt, ctx(), deadline=end)
+    foreign = ManagedQdrantSupervisor(tmp_path/'other', tmp_path/'other-work', 'other-instance', config())
+    async with controller_finalization(foreign, object(), deadline=end):
+        with pytest.raises(InvalidRequest):
+            await attestation_receipt_data(receipt, verifier, writer, deadline=end)
+    async with controller_finalization(supervisor, attempt, deadline=end):
+        verifier.supervisor = foreign
+        with pytest.raises(InvalidRequest):
+            await attestation_receipt_data(receipt, verifier, writer, deadline=end)
+        verifier.supervisor = supervisor
+        verifier.writer = object()
+        with pytest.raises(InvalidRequest):
+            await attestation_receipt_data(receipt, verifier, writer, deadline=end)
+        verifier.writer = writer
+        supervisor._credential_generation = 'retired-attempt'
+        with pytest.raises(ProviderUnavailable):
+            await attestation_receipt_data(receipt, verifier, writer, deadline=end)
+
+
+@run_async
+async def test_attestation_checks_context_again_after_awaited_validation(monkeypatch, tmp_path):
+    writer, supervisor, attempt, verifier, _, _, _, _ = await setup(monkeypatch, tmp_path)
+    end = asyncio.get_running_loop().time() + 5
+    receipt = await verifier.verify(attempt, ctx(), deadline=end)
+    original = implementation.validate_publication_receipt
+    async def rebind_after_validation(value, issuer, *, deadline):
+        result = await original(value, issuer, deadline=deadline)
+        await asyncio.sleep(0)
+        issuer.writer = object()
+        return result
+    monkeypatch.setattr(implementation, 'validate_publication_receipt', rebind_after_validation)
+    async with controller_finalization(supervisor, attempt, deadline=end):
+        with pytest.raises(InvalidRequest):
+            await attestation_receipt_data(receipt, verifier, writer, deadline=end)
+    verifier.writer = writer
+    expected = publication_receipt_data(receipt, verifier)
+    async def expiry_after_validation(value, issuer, *, deadline):
+        # Unit seam isolates expiry across the awaited controller validation.
+        await asyncio.sleep(.02)
+        return expected
+    monkeypatch.setattr(implementation, 'validate_publication_receipt', expiry_after_validation)
+    end = asyncio.get_running_loop().time() + .01
+    async with controller_finalization(supervisor, attempt, deadline=end):
+        with pytest.raises(DeadlineExceeded):
+            await attestation_receipt_data(receipt, verifier, writer, deadline=end)
 
 
 @pytest.mark.parametrize('case', ['pending', 'owner', 'blocked', 'epoch', 'missing', 'tombstone'])

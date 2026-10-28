@@ -4,7 +4,10 @@ import { PoolResource, bounded, now, type PgClient, type LeaseOptions } from './
 import { DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady, IntegrityViolation, InvalidRequest,
   ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from './errors.js';
 import { AUTHORITY_FINGERPRINT_SQL, AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY,
-  AUTHORITY_PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT } from './qdrant-authority.js';
+  AUTHORITY_PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
+  AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,publication_schema_profile,type PublicationSchemaProfile } from './qdrant-authority.js';
+import {attestation_receipt_data,publication_verifier_controller,type QdrantPublicationVerifier} from './qdrant-publication-verification.js';
+import {require_publication_finalization} from './qdrant-publication-worker.js';
 import { encode_manifest, encode_stage_intent, restore_dense_replay, restore_sparse_replay } from './qdrant-manifest.js';
 import { same, point_id, parse_response, type QdrantConfig } from './qdrant-contract.js';
 import { type TrustedScope } from './requests.js';
@@ -40,6 +43,9 @@ export type ManagerSnapshot=Readonly<{intent:IntentView|null;document:Readonly<{
 export type PublicationAdmission=Readonly<{intent:IntentView;owner:Readonly<{owner_token:string;backend_epoch:number}>|null}>;
 export type DispatchStatus=Readonly<{dispatch_id:string;sequence:number;owner_token:string;backend_epoch:number;
   credential_generation:string;operation:string;state:string;completion_sha256:string|null;request_sha256:string;point_ids:readonly string[]}>;
+export type PreparationMetadata=Readonly<{owner_token:string;backend_epoch:number;authorization_revision:string;mutation_epoch:number;manifest_sha256:string;readback_sha256:string}>;
+export type PreparationAttestation=Readonly<{tenant_id:string;collection:string;document_id:string;intent_id:string;instance_id:string;owner_token:string;backend_epoch:number;authorization_revision:string;mutation_epoch:number;manifest_sha256:string;expected_active_generation_id:string|null;credential_generation:string;verification_id:string;readback_sha256:string}>;
+const ATTESTATION_COLUMNS=['tenant_id','collection','document_id','intent_id','instance_id','owner_token','backend_epoch','authorization_revision','mutation_epoch','manifest_sha256','expected_active_generation_id','credential_generation','verification_id','readback_sha256'] as const;
 type WriterRegistration=Readonly<{resource:PoolResource;config:QdrantConfig;instance_id:string}>;
 const writerRegistrations=new WeakMap<object,WriterRegistration>();
 
@@ -135,6 +141,44 @@ export const WRITER_ROLE_SQL = `SELECT current_user=session_user
    p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.scope_visible(text,text,text[],text[],text,boolean)') OR
    p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.lock_publication_owner(text,text,text,text,uuid,bigint,boolean)') OR
    p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.assert_publication(text,text,text,text)')))`;
+export const WRITER_ATTESTATION_ROLE_SQL = `SELECT current_user=session_user
+ AND EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolcanlogin AND NOT(rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication))
+ AND EXISTS(SELECT 1 FROM pg_roles capability WHERE capability.rolname='cragkit_qdrant_writer'
+  AND NOT(capability.rolcanlogin OR capability.rolsuper OR capability.rolbypassrls OR capability.rolcreaterole OR capability.rolcreatedb OR capability.rolreplication)
+  AND NOT EXISTS(SELECT 1 FROM pg_auth_members membership WHERE membership.member=capability.oid)
+  AND pg_has_role(current_user,capability.oid,'USAGE'))
+ AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE pg_has_role(current_user,oid,'MEMBER') AND (rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication OR rolname IN('cragkit_qdrant_supervisor','pg_read_all_data','pg_write_all_data','pg_read_server_files','pg_write_server_files','pg_execute_server_program')))
+ AND EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='cragkit_qdrant' AND has_schema_privilege(current_user,oid,'USAGE') AND NOT has_schema_privilege(current_user,oid,'CREATE') AND NOT pg_has_role(current_user,nspowner,'MEMBER'))
+ AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant' AND c.relkind IN('r','p') AND (pg_has_role(current_user,c.relowner,'MEMBER') OR has_table_privilege(current_user,c.oid,'DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_any_column_privilege(current_user,c.oid,'REFERENCES') OR (c.relname<>'schema_migrations' AND NOT row_security_active(c.oid))))
+ AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='cragkit_qdrant' AND pg_has_role(current_user,p.proowner,'MEMBER'))
+ AND NOT EXISTS(SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='cragkit_qdrant' AND pg_has_role(current_user,t.typowner,'MEMBER'))
+ AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) privilege
+  WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND
+  has_table_privilege(current_user,c.oid,privilege) IS DISTINCT FROM CASE
+   WHEN privilege='SELECT' THEN c.relname IN ('schema_migrations','documents','document_revisions','generations','members','backend_instances','publication_intents','document_owners','point_claims','vector_replays','dispatch_journal','dispatch_points','preparations','preparation_attestations')
+   WHEN privilege='INSERT' THEN c.relname IN ('documents','document_revisions','generations','members','publication_intents','document_owners','point_claims','vector_replays','dispatch_journal','dispatch_points','preparations','preparation_attestations')
+   WHEN privilege='UPDATE' THEN c.relname IN ('documents','generations','publication_intents','document_owners','dispatch_journal')
+   ELSE false END)
+ AND NOT EXISTS(SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+  CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) privilege
+  WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped AND
+  has_column_privilege(current_user,c.oid,a.attnum,privilege) IS DISTINCT FROM CASE
+   WHEN privilege='SELECT' THEN c.relname IN ('schema_migrations','documents','document_revisions','generations','members','backend_instances','publication_intents','document_owners','point_claims','vector_replays','dispatch_journal','dispatch_points','preparations','preparation_attestations')
+   WHEN privilege='INSERT' THEN c.relname IN ('documents','document_revisions','generations','members','publication_intents','document_owners','point_claims','vector_replays','dispatch_journal','dispatch_points','preparations','preparation_attestations')
+   WHEN privilege='UPDATE' THEN c.relname IN ('documents','generations','publication_intents','document_owners','dispatch_journal')
+    OR (c.relname='members' AND a.attname='point_id') OR (c.relname='backend_instances' AND a.attname='epoch')
+   ELSE false END)
+ AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='cragkit_qdrant' AND has_function_privilege(current_user,p.oid,'EXECUTE') IS DISTINCT FROM (
+   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR
+   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.scope_grants()') OR
+   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.writer_scope(text,text,text)') OR
+   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.bound_stage(text,text,text,text,text)') OR
+   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.supervisor_instance(text)') OR
+   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.scope_visible(text,text,text[],text[],text,boolean)') OR
+   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.lock_publication_owner(text,text,text,text,uuid,bigint,boolean)') OR
+   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.assert_publication(text,text,text,text)')))`;
 const SCOPE_SQL = `SELECT set_config('cragkit_qdrant.tenant_id',$1,true),set_config('cragkit_qdrant.collection',$2,true),set_config('cragkit_qdrant.principal_id',$3,true),set_config('cragkit_qdrant.grant_ids',$4,true),set_config('cragkit_qdrant.authorization_revision',$5,true),set_config('cragkit_qdrant.writer_document_id',$6,true),set_config('cragkit_qdrant.writer_intent_id',$7,true),set_config('cragkit_qdrant.writer_owner_token',$8,true),set_config('cragkit_qdrant.backend_instance_id',$9,true)`;
 
 function safe(error: unknown, deadline: number): Error {
@@ -181,6 +225,7 @@ export class PostgresQdrantWriter {
   readonly #config: QdrantConfig;
   readonly #instance: string;
   #initialized=false;
+  #profile:PublicationSchemaProfile|null=null;
   #closed=false;
   #active?: {controller:AbortController;done:Promise<void>};
   #closing?: Promise<void>;
@@ -203,7 +248,7 @@ export class PostgresQdrantWriter {
     catch(error) { throw safe(error, options.deadline); }
     finally { options.signal?.removeEventListener('abort',onAbort); this.#active=undefined; finish(); }
   }
-  async #tx<T>(context:WriterContext|null,options:LeaseOptions,body:(tx:Tx)=>Promise<T>,preserveCommitCancellation=false):Promise<T> {
+  async #tx<T>(context:WriterContext|null,options:LeaseOptions,body:(tx:Tx,profile:PublicationSchemaProfile)=>Promise<T>,preserveCommitCancellation=false,initializing=false):Promise<T> {
     return this.#resource.withLease(options,async(client,signal)=>{
       const lease={deadline:options.deadline,signal};
       let initialStatus:string|null;
@@ -224,7 +269,9 @@ export class PostgresQdrantWriter {
       try {
         await bounded(client.query({text:'BEGIN ISOLATION LEVEL READ COMMITTED',rowMode:'array'}),lease); begun=true;
         await bounded(client.query({text:'SET LOCAL search_path=pg_catalog',rowMode:'array'}),lease);
-        const role=await tx.query(WRITER_ROLE_SQL,undefined,1);
+        const profile=initializing?publication_schema_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,4)):this.#profile;
+        if(profile===null)throw new IndexNotReady();
+        const role=await tx.query(profile==='attestation'?WRITER_ATTESTATION_ROLE_SQL:WRITER_ROLE_SQL,undefined,1);
         if(role.length!==1||role[0].length!==1||role[0][0]!==true) throw new UnauthorizedScope();
         if(context){
           const grants=JSON.stringify(context.scope.grant_ids);
@@ -232,7 +279,7 @@ export class PostgresQdrantWriter {
           await tx.query(SCOPE_SQL,[context.scope.tenant_id,context.collection,context.scope.principal_id,grants,
             context.scope.authorization_revision,context.document_id,context.intent_id,context.owner_token,this.#instance],1);
         }
-        const value=await body(tx);
+        const value=await body(tx,profile);
         commitAttempted=true;
         await bounded(client.query({text:'COMMIT',rowMode:'array'}),lease);
         if(client.getTransactionStatus()!=='I') throw new ProviderUnavailable();
@@ -292,6 +339,14 @@ export class PostgresQdrantWriter {
     if(row.instance_id!==this.#instance||hash(db_bytes(row.payload_bytes,1048576))!==row.payload_sha256)throw new IntegrityViolation();
     if(row.manifest_bytes!==null&&hash(db_bytes(row.manifest_bytes,1048576))!==row.manifest_sha256)throw new IntegrityViolation();
     db_count(row.expected_mutation_epoch);
+    if(row.action==='stage'){
+      const tuple=this.#payloadTuple(row);
+      if(tuple.length!==11||!same(tuple.slice(0,10),['cragkit.qdrant.intent.v1','stage',context.intent_id,...this.#key(context),row.manifest_sha256,row.expected_active_generation_id,row.expected_authorization_revision,String(db_count(row.expected_mutation_epoch))]))throw new IntegrityViolation();
+      let manifest:unknown[];
+      try{manifest=native_array(JSON.parse(new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(db_bytes(row.manifest_bytes,1048576))),18,18);}
+      catch{throw new IntegrityViolation();}
+      if(!same(manifest.slice(0,9),['cragkit.qdrant.manifest.v1',this.#config.backend_namespace,this.#config.physical_collection,this.#config.collection_incarnation,...this.#key(context),row.revision_id,row.generation_id]))throw new IntegrityViolation();
+    }
     return row;
   }
   async #document(tx:Tx,context:WriterContext,lock=false):Promise<Data|null>{
@@ -356,14 +411,16 @@ export class PostgresQdrantWriter {
   async initialize(input:unknown):Promise<void>{
     const options=parseOptions(input);
     await this.#work(options,async lease=>{
-      await this.#tx(null,lease,async tx=>{
-        const history=await tx.query(AUTHORITY_HISTORY_SQL,undefined,3);
-        if(history.length!==2||history.some((row,index)=>row.length!==2||row[0]!==AUTHORITY_PUBLICATION_HISTORY[index][0]||row[1]!==AUTHORITY_PUBLICATION_HISTORY[index][1]))throw new UnsupportedCapability();
-        for(const [sql,expected] of [[AUTHORITY_PUBLICATION_CATALOG_SQL,true],[AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT]] as const){
+      this.#initialized=false;this.#profile=null;
+      const selected=await this.#tx(null,lease,async(tx,profile)=>{
+        const catalog=profile==='attestation'?AUTHORITY_ATTESTATION_CATALOG_SQL:AUTHORITY_PUBLICATION_CATALOG_SQL;
+        const fingerprint=profile==='attestation'?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;
+        for(const [sql,expected] of [[catalog,true],[AUTHORITY_FINGERPRINT_SQL,fingerprint]] as const){
           const rows=await tx.query(sql,undefined,1);if(rows.length!==1||rows[0].length!==1||rows[0][0]!==expected)throw new UnsupportedCapability();
         }
-      });
-      this.#initialized=true;
+        return profile;
+      },false,true);
+      this.#profile=selected;this.#initialized=true;
     },true);
   }
   async inspect(input:unknown,rawOptions:unknown):Promise<IntentView|null>{
@@ -983,6 +1040,103 @@ export class PostgresQdrantWriter {
       }
   }
 
+  #requireAttestationProfile():void{
+    if(this.#closed||this.#active)throw new ProviderUnavailable();
+    if(!this.#initialized)throw new IndexNotReady();
+    if(this.#profile!=='attestation')throw new UnsupportedCapability();
+  }
+  async #originalPreparation(tx:Tx,context:WriterContext,intent:Data):Promise<PreparationMetadata>{
+    const rows=await this.#select(tx,'preparations',['instance_id','owner_token','backend_epoch','authorization_revision','mutation_epoch','manifest_sha256','readback_sha256'],context,' AND intent_id=$4',[context.intent_id],2);
+    if(rows.length!==1)throw new IntegrityViolation();
+    try{
+      const row=rows[0],preparation=Object.freeze({owner_token:uuid(row.owner_token),backend_epoch:db_count(row.backend_epoch),authorization_revision:text(row.authorization_revision),mutation_epoch:db_count(row.mutation_epoch),manifest_sha256:digest(row.manifest_sha256),readback_sha256:digest(row.readback_sha256)});
+      if(row.instance_id!==this.#instance||preparation.backend_epoch<1||preparation.manifest_sha256!==intent.manifest_sha256
+        ||preparation.authorization_revision!==intent.expected_authorization_revision||preparation.mutation_epoch!==db_count(intent.expected_mutation_epoch))throw new IntegrityViolation();
+      return preparation;
+    }catch(error){if(error instanceof InvalidRequest)throw new IntegrityViolation();throw error;}
+  }
+  async #currentAttestation(tx:Tx,context:WriterContext,intent:Data,epoch:number):Promise<PreparationAttestation|null>{
+    const rows=await this.#select(tx,'preparation_attestations',ATTESTATION_COLUMNS,context,
+      ' AND intent_id=$4 AND backend_epoch=$5 AND owner_token=$6::uuid AND instance_id=$7',[context.intent_id,epoch,context.owner_token,this.#instance],2);
+    if(rows.length>1)throw new IntegrityViolation();if(rows.length===0)return null;
+    try{
+      const row=rows[0];
+      for(const key of ['tenant_id','collection','document_id','intent_id','instance_id','authorization_revision','credential_generation','verification_id'])text(row[key],key==='collection');
+      const result=Object.freeze({...row,owner_token:uuid(row.owner_token),backend_epoch:db_count(row.backend_epoch),mutation_epoch:db_count(row.mutation_epoch),manifest_sha256:digest(row.manifest_sha256),readback_sha256:digest(row.readback_sha256),expected_active_generation_id:row.expected_active_generation_id===null?null:text(row.expected_active_generation_id)}) as PreparationAttestation;
+      if(result.tenant_id!==context.scope.tenant_id||result.collection!==context.collection||result.document_id!==context.document_id||result.intent_id!==context.intent_id||result.instance_id!==this.#instance
+        ||result.owner_token!==context.owner_token||result.backend_epoch!==epoch||result.backend_epoch<1||result.manifest_sha256!==intent.manifest_sha256||result.authorization_revision!==intent.expected_authorization_revision
+        ||result.mutation_epoch!==db_count(intent.expected_mutation_epoch)||result.expected_active_generation_id!==intent.expected_active_generation_id)throw new IntegrityViolation();
+      return result;
+    }catch(error){if(error instanceof InvalidRequest)throw new IntegrityViolation();throw error;}
+  }
+  async attestation_snapshot(input:unknown,rawOptions:unknown):Promise<Readonly<{preparation:PreparationMetadata;attestation:PreparationAttestation|null}>>{
+    const context=parseContext(input),options=parseOptions(rawOptions);this.#requireAttestationProfile();
+    return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
+      const locked=await this.#locks(tx,context);
+      const intent=await this.#intent(tx,context);if(!intent||intent.action!=='stage'||intent.state!=='prepared')throw new InvalidRequest();
+      const failure=await this.#fence(tx,context,intent);if(failure)throw failure==='denied'?new UnauthorizedScope():new ProviderUnavailable();
+      if(await this.#managerPending(tx,context))throw new ProviderUnavailable();
+      await this.#loadStage(tx,context);
+      const preparation=await this.#originalPreparation(tx,context,intent);
+      const attestation=await this.#currentAttestation(tx,context,intent,locked.epoch);
+      if(preparation.backend_epoch>locked.epoch||(attestation&&locked.epoch<=preparation.backend_epoch))throw new IntegrityViolation();
+      return Object.freeze({preparation,attestation});
+    }));
+  }
+  async attest_prepared(receipt:unknown,verifier:QdrantPublicationVerifier,rawOptions:unknown):Promise<Readonly<{intent:IntentView;attestation:PreparationAttestation|null}>>{
+    const parsed=parseOptions(rawOptions);this.#requireAttestationProfile();
+    // Only deadline/signal cross the controller boundary; owner_token is SQL-only.
+    const options:LeaseOptions={deadline:parsed.deadline,...(parsed.signal===undefined?{}:{signal:parsed.signal})};
+    const proof=await attestation_receipt_data(receipt,verifier,this,options);
+    const controller=publication_verifier_controller(verifier,this);
+    const context=parseContext(proof.context);
+    let projectionFailure:unknown;
+    try{await this.validate_publication_projection(proof.projection,options);}
+    catch(error){if(!(error instanceof UnauthorizedScope))throw error;projectionFailure=error;}
+    await attestation_receipt_data(receipt,verifier,this,options);
+    type Result=Readonly<{intent:IntentView;attestation:PreparationAttestation|null}>;
+    const operation=async(tx:Tx,insert:boolean):Promise<Result|null>=>{
+      require_publication_finalization(controller,options);
+      const locked=await this.#locks(tx,context,false);
+      const intent=await this.#intent(tx,context);if(!intent||intent.action!=='stage')throw new InvalidRequest();
+      if(['conflict','denied'].includes(String(intent.state)))return Object.freeze({intent:intent_view(intent),attestation:null});
+      if(intent.state!=='prepared')throw new InvalidRequest();
+      const failure=await this.#fence(tx,context,intent);
+      if(failure){const terminal=await this.#updateIntent(tx,context,failure);require_publication_finalization(controller,options);return Object.freeze({intent:terminal,attestation:null});}
+      this.#requireLockedOwner(context,locked);
+      if(projectionFailure)throw projectionFailure;
+      if(await this.#managerPending(tx,context))throw new ProviderUnavailable();
+      const preparation=await this.#originalPreparation(tx,context,intent);
+      if(locked.epoch<=preparation.backend_epoch)throw new ProviderUnavailable();
+      const current=await this.#projectPublication(tx,context,proof.attempt_binding);
+      if(current.readback_sha256!==proof.readback_sha256||current.manifest_sha256!==intent.manifest_sha256||current.revision_id!==intent.revision_id||current.generation_id!==intent.generation_id)throw new IntegrityViolation();
+      const record:PreparationAttestation=Object.freeze({tenant_id:context.scope.tenant_id,collection:context.collection,document_id:context.document_id,intent_id:context.intent_id,instance_id:this.#instance,
+        owner_token:context.owner_token,backend_epoch:locked.epoch,authorization_revision:text(intent.expected_authorization_revision),mutation_epoch:db_count(intent.expected_mutation_epoch),manifest_sha256:digest(intent.manifest_sha256),
+        expected_active_generation_id:intent.expected_active_generation_id===null?null:text(intent.expected_active_generation_id),credential_generation:text(proof.attempt_binding.credential_generation),verification_id:text(proof.attempt_binding.dispatch_id),readback_sha256:digest(proof.readback_sha256)});
+      let attestation=await this.#currentAttestation(tx,context,intent,locked.epoch);
+      if(attestation&&!same(attestation,record))throw new IntegrityViolation();
+      require_publication_finalization(controller,options);
+      if(!attestation&&insert){
+        await this.#insert(tx,'preparation_attestations',record);
+        attestation=await this.#currentAttestation(tx,context,intent,locked.epoch);
+        if(!attestation||!same(attestation,record))throw new IntegrityViolation();
+      }
+      require_publication_finalization(controller,options);
+      return attestation?Object.freeze({intent:intent_view(intent),attestation}):null;
+    };
+    return this.#work(options,async lease=>{
+      const mutate=async(tx:Tx)=>{const result=await operation(tx,true);if(!result)throw new IntegrityViolation();return result;};
+      try{return await this.#tx(context,lease,mutate,true);}
+      catch(error){
+        if(!(error instanceof CommitUnknown))throw error;
+        const confirmed=await this.#tx(context,lease,tx=>operation(tx,false),true);
+        if(confirmed)return confirmed;
+        // The only retry follows an actual COMMIT-unknown and fresh exact-key absence.
+        try{return await this.#tx(context,lease,mutate,true);}
+        catch(retryError){if(!(retryError instanceof CommitUnknown))throw retryError;const final=await this.#tx(context,lease,tx=>operation(tx,false),true);if(!final)throw new ProviderUnavailable();return final;}
+      }
+    });
+  }
   async publication_preparation(input:unknown,rawOptions:unknown):Promise<Readonly<{
     preparation:Readonly<{owner_token:string;backend_epoch:number;authorization_revision:string;mutation_epoch:number;
       manifest_sha256:string;readback_sha256:string}>;dispatch:DispatchStatus;
@@ -1197,12 +1351,14 @@ export class PostgresQdrantWriter {
       const pending=await this.#select(tx,'dispatch_journal',['state'],context," AND state<>'settled'",[],1);
       if(pending.length)throw new ProviderUnavailable();
       await this.#loadStage(tx,context);
-      const preparations=await this.#select(tx,'preparations',['owner_token','backend_epoch','manifest_sha256','authorization_revision','mutation_epoch'],context,
-        ' AND intent_id=$4',[context.intent_id],2);
-      if(preparations.length!==1||preparations[0].owner_token!==context.owner_token||preparations[0].manifest_sha256!==intent.manifest_sha256
-        ||db_count(preparations[0].backend_epoch)!==locked.epoch
-        ||preparations[0].authorization_revision!==intent.expected_authorization_revision
-        ||db_count(preparations[0].mutation_epoch)!==db_count(intent.expected_mutation_epoch))throw new IntegrityViolation();
+      const preparation=await this.#originalPreparation(tx,context,intent);
+      const originalCurrent=preparation.owner_token===context.owner_token&&preparation.backend_epoch===locked.epoch;
+      if(!originalCurrent){
+        if(this.#profile!=='attestation')throw new ProviderUnavailable();
+        const attestation=await this.#currentAttestation(tx,context,intent,locked.epoch);
+        if(!attestation)throw new ProviderUnavailable();
+        if(locked.epoch<=preparation.backend_epoch)throw new IntegrityViolation();
+      }
       await tx.query('UPDATE cragkit_qdrant.generations SET published=false WHERE (tenant_id,collection,document_id)=($1,$2,$3) AND generation_id<>$4 AND published',
         [...this.#key(context),intent.generation_id],0);
       await tx.query('UPDATE cragkit_qdrant.generations SET published=true,ever_published=true WHERE (tenant_id,collection,document_id,generation_id)=($1,$2,$3,$4)',

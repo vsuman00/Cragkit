@@ -5,6 +5,7 @@ import {Socket} from 'node:net';
 import * as http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {types} from 'node:util';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {ManagedQdrantSupervisor,type SupervisorTransport} from './qdrant-supervisor.js';
 import {PoolResource,parse_pool_config,bounded,now,check_options,type LeaseOptions} from './postgres-pool.js';
 import {ExecutionLedger,BudgetExhausted,type Reservation} from './execution.js';
@@ -409,12 +410,35 @@ export async function publication_before_write(controller:OrdinaryPublicationCon
   const issued=local(controller).attempts.get(attempt as object);need(issued);
   await rpc(controller,'before_write',{attempt_id:issued.id,dispatch_id:dispatch.dispatch_id,sequence:dispatch.sequence,request_sha256:sha(Buffer.from(dispatch.request_bytes))},options);
 }
-export async function publication_finalization<T>(controller:OrdinaryPublicationController,attempt:unknown,body:()=>Promise<T>,options:LeaseOptions):Promise<T>{
+type FinalizationContext={controller:OrdinaryPublicationController;deadline:number;signal?:AbortSignal;active:boolean};
+const finalizationContext=new AsyncLocalStorage<FinalizationContext>();
+
+/** Only the native-session helper below issues this request-local authority. */
+export function require_publication_finalization(controller:OrdinaryPublicationController,options:LeaseOptions):void{
   need(is_publication_controller(controller));
-  if(!is_worker_controller(controller))return controller.control_session(body);
+  const data=fields(options,['deadline'],['signal']);
+  need(data.signal===undefined||typeof data.signal==='object'&&data.signal!==null&&!types.isProxy(data.signal));
+  const lease={deadline:data.deadline as number,signal:data.signal as AbortSignal|undefined};
+  check_options(lease);
+  const context=finalizationContext.getStore();
+  need(context?.active&&context.controller===controller&&lease.deadline<=context.deadline);
+  need(context.signal===undefined||context.signal===lease.signal);
+  check_options({deadline:context.deadline,signal:context.signal});
+}
+
+export async function publication_finalization<T>(controller:OrdinaryPublicationController,attempt:unknown,body:()=>Promise<T>,options:LeaseOptions):Promise<T>{
+  need(is_publication_controller(controller)&&typeof body==='function'&&!types.isProxy(body));
+  const data=fields(options,['deadline'],['signal']);
+  const lease:LeaseOptions={deadline:data.deadline as number,signal:data.signal as AbortSignal|undefined};
+  check_options(lease);need(!finalizationContext.getStore()?.active);
+  const scoped=async()=>{
+    const context:FinalizationContext={controller,...lease,active:true};
+    return finalizationContext.run(context,async()=>{try{return await body();}finally{context.active=false;}});
+  };
+  if(!is_worker_controller(controller))return controller.control_session(scoped);
   const state=local(controller),issued=state.attempts.get(attempt as object);need(issued&&!state.finalized);state.finalized=true;
   await rpc(controller,'finalize_begin',{attempt_id:issued.id},options);
-  try{return await body();}
+  try{return await scoped();}
   finally{await rpc(controller,'finalize_end',{}, {deadline:Math.min(state.deadline,now()+2)});}
 }
 async function worker_authorize(controller:OrdinaryWorkerController,scope:TrustedScope,collection:string,document_id:string):Promise<boolean>{

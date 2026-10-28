@@ -26,7 +26,10 @@ class PublicationDatabase:
     Neither credentials nor source rows are included in returned observations.
     """
 
-    def __init__(self, fixture):
+    def __init__(self, fixture, *, with_attestations=False):
+        if type(with_attestations) is not bool:
+            raise ValueError("publication_fixture_profile")
+        self.with_attestations = with_attestations
         self.fixture = fixture
         self.admin = None
         self._configs = {}
@@ -111,6 +114,15 @@ class PublicationDatabase:
                     await self.admin.execute(sql.SQL('GRANT EXECUTE ON FUNCTION '
                         'cragkit_qdrant.scope_visible(text,text,text[],text[],text,boolean),'
                         'cragkit_qdrant.scope_grants(),cragkit_qdrant.valid_identity_array(text[]) TO {}').format(sql.Identifier(name)))
+        if self.with_attestations:
+            from qdrant_attestation_schema import migration as attestation_migration
+            attestation = attestation_migration()
+            async with self.admin.transaction():
+                await self.admin.execute('SET LOCAL search_path=pg_catalog')
+                await self.admin.execute(attestation.sql, prepare=False)
+                await self.admin.execute('INSERT INTO cragkit_qdrant.schema_migrations '
+                    '(version,checksum_sha256) VALUES(%s,%s)', (attestation.version, attestation.checksum))
+            expected = json.loads((ROOT / 'contracts/fixtures/qdrant_attestation_catalog.json').read_text())
         # Re-read after the real commit, outside the installation transaction.
         await self.admin.execute('SET search_path=pg_catalog')
         cursor = await self.admin.execute(catalog_queries()[0], prepare=False)

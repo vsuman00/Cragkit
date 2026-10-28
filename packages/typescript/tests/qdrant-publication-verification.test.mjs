@@ -4,7 +4,9 @@ import {readFileSync} from 'node:fs';
 import {PoolResource,parse_pool_config,bounded,now} from '../dist/postgres-pool.js';
 import {PostgresQdrantWriter,WRITER_ROLE_SQL,publication_projection_data} from '../dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
-import {QdrantPublicationVerifier,publication_receipt_data} from '../dist/qdrant-publication-verification.js';
+import {QdrantPublicationVerifier,publication_receipt_data,attestation_receipt_data,
+  publication_verifier_controller} from '../dist/qdrant-publication-verification.js';
+import {publication_finalization} from '../dist/qdrant-publication-worker.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {encode_dense_replay,encode_sparse_replay} from '../dist/qdrant-manifest.js';
@@ -147,6 +149,41 @@ test('ordinary full native-byte readback issues only immutable issuer-bound prov
     await foreign.close();
     f.state.binding.credential_generation='changed';
     assert.throws(()=>publication_receipt_data(receipt,f.verifier),UnsupportedCapability);
+  }finally{await f.close();}
+});
+
+test('attestation consumes only the original receipt and writer inside native finalization',async()=>{
+  const f=await setup(),lease=options();
+  const foreignWriter=new PostgresQdrantWriter(f.resource,config,ordinary.instance_id);
+  const foreignVerifier=new QdrantPublicationVerifier(f.writer,f.supervisor);
+  try{
+    const receipt=await f.verifier.verify(f.state.attempt,context,lease);
+    assert.equal(publication_verifier_controller(f.verifier,f.writer),f.supervisor);
+    assert.throws(()=>publication_verifier_controller(f.verifier,foreignWriter),InvalidRequest);
+    await assert.rejects(attestation_receipt_data(receipt,f.verifier,f.writer,lease),InvalidRequest);
+    await f.supervisor.control_session(async()=>{
+      await assert.rejects(attestation_receipt_data(receipt,f.verifier,f.writer,lease),InvalidRequest);
+    });
+    await publication_finalization(f.supervisor,f.state.attempt,async()=>{
+      assert.equal(await attestation_receipt_data(receipt,f.verifier,f.writer,lease),publication_receipt_data(receipt,f.verifier));
+      await assert.rejects(attestation_receipt_data({...receipt},f.verifier,f.writer,lease),InvalidRequest);
+      await assert.rejects(attestation_receipt_data(receipt,foreignVerifier,f.writer,lease),InvalidRequest);
+      await assert.rejects(attestation_receipt_data(receipt,f.verifier,foreignWriter,lease),InvalidRequest);
+      f.state.binding.credential_generation='retired';
+      await assert.rejects(attestation_receipt_data(receipt,f.verifier,f.writer,lease),UnsupportedCapability);
+    },lease);
+  }finally{await foreignVerifier.close();await foreignWriter.close();await f.close();}
+});
+
+test('an unawaited receipt validation cannot outlive its native finalization context',async()=>{
+  const f=await setup(),lease=options();let pending;
+  try{
+    const receipt=await f.verifier.verify(f.state.attempt,context,lease);
+    await publication_finalization(f.supervisor,f.state.attempt,async()=>{
+      pending=attestation_receipt_data(receipt,f.verifier,f.writer,lease);
+      pending.catch(()=>{});
+    },lease);
+    await assert.rejects(pending,InvalidRequest);
   }finally{await f.close();}
 });
 

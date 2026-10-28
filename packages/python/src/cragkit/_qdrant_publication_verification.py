@@ -14,7 +14,8 @@ from ._qdrant_reconciliation import _Readback, _ReadbackTransport, _safe, _verif
 from ._qdrant_source import metadata_guard
 from ._qdrant_supervisor import ManagedQdrantSupervisor
 from ._qdrant_transport import deadline_value
-from ._qdrant_publication_worker import is_controller, controller_attempt, OrdinaryWorkerController
+from ._qdrant_publication_worker import (is_controller, controller_attempt, OrdinaryWorkerController,
+    require_publication_finalization)
 from .errors import (DeadlineExceeded, InvalidRequest, ProviderUnavailable,
                      UnsupportedCapability)
 
@@ -142,6 +143,31 @@ async def validate_publication_receipt(value: object, verifier: object, *, deadl
     controller = _VERIFIERS[verifier][1]
     if dict(await controller_attempt(controller, attempt, deadline=deadline)) != dict(data['attempt_binding']):
         raise UnsupportedCapability()
+    return data
+
+
+def publication_verifier_controller(verifier: object, expected_writer: object) -> ManagedQdrantSupervisor | OrdinaryWorkerController:
+    """Return only the original registered controller, without performing I/O."""
+    if (type(verifier) is not QdrantPublicationVerifier or verifier not in _VERIFIERS
+            or _VERIFIERS[verifier][0] is not expected_writer):
+        raise InvalidRequest()
+    controller = _VERIFIERS[verifier][1]
+    if verifier.writer is not expected_writer or verifier.supervisor is not controller:
+        raise InvalidRequest()
+    return controller
+
+
+async def attestation_receipt_data(value: object, verifier: object, expected_writer: object,
+                                   *, deadline: float) -> Mapping[str, Any]:
+    """Revalidate an original receipt within its acquired finalization lifetime."""
+    deadline = deadline_value(deadline)
+    controller = publication_verifier_controller(verifier, expected_writer)
+    require_publication_finalization(controller, deadline=deadline)
+    data = await validate_publication_receipt(value, verifier, deadline=deadline)
+    publication_projection_data(data['projection'], expected_writer)
+    if publication_verifier_controller(verifier, expected_writer) is not controller:
+        raise InvalidRequest()
+    require_publication_finalization(controller, deadline=deadline)
     return data
 
 

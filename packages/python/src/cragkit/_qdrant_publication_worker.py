@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 import hashlib
 import inspect
 import json
@@ -39,6 +40,19 @@ _OWNED: WeakKeyDictionary[Any, Any] = WeakKeyDictionary()
 _HOSTS: WeakKeyDictionary[Any, Any] = WeakKeyDictionary()
 _HTTP: WeakKeyDictionary[Any, Any] = WeakKeyDictionary()
 _POISONED: set[Any] = set()
+
+
+class _Finalization:
+    __slots__ = ('controller', 'task', 'deadline', 'active')
+
+    def __init__(self, controller: Any, task: Any, deadline: float) -> None:
+        self.controller = controller
+        self.task = task
+        self.deadline = deadline
+        self.active = True
+
+
+_FINALIZATION: ContextVar[_Finalization | None] = ContextVar('publication_finalization', default=None)
 
 
 class _TerminalFailure(Exception):
@@ -331,14 +345,39 @@ async def controller_issue(controller: Any, binding: Any, *, deadline: float) ->
 
 @asynccontextmanager
 async def controller_finalization(controller: Any, attempt: Any, *, deadline: float) -> Any:
+    deadline = deadline_value(deadline)
+    inherited = _FINALIZATION.get()
+    if inherited is not None and inherited.active:
+        raise InvalidRequest()
     if type(controller) is ManagedQdrantSupervisor:
-        async with controller.control_session():
-            yield
+        session = controller.control_session()
     elif is_worker(controller):
-        async with controller.finalization(attempt, deadline=deadline):
-            yield
+        session = controller.finalization(attempt, deadline=deadline)
     else:
         raise InvalidRequest()
+    async with session:
+        # Only the helper which acquired the actual native/IPC session issues
+        # this lifetime. Context inheritance conveys no authority to a new task.
+        state = _Finalization(controller, asyncio.current_task(), deadline)
+        token = _FINALIZATION.set(state)
+        try:
+            yield
+        finally:
+            state.active = False
+            _FINALIZATION.reset(token)
+
+
+def require_publication_finalization(controller: Any, *, deadline: float) -> None:
+    deadline = deadline_value(deadline)
+    state = _FINALIZATION.get()
+    task = asyncio.current_task()
+    if (state is None or not state.active or state.controller is not controller
+            or state.task is not task or task is None or not is_controller(controller)
+            or deadline > state.deadline):
+        raise InvalidRequest()
+    deadline_value(state.deadline)
+    if task.cancelling():
+        raise asyncio.CancelledError()
 
 
 class _Attempt:

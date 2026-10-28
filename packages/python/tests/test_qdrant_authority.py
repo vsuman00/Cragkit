@@ -42,7 +42,7 @@ class Connection:
         if self.failure is not None: raise self.failure
         if sql==implementation._ROLE_SQL:return Cursor(self.role)
         if sql==implementation._CATALOG_SQL:return Cursor(self.catalog)
-        if sql==implementation._PUBLICATION_CATALOG_SQL:return Cursor(self.publication_catalog)
+        if sql in (implementation._PUBLICATION_CATALOG_SQL, implementation._ATTESTATION_CATALOG_SQL):return Cursor(self.publication_catalog)
         if sql==implementation._HISTORY_SQL:return Cursor(self.history)
         if sql==implementation._CATALOG_FINGERPRINT_SQL:return Cursor(self.fingerprint)
         if sql==implementation._SCOPE_SQL:return Cursor([(None,)*5])
@@ -195,7 +195,7 @@ def test_exact_profile_selected_from_history_before_structural_or_role_checks(pu
             implementation._CATALOG_FINGERPRINT_SQL)]
         assert queries == [implementation._HISTORY_SQL, expected_catalog,
                            implementation._ROLE_SQL, implementation._CATALOG_FINGERPRINT_SQL]
-        assert 'LIMIT 3' in implementation._HISTORY_SQL
+        assert 'LIMIT 4' in implementation._HISTORY_SQL
         assert conn.rollbacks == 1 and pool.borrowed == pool.returned == 1
     asyncio.run(scenario())
 
@@ -290,3 +290,48 @@ def test_publication_structural_guard_is_separate_and_requires_complete_rls_prof
     assert "t.tgenabled<>'O'" in sql
     assert 't.tgisinternal' not in sql
     assert 'count(*)=5' in implementation._CATALOG_SQL
+
+
+@pytest.mark.parametrize('history,catalog,fingerprint', [
+    (implementation.EXPECTED_HISTORY, implementation._CATALOG_SQL, implementation.EXPECTED_CATALOG_FINGERPRINT),
+    (implementation.EXPECTED_PUBLICATION_HISTORY, implementation._PUBLICATION_CATALOG_SQL, implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT),
+    (implementation.EXPECTED_ATTESTATION_HISTORY, implementation._ATTESTATION_CATALOG_SQL, implementation.EXPECTED_ATTESTATION_CATALOG_FINGERPRINT),
+])
+def test_source_accepts_exact_three_explicit_profiles_and_reads_overflow(history,catalog,fingerprint):
+    async def scenario():
+        reader,connection,_ = authority()
+        connection.history = list(history)
+        connection.fingerprint = [(fingerprint,)]
+        await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
+        assert 'LIMIT 4' in implementation._HISTORY_SQL
+        assert any(sql == catalog for sql,_ in connection.calls)
+        assert implementation.EXPECTED_PUBLICATION_HISTORY != implementation.EXPECTED_ATTESTATION_HISTORY
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('failure', ['fourth','hash','fingerprint','structure'])
+def test_attestation_source_profile_rejects_extra_history_and_mismatch(failure):
+    async def scenario():
+        reader,connection,_ = authority()
+        connection.history = list(implementation.EXPECTED_ATTESTATION_HISTORY)
+        connection.fingerprint = [(implementation.EXPECTED_ATTESTATION_CATALOG_FINGERPRINT,)]
+        if failure == 'fourth':
+            connection.history.append(('0004_unknown','a'*64))
+        elif failure == 'hash':
+            connection.history[-1] = (connection.history[-1][0],'b'*64)
+        elif failure == 'fingerprint':
+            connection.fingerprint = [(implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,)]
+        else:
+            connection.publication_catalog = [(False,)]
+        with pytest.raises(UnsupportedCapability):
+            await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
+    asyncio.run(scenario())
+
+
+def test_attestation_catalog_structural_profile_keeps_old_literals_and_new_counts():
+    assert 'count(*)=13 FROM pg_class' in implementation._PUBLICATION_CATALOG_SQL
+    assert 'count(*)=12 FROM pg_class' in implementation._PUBLICATION_CATALOG_SQL
+    assert 'count(*)=14 FROM pg_class' in implementation._ATTESTATION_CATALOG_SQL
+    assert 'count(*)=13 FROM pg_class' in implementation._ATTESTATION_CATALOG_SQL
+    assert "t.tgenabled<>'O'" in implementation._ATTESTATION_CATALOG_SQL
+    assert 'p.prosecdef' in implementation._ATTESTATION_CATALOG_SQL

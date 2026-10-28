@@ -75,9 +75,9 @@ class Connection:
         if sql.startswith('UPDATE cragkit_qdrant.publication_intents SET state=%s'): return Cursor([])
         if self.block is not None: await self.block.wait()
         if self.failure is not None: raise self.failure
-        if sql==implementation._WRITER_ROLE_SQL:return Cursor([(self.role,)])
+        if sql in (implementation._WRITER_ROLE_SQL,implementation._WRITER_ATTESTATION_ROLE_SQL):return Cursor([(self.role,)])
         if sql==implementation._HISTORY_SQL:return Cursor(self.history)
-        if sql==implementation._PUBLICATION_CATALOG_SQL:return Cursor([(True,)])
+        if sql in (implementation._PUBLICATION_CATALOG_SQL,implementation._ATTESTATION_CATALOG_SQL):return Cursor([(True,)])
         if sql==implementation._CATALOG_FINGERPRINT_SQL:return Cursor([(self.hash,)])
         if 'SELECT action,state,payload_sha256' in sql:return Cursor([])
         raise AssertionError('unexpected SQL')
@@ -646,7 +646,7 @@ class ManagerConnection(Connection):
 
     async def execute(self, sql, params=None):
         if (sql.startswith('SET ') or 'set_config(' in sql
-                or sql == implementation._WRITER_ROLE_SQL):
+                or sql in (implementation._WRITER_ROLE_SQL,implementation._WRITER_ATTESTATION_ROLE_SQL)):
             return await super().execute(sql, params)
         self.calls.append((sql, params))
         if self.state.get('body_error') is not None:
@@ -1000,3 +1000,277 @@ async def test_publication_preparation_rejects_corruption_and_retired_bindings(m
         state['preparations'] = [tuple(row)]
     with pytest.raises(error):
         await writer.publication_preparation(ctx(), deadline=asyncio.get_running_loop().time() + 5)
+
+
+@pytest.mark.parametrize('profile', [2,3])
+@run_async
+async def test_writer_initialization_selects_complete_literal_role_profile_before_readiness(monkeypatch,profile):
+    connection = Connection()
+    if profile == 3:
+        connection.history = list(implementation.EXPECTED_ATTESTATION_HISTORY)
+        connection.hash = implementation.EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
+    writer = PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    await writer.initialize(deadline=asyncio.get_running_loop().time()+5)
+    role = implementation._WRITER_ATTESTATION_ROLE_SQL if profile==3 else implementation._WRITER_ROLE_SQL
+    assert writer._schema_profile == profile and writer._ready
+    assert next(index for index,(sql,_) in enumerate(connection.calls) if sql==implementation._HISTORY_SQL) < next(index for index,(sql,_) in enumerate(connection.calls) if sql==role)
+    connection.calls.clear()
+    await writer.inspect(ctx(),deadline=asyncio.get_running_loop().time()+5)
+    assert any(sql==role for sql,_ in connection.calls)
+    connection.role=False
+    with pytest.raises(UnauthorizedScope):
+        await writer.inspect(ctx(),deadline=asyncio.get_running_loop().time()+5)
+
+
+@pytest.mark.parametrize('failure', ['fourth','hash','fingerprint'])
+@run_async
+async def test_writer_attestation_profile_rejects_unknown_history_without_mutation(monkeypatch,failure):
+    connection=Connection()
+    connection.history=list(implementation.EXPECTED_ATTESTATION_HISTORY)
+    connection.hash=implementation.EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
+    if failure=='fourth':connection.history.append(('0004_other','a'*64))
+    elif failure=='hash':connection.history[-1]=(connection.history[-1][0],'a'*64)
+    else:connection.hash=implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
+    writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    with pytest.raises(UnsupportedCapability):
+        await writer.initialize(deadline=asyncio.get_running_loop().time()+5)
+    assert not writer._ready
+    assert all(not sql.startswith(('INSERT ','UPDATE ','DELETE ')) for sql,_ in connection.calls)
+
+
+def test_writer_attestation_literal_permissions_do_not_broaden_ordinary_profile():
+    assert 'preparation_attestations' not in implementation._WRITER_ROLE_SQL
+    assert implementation._WRITER_ATTESTATION_ROLE_SQL.count("'preparation_attestations')") == 4
+    assert "has_table_privilege(current_user,'cragkit_qdrant.preparation_attestations','SELECT,INSERT')" in implementation._WRITER_ATTESTATION_ROLE_SQL
+    assert "WHEN privilege='UPDATE' THEN c.relname IN ('documents','generations','publication_intents','document_owners','dispatch_journal')" in implementation._WRITER_ATTESTATION_ROLE_SQL
+
+
+class AttestationConnection(ManagerConnection):
+    """SQL transaction/acknowledgment double, not a physical F1 proof."""
+    def transaction(self):
+        transaction=super().transaction()
+        owner=self
+        class Transaction:
+            async def __aenter__(self):
+                return await transaction.__aenter__()
+            async def __aexit__(self,kind,error,traceback):
+                try:
+                    return await transaction.__aexit__(kind,error,traceback)
+                except RuntimeError:
+                    if kind is None and owner.state.pop('commit_confirm_absent',False):
+                        owner.state['attestations']=[]
+                    raise
+        return Transaction()
+    async def execute(self,sql,params=None):
+        if sql.startswith('SELECT instance_id,owner_token::text,backend_epoch,authorization_revision'):
+            self.calls.append((sql,params))
+            return Cursor([('instance-1',*row) for row in self.state['preparations']])
+        if sql.startswith('SELECT tenant_id,collection,document_id,intent_id,instance_id,owner_token::text'):
+            self.calls.append((sql,params))
+            return Cursor(self.state.get('attestations',[]))
+        if sql.startswith('INSERT INTO cragkit_qdrant.preparation_attestations'):
+            self.calls.append((sql,params))
+            self.state['insert_attempts']=self.state.get('insert_attempts',0)+1
+            if self.state.get('insert_error') is not None:raise self.state['insert_error']
+            self.state.setdefault('attestations',[]).append(tuple(params))
+            return Cursor([])
+        if sql.startswith('SELECT owner_token::text,backend_epoch,instance_id,manifest_sha256'):
+            self.calls.append((sql,params))
+            return Cursor([(row[0],row[1],'instance-1',row[4],row[2],row[3]) for row in self.state['preparations']])
+        if sql.startswith('UPDATE cragkit_qdrant.generations') or sql.startswith('UPDATE cragkit_qdrant.documents'):
+            self.calls.append((sql,params));self.state.setdefault('publication_updates',[]).append(sql);return Cursor([])
+        if sql.startswith("UPDATE cragkit_qdrant.publication_intents SET state='published'"):
+            self.calls.append((sql,params));self.state['intent']['state']='published';return Cursor([])
+        return await super().execute(sql,params)
+
+
+def attestation_writer(monkeypatch):
+    writer,state,_,loads=manager_writer(monkeypatch)
+    manager_prepared(state)
+    writer._schema_profile=3
+    state['attestations']=[]
+    state['guard']=True
+    state['document'].update(principal_ids=['reader-a'],grant_ids=['grant-a'],language=None,kind=None,tag=None)
+    connections=[]
+    @asynccontextmanager
+    async def lease(self,*,deadline):
+        connection=AttestationConnection(state);connections.append(connection);yield connection
+    monkeypatch.setattr(PoolResource,'lease',lease)
+    plan=prepare_stage(stage_input());graph=stage_data(plan)
+    parsed=implementation.context(ctx())
+    # Fences/proof bindings are explicit unit fixtures; native acceptance owns real receipts.
+    async def fences(connection,selected):
+        state['fence_reads']=state.get('fence_reads',0)+1
+        return 2,state['document'],(graph.intent.expected_authorization_revision,graph.intent.expected_mutation_epoch,
+            graph.intent.expected_active_generation_id,plan.manifest_sha256,graph.manifest.generation_id,
+            graph.manifest.revision_id,state['intent']['state']),state.get('fence_failure')
+    monkeypatch.setattr(writer,'_fences',fences)
+    receipt,verifier,controller=object(),object(),object()
+    data={'context':parsed,'attempt_binding':dict(instance_id='instance-1',storage_identity='storage-1',supervisor_id='supervisor-1',
+        epoch=2,credential_generation='credential-2',intent_id=parsed.intent_id,owner_token=parsed.owner_token,dispatch_id='verification-2'),
+        'projection':object(),'manifest_sha256':plan.manifest_sha256,'generation_id':graph.manifest.generation_id,
+        'revision_id':graph.manifest.revision_id,'authorization_revision':'auth-1','mutation_epoch':1,
+        'active_generation_id':graph.intent.expected_active_generation_id,'tombstoned':False,'readback_sha256':'e'*64}
+    # Bind the fixture's metadata digest exactly; this is not a physical readback receipt.
+    projected=implementation.finalize_publication_projection(writer,{
+        'context':parsed,'attempt_binding':implementation.ordinary_binding(data['attempt_binding']),
+        'manifest_sha256':plan.manifest_sha256,'revision_id':graph.manifest.revision_id,'generation_id':graph.manifest.generation_id,
+        'authorization_revision':'auth-1','mutation_epoch':1,'active_generation_id':graph.intent.expected_active_generation_id,
+        'tombstoned':False,'points':writer._projection_points(graph,state['document']),
+        'authority':{key:state['document'][key] for key in ('principal_ids','grant_ids','language','kind','tag')}})
+    data['projection']=projected
+    data['readback_sha256']=implementation.publication_projection_data(projected,writer)['readback_sha256']
+    async def receipt_data(selected,selected_verifier,expected_writer,*,deadline):
+        if selected is not receipt or selected_verifier is not verifier or expected_writer is not writer:
+            raise InvalidRequest()
+        guard(controller,deadline=deadline)
+        return data
+    def guard(selected,*,deadline):
+        if selected is not controller or not state['guard']:raise InvalidRequest()
+    async def validate(projection,*,deadline):
+        assert projection is data['projection'] and not any(connection.info.transaction_status==2 for connection in connections)
+        state['projection_checks']=state.get('projection_checks',0)+1
+    monkeypatch.setattr(implementation,'attestation_receipt_data',receipt_data)
+    monkeypatch.setattr(implementation,'publication_verifier_controller',lambda selected,expected:controller)
+    monkeypatch.setattr(implementation,'require_publication_finalization',guard)
+    monkeypatch.setattr(writer,'validate_publication_projection',validate)
+    return writer,state,connections,loads,receipt,verifier,data
+
+
+@run_async
+async def test_attestation_snapshot_same_key_retry_preserves_original_prepared_row(monkeypatch):
+    writer,state,connections,loads,receipt,verifier,data=attestation_writer(monkeypatch)
+    original=copy.deepcopy(state['preparations'])
+    deadline=asyncio.get_running_loop().time()+5
+    snapshot=await writer.attestation_snapshot(ctx(),deadline=deadline)
+    assert snapshot['attestation'] is None and snapshot['preparation']['backend_epoch']==1
+    result=await writer.attest_prepared(receipt,verifier,deadline=deadline)
+    repeated=await writer.attest_prepared(receipt,verifier,deadline=deadline)
+    assert result==repeated and state['insert_attempts']==1
+    assert tuple(result['attestation'])==implementation._ATTESTATION_FIELDS
+    assert result['attestation']['verification_id']=='verification-2' and result['attestation']['backend_epoch']==2
+    assert state['intent']['state']=='prepared' and state['preparations']==original
+    assert len(loads)>=3 and state['projection_checks']==2
+    with pytest.raises(TypeError):result['attestation']['readback_sha256']='changed'
+    assert all('SET state=\'writing\'' not in sql for connection in connections for sql,_ in connection.calls)
+
+
+@pytest.mark.parametrize('failure', ['old_profile','receipt','context'])
+@run_async
+async def test_invalid_attestation_profile_or_private_binding_never_borrows(monkeypatch,failure):
+    writer,state,connections,_,receipt,verifier,_=attestation_writer(monkeypatch)
+    if failure=='old_profile':writer._schema_profile=2
+    elif failure=='receipt':receipt=object()
+    else:state['guard']=False
+    with pytest.raises(UnsupportedCapability if failure=='old_profile' else InvalidRequest):
+        await writer.attest_prepared(receipt,verifier,deadline=asyncio.get_running_loop().time()+5)
+    assert connections==[]
+
+
+@pytest.mark.parametrize('failure', ['digest','credential','verification','owner','epoch','pointer','shape'])
+@run_async
+async def test_current_attestation_rows_are_exact_and_contradictions_fail(monkeypatch,failure):
+    writer,state,_,_,receipt,verifier,_=attestation_writer(monkeypatch)
+    deadline=asyncio.get_running_loop().time()+5
+    await writer.attest_prepared(receipt,verifier,deadline=deadline)
+    values=list(state['attestations'][0]);fields=implementation._ATTESTATION_FIELDS
+    key,value={'digest':('readback_sha256','bad'),'credential':('credential_generation','different'),
+        'verification':('verification_id','different'),'owner':('owner_token','22222222-2222-4222-8222-222222222222'),
+        'epoch':('backend_epoch',3),'pointer':('expected_active_generation_id','different'),
+        'shape':('readback_sha256','bad')}[failure]
+    values[fields.index(key)]=value
+    state['attestations']=[tuple(values[:-1]) if failure=='shape' else tuple(values)]
+    with pytest.raises(IntegrityViolation):
+        await writer.attest_prepared(receipt,verifier,deadline=deadline)
+
+
+@run_async
+async def test_lost_attestation_commit_ack_confirms_same_key_with_fresh_fences(monkeypatch):
+    writer,state,connections,_,receipt,verifier,_=attestation_writer(monkeypatch)
+    state['commit_error']=RuntimeError('PRIVATE_ACTUAL_COMMIT_ACK_LOSS')
+    result=await writer.attest_prepared(receipt,verifier,deadline=asyncio.get_running_loop().time()+5)
+    assert result['attestation'] is not None and state['insert_attempts']==1 and len(connections)==2
+    assert connections[0].closed and state['fence_reads']==2
+
+
+@run_async
+async def test_attestation_body_provider_failure_and_cancel_are_not_commit_unknown(monkeypatch):
+    writer,state,connections,_,receipt,verifier,_=attestation_writer(monkeypatch)
+    state['insert_error']=ProviderUnavailable()
+    with pytest.raises(ProviderUnavailable):
+        await writer.attest_prepared(receipt,verifier,deadline=asyncio.get_running_loop().time()+5)
+    assert len(connections)==1 and connections[0].rollbacks==1 and state['attestations']==[]
+    state['insert_error']=asyncio.CancelledError()
+    with pytest.raises(asyncio.CancelledError):
+        await writer.attest_prepared(receipt,verifier,deadline=asyncio.get_running_loop().time()+5)
+    assert len(connections)==2 and state['attestations']==[]
+
+
+@pytest.mark.parametrize('failure', ['denied','conflict'])
+@run_async
+async def test_changed_attestation_fences_persist_terminal_outcome_without_insert(monkeypatch,failure):
+    writer,state,_,_,receipt,verifier,_=attestation_writer(monkeypatch)
+    state['fence_failure']=failure
+    result=await writer.attest_prepared(receipt,verifier,deadline=asyncio.get_running_loop().time()+5)
+    assert result['intent']['state']==failure and result['attestation'] is None
+    assert state['attestations']==[] and state['preparations'][0][1]==1
+
+
+@run_async
+async def test_publication_requires_current_effective_preparation_and_full_graph(monkeypatch):
+    writer,state,_,loads,receipt,verifier,_=attestation_writer(monkeypatch)
+    deadline=asyncio.get_running_loop().time()+5
+    with pytest.raises(ProviderUnavailable):await writer.publish(ctx(),deadline=deadline)
+    assert not state.get('publication_updates')
+    await writer.attest_prepared(receipt,verifier,deadline=deadline)
+    result=await writer.publish(ctx(),deadline=deadline)
+    assert result['state']=='published' and len(loads)>=3
+    assert state['preparations'][0][1]==1
+
+
+@run_async
+async def test_unknown_attestation_commit_absence_allows_one_same_key_sql_retry(monkeypatch):
+    writer,state,connections,_,receipt,verifier,_=attestation_writer(monkeypatch)
+    state['commit_error']=RuntimeError('PRIVATE_UNKNOWN_COMMIT')
+    state['commit_confirm_absent']=True
+    result=await writer.attest_prepared(receipt,verifier,deadline=asyncio.get_running_loop().time()+5)
+    assert result['attestation'] is not None and len(state['attestations'])==1
+    assert state['insert_attempts']==2 and len(connections)==3 and state['fence_reads']==3
+    inserts=[params for connection in connections for sql,params in connection.calls
+        if sql.startswith('INSERT INTO cragkit_qdrant.preparation_attestations')]
+    assert len(inserts)==2 and inserts[0]==inserts[1]
+
+
+@run_async
+async def test_old_publication_profile_cannot_use_retired_original_preparation(monkeypatch):
+    writer,state,_,_,_,_,_=attestation_writer(monkeypatch)
+    writer._schema_profile=2
+    with pytest.raises(ProviderUnavailable):
+        await writer.publish(ctx(),deadline=asyncio.get_running_loop().time()+5)
+    assert not state.get('publication_updates') and state['intent']['state']=='prepared'
+
+
+@pytest.mark.parametrize('field,value', [('expected_active_generation_id','other-active'),
+    ('expected_authorization_revision','other-auth'),('expected_mutation_epoch',2)])
+@run_async
+async def test_attestation_raw_intent_bytes_cannot_be_rebased_via_fence_columns(monkeypatch,field,value):
+    writer,state,_,_,receipt,verifier,_=attestation_writer(monkeypatch)
+    plan=prepare_stage(stage_input());graph=stage_data(plan)
+    positions={'expected_authorization_revision':0,'expected_mutation_epoch':1,'expected_active_generation_id':2}
+    original=(graph.intent.expected_authorization_revision,graph.intent.expected_mutation_epoch,
+        graph.intent.expected_active_generation_id,plan.manifest_sha256,graph.manifest.generation_id,graph.manifest.revision_id,'prepared')
+    changed=list(original);changed[positions[field]]=value
+    async def fences(connection,selected):return 2,state['document'],tuple(changed),None
+    monkeypatch.setattr(writer,'_fences',fences)
+    with pytest.raises(IntegrityViolation):
+        await writer.attest_prepared(receipt,verifier,deadline=asyncio.get_running_loop().time()+5)
+    assert state['attestations']==[] and state['intent']['state']=='prepared'
+
+
+@run_async
+async def test_attestation_rejects_already_published_intent_instead_of_null_terminal(monkeypatch):
+    writer,state,_,_,receipt,verifier,_=attestation_writer(monkeypatch)
+    state['intent']['state']='published'
+    with pytest.raises(InvalidRequest):
+        await writer.attest_prepared(receipt,verifier,deadline=asyncio.get_running_loop().time()+5)
+    assert state['attestations']==[]

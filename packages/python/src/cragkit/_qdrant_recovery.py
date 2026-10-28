@@ -13,6 +13,7 @@ from ._postgres_session import SessionConnection
 from ._qdrant_authority import (
     _CATALOG_FINGERPRINT_SQL, _HISTORY_SQL, _PUBLICATION_CATALOG_SQL,
     EXPECTED_PUBLICATION_CATALOG_FINGERPRINT, EXPECTED_PUBLICATION_HISTORY,
+    EXPECTED_ATTESTATION_CATALOG_FINGERPRINT, EXPECTED_ATTESTATION_HISTORY, _ATTESTATION_CATALOG_SQL,
 )
 from ._qdrant_reconciliation import (
     QdrantReconciliationVerifier, physical_binding, receipt_data, verifier_authority,
@@ -389,13 +390,16 @@ class PostgresQdrantRecovery:
             self._identity = MappingProxyType({key: local[key] for key in
                 ('instance_id', 'storage_identity', 'supervisor_id')})
             async def install(connection: SessionConnection) -> bool:
-                if await self._query(connection, _HISTORY_SQL) != list(EXPECTED_PUBLICATION_HISTORY):
+                history = await self._query(connection, _HISTORY_SQL)
+                if history == list(EXPECTED_PUBLICATION_HISTORY):
+                    catalog, fingerprint = _PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
+                elif history == list(EXPECTED_ATTESTATION_HISTORY):
+                    catalog, fingerprint = _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
+                else:
                     raise UnsupportedCapability()
-                if await self._query(connection, _PUBLICATION_CATALOG_SQL) != [(True,)]:
+                if await self._query(connection, catalog) != [(True,)]:
                     raise UnsupportedCapability()
-                if await self._query(connection, _CATALOG_FINGERPRINT_SQL) != [(
-                    EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,
-                )]:
+                if await self._query(connection, _CATALOG_FINGERPRINT_SQL) != [(fingerprint,)]:
                     raise UnsupportedCapability()
                 rows = await self._query(connection,
                     'SELECT instance_id FROM cragkit_qdrant.backend_instances WHERE instance_id=%s',
