@@ -1186,3 +1186,15 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh artifact directory. The parent applies only the explicit disposable three-migration fixture profile and checks restricted-role admission before releasing its administrative connection. Each runtime uses at most one writer and one supervisor database client; languages run serially. It verifies eight actual source/proof/readback cases per runtime and stable witness-content parity. The 120-second business profile and separate twelve-second resource-cleanup allowance do not change library defaults or establish performance. Listener/process cleanup is checked before owned storage removal. These tests create no journal settlement or public convergence claim; routine vectors and source spans are synthetic.
+
+
+## V5-04G2b2d0 separate-connection guard necessity
+
+[Counterexample evidence](../evaluation/reports/V5/V5-04G2b2d0.md) rejects the candidate two-connection guard; passing this checker does not establish safe product settlement.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_security_lock_native.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_security_lock.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --artifacts-dir artifacts/V5/V5-04G2b2d0/a-new-lock-counterexample
+```
+
+Use a fresh directory. This PostgreSQL-only fixture uses two restricted runtime clients plus one administrative advisory-barrier observer, sequential writer replacement and six server slots. A separate fixture schema leaves the production catalog and capability grants unchanged. Actual submitted COMMIT and retained-lock waits are observed through database lock/activity views. Completion metadata is explicitly synthetic. The sixty-second business deadline and separate twelve-second cleanup allowance are development limits. Owned connections/schema/process/storage are closed and checked. No Qdrant, provider or hosted target is involved.
