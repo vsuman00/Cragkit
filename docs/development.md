@@ -1153,3 +1153,17 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory. The opt-in mode performs 15 checks on one disposable PostgreSQL connection with restricted SQL roles, explicit synthetic metadata and mandatory savepoint/outer rollback. It runs no Qdrant service or provider and creates no genuine recovery proof or completed HTTP acknowledgment. Omitting `--security-owner` retains the prior 12-check B0 profile. Pre-existing output directories are refused without overwriting their diagnostic files.
+
+
+## V5-04G2b2b full-document security readback
+
+[Readback evidence](../evaluation/reports/V5/V5-04G2b2b.md) separates diagnostics from genuine recovery receipts and settlement. Run languages serially:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_security_readback.py tools/tests/test_qdrant_security_readback_native.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-security-readback.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_security_readback.py --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --artifacts-dir artifacts/V5/V5-04G2b2/a-new-readback-run
+```
+
+Use a fresh artifact directory. The parent runs eight cases per runtime serially on actual isolated Qdrant, with four synthetic points across two generations and no PostgreSQL or provider. It checks real stale/missing/corrupt/extra/drifting data and actual shared response accounting, then closes sessions/controllers and verifies listener absence before cleanup. These observations do not authorize writes or certify SQL settlement. Deadline/cancellation and ceiling exhaustion have separate unit coverage.
