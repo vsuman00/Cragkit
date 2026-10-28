@@ -362,6 +362,15 @@ Recovery does not publish a stage, complete a later security intent, clear curre
 
 ## Security changes, tombstones and deletion
 
+### G2a1: Authority-only security commit confirmation
+
+The existing native writer `apply_security` remains authority-only: commit current authorization or a monotonic tombstone without backend/owner recovery locks or vector I/O. A blocked backend and uncertain dispatch must not defer this source-authority transition. Its result retains the stored authority/replica flags; source admission does not certify replica convergence.
+
+Both runtimes must reconcile only an actual lost COMMIT acknowledgment. In a fresh ordinary scoped writer transaction, read the same intent key and compare the exact instance, action, encoded payload bytes/hash and original expected authorization revision/mutation epoch. Return the durable historical outcome only when authority is committed or the state is terminal denied/conflict. Do not require the document to retain the old revision: the original successful transition changes it, and later authorized transitions may supersede it. Missing or nonterminal confirmation is `ProviderUnavailable`; a contradictory exact-key record is `IntegrityViolation`. The confirmation performs no INSERT/UPDATE and never retries the mutation automatically. A later explicit caller retry must reauthorize through its eventual public application boundary. Body failures, deadline expiry and cancellation cannot enter this confirmation path. Preserve current runtime-role, RLS, deadline and connection cleanup checks on the fresh lease.
+
+This child closes writer behavior parity before public authority admission and security-bound physical convergence. It does not add a manager method, settle old writes, transfer ownership, update replicas, purge data or complete G2.
+
+
 ACL/metadata updates compare expected fences, atomically commit the new complete state and increment `mutation_epoch` with a new authorization revision. Tombstone performs the same security transition and immediately denies all generations, including private retained source bindings. These SQL commits are not delayed by an outstanding vector request or instance recovery gate.
 
 The same document coordinator serializes subsequent vector convergence. An old full-point upsert can still carry old ACL while it is uncertain; QS-r1 must independently enforce current authority before provider/final release. After settlement, replay builds current replicas, never restores an intent's stale grants or unsets a tombstone. A denied or conflicting publication does not resurrect its source.

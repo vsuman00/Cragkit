@@ -609,13 +609,13 @@ export class PostgresQdrantWriter {
       }
     });
   }
-  async #mutation<T>(context:WriterContext,options:LeaseOptions,body:(tx:Tx)=>Promise<T>,reconcile:(tx:Tx)=>Promise<T>):Promise<T>{
+  async #mutation<T>(context:WriterContext,options:LeaseOptions,body:(tx:Tx)=>Promise<T>,reconcile:(tx:Tx)=>Promise<T>,preserveCommitCancellation=false):Promise<T>{
     return this.#work(options,async lease=>{
-      try { return await this.#tx(context,lease,body); }
+      try { return await this.#tx(context,lease,body,preserveCommitCancellation); }
       catch(error) {
         if(!(error instanceof CommitUnknown))throw error;
         // Reconcile the SAME identity once. Never retry DML after a lost ACK.
-        return this.#tx(context,lease,reconcile);
+        return this.#tx(context,lease,reconcile,preserveCommitCancellation);
       }
     });
   }
@@ -1444,6 +1444,14 @@ export class PostgresQdrantWriter {
       if(!existing||Object.keys(intentRecord).some(key=>!TARGET.includes(key)&&key!=='intent_id'&&!exact(existing[key],intentRecord[key])))throw new IntegrityViolation();
       return intent_view(existing);
     };
+    const confirm=async(tx:Tx)=>{
+      const existing=await this.#intent(tx,context);
+      if(!existing)throw new ProviderUnavailable();
+      if(Object.keys(intentRecord).some(key=>!TARGET.includes(key)&&key!=='intent_id'&&!exact(existing[key],intentRecord[key])))throw new IntegrityViolation();
+      const result=intent_view(existing);
+      if(!result.authority_committed&&!['denied','conflict'].includes(result.state))throw new ProviderUnavailable();
+      return result;
+    };
     return this.#mutation(context,options,async tx=>{
       const existing=await this.#intent(tx,context);
       if(existing){
@@ -1465,7 +1473,7 @@ export class PostgresQdrantWriter {
       await tx.query("UPDATE cragkit_qdrant.publication_intents SET state='authority_committed',authority_committed=true WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4)",
         [...this.#key(context),context.intent_id],0);
       return verify(tx);
-    },verify);
+    },confirm,true);
   }
   async bind_purge(input:unknown,inputScope:unknown,rawOptions:unknown):Promise<IntentView>{
     const options=parseOptions(rawOptions,true),bound=parseOperation(input,inputScope,options.owner_token,true),record=bound.record;

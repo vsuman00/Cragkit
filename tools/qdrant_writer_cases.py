@@ -357,9 +357,19 @@ async def python_writer_cases(config, inputs):
             expected_authorization_revision='auth-2', expected_mutation_epoch=2,
             authorization=dict(authorization_revision='auth-3', principal_ids=[], grant_ids=[],
                 language=None, kind=None, tag=None, tombstoned=True))
+        acknowledgment['armed'] = True
         tombstone = await writer.apply_security(security, current_scope, owner_token=OWNER_TOKEN, deadline=deadline)
+        if (acknowledgment['armed'] or acknowledgment['fired'] != 2
+                or not acknowledgment['retired_connection'].closed or not tombstone['authority_committed']
+                or tombstone['replica_complete'] or tombstone['purge_complete']):
+            raise RuntimeError('security_commit_ack_confirmation_failed')
+        checks.append('security_commit_ack_loss_confirms_without_mutation_replay')
         await writer.apply_security(security, current_scope, owner_token=OWNER_TOKEN, deadline=deadline)
         checks.append('immediate_monotonic_tombstone_with_stable_security_intent')
+        historical_security = await writer.apply_security(revocation, scope, owner_token=OWNER_TOKEN, deadline=deadline)
+        if not historical_security['authority_committed'] or historical_security['payload_sha256'] == tombstone['payload_sha256']:
+            raise RuntimeError('superseded_security_history_lost')
+        checks.append('superseded_security_retry_preserves_current_tombstone')
         purge_scope = parse_model(TrustedScope, dict(inputs['scope'], authorization_revision='auth-3'))
         purge = dict(intent_id='native-purge', tenant_id=scope.tenant_id, collection=context['collection'],
             document_id=context['document_id'], tombstone_intent_payload_sha256=tombstone['payload_sha256'],

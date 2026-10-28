@@ -67,7 +67,11 @@ function setup(){
     dispatch_journal:['tenant_id','collection','document_id','intent_id','dispatch_id'],dispatch_points:['tenant_id','collection','document_id','intent_id','dispatch_id','point_id'],
     preparations:['tenant_id','collection','document_id','intent_id'],preparation_attestations:['tenant_id','collection','document_id','intent_id','backend_epoch','owner_token']};
   const pool={ends:0,async end(){this.ends++;},async connect(){
-    const client={status:state.startStatus,releases:[],snapshot:null,getTransactionStatus(){return this.status;},release(value=false){this.releases.push(value);},
+    const client={status:state.startStatus,releases:[],snapshot:null,getTransactionStatus(){return this.status;},release(value=false){
+      this.releases.push(value);
+      // Destroying a native connection rolls back its still-open transaction.
+      if(value&&this.status==='T'&&this.snapshot){state.tables=this.snapshot;this.status='I';}
+    },
       async query(query){
         const sql=query.text,params=query.values??[];state.queries.push(query);
         if(sql.startsWith('BEGIN')){this.recoveryInserted=false;this.recoveryMarked=null;this.attestationInserted=false;this.snapshot=clone(state.tables);this.status='T';return {rows:[]};}
@@ -134,7 +138,7 @@ function setup(){
             rows=rows.filter(row=>row.intent_id===params[3]&&row.dispatch_id===params[4]);for(const row of rows)Object.assign(row,{state:params[5],completion_sha256:params[6]});if(rows.some(row=>row.recovery))this.recoveryMarked=params[5];
           }else if(table==='documents'){
             if(sql.includes('SET active_generation_id'))for(const row of rows)row.active_generation_id=params[3];
-            else for(const row of rows)Object.assign(row,{principal_ids:params[3],grant_ids:params[4],authorization_revision:params[5],mutation_epoch:params[6],language:params[7],kind:params[8],tag:params[9],tombstoned:params[10]});
+            else {await state.onSecurityBody?.();for(const row of rows)Object.assign(row,{principal_ids:params[3],grant_ids:params[4],authorization_revision:params[5],mutation_epoch:params[6],language:params[7],kind:params[8],tag:params[9],tombstoned:params[10]});}
           }else if(table==='generations'){
             for(const row of rows){if(sql.includes('published=false')){if(row.generation_id!==params[3])row.published=false;}
               else if(row.generation_id===params[3]){row.published=true;row.ever_published=true;}}
@@ -1259,4 +1263,95 @@ test('stalled recovery authorization respects deadline and observes late rejecti
     reject(new Error('late_application_failure'));await new Promise(resolve=>setImmediate(resolve));
     assert.equal(f.state.queries.length,before);assert.equal(f.state.puts,0);
   }finally{reject?.(new Error('test_cleanup'));await f.close();}
+});
+
+function securityChange(action='update_authorization'){
+  return {action,intent_id:'security-confirmation',tenant_id:'tenant-a',collection:'docs',document_id:'doc-1',
+    expected_authorization_revision:'auth-1',expected_mutation_epoch:1,
+    authorization:{authorization_revision:'auth-2',principal_ids:[],grant_ids:[],language:null,kind:null,tag:null,
+      tombstoned:action==='tombstone'}};
+}
+async function securitySetup(){
+  const f=setup();await f.writer.initialize(opts());await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+  return f;
+}
+function confirmationQueries(state,start){
+  const queries=state.queries.slice(start),commit=queries.findIndex(query=>query.text==='COMMIT');
+  assert.ok(commit>=0);return queries.slice(commit+1);
+}
+for(const action of ['update_authorization','tombstone'])test(`security ${action} lost COMMIT confirms once despite blocked owner and newer authority`,async()=>{
+  const f=await securitySetup();
+  try{
+    Object.assign(f.state.tables.backend_instances[0],{state:'recovery_blocked',epoch:2,recovery_id:'recovery-1'});
+    f.state.tables.document_owners=[{...Object.fromEntries(['tenant_id','collection','document_id'].map(key=>[key,context[key]??scope[key]])),
+      instance_id:'instance-fixture',intent_id:'intent-2',owner_token:token,backend_epoch:1}];
+    f.state.tables.dispatch_journal=[{tenant_id:'tenant-a',collection:'docs',document_id:'doc-1',state:'unknown'}];
+    f.state.commitLost=true;f.state.onLostCommit=()=>Object.assign(f.state.tables.documents[0],{authorization_revision:'auth-3',mutation_epoch:3});
+    const start=f.state.queries.length,result=await f.writer.apply_security(securityChange(action),scope,stageOpts());
+    assert.equal(result.authority_committed,true);assert.equal(result.replica_complete,false);
+    assert.equal(f.state.tables.documents[0].authorization_revision,'auth-3');
+    const confirmation=confirmationQueries(f.state,start);
+    assert.equal(confirmation.filter(query=>query.text.startsWith('SELECT ')&&query.text.includes('FROM cragkit_qdrant.publication_intents')).length,1);
+    assert.equal(confirmation.some(query=>/^(INSERT|UPDATE|DELETE) /.test(query.text)),false);
+    assert.equal(f.state.queries.slice(start).some(query=>/FROM cragkit_qdrant\.(backend_instances|document_owners|dispatch_journal)/.test(query.text)),false);
+    const before=f.state.queries.length;
+    assert.equal((await f.writer.apply_security(securityChange(action),scope,stageOpts())).authority_committed,true);
+    assert.equal(f.state.queries.slice(before).some(query=>query.text.startsWith('UPDATE ')),false);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+for(const outcome of ['missing','staged','writing','denied','conflict','wrong_action','wrong_revision','wrong_epoch','wrong_payload','wrong_instance'])
+  test(`security lost COMMIT exact confirmation handles ${outcome} without DML replay`,async()=>{
+    const f=await securitySetup();
+    try{
+      f.state.commitLost=true;f.state.onLostCommit=()=>{
+        const row=f.state.tables.publication_intents.find(item=>item.intent_id==='security-confirmation');
+        if(outcome==='missing')f.state.tables.publication_intents=f.state.tables.publication_intents.filter(item=>item!==row);
+        else if(['staged','writing','denied','conflict'].includes(outcome))Object.assign(row,{state:outcome,authority_committed:false});
+        else if(outcome==='wrong_action')row.action='tombstone';
+        else if(outcome==='wrong_revision')row.expected_authorization_revision='other-revision';
+        else if(outcome==='wrong_epoch')row.expected_mutation_epoch=7;
+        else if(outcome==='wrong_payload'){row.payload_bytes=Buffer.from('[]');row.payload_sha256=digest(row.payload_bytes);}
+        else row.instance_id='other-instance';
+      };
+      const start=f.state.queries.length,operation=f.writer.apply_security(securityChange(),scope,stageOpts());
+      if(['denied','conflict'].includes(outcome))assert.equal((await operation).state,outcome);
+      else await assert.rejects(operation,['missing','staged','writing'].includes(outcome)?ProviderUnavailable:IntegrityViolation);
+      const confirmation=confirmationQueries(f.state,start);
+      assert.equal(confirmation.some(query=>/^(INSERT|UPDATE|DELETE) /.test(query.text)),false);
+      assert.equal(f.state.queries.slice(start).filter(query=>query.text.startsWith('UPDATE cragkit_qdrant.documents ')).length,1);
+    }finally{await f.writer.close();await f.resource.close();}
+  });
+
+for(const boundary of ['body','cancel','deadline'])test(`security ${boundary} failure never enters commit confirmation`,async()=>{
+  const f=await securitySetup();
+  try{
+    const controller=new AbortController(),options={...stageOpts(),signal:controller.signal};
+    if(boundary==='body')f.state.onSecurityBody=()=>{throw Error('private security body failure');};
+    else if(boundary==='cancel')f.state.onSecurityBody=()=>{controller.abort();};
+    else f.state.onSecurityBody=()=>new Promise(resolve=>setTimeout(resolve,30));
+    if(boundary==='deadline')options.deadline=now()+.01;
+    const start=f.state.queries.length;
+    await assert.rejects(f.writer.apply_security(securityChange(),scope,options),
+      boundary==='body'?ProviderUnavailable:boundary==='deadline'?DeadlineExceeded:error=>error.name==='AbortError');
+    const queries=f.state.queries.slice(start);
+    assert.equal(queries.filter(query=>query.text.startsWith('BEGIN')).length,1);
+    assert.equal(queries.some(query=>query.text==='COMMIT'),false);
+    assert.equal(f.state.tables.documents[0].authorization_revision,'auth-1');
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+for(const boundary of ['deadline','abort','statement_cancel'])test(`security COMMIT ${boundary} does not enter confirmation`,async()=>{
+  const f=await securitySetup();
+  try{
+    f.state.commitError=boundary==='deadline'?new DeadlineExceeded():boundary==='abort'
+      ?new DOMException('Operation aborted.','AbortError'):Object.assign(new Error('private cancel'),{code:'57014'});
+    const start=f.state.queries.length;
+    await assert.rejects(f.writer.apply_security(securityChange(),scope,stageOpts()),
+      boundary==='deadline'?DeadlineExceeded:boundary==='abort'?error=>error.name==='AbortError':ProviderUnavailable);
+    const queries=f.state.queries.slice(start);
+    assert.equal(queries.filter(query=>query.text.startsWith('BEGIN')).length,1);
+    assert.equal(queries.filter(query=>query.text==='COMMIT').length,1);
+    assert.equal(f.state.tables.documents[0].authorization_revision,'auth-1');
+  }finally{await f.writer.close();await f.resource.close();}
 });

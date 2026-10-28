@@ -37,7 +37,7 @@ async function cases(value) {
   const acknowledgment = {armed: false, fired: 0, destroyed: 0};
   const withLease = resource.withLease.bind(resource);
   // Forward every query to the owned native driver. Withhold one real COMMIT
-  // acknowledgment only during the alternate-owner admission below.
+  // acknowledgment during alternate-owner admission and security commit below.
   resource.withLease = (leaseOptions, operation) => withLease(leaseOptions, (client, signal) => {
     let committedUnknown = false;
     return operation({
@@ -247,9 +247,15 @@ async function cases(value) {
       expected_authorization_revision: 'auth-2', expected_mutation_epoch: 2,
       authorization: {authorization_revision: 'auth-3', principal_ids: [], grant_ids: [],
         language: null, kind: null, tag: null, tombstoned: true}};
+    acknowledgment.armed = true;
     const tombstone = await writer.apply_security(security, currentScope, {...options, owner_token: OWNER_TOKEN});
+    if(acknowledgment.armed||acknowledgment.fired!==2||acknowledgment.destroyed!==2||!tombstone.authority_committed||tombstone.replica_complete||tombstone.purge_complete)throw new Error('security_commit_ack_confirmation_failed');
+    checks.push('security_commit_ack_loss_confirms_without_mutation_replay');
     await writer.apply_security(security, currentScope, {...options, owner_token: OWNER_TOKEN});
     checks.push('immediate_monotonic_tombstone_with_stable_security_intent');
+    const historicalSecurity=await writer.apply_security(revocation,scope,{...options,owner_token:OWNER_TOKEN});
+    if(!historicalSecurity.authority_committed||historicalSecurity.payload_sha256===tombstone.payload_sha256)throw new Error('superseded_security_history_lost');
+    checks.push('superseded_security_retry_preserves_current_tombstone');
     const purgeScope = {...scope, authorization_revision: 'auth-3'};
     const purge = {intent_id: 'native-purge', tenant_id: scope.tenant_id, collection: context.collection,
       document_id: context.document_id, tombstone_intent_payload_sha256: tombstone.payload_sha256,

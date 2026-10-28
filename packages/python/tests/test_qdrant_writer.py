@@ -19,6 +19,7 @@ from cragkit.embeddings import OPENAI_PROFILE
 from cragkit.errors import (DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady,
     IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability)
 from test_qdrant_manifest import FIXTURE, TEXT, manifest_record, stage_record
+from test_qdrant_manifest import security_record
 
 
 def run_async(function):
@@ -91,6 +92,151 @@ def resource(monkeypatch,connection):
     async def lease(self,*,deadline): yield connection
     monkeypatch.setattr(PoolResource,'lease',lease)
     return pool
+
+
+def security_writer(monkeypatch):
+    """Use the real transaction wrapper with a fresh connection for confirmation."""
+    connections = []
+    state = dict(intent=None, raw=None, lost=True, after_commit=None, body_error=None,
+                 document=dict(authorization_revision='auth-1', mutation_epoch=1, tombstoned=False))
+    class SecurityConnection(Connection):
+        def transaction(self):
+            transaction = super().transaction()
+            class Transaction:
+                async def __aenter__(inner):
+                    return await transaction.__aenter__()
+                async def __aexit__(inner, *args):
+                    result = await transaction.__aexit__(*args)
+                    if args[0] is None and state['lost']:
+                        state['lost'] = False
+                        if state['after_commit'] is not None:
+                            state['after_commit'](state)
+                        raise ConnectionError('PRIVATE_COMMIT_ACK_LOSS')
+                    return result
+            return Transaction()
+        async def execute(self, sql, params=None):
+            if sql.startswith('SELECT instance_id,action,payload_bytes'):
+                self.calls.append((sql, params))
+                return Cursor([] if state['raw'] is None else [state['raw']])
+            if sql.startswith('UPDATE cragkit_qdrant.documents SET authorization_revision='):
+                self.calls.append((sql, params))
+                if state.get('body_wait'):
+                    await asyncio.Event().wait()
+                if state['body_error'] is not None:
+                    raise state['body_error']
+                state['document'].update(authorization_revision=params[0],mutation_epoch=params[1],tombstoned=params[7])
+                return Cursor([])
+            if sql.startswith("UPDATE cragkit_qdrant.publication_intents SET state='authority_committed'"):
+                self.calls.append((sql, params))
+                state['intent'].update(state='authority_committed',authority_committed=True)
+                return Cursor([])
+            return await super().execute(sql, params)
+    pool = PoolResource(PoolConfig(host='localhost',dbname='fixture',user='writer',
+        sslrootcert=Path('/fixture/ca'),passfile=Path('/fixture/pass')))
+    @asynccontextmanager
+    async def lease(self, *, deadline):
+        connection = SecurityConnection()
+        connections.append(connection)
+        yield connection
+    monkeypatch.setattr(PoolResource,'lease',lease)
+    writer = PostgresQdrantWriter(pool,config(),'instance-1')
+    writer._ready = True
+    async def ensure(connection,table,record,keys):
+        connection.calls.append(('INSERT fixture intent',None))
+        raw = tuple(record[key] for key in ('instance_id','action','payload_bytes','payload_sha256',
+                                          'expected_authorization_revision','expected_mutation_epoch'))
+        if state['raw'] is not None:
+            if state['raw'] != raw:
+                raise IntegrityViolation()
+            return
+        state['raw'] = raw
+        state['intent'] = dict(action=record['action'],state='staged',payload_sha256=record['payload_sha256'],
+            manifest_sha256=None,revision_id=None,generation_id=None,authority_committed=False,
+            replica_complete=False,purge_complete=False)
+    async def inspect(connection,context):
+        connection.calls.append(('SELECT fixture metadata',None))
+        return None if state['intent'] is None else dict(state['intent'])
+    async def document(connection,context,**options):
+        connection.calls.append(('SELECT fixture document',None))
+        return dict(state['document'])
+    monkeypatch.setattr(writer,'_ensure',ensure)
+    monkeypatch.setattr(writer,'_inspect',inspect)
+    monkeypatch.setattr(writer,'_document',document)
+    return writer,state,connections
+
+
+@pytest.mark.parametrize('action', ['update_authorization','tombstone'])
+@run_async
+async def test_security_lost_commit_confirms_read_only_after_revision_superseded(monkeypatch,action):
+    writer,state,connections = security_writer(monkeypatch)
+    change = security_record(action=action)
+    if action == 'tombstone':
+        change['authorization']['tombstoned'] = True
+    state['after_commit'] = lambda value: value['document'].update(authorization_revision='auth-later',mutation_epoch=9)
+    result = await writer.apply_security(change,ctx()['scope'],owner_token=ctx()['owner_token'],
+        deadline=asyncio.get_running_loop().time()+5)
+    assert result['authority_committed'] and not result['replica_complete']
+    assert state['document']['authorization_revision'] == 'auth-later'
+    assert len(connections) == 2 and connections[0].closed
+    assert not any(any('FROM cragkit_qdrant.'+table in sql
+                       for table in ('backend_instances','document_owners','dispatch_journal'))
+                   for connection in connections for sql,_ in connection.calls)
+    assert not any(sql.startswith(('INSERT','UPDATE','DELETE')) for sql,_ in connections[1].calls)
+    assert not any(sql == 'SELECT fixture document' for sql,_ in connections[1].calls)
+    repeated = await writer.apply_security(change,ctx()['scope'],owner_token=ctx()['owner_token'],
+        deadline=asyncio.get_running_loop().time()+5)
+    assert repeated == result and state['document']['mutation_epoch'] == 9
+    assert not any(sql.startswith('UPDATE') for sql,_ in connections[-1].calls)
+
+
+@pytest.mark.parametrize('failure', ['missing','nonterminal','instance','action','bytes','digest','revision','epoch','bool_epoch'])
+@run_async
+async def test_security_lost_commit_absence_or_contradiction_never_replays_mutation(monkeypatch,failure):
+    writer,state,connections = security_writer(monkeypatch)
+    def change_confirmation(value):
+        if failure == 'missing':
+            value['raw'] = None
+        elif failure == 'nonterminal':
+            value['intent'].update(authority_committed=False,state='staged')
+        else:
+            index = dict(instance=0,action=1,bytes=2,digest=3,revision=4,epoch=5,bool_epoch=5)[failure]
+            raw = list(value['raw'])
+            raw[index] = True if failure == 'bool_epoch' else (b'changed' if failure == 'bytes' else 'changed')
+            value['raw'] = tuple(raw)
+    state['after_commit'] = change_confirmation
+    with pytest.raises(ProviderUnavailable if failure in ('missing','nonterminal') else IntegrityViolation):
+        await writer.apply_security(security_record(),ctx()['scope'],owner_token=ctx()['owner_token'],
+            deadline=asyncio.get_running_loop().time()+5)
+    assert len(connections) == 2
+    assert not any(sql.startswith(('INSERT','UPDATE','DELETE')) for sql,_ in connections[1].calls)
+
+
+@pytest.mark.parametrize('terminal', ['denied','conflict'])
+@run_async
+async def test_security_lost_commit_can_confirm_terminal_historical_outcome(monkeypatch,terminal):
+    writer,state,connections = security_writer(monkeypatch)
+    # The committed response is deliberately non-authoritative but terminal.
+    state['after_commit'] = lambda value: value['intent'].update(state=terminal,authority_committed=False)
+    result = await writer.apply_security(security_record(),ctx()['scope'],owner_token=ctx()['owner_token'],
+        deadline=asyncio.get_running_loop().time()+5)
+    assert result['state'] == terminal and not result['authority_committed']
+    assert len(connections) == 2
+
+
+@pytest.mark.parametrize('failure', ['body','cancel','deadline'])
+@run_async
+async def test_security_body_failure_cancellation_and_deadline_never_confirm(monkeypatch,failure):
+    writer,state,connections = security_writer(monkeypatch)
+    error = dict(body=ProviderUnavailable(),cancel=asyncio.CancelledError(),deadline=DeadlineExceeded())[failure]
+    if failure == 'deadline':
+        state['body_wait'] = True
+    else:
+        state['body_error'] = error
+    with pytest.raises(type(error)):
+        await writer.apply_security(security_record(),ctx()['scope'],owner_token=ctx()['owner_token'],
+            deadline=asyncio.get_running_loop().time()+(.01 if failure == 'deadline' else 5))
+    assert len(connections) == 1 and connections[0].rollbacks == 1
+    assert state['lost'] and not state['intent']['authority_committed']
 
 
 @pytest.mark.parametrize('field,value,error', [

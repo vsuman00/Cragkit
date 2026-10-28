@@ -1814,7 +1814,32 @@ class PostgresQdrantWriter:
             result = await self._inspect(connection,ctx)
             assert result is not None
             return result
-        return await self._run(ctx,deadline,apply)
+        try:
+            return await self._run(ctx,deadline,apply,detect_commit_unknown=True)
+        except _CommitUnknown:
+            async def confirm(connection: SessionConnection) -> Mapping[str, Any]:
+                rows = await self._query(connection,
+                    'SELECT instance_id,action,payload_bytes,payload_sha256,expected_authorization_revision,'
+                    'expected_mutation_epoch FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,
+                    _key(ctx))
+                if not rows:
+                    raise ProviderUnavailable()
+                expected = (self.instance_id,intent.action,encoded.encoded_bytes,encoded.sha256,
+                            intent.expected_authorization_revision,intent.expected_mutation_epoch)
+                if (len(rows) != 1 or len(rows[0]) != len(expected)
+                        or any(type(actual) is not type(wanted) or actual != wanted
+                               for actual,wanted in zip(rows[0],expected,strict=True))):
+                    raise IntegrityViolation()
+                result = await self._inspect(connection,ctx)
+                if result is None:
+                    raise ProviderUnavailable()
+                if (type(result['authority_committed']) is not bool
+                        or result['action'] != intent.action or result['payload_sha256'] != encoded.sha256):
+                    raise IntegrityViolation()
+                if not result['authority_committed'] and result['state'] not in ('denied','conflict'):
+                    raise ProviderUnavailable()
+                return result
+            return await self._run(ctx,deadline,confirm)
 
     async def bind_purge(self, record: object, scope: object, *, owner_token: object, deadline: float) -> Mapping[str, Any]:
         encoded = encode_purge_intent(record)
