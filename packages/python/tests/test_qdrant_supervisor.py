@@ -493,3 +493,116 @@ async def test_control_session_drains_started_facade_work_before_expiring(tmp_pa
     else:await task
     assert owner._active is None and owner._control_token is None
     with pytest.raises(ProviderUnavailable):escaped[0].block_ordinary()
+
+
+@run_async
+async def test_facade_recovery_transport_is_exact_session_bound_and_bounded(tmp_path,monkeypatch):
+    owner=supervisor(tmp_path,monkeypatch)
+    borrowed=owner.transport_for(owner.issue_attempt(BINDING,deadline=asyncio.get_running_loop().time()+5))
+    await recovery_doubles(owner,monkeypatch)
+    deadline=asyncio.get_running_loop().time()+5
+    proof=await owner.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},deadline=deadline)
+    binding={**BINDING,'epoch':2,'recovery_id':'r'}
+    raw=owner.issue_recovery_attempt(proof,binding,deadline=deadline)
+    async def current_http(*args):return 200,b'{}'
+    monkeypatch.setattr(owner,'_http',current_http)
+    async with owner.control_session() as control:
+        for invalid in (raw,implementation._Attempt(),dict(binding)):
+            with pytest.raises(InvalidRequest):control.recovery_transport_for(invalid)
+        with pytest.raises(UnsupportedCapability):control.issue_recovery_attempt(dict(owner.recovery_binding(proof)),binding,deadline=deadline)
+        with pytest.raises(ProviderUnavailable):owner.issue_recovery_attempt(proof,binding,deadline=deadline)
+        with pytest.raises(ProviderUnavailable):owner.transport_for(raw)
+        attempt=control.issue_recovery_attempt(proof,binding,deadline=deadline)
+        with pytest.raises(TypeError):pickle.dumps(attempt)
+        handles=[control.recovery_transport_for(attempt) for _ in range(8)]
+        with pytest.raises(ProviderUnavailable):control.recovery_transport_for(attempt)
+        await handles.pop().close()
+        replacement=control.recovery_transport_for(attempt)
+        assert await replacement.request('GET','/',deadline=deadline)==b'{}'
+        assert 'SECRET' not in repr(replacement)+repr(control)
+        with pytest.raises(InvalidRequest):await replacement.request('PUT','/collections/docs',body=b'{}',deadline=deadline)
+        with pytest.raises(InvalidRequest):await replacement.request('GET','/collections/foreign',deadline=deadline)
+    assert all(handle not in owner._transports for handle in handles+[replacement])
+    assert borrowed in owner._transports
+    with pytest.raises(ProviderUnavailable):await replacement.request('GET','/',deadline=deadline)
+    with pytest.raises(ProviderUnavailable):control.recovery_transport_for(attempt)
+    async with owner.control_session() as other:
+        with pytest.raises(InvalidRequest):other.recovery_transport_for(attempt)
+    await borrowed.close()
+
+
+@pytest.mark.parametrize('cancel',[False,True])
+@run_async
+async def test_facade_recovery_http_drains_actual_unwind_and_rejects_late_work(tmp_path,monkeypatch,cancel):
+    owner=supervisor(tmp_path,monkeypatch)
+    await recovery_doubles(owner,monkeypatch)
+    deadline=asyncio.get_running_loop().time()+5
+    proof=await owner.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},deadline=deadline)
+    started,released=asyncio.Event(),asyncio.Event();escaped=[];requests=[]
+    async def paused_http(*args):
+        started.set();await released.wait();return 200,b'{}'
+    monkeypatch.setattr(owner,'_http',paused_http)
+    async def operation():
+        async with owner.control_session() as control:
+            attempt=control.issue_recovery_attempt(proof,{**BINDING,'epoch':2,'recovery_id':'r'},deadline=deadline)
+            handle=control.recovery_transport_for(attempt);escaped.append(handle)
+            requests.append(asyncio.create_task(handle.request('GET','/',deadline=deadline)))
+            await started.wait()
+            if cancel:await asyncio.Event().wait()
+    task=asyncio.create_task(operation())
+    await started.wait();await asyncio.sleep(0)
+    if cancel:task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done() and owner._control_token is not None and owner._requests
+    with pytest.raises(ProviderUnavailable):await escaped[0].request('GET','/',deadline=deadline)
+    with pytest.raises(ProviderUnavailable):
+        async with owner.control_session():pass
+    released.set()
+    if cancel:
+        with pytest.raises(asyncio.CancelledError):await task
+    else:await task
+    assert await requests[0]==b'{}'
+    assert not owner._requests and not owner._control_work and owner._control_token is None
+    with pytest.raises(ProviderUnavailable):await escaped[0].request('GET','/',deadline=deadline)
+
+
+@run_async
+async def test_unstarted_facade_request_and_retired_proof_cannot_escape_session(tmp_path,monkeypatch):
+    owner=supervisor(tmp_path,monkeypatch);await recovery_doubles(owner,monkeypatch)
+    deadline=asyncio.get_running_loop().time()+5
+    proof=await owner.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},deadline=deadline)
+    async with owner.control_session() as control:
+        attempt=control.issue_recovery_attempt(proof,{**BINDING,'epoch':2,'recovery_id':'r'},deadline=deadline)
+        handle=control.recovery_transport_for(attempt)
+        unstarted=handle.request('GET','/',deadline=deadline)
+    with pytest.raises(ProviderUnavailable):await unstarted
+    replacement=await owner.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},deadline=deadline)
+    async with owner.control_session() as current:
+        with pytest.raises(UnsupportedCapability):current.issue_recovery_attempt(proof,{**BINDING,'epoch':2,'recovery_id':'r'},deadline=deadline)
+        assert replacement is not proof
+
+
+@run_async
+async def test_facade_closes_only_owned_clients_and_reports_cleanup_failure(tmp_path,monkeypatch):
+    owner=supervisor(tmp_path,monkeypatch);await recovery_doubles(owner,monkeypatch)
+    deadline=asyncio.get_running_loop().time()+5
+    proof=await owner.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},deadline=deadline)
+    binding={**BINDING,'epoch':2,'recovery_id':'r'}
+    raw=owner.issue_recovery_attempt(proof,binding,deadline=deadline);borrowed=owner.transport_for(raw)
+    closed=[]
+    class Client:
+        def __init__(self,name,fail=False):self.name=name;self.fail=fail
+        async def aclose(self):
+            closed.append(self.name)
+            if self.fail:raise RuntimeError('private client error')
+    owner._transports[borrowed].client=Client('borrowed')
+    with pytest.raises(ProviderUnavailable):
+        async with owner.control_session() as control:
+            attempt=control.issue_recovery_attempt(proof,binding,deadline=deadline)
+            handle=control.recovery_transport_for(attempt)
+            owner._transports[handle].client=Client('owned',True)
+    assert closed==['owned'] and borrowed in owner._transports
+    assert owner._control_token is None
+    with pytest.raises(ProviderUnavailable):await handle.request('GET','/',deadline=deadline)
+    await borrowed.close()
+    assert closed==['owned','borrowed']

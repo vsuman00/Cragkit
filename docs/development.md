@@ -1089,3 +1089,16 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory. The parent applies only the explicit disposable fixture schema, runs native languages serially with at most two database clients, checks least-privilege predicates and verifies listener shutdown. Real completed HTTP/SQL responses are withheld for acknowledgment faults. The Python and Node interruption points differ, as recorded in the report. Neither a passing schema nor a matching result shape proves complete repair or model quality.
+
+## V5-04G1b-B1 recovery session transport
+
+[B1 evidence](../evaluation/reports/V5/V5-04G1b-B1.md) covers the actual session transport prerequisite without SQL or publication claims.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_supervisor.py tools/tests/test_qdrant_recovery_session_native.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-supervisor.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_recovery_session.py --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --artifacts-dir artifacts/V5/V5-04G1/a-new-session-run
+```
+
+Use a fresh directory. The parent runs native languages serially with actual isolated Qdrant and synthetic vectors. It checks listener absence before removing owned storage. Cancellation/drain timing has unit coverage; the five native cases per runtime do not simulate a stalled wire response or establish SQL settlement. Existing native controller/recovery regressions remain separate runs.

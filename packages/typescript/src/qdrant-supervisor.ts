@@ -17,6 +17,8 @@ export type PhysicalRecovery = Readonly<Record<never, never>>;
 export type RecoveryBarrier = Readonly<Record<never, never>>;
 export type SupervisorControlSession = Readonly<{
   block_ordinary():void;
+  issue_recovery_attempt(proof:unknown,binding:unknown,options:unknown):Attempt;
+  recovery_transport_for(attempt:unknown):SupervisorTransport;
   recover(input:unknown,options:unknown):Promise<PhysicalRecovery>;
   seal_recovery(proof:unknown,options:unknown):Promise<RecoveryBarrier>;
   finish_recovery(barrier:unknown,settlement:unknown,options:unknown):void;
@@ -168,6 +170,7 @@ export class ManagedQdrantSupervisor {
     if(this.#controlToken||this.#active||this.#closing||this.#state==='closed')throw new ProviderUnavailable();
     const token=Object.freeze({});
     this.#controlToken=token;
+    const issued=new Set<Attempt>(),owned=new Set<ManagedHandle>();
     const track=<R>(operation:()=>Promise<R>):Promise<R>=>{
       this.#controlAccess(token);
       const work=operation();
@@ -175,8 +178,27 @@ export class ManagedQdrantSupervisor {
       void work.then(()=>this.#controlWork.delete(work),()=>this.#controlWork.delete(work));
       return work;
     };
+    const trackRequest=<R>(operation:()=>Promise<R>):Promise<R>=>track(()=>Promise.resolve().then(operation));
     const control:SupervisorControlSession=Object.freeze({
       block_ordinary:()=>this.block_ordinary(token),
+      issue_recovery_attempt:(proof,input,options)=>{
+        this.#controlAccess(token);
+        const attempt=this.issue_recovery_attempt(proof,input,options,token);
+        issued.add(attempt);return attempt;
+      },
+      recovery_transport_for:input=>{
+        this.#controlAccess(token);
+        if(typeof input!=='object'||input===null||!issued.has(input))throw new InvalidRequest();
+        const attempt=this.#attempt(input,token);
+        if(!attempt.recovery)throw new UnsupportedCapability();
+        if(owned.size>=8)throw new ProviderUnavailable();
+        const validate=()=>{
+          const current=this.#attempt(input,token);
+          if(!current.recovery||current!==attempt)throw new UnsupportedCapability();
+        };
+        const handle=this.#transport(attempt.key,false,{token,validate,track:trackRequest,onClose:closed=>{owned.delete(closed);}});
+        owned.add(handle);return handle;
+      },
       recover:(input,options)=>track(()=>this.recover(input,options,token)),
       seal_recovery:(proof,options)=>track(()=>this.seal_recovery(proof,options,token)),
       finish_recovery:(barrier,settlement,options)=>this.finish_recovery(barrier,settlement,options,token),
@@ -189,6 +211,8 @@ export class ManagedQdrantSupervisor {
       try{
         const outcomes=await Promise.allSettled([...this.#controlWork]);
         failed=outcomes.some(outcome=>outcome.status==='rejected');
+        const cleanup=await Promise.allSettled([...owned].map(handle=>handle.close()));
+        failed=failed||cleanup.some(outcome=>outcome.status==='rejected');
       }finally{
         this.#controlToken=undefined;
         this.#controlDraining=false;
@@ -393,12 +417,14 @@ export class ManagedQdrantSupervisor {
     if(result.status<200||result.status>=300)throw new ProviderUnavailable();
     return result.bytes;
   }
-  #transport(key:string,admin=false):ManagedHandle {
+  #transport(key:string,admin=false,session?:Readonly<{token:object;validate:()=>void;
+    track:<T>(operation:()=>Promise<T>)=>Promise<T>;onClose:(handle:ManagedHandle)=>void}>):ManagedHandle {
     if(this.#handles.size>=256)throw new ProviderUnavailable();
     let closed=false,active:Readonly<{controller:AbortController;done:Promise<void>}>|undefined;
     const handle:ManagedHandle={
       request:async(method,path,rawOptions)=>{
-        this.#controlAccess();
+        this.#controlAccess(session?.token);
+        session?.validate();
         if(closed)throw new InvalidRequest();
         if(active)throw new ProviderUnavailable();
         const value=fields(rawOptions,['deadline'],['body','signal','max_response_bytes']);
@@ -412,14 +438,21 @@ export class ManagedQdrantSupervisor {
         if(options.signal?.aborted)controller.abort();
         let finish!:()=>void;
         const done=new Promise<void>(resolve=>{finish=resolve;});active={controller,done};
-        try{return await this.#request(key,method,path,body,{deadline:options.deadline,signal:controller.signal,max_response_bytes:maximum});}
-        catch(error){throw safe(error);}
-        finally{options.signal?.removeEventListener('abort',relay);active=undefined;finish();}
+        const run=async()=>{
+          try{
+            // Started work may unwind during drain, but retains its exact proof.
+            session?.validate();
+            if(session)lease_options({deadline:options.deadline,signal:controller.signal});
+            return await this.#request(key,method,path,body,{deadline:options.deadline,signal:controller.signal,max_response_bytes:maximum});
+          }catch(error){throw safe(error);}
+          finally{options.signal?.removeEventListener('abort',relay);active=undefined;finish();}
+        };
+        return session?session.track(run):run();
       },
       close:async()=>{
         closed=true;const pending=active;pending?.controller.abort();
         if(pending)await bounded(pending.done,{deadline:now()+2});
-        this.#handles.delete(handle);
+        this.#handles.delete(handle);session?.onClose(handle);
       },
       inflight:()=>active!==undefined,
     };
@@ -507,11 +540,11 @@ export class ManagedQdrantSupervisor {
     this.#attempts.set(capability,Object.freeze({binding:bound,key:this.#key,credential_generation:this.#credentialGeneration,recovery:false}));
     return capability;
   }
-  #attempt(input:unknown):AttemptData {
+  #attempt(input:unknown,control?:object):AttemptData {
     if(typeof input!=='object'||input===null||!this.#attempts.has(input))throw new InvalidRequest();
     const data=this.#attempts.get(input)!;
     if(data.recovery){
-      this.#proof(data.proof);
+      this.#proof(data.proof,control);
       if(data.binding.epoch!==this.#epoch||data.credential_generation!==this.#credentialGeneration)throw new UnsupportedCapability();
     }else if(this.#state!=='open'||!this.#ordinaryOpen||!this.#alive()
       ||data.binding.epoch!==this.#epoch||data.credential_generation!==this.#credentialGeneration)throw new ProviderUnavailable();
@@ -541,12 +574,15 @@ export class ManagedQdrantSupervisor {
       await bounded(Promise.resolve().then(()=>sink(credential)),lease);
     });
   }
-  #proof(input:unknown):ProofData {
+  #proof(input:unknown,control?:object):ProofData {
     if(typeof input!=='object'||input===null||!this.#proofs.has(input)||input!==this.#currentProof
       ||this.#state!=='recovery_only'||!this.#alive())throw new UnsupportedCapability();
     const proof=this.#proofs.get(input)!;
     if(proof.new_epoch!==this.#epoch||proof.credential_generation!==this.#credentialGeneration)throw new UnsupportedCapability();
-    if([...this.#handles].some(handle=>handle.inflight()))throw new ProviderUnavailable();
+    // Only an existing facade's private token can revalidate its admitted
+    // transport while requests are in flight. Raw proof issuance stays strict.
+    if(!(control!==undefined&&control===this.#controlToken)
+      &&[...this.#handles].some(handle=>handle.inflight()))throw new ProviderUnavailable();
     return proof;
   }
   recovery_binding(input:unknown):Readonly<Record<string,unknown>> {
@@ -602,8 +638,8 @@ export class ManagedQdrantSupervisor {
     this.#state='open';
     this.#ordinaryOpen=true;
   }
-  issue_recovery_attempt(proof:unknown,input:unknown,rawOptions:unknown):Attempt {
-    this.#controlAccess();
+  issue_recovery_attempt(proof:unknown,input:unknown,rawOptions:unknown,_control?:object):Attempt {
+    this.#controlAccess(_control);
     lease_options(rawOptions);const physical=this.#proof(proof),bound=binding(input,true);
     if(bound.epoch!==physical.new_epoch||bound.recovery_id!==physical.recovery_id)throw new InvalidRequest();
     const capability=Object.freeze({});

@@ -425,3 +425,177 @@ test('cancellation retains native unwind before another session can enter', {ski
     await supervisor.control_session(async control=>{control.block_ordinary();});
   }finally{release?.();await supervisor.close();fake.restore();}
 });
+
+const recoveryInput={recovery_id:'session-recovery',old_epoch:1,new_epoch:2};
+const recoveryAttempt=()=>({...attempt(2),recovery_id:recoveryInput.recovery_id});
+const nativeDouble={skip:process.platform!=='darwin'||process.arch!=='arm64'};
+
+test('session recovery transport accepts only attempts issued by its exact live facade',nativeDouble,async()=>{
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  try{
+    await supervisor.initialize({...options(),provision});
+    const ordinary=supervisor.issue_attempt(attempt(),options());
+    const proof=await supervisor.recover(recoveryInput,options());
+    const raw=supervisor.issue_recovery_attempt(proof,recoveryAttempt(),options());
+    let escaped,issued;
+    await supervisor.control_session(async control=>{
+      escaped=control;
+      for(const foreign of [ordinary,raw,{},JSON.parse(JSON.stringify(raw))])assert.throws(()=>control.recovery_transport_for(foreign),InvalidRequest);
+      assert.throws(()=>control.issue_recovery_attempt({...proof},recoveryAttempt(),options()),UnsupportedCapability);
+      issued=control.issue_recovery_attempt(proof,recoveryAttempt(),options());
+      assert.throws(()=>supervisor.issue_recovery_attempt(proof,recoveryAttempt(),options()),ProviderUnavailable);
+      assert.throws(()=>supervisor.transport_for(issued),ProviderUnavailable);
+      const handle=control.recovery_transport_for(issued);
+      assert.ok((await handle.request('GET','/',options())).length>0);
+      await handle.close();
+    });
+    assert.throws(()=>escaped.issue_recovery_attempt(proof,recoveryAttempt(),options()),ProviderUnavailable);
+    assert.throws(()=>escaped.recovery_transport_for(issued),ProviderUnavailable);
+    await supervisor.control_session(async control=>assert.throws(()=>control.recovery_transport_for(issued),InvalidRequest));
+  }finally{await supervisor.close();fake.restore();}
+});
+
+test('session handles retain eight live slots and close frees a slot without closing borrowed transport',nativeDouble,async()=>{
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let borrowed,escaped;
+  try{
+    await supervisor.initialize({...options(),provision});const proof=await supervisor.recover(recoveryInput,options());
+    const raw=supervisor.issue_recovery_attempt(proof,recoveryAttempt(),options());borrowed=supervisor.transport_for(raw);
+    await supervisor.control_session(async control=>{
+      const cap=control.issue_recovery_attempt(proof,recoveryAttempt(),options());
+      const handles=Array.from({length:8},()=>control.recovery_transport_for(cap));escaped=handles[0];
+      assert.throws(()=>control.recovery_transport_for(cap),ProviderUnavailable);
+      await handles[1].close();
+      const replacement=control.recovery_transport_for(cap);
+      assert.ok((await replacement.request('GET','/',options())).length>0);
+      await assert.rejects(borrowed.request('GET','/',options()),ProviderUnavailable);
+    });
+    await assert.rejects(escaped.request('GET','/',options()),ProviderUnavailable);
+    assert.ok((await borrowed.request('GET','/',options())).length>0);
+  }finally{await borrowed?.close();await supervisor.close();fake.restore();}
+});
+
+test('session recovery handle keeps existing routes body response limits and one request at a time',nativeDouble,async()=>{
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let release;
+  try{
+    await supervisor.initialize({...options(),provision});const proof=await supervisor.recover(recoveryInput,options());
+    await supervisor.control_session(async control=>{
+      const handle=control.recovery_transport_for(control.issue_recovery_attempt(proof,recoveryAttempt(),options()));
+      for(const [method,path,opts] of [['PUT','/collections/foreign/points?wait=true',{...options(),body:bytes({points:[]})}],
+        ['GET','/',{...options(),body:[]}],['POST','/collections/managed_fixture/points',options()],
+        ['GET','/',{...options(),max_response_bytes:1048577}]])await assert.rejects(handle.request(method,path,opts),InvalidRequest);
+      const started=new Promise(resolve=>{fake.state.waitStarted=resolve;});fake.state.wait=new Promise(resolve=>{release=resolve;});
+      const pending=handle.request('GET','/',options());
+      await assert.rejects(handle.request('GET','/',options()),ProviderUnavailable);
+      await started;release();await pending;fake.state.wait=null;
+      await handle.close();await assert.rejects(handle.request('GET','/',options()),InvalidRequest);
+    });
+  }finally{release?.();await supervisor.close();fake.restore();}
+});
+
+test('session callback return drains unawaited recovery HTTP before releasing exclusion',nativeDouble,async()=>{
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let release,escaped,handle,finished=false;
+  try{
+    await supervisor.initialize({...options(),provision});const proof=await supervisor.recover(recoveryInput,options());
+    const started=new Promise(resolve=>{fake.state.waitStarted=resolve;});fake.state.wait=new Promise(resolve=>{release=resolve;});
+    const session=supervisor.control_session(async control=>{
+      escaped=control;handle=control.recovery_transport_for(control.issue_recovery_attempt(proof,recoveryAttempt(),options()));
+      void handle.request('GET','/',options());await started;
+    }).then(()=>{finished=true;});
+    await started;await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(finished,false);await assert.rejects(supervisor.control_session(async()=>{}),ProviderUnavailable);
+    await assert.rejects(handle.request('GET','/',options()),ProviderUnavailable);
+    assert.throws(()=>escaped.issue_recovery_attempt(proof,recoveryAttempt(),options()),ProviderUnavailable);
+    await assert.rejects(supervisor.close(),ProviderUnavailable);
+    release();await session;fake.state.wait=null;
+    await supervisor.control_session(async()=>{});
+    await assert.rejects(handle.request('GET','/',options()),ProviderUnavailable);
+  }finally{release?.();await supervisor.close();fake.restore();}
+});
+
+test('late inherited facade work cannot start recovery HTTP after callback exit',nativeDouble,async()=>{
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let late,handle;
+  try{
+    await supervisor.initialize({...options(),provision});const proof=await supervisor.recover(recoveryInput,options());
+    await supervisor.control_session(async control=>{
+      const cap=control.issue_recovery_attempt(proof,recoveryAttempt(),options());handle=control.recovery_transport_for(cap);
+      late=()=>handle.request('GET','/',options());
+    });
+    const count=fake.state.requests.length;
+    await assert.rejects(Promise.resolve().then(late),ProviderUnavailable);
+    assert.equal(fake.state.requests.length,count);
+  }finally{await supervisor.close();fake.restore();}
+});
+
+test('session recovery handle rejects retired proof and does not refresh its captured key',nativeDouble,async()=>{
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  try{
+    await supervisor.initialize({...options(),provision});const proof=await supervisor.recover(recoveryInput,options());
+    await supervisor.control_session(async control=>{
+      const cap=control.issue_recovery_attempt(proof,recoveryAttempt(),options());const handle=control.recovery_transport_for(cap);
+      const replacement=await control.recover(recoveryInput,options());
+      assert.throws(()=>control.issue_recovery_attempt(proof,recoveryAttempt(),options()),UnsupportedCapability);
+      assert.throws(()=>control.recovery_transport_for(cap),UnsupportedCapability);
+      await assert.rejects(handle.request('GET','/',options()),UnsupportedCapability);
+      const fresh=control.recovery_transport_for(control.issue_recovery_attempt(replacement,recoveryAttempt(),options()));
+      assert.ok((await fresh.request('GET','/',options())).length>0);
+    });
+  }finally{await supervisor.close();fake.restore();}
+});
+
+test('session cancellation rejects recovery request and closes owned handle before another session enters',nativeDouble,async()=>{
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let release,handle;
+  try{
+    await supervisor.initialize({...options(),provision});const proof=await supervisor.recover(recoveryInput,options());
+    const cancellation=new AbortController(),started=new Promise(resolve=>{fake.state.waitStarted=resolve;});
+    fake.state.wait=new Promise(resolve=>{release=resolve;});
+    const session=supervisor.control_session(async control=>{
+      handle=control.recovery_transport_for(control.issue_recovery_attempt(proof,recoveryAttempt(),options()));
+      await handle.request('GET','/',{...options(),signal:cancellation.signal});
+    });
+    await started;cancellation.abort();await assert.rejects(session,error=>error.name==='AbortError');
+    release();fake.state.wait=null;
+    await supervisor.control_session(async()=>{});
+    await assert.rejects(handle.request('GET','/',options()),ProviderUnavailable);
+  }finally{release?.();await supervisor.close();fake.restore();}
+});
+
+test('session tracks concurrent owned handles while raw physical proof access remains excluded',nativeDouble,async()=>{
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let release;
+  try{
+    await supervisor.initialize({...options(),provision});const proof=await supervisor.recover(recoveryInput,options());
+    await supervisor.control_session(async control=>{
+      const cap=control.issue_recovery_attempt(proof,recoveryAttempt(),options());
+      const first=control.recovery_transport_for(cap),second=control.recovery_transport_for(cap);
+      const started=new Promise(resolve=>{fake.state.waitStarted=resolve;});fake.state.wait=new Promise(resolve=>{release=resolve;});
+      const one=first.request('GET','/',options()),two=second.request('GET','/',options());
+      await started;
+      assert.throws(()=>supervisor.recovery_binding(proof),ProviderUnavailable);
+      release();await Promise.all([one,two]);fake.state.wait=null;
+    });
+  }finally{release?.();await supervisor.close();fake.restore();}
+});
+
+test('callback failure still drains owned recovery request before surfacing the primary error',nativeDouble,async()=>{
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let release,finished=false;
+  try{
+    await supervisor.initialize({...options(),provision});const proof=await supervisor.recover(recoveryInput,options());
+    const primary=new Error('synthetic callback failure');
+    const started=new Promise(resolve=>{fake.state.waitStarted=resolve;});fake.state.wait=new Promise(resolve=>{release=resolve;});
+    const session=supervisor.control_session(async control=>{
+      const handle=control.recovery_transport_for(control.issue_recovery_attempt(proof,recoveryAttempt(),options()));
+      void handle.request('GET','/',options());await started;throw primary;
+    });
+    const observed=session.then(()=>{throw Error('missing failure');},error=>{finished=true;assert.equal(error,primary);});
+    await started;await new Promise(resolve=>setImmediate(resolve));assert.equal(finished,false);
+    await assert.rejects(supervisor.control_session(async()=>{}),ProviderUnavailable);
+    release();await observed;fake.state.wait=null;
+    await supervisor.control_session(async()=>{});
+  }finally{release?.();await supervisor.close();fake.restore();}
+});

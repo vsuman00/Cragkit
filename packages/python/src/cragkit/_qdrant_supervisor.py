@@ -96,13 +96,17 @@ class _Barrier(_Opaque):
 
 class _ControlSession(_Opaque):
     """Sequencing permission, not evidence of fencing or SQL completion."""
-    __slots__ = ('_owner', '_token')
+    __slots__ = ('_owner', '_token', '_attempts', '_handles')
     _owner: ManagedQdrantSupervisor
     _token: object
+    _attempts: dict[_Attempt, object]
+    _handles: set[_Transport]
 
     def __init__(self, owner: ManagedQdrantSupervisor, token: object) -> None:
         object.__setattr__(self, '_owner', owner)
         object.__setattr__(self, '_token', token)
+        object.__setattr__(self, '_attempts', {})
+        object.__setattr__(self, '_handles', set())
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError('Immutable control session')
@@ -133,6 +137,29 @@ class _ControlSession(_Opaque):
     def finish_recovery(self, barrier: object, settlement: object, *, deadline: float) -> None:
         self._owner.finish_recovery(barrier, settlement, deadline=deadline, _control=self._token)
 
+    def issue_recovery_attempt(self, proof: object, binding: object, *, deadline: float) -> _Attempt:
+        self._owner._control_access(self._token)
+        attempt = self._owner.issue_recovery_attempt(proof, binding, deadline=deadline, _control=self._token)
+        self._attempts[attempt] = proof
+        return attempt
+
+    def recovery_transport_for(self, attempt: object) -> _Transport:
+        self._owner._control_access(self._token)
+        if type(attempt) is not _Attempt or attempt not in self._attempts:
+            raise InvalidRequest()
+        if len(self._handles) >= 8:
+            raise ProviderUnavailable()
+        proof = self._attempts[attempt]
+        self._owner.recovery_binding(proof)
+        assert isinstance(proof, _Proof)
+        handle = self._owner.transport_for(attempt, _control=self._token)
+        state = self._owner._transports[handle]
+        state.control = self
+        state.attempt = attempt
+        state.proof = proof
+        self._handles.add(handle)
+        return handle
+
 
 @dataclass(frozen=True,slots=True)
 class _Binding:
@@ -150,6 +177,8 @@ class _TransportState:
     proof: _Proof | None = None
     client: Any = field(default=None,repr=False)
     closed: bool = False
+    control: _ControlSession | None = field(default=None,repr=False)
+    attempt: _Attempt | None = field(default=None,repr=False)
 
 
 class _Transport:
@@ -272,8 +301,9 @@ class ManagedQdrantSupervisor:
             raise ProviderUnavailable()
         token = object()
         self._control_token = token
+        facade = _ControlSession(self, token)
         try:
-            yield _ControlSession(self, token)
+            yield facade
         finally:
             self._control_draining = True
             pending = [task for task in self._control_work if task is not asyncio.current_task()]
@@ -288,6 +318,20 @@ class ManagedQdrantSupervisor:
                         except asyncio.CancelledError:
                             cancelled = True
                     failures = [result for result in drain.result() if isinstance(result, BaseException)]
+                # Keep exclusion until every owned close actually unwinds.
+                for handle in tuple(facade._handles):
+                    closing = asyncio.create_task(self._close_transport(handle))
+                    while not closing.done():
+                        try:
+                            await asyncio.shield(closing)
+                        except asyncio.CancelledError:
+                            cancelled = True
+                        except Exception:
+                            break
+                    try:
+                        closing.result()
+                    except BaseException as error:
+                        failures.append(error)
             finally:
                 self._control_token = None
                 self._control_draining = False
@@ -590,8 +634,8 @@ class ManagedQdrantSupervisor:
         cap=_Attempt();self._attempts[cap]=(parsed,self._key,self._credential_generation)
         return cap
 
-    def transport_for(self,capability: object) -> _Transport:
-        self._control_access()
+    def transport_for(self,capability: object, *, _control: object | None = None) -> _Transport:
+        self._control_access(_control)
         if type(capability) is not _Attempt or capability not in self._attempts or self._closed:
             raise InvalidRequest()
         self._assert_live()
@@ -631,14 +675,23 @@ class ManagedQdrantSupervisor:
             self._requests.discard(task)
 
     async def _transport_request(self,handle: _Transport,method: str,path: str,body: bytes | None,deadline: float,maximum: int) -> bytes:
-        self._control_access()
-        deadline=deadline_value(deadline)
         state=self._transports.get(handle)
         if state is None or state.closed or self._closed:
             raise ProviderUnavailable()
+        self._control_access(state.control._token if state.control is not None else None)
+        deadline=deadline_value(deadline)
         self._assert_live()
         if state.kind=='recovery':
             self.recovery_binding(state.proof)
+        if state.control is not None:
+            if (type(state.attempt) is not _Attempt or state.attempt not in state.control._attempts
+                    or state.control._attempts[state.attempt] is not state.proof
+                    or state.attempt not in self._attempts):
+                raise InvalidRequest()
+            binding,key,generation=self._attempts[state.attempt]
+            if (binding.recovery_id is None or binding.epoch!=self._epoch
+                    or key!=state.key or generation!=self._credential_generation):
+                raise ProviderUnavailable()
         if type(method) is not str or method not in ('GET','PUT','POST','DELETE') or type(path) is not str or len(path)>256:
             raise InvalidRequest()
         if path not in ('/','/cluster','/collections') and _PATH.fullmatch(path) is None:
@@ -670,6 +723,8 @@ class ManagedQdrantSupervisor:
             raise ProviderUnavailable()
         task=asyncio.current_task();assert task is not None
         self._requests.add(task)
+        if state.control is not None:
+            self._control_work.add(task)
         try:
             async with asyncio.timeout_at(deadline):
                 status,result=await self._http(state.key,method,path,body,deadline,maximum,state)
@@ -686,6 +741,8 @@ class ManagedQdrantSupervisor:
             raise _safe(error) from None
         finally:
             self._requests.discard(task)
+            if state.control is not None:
+                self._control_work.discard(task)
 
     async def _close_transport(self,handle: _Transport) -> None:
         state=self._transports.get(handle)
@@ -696,6 +753,8 @@ class ManagedQdrantSupervisor:
                     await state.client.aclose()
                 state.client=None
             self._transports.pop(handle,None)
+            if state.control is not None:
+                state.control._handles.discard(handle)
 
     async def _stop(self) -> None:
         self._assert_owner()
@@ -781,8 +840,8 @@ class ManagedQdrantSupervisor:
         finally:
             self._active=None
 
-    def issue_recovery_attempt(self,proof: object,binding: object,*,deadline: float) -> _Attempt:
-        self._control_access()
+    def issue_recovery_attempt(self,proof: object,binding: object,*,deadline: float,_control: object | None=None) -> _Attempt:
+        self._control_access(_control)
         deadline_value(deadline)
         self.recovery_binding(proof)
         assert isinstance(proof,_Proof)
