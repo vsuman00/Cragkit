@@ -599,3 +599,32 @@ test('callback failure still drains owned recovery request before surfacing the 
     await supervisor.control_session(async()=>{});
   }finally{release?.();await supervisor.close();fake.restore();}
 });
+
+test('private session binding requires original active facade and tracks every admitted request',nativeDouble,async()=>{
+  const {control_session_binding}=await import('../dist/qdrant-supervisor.js');
+  const fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-1',config);
+  let escaped;
+  try{
+    await supervisor.initialize({...options(),provision});const proof=await supervisor.recover(recoveryInput,options());
+    await supervisor.control_session(async control=>{
+      escaped=control;
+      const first=control_session_binding(control,supervisor,proof);
+      assert.deepEqual(Object.keys(first).sort(),['activity','physical_binding']);assert.equal(first.activity,0);
+      assert.deepEqual(first.physical_binding,supervisor.recovery_binding(proof));
+      for(const forged of [{},{...control},new Proxy(control,{})])assert.throws(()=>control_session_binding(forged,supervisor,proof),InvalidRequest);
+      assert.throws(()=>control_session_binding(control,{},proof),InvalidRequest);
+      assert.throws(()=>control_session_binding(control,supervisor,{...proof}),UnsupportedCapability);
+      assert.throws(()=>{first.activity=100;},TypeError);
+      const handle=control.recovery_transport_for(control.issue_recovery_attempt(proof,recoveryAttempt(),options()));
+      assert.equal(control_session_binding(control,supervisor,proof).activity,1);
+      await handle.request('GET','/',options());assert.equal(control_session_binding(control,supervisor,proof).activity,2);
+      await handle.request('GET','/',options());assert.equal(control_session_binding(control,supervisor,proof).activity,3);
+      await handle.close();assert.equal(first.activity,0);
+    });
+    assert.throws(()=>control_session_binding(escaped,supervisor,proof),InvalidRequest);
+    await supervisor.control_session(async control=>{
+      assert.equal(control_session_binding(control,supervisor,proof).activity,0);
+      assert.throws(()=>control_session_binding(escaped,supervisor,proof),InvalidRequest);
+    });
+  }finally{await supervisor.close();fake.restore();}
+});

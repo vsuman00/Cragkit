@@ -410,6 +410,40 @@ Always scroll the complete physical/document scope using only backend namespace,
 
 Inspection may diagnose a tombstoned projection's present claimed IDs; it never upserts or deletes them. Strict verification for a non-tombstoned document requires every expected ID present with exact current payloads. Strict tombstone verification requires every expected ID absent and the full document enumeration empty. Unexpected members remain errors in either mode. Empty results, EOF and successful schema parsing alone cannot establish physical fencing, purge or settlement. Exhausted bytes/calls/pages before the required observations and EOF remain operational failures, never inferred complete/empty success. A final valid EOF observed within the inclusive ceilings may succeed. Native acceptance must inject real stale fields, missing/corrupt/extra-generation points and GET/scroll drift on the pinned server and distinguish those observations from fake-transport budget/cancellation tests. Genuine private security receipts and high-level shared-budget wiring are later dependent gates.
 
+### G2b2c1: Authentic recovery-session activity
+
+Private `control_session_binding(control, supervisor, proof)` authenticates the exact registry-issued active facade from the original native supervisor and its still-current physical proof. It returns exactly immutable `physical_binding` and `activity`; it exposes no credential, session token or mutation permission. Copies, foreign controllers, expired sessions and draining facades fail. The registry entry is removed after actual owned work/handle drain, preserving existing session exclusion and cleanup semantics.
+
+Activity starts at zero for each distinct facade and increases for every successfully issued facade recovery attempt and every admitted session transport request, including reads. It is conservative and never resets within that facade. It is not an HTTP acknowledgment or a database fact. A later receipt must bind the original facade and its observed activity; a different facade with the same numeric counter is never equivalent. Existing stage receipts and public package exports remain unchanged.
+
+Capture receipt activity synchronously when strict readback returns, before awaiting handle close. Require the same activity after close and after fresh source-projection validation. This prevents an intervening request during either await from being blessed as part of an earlier observation. The future orchestrator must still retain the facade privately and serialize receipt consumption through SQL settlement; the counter cannot prohibit future writes or replace current-credential and foreign-uncertainty checks.
+
+### G2b2c2: Private same-session security receipt
+
+Add private native security-verification modules and tests, with no package exports or SQL settlement. `QdrantSecurityVerifier(writer, supervisor)` borrows the exact native writer/controller and has zero-queue verification admission. Python `verify(proof, control, owner_context, security_context, *, deadline, budget=None)` and Node `verify(proof, control, owner_context, security_context, options, budget?)` return only a nominal private `SecurityReceipt`. `security_verifier_binding(verifier, writer, supervisor)` validates original dependencies and returns no resources. `security_receipt_data(receipt, verifier, control, *, deadline)` / Node `(receipt, verifier, control, options)` expose evidence only after same-issuer, same original active facade, same proof/attempt/activity, original cancellation and nonextended-deadline checks. `close()` stops only verifier-owned work; borrowed dependencies remain open.
+
+Parse both contexts and require identical target and complete current trusted scope. The owner intent/token can differ from the security intent/token. These supplied historical-owner facts are bound into the receipt; actual durable ownership/journal checks belong to later settlement. Resolve the genuine facade/proof through G2b2c1, project current security through the registered writer and validate its nominal projection. Issue a fresh facade recovery attempt bound to the historical intent/token, current physical epoch/recovery ID and fresh `security-readback-` UUID; compare its full native attempt binding. Obtain transport only from that facade and run G2b2b strict current/absence verification with the supplied shared budget. No source lease spans HTTP.
+
+Snapshot activity synchronously immediately after strict readback returns. Close the owned handle, require unchanged activity/physical/attempt facts, then freshly validate the complete current projection and require the same snapshot again. Check original provenance, cancellation and deadline after every business await; failure mints nothing. The private receipt is valid only during the original active facade with unchanged activity and current proof/attempt. Copies, serialization, wrong issuers, expired facades, intervening requests and rotated proofs cannot confer authority. Source refresh and final SQL owner/retired-credential/global checks remain mandatory for later consumption. Receipt access alone makes no SQL or future-storage guarantee.
+
+The exact compact UTF-8 JSON witness is the following ordered array. Integer counters are decimal strings; nullable values are explicit null; tombstoned is the string `true` or `false`. Identity arrays use canonical unique unsigned UTF-8 order; generations retain accepted inventory order and members use sorted UUID order. Do not serialize floating-point vectors.
+
+```text
+["cragkit.qdrant.security-readback.v1",
+ [instance_id, storage_identity, supervisor_id, recovery_id, old_epoch_decimal, new_epoch_decimal, credential_generation],
+ [attempt_intent_id, attempt_owner_token, attempt_epoch_decimal, attempt_dispatch_id, attempt_recovery_id],
+ activity_decimal,
+ [owner_tenant_id, owner_collection, owner_document_id, owner_intent_id, owner_token],
+ [trusted_tenant_id, trusted_principal_id, sorted_trusted_grant_ids, trusted_authorization_revision],
+ [security_intent_id, security_owner_token, intent_sha256, authorization_revision, mutation_epoch_decimal,
+  active_generation_id_or_null, tombstoned_string, sorted_principal_ids, sorted_grant_ids,
+  language_or_null, kind_or_null, tag_or_null],
+ [inventory_sha256, [[revision_id, generation_id, manifest_sha256, sorted_point_ids], ...]],
+ [[point_id, dense_input_sha256, sparse_input_sha256_or_null], ...]]
+```
+
+Receipt data has exactly 13 immutable fields: `projection`, `owner_context`, `security_context`, `physical_binding`, `attempt_binding`, `activity`, `intent_sha256`, `inventory_sha256`, `point_ids`, `readback_sha256`, `witness`, `encoded_bytes`, `sha256`. The two readback hash fields equal SHA-256 of the witness bytes; source intent/inventory hashes retain distinct meanings. Original proof/facade/deadline/cancellation state remain registry-private. Keep admission held until actual verification/cleanup unwind; cancellation or cleanup failure cannot create a receipt. Unit doubles establish wiring and refusal semantics only; native source/proof/readback acceptance is a separate required gate. Current-payload recovery plans, dispatch, old-owner settlement, handoff and public convergence remain later children.
+
 ### G2a1: Authority-only security commit confirmation
 
 The existing native writer `apply_security` remains authority-only: commit current authorization or a monotonic tombstone without backend/owner recovery locks or vector I/O. A blocked backend and uncertain dispatch must not defer this source-authority transition. Its result retains the stored authority/replica flags; source admission does not certify replica convergence.

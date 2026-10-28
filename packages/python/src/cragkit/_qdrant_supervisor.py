@@ -140,6 +140,7 @@ class _ControlSession(_Opaque):
     def issue_recovery_attempt(self, proof: object, binding: object, *, deadline: float) -> _Attempt:
         self._owner._control_access(self._token)
         attempt = self._owner.issue_recovery_attempt(proof, binding, deadline=deadline, _control=self._token)
+        _session_activity(self)
         self._attempts[attempt] = proof
         return attempt
 
@@ -159,6 +160,32 @@ class _ControlSession(_Opaque):
         state.proof = proof
         self._handles.add(handle)
         return handle
+
+
+_CONTROL_SESSIONS: WeakKeyDictionary[_ControlSession, tuple[ManagedQdrantSupervisor, object, dict[str, int]]] = WeakKeyDictionary()
+
+
+def control_session_binding(control: object, supervisor: object, proof: object) -> Mapping[str, Any]:
+    """Resolve an original active facade and its conservative activity snapshot."""
+    if (type(control) is not _ControlSession or control not in _CONTROL_SESSIONS
+            or type(supervisor) is not ManagedQdrantSupervisor):
+        raise InvalidRequest()
+    owner, token, state = _CONTROL_SESSIONS[control]
+    if owner is not supervisor:
+        raise InvalidRequest()
+    owner._control_access(token)
+    return MappingProxyType(dict(physical_binding=owner.recovery_binding(proof),activity=state['activity']))
+
+
+def _session_activity(control: _ControlSession) -> None:
+    record = _CONTROL_SESSIONS.get(control)
+    if record is None:
+        raise ProviderUnavailable()
+    owner, token, state = record
+    owner._control_access(token)
+    if state['activity'] >= 9007199254740991:
+        raise ProviderUnavailable()
+    state['activity'] += 1
 
 
 @dataclass(frozen=True,slots=True)
@@ -302,6 +329,7 @@ class ManagedQdrantSupervisor:
         token = object()
         self._control_token = token
         facade = _ControlSession(self, token)
+        _CONTROL_SESSIONS[facade] = (self, token, {'activity': 0})
         try:
             yield facade
         finally:
@@ -333,6 +361,7 @@ class ManagedQdrantSupervisor:
                     except BaseException as error:
                         failures.append(error)
             finally:
+                _CONTROL_SESSIONS.pop(facade, None)
                 self._control_token = None
                 self._control_draining = False
             if cancelled:
@@ -721,6 +750,8 @@ class ManagedQdrantSupervisor:
             raise InvalidRequest()
         if self._requests or (self._active is not None and state.kind!='bootstrap'):
             raise ProviderUnavailable()
+        if state.control is not None:
+            _session_activity(state.control)
         task=asyncio.current_task();assert task is not None
         self._requests.add(task)
         if state.control is not None:

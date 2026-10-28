@@ -606,3 +606,39 @@ async def test_facade_closes_only_owned_clients_and_reports_cleanup_failure(tmp_
     with pytest.raises(ProviderUnavailable):await handle.request('GET','/',deadline=deadline)
     await borrowed.close()
     assert closed==['owned','borrowed']
+
+
+@run_async
+async def test_private_session_binding_rejects_forgery_and_tracks_each_admitted_request(tmp_path,monkeypatch):
+    from cragkit._qdrant_supervisor import control_session_binding
+    owner=supervisor(tmp_path,monkeypatch)
+    await recovery_doubles(owner,monkeypatch)
+    deadline=asyncio.get_running_loop().time()+5
+    proof=await owner.recover({'recovery_id':'r','old_epoch':1,'new_epoch':2},deadline=deadline)
+    async def current_http(*args):return 200,b'{}'
+    monkeypatch.setattr(owner,'_http',current_http)
+    async with owner.control_session() as control:
+        first=control_session_binding(control,owner,proof)
+        assert set(first)=={'physical_binding','activity'} and first['activity']==0
+        assert dict(first['physical_binding'])==dict(owner.recovery_binding(proof))
+        for fake in ({},object(),implementation._ControlSession(owner,control._token)):
+            with pytest.raises(InvalidRequest):control_session_binding(fake,owner,proof)
+        with pytest.raises(InvalidRequest):control_session_binding(control,object(),proof)
+        with pytest.raises(UnsupportedCapability):control_session_binding(control,owner,dict(first['physical_binding']))
+        with pytest.raises(TypeError):first['activity']=100
+        attempt=control.issue_recovery_attempt(proof,{**BINDING,'epoch':2,'recovery_id':'r'},deadline=deadline)
+        assert control_session_binding(control,owner,proof)['activity']==1
+        handle=control.recovery_transport_for(attempt)
+        await handle.request('GET','/',deadline=deadline)
+        assert control_session_binding(control,owner,proof)['activity']==2
+        await handle.request('GET','/',deadline=deadline)
+        assert control_session_binding(control,owner,proof)['activity']==3
+        await handle.close()
+        assert first['activity']==0
+        owner._control_draining=True
+        with pytest.raises(ProviderUnavailable):control_session_binding(control,owner,proof)
+        owner._control_draining=False
+    with pytest.raises(InvalidRequest):control_session_binding(control,owner,proof)
+    async with owner.control_session() as next_control:
+        assert control_session_binding(next_control,owner,proof)['activity']==0
+        with pytest.raises(InvalidRequest):control_session_binding(control,owner,proof)

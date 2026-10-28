@@ -23,6 +23,14 @@ export type SupervisorControlSession = Readonly<{
   seal_recovery(proof:unknown,options:unknown):Promise<RecoveryBarrier>;
   finish_recovery(barrier:unknown,settlement:unknown,options:unknown):void;
 }>;
+type SessionSnapshot = Readonly<{physical_binding:Readonly<Record<string,unknown>>;activity:number}>;
+const controlSessions=new WeakMap<object,Readonly<{owner:ManagedQdrantSupervisor;binding:(proof:unknown)=>SessionSnapshot}>>();
+export function control_session_binding(control:unknown,supervisor:unknown,proof:unknown):SessionSnapshot {
+  if(typeof control!=='object'||control===null)throw new InvalidRequest();
+  const issued=controlSessions.get(control);
+  if(!issued||issued.owner!==supervisor)throw new InvalidRequest();
+  return issued.binding(proof);
+}
 type ProbeSpec = Readonly<{collection:string;collection_config:Readonly<Record<string,unknown>>;point:Readonly<Record<string,unknown>>}>;
 type Identity = Readonly<{instance_id:string;storage_identity:string;supervisor_id:string;endpoint:string;probe_spec:ProbeSpec}>;
 type Binding = Readonly<{intent_id:string;owner_token:string;epoch:number;dispatch_id:string;recovery_id?:string}>;
@@ -171,6 +179,12 @@ export class ManagedQdrantSupervisor {
     const token=Object.freeze({});
     this.#controlToken=token;
     const issued=new Set<Attempt>(),owned=new Set<ManagedHandle>();
+    let activity=0;
+    const chargeActivity=()=>{
+      this.#controlAccess(token);
+      if(activity>=Number.MAX_SAFE_INTEGER)throw new ProviderUnavailable();
+      activity++;
+    };
     const track=<R>(operation:()=>Promise<R>):Promise<R>=>{
       this.#controlAccess(token);
       const work=operation();
@@ -178,13 +192,13 @@ export class ManagedQdrantSupervisor {
       void work.then(()=>this.#controlWork.delete(work),()=>this.#controlWork.delete(work));
       return work;
     };
-    const trackRequest=<R>(operation:()=>Promise<R>):Promise<R>=>track(()=>Promise.resolve().then(operation));
+    const trackRequest=<R>(operation:()=>Promise<R>):Promise<R>=>{chargeActivity();return track(()=>Promise.resolve().then(operation));};
     const control:SupervisorControlSession=Object.freeze({
       block_ordinary:()=>this.block_ordinary(token),
       issue_recovery_attempt:(proof,input,options)=>{
         this.#controlAccess(token);
         const attempt=this.issue_recovery_attempt(proof,input,options,token);
-        issued.add(attempt);return attempt;
+        chargeActivity();issued.add(attempt);return attempt;
       },
       recovery_transport_for:input=>{
         this.#controlAccess(token);
@@ -203,6 +217,10 @@ export class ManagedQdrantSupervisor {
       seal_recovery:(proof,options)=>track(()=>this.seal_recovery(proof,options,token)),
       finish_recovery:(barrier,settlement,options)=>this.finish_recovery(barrier,settlement,options,token),
     });
+    controlSessions.set(control,Object.freeze({owner:this,binding:(proof:unknown)=>{
+      this.#controlAccess(token);
+      return Object.freeze({physical_binding:this.recovery_binding(proof),activity});
+    }}));
     try{
       return await body(control);
     }finally{
@@ -214,6 +232,7 @@ export class ManagedQdrantSupervisor {
         const cleanup=await Promise.allSettled([...owned].map(handle=>handle.close()));
         failed=failed||cleanup.some(outcome=>outcome.status==='rejected');
       }finally{
+        controlSessions.delete(control);
         this.#controlToken=undefined;
         this.#controlDraining=false;
       }

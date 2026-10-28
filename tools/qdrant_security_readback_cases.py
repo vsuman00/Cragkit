@@ -52,7 +52,7 @@ async def python_security_readback_cases(value):
     import inspect
     import json
     from pathlib import Path
-    from cragkit._qdrant_supervisor import ManagedQdrantSupervisor
+    from cragkit._qdrant_supervisor import ManagedQdrantSupervisor, control_session_binding
     from cragkit._qdrant_contract import CandidatePayload
     from cragkit._qdrant_vectors import encode_dense, encode_sparse
     from cragkit._qdrant_reconciliation import ExpectedPoint
@@ -194,6 +194,7 @@ async def python_security_readback_cases(value):
                     raw = await handle.request(method,path,**options)
                     self.observed_bytes += len(raw)
                     return raw
+            initial_activity=control_session_binding(facade,controller,proof)['activity']
             meter,budget = Meter(),SecurityReadbackBudget()
             for _ in range(2):
                 actual = await inspect_set(meter,budget=budget)
@@ -203,6 +204,8 @@ async def python_security_readback_cases(value):
             if (budget.remaining_bytes!=8388608-meter.observed_bytes or budget.remaining_calls!=513-meter.calls
                     or meter.calls<=0 or meter.observed_bytes<=0):
                 raise RuntimeError('security_readback_budget_reset')
+            if control_session_binding(facade,controller,proof)['activity']!=initial_activity+meter.calls:
+                raise RuntimeError('security_session_activity_mismatch')
             checks.append(CHECKS[7])
         return dict(runtime='python',checks=checks,proof_scope='security_document_readback_diagnostics_only')
     except BaseException as error:

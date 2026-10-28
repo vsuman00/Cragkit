@@ -1167,3 +1167,8 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh artifact directory. The parent runs eight cases per runtime serially on actual isolated Qdrant, with four synthetic points across two generations and no PostgreSQL or provider. It checks real stale/missing/corrupt/extra/drifting data and actual shared response accounting, then closes sessions/controllers and verifies listener absence before cleanup. These observations do not authorize writes or certify SQL settlement. Deadline/cancellation and ceiling exhaustion have separate unit coverage.
+
+
+## V5-04G2b2c1 authentic session snapshots
+
+[Session evidence](../evaluation/reports/V5/V5-04G2b2c1.md) uses the existing Python `test_qdrant_supervisor.py` and Node `qdrant-supervisor.test.mjs` focused suites, strict typechecks/build and the G2b2b native parent above, serially. The parent now also compares actual session activity against three metered readback passes. Use a new artifact directory. No database or provider is required; these checks do not mint security receipts or settle journals.

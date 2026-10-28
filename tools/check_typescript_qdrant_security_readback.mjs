@@ -1,7 +1,7 @@
 /** Actual full-document security diagnostics; no SQL or settlement proof. */
 import {execFile} from 'node:child_process';
 import {isDeepStrictEqual as same} from 'node:util';
-import {ManagedQdrantSupervisor} from '../packages/typescript/dist/qdrant-supervisor.js';
+import {ManagedQdrantSupervisor,control_session_binding} from '../packages/typescript/dist/qdrant-supervisor.js';
 import {now,bounded} from '../packages/typescript/dist/postgres-pool.js';
 import {IntegrityViolation} from '../packages/typescript/dist/errors.js';
 import {QdrantPayloadSchema} from '../packages/typescript/dist/qdrant-contract.js';
@@ -117,6 +117,7 @@ async function cases(value){
       await remove([inputs.points[0].id]);
       if(!same(await inspect(read,empty),{present_ids:[],missing_ids:[],stale_ids:[]}))throw new Error('empty_scope');
       await verify(read,empty);mark();await put(inputs.points);
+      const initialActivity=control_session_binding(control,supervisor,proof).activity;
       let observedBytes=0,calls=0;
       const measured={async request(method,path,requestOptions){
         calls++;const body=decode(requestOptions.body);
@@ -128,6 +129,7 @@ async function cases(value){
       for(let pass=0;pass<2;pass++){const result=await inspect(measured,data,budget);if(result.missing_ids.length||result.stale_ids.length)throw new Error('complete_diagnostics');}
       await verify(measured,data,budget);
       if(budget.remaining_bytes!==8388608-observedBytes||budget.remaining_calls!==513-calls||calls<=0||observedBytes<=0)throw new Error('budget_reset');
+      if(control_session_binding(control,supervisor,proof).activity!==initialActivity+calls)throw new Error('session_activity_mismatch');
       mark();
     });
     return {runtime:'typescript',checks,proof_scope:'security_document_readback_diagnostics_only'};
