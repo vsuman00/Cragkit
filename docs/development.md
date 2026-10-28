@@ -1172,3 +1172,17 @@ Use a fresh artifact directory. The parent runs eight cases per runtime serially
 ## V5-04G2b2c1 authentic session snapshots
 
 [Session evidence](../evaluation/reports/V5/V5-04G2b2c1.md) uses the existing Python `test_qdrant_supervisor.py` and Node `qdrant-supervisor.test.mjs` focused suites, strict typechecks/build and the G2b2b native parent above, serially. The parent now also compares actual session activity against three metered readback passes. Use a new artifact directory. No database or provider is required; these checks do not mint security receipts or settle journals.
+
+
+## V5-04G2b2c2 same-session security receipts
+
+[Receipt evidence](../evaluation/reports/V5/V5-04G2b2c2.md) distinguishes actual native observation from SQL settlement. Run checks serially:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_security_verification.py tools/tests/test_qdrant_security_verification_native.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-security-verification.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_security_verification.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --artifacts-dir artifacts/V5/V5-04G2b2c/a-new-security-receipt-run
+```
+
+Use a fresh artifact directory. The parent applies only the explicit disposable three-migration fixture profile and checks restricted-role admission before releasing its administrative connection. Each runtime uses at most one writer and one supervisor database client; languages run serially. It verifies eight actual source/proof/readback cases per runtime and stable witness-content parity. The 120-second business profile and separate twelve-second resource-cleanup allowance do not change library defaults or establish performance. Listener/process cleanup is checked before owned storage removal. These tests create no journal settlement or public convergence claim; routine vectors and source spans are synthetic.
