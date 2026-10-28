@@ -1274,3 +1274,53 @@ async def test_attestation_rejects_already_published_intent_instead_of_null_term
     with pytest.raises(InvalidRequest):
         await writer.attest_prepared(receipt,verifier,deadline=asyncio.get_running_loop().time()+5)
     assert state['attestations']==[]
+
+
+@run_async
+@pytest.mark.parametrize('outcome', ['prepared', 'denied', 'conflict', 'published'])
+async def test_repair_preflight_locks_without_owner_or_epoch_mutation(monkeypatch, outcome):
+    writer,state,connections,loads,receipt,verifier,data=attestation_writer(monkeypatch)
+    order=[]
+    plan=prepare_stage(stage_input()); graph=stage_data(plan)
+    original=(graph.intent.expected_authorization_revision, graph.intent.expected_mutation_epoch,
+        graph.intent.expected_active_generation_id, plan.manifest_sha256,
+        graph.manifest.generation_id, graph.manifest.revision_id, 'prepared')
+    state['intent']['state']='published' if outcome=='published' else 'prepared'
+    document=dict(state['document'])
+    if outcome=='denied': document['tombstoned']=True
+    if outcome=='conflict': document['active_generation_id']='winner-generation'
+    backend=dict(instance_id='instance-1',state='recovery_blocked',epoch=2,recovery_id='recovery-1')
+    owner=dict(instance_id='instance-1',intent_id=ctx()['intent_id'],owner_token=ctx()['owner_token'],backend_epoch=1)
+    async def get_backend(connection,*,lock=False):
+        assert lock;order.append('backend');return backend
+    async def get_owner(connection,context,*,lock=False):
+        assert lock;order.append('owner');return owner
+    async def get_document(connection,context,*,lock=False):
+        assert lock;order.append('document');return document
+    async def get_intent(connection,context):return state['intent']
+    original_query=writer._query
+    async def query(connection,sql,params=()):
+        if sql.startswith('SELECT expected_authorization_revision,expected_mutation_epoch,expected_active_generation_id,manifest_sha256'):
+            return [original]
+        if sql.startswith('SELECT dispatch_id FROM cragkit_qdrant.dispatch_journal'):
+            return [('unknown-target',)]
+        return await original_query(connection,sql,params)
+    async def changed(connection,context,selected):
+        state['intent']['state']=selected;return state['intent']
+    for name,method in [('_manager_backend',get_backend),('_manager_owner',get_owner),
+            ('_manager_document',get_document),('_manager_intent',get_intent),('_query',query),('_outcome',changed)]:
+        monkeypatch.setattr(writer,name,method)
+    result=await writer.preflight_repair(ctx(),deadline=asyncio.get_running_loop().time()+5)
+    assert set(result)=={'intent','owner','backend','pending'}
+    assert order==['backend','owner','document'] and result['pending']
+    assert result['intent']['state']==outcome and owner['backend_epoch']==1 and backend['epoch']==2
+    assert state.get('insert_attempts',0)==0 and state.get('publication_updates',[])==[]
+
+
+@run_async
+async def test_repair_preflight_old_profile_fails_before_checkout(monkeypatch):
+    writer,state,connections,loads,receipt,verifier,data=attestation_writer(monkeypatch)
+    writer._schema_profile=2
+    with pytest.raises(UnsupportedCapability):
+        await writer.preflight_repair(ctx(),deadline=asyncio.get_running_loop().time()+5)
+    assert connections==[]

@@ -1,5 +1,5 @@
 /** Optional native stage/publish manager. Dependencies remain application-owned. */
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {types} from 'node:util';
 import {PostgresQdrantWriter,writer_binding,type IntentView,type DispatchStatus,type DispatchView} from './qdrant-writer.js';
 import {PostgresQdrantRecovery,recovery_components} from './qdrant-recovery.js';
@@ -27,7 +27,7 @@ type Session=Readonly<{attempt:unknown;binding:Readonly<Data>;handle:SupervisorT
 type Ack=Readonly<Record<never,never>>;
 const acknowledgments=new WeakMap<object,Readonly<{session:Session;sha256:string}>>();
 type Reference=Readonly<{collection:string;document_id:string;intent_id:string}>;
-type Result=Readonly<{intent_id:string;operation:'stage'|'publish';state:string;revision_id:string|null;
+type Result=Readonly<{intent_id:string;operation:'stage'|'publish'|'repair';state:string;revision_id:string|null;
   generation_id:string|null;authority_committed:boolean;replica_complete:boolean;published:boolean;purge_complete:boolean}>;
 type Authorizer=(scope:TrustedScope,collection:string,document_id:string)=>Promise<boolean>;
 
@@ -44,7 +44,7 @@ function reference(input:unknown):Reference {
   const value=fields(input,['collection','document_id','intent_id']);
   return Object.freeze({collection:text(value.collection,true),document_id:text(value.document_id),intent_id:text(value.intent_id)});
 }
-function result(intent_id:string,operation:'stage'|'publish',intent:IntentView):Result {
+function result(intent_id:string,operation:'stage'|'publish'|'repair',intent:IntentView):Result {
   return Object.freeze({intent_id,operation,state:intent.state,revision_id:intent.revision_id,generation_id:intent.generation_id,
     authority_committed:intent.authority_committed,replica_complete:intent.replica_complete,published:intent.state==='published',purge_complete:intent.purge_complete});
 }
@@ -378,21 +378,24 @@ export class QdrantPublicationManager {
     this.#admit();
     const ref=reference(input),scope=parse_scope(inputScope),options=this.#ledger(ledger,rawOptions);
     const lookup=parse_context({...ref,scope,owner_token:randomUUID()});
-    return this.#attempt(ledger,options,async lease=>{
+    return this.#attempt(ledger,options,lease=>this.#publishBody(ref,lookup,lease,'publish'));
+  }
+
+  async #publishBody(ref:Reference,lookup:WriterContext,lease:LeaseOptions,operation:'publish'|'repair'):Promise<Result> {
       await this.#authorize(lookup,lease);
       const writer=this.#authority.writer;
       const initial=await this.#await(writer.manager_snapshot(lookup,lease),lease);
       if(!initial.intent||initial.intent.action!=='stage')throw new InvalidRequest();
       if(['published','conflict','denied'].includes(initial.intent.state)){
         const historical=await this.#await(writer.admit_publication(lookup,lease),lease);
-        return result(ref.intent_id,'publish',historical.intent);
+        return result(ref.intent_id,operation,historical.intent);
       }
       const prepared=initial.intent.state==='prepared'
         ?await this.#await(writer.publication_preparation(lookup,lease),lease):null;
       if(initial.intent.state==='prepared'&&!prepared)throw new IntegrityViolation();
       const context=parse_context({...lookup,owner_token:prepared?.preparation.owner_token??lookup.owner_token});
       const admission=await this.#await(writer.admit_publication(context,lease),lease);
-      if(!admission.owner)return result(ref.intent_id,'publish',admission.intent);
+      if(!admission.owner)return result(ref.intent_id,operation,admission.intent);
       const snapshot=await this.#await(writer.manager_snapshot(context,lease),lease);
       const profile=await this.#profile(lease,true);
       if(snapshot.pending||snapshot.backend.state!=='open'||snapshot.backend.epoch!==profile.epoch
@@ -427,7 +430,7 @@ export class QdrantPublicationManager {
           if(!prepared){
             try {
               const outcome=await this.#await(writer.prepare(context,current.readback_sha256,lease),lease);
-              if(['denied','conflict','published'].includes(outcome.state))return result(ref.intent_id,'publish',outcome);
+              if(['denied','conflict','published'].includes(outcome.state))return result(ref.intent_id,operation,outcome);
             }
             catch(error){
               if(!(error instanceof ProviderUnavailable))throw error;
@@ -445,12 +448,82 @@ export class QdrantPublicationManager {
             if(!outcome.intent||outcome.intent.state!=='published')throw error;
             published=outcome.intent;
           }
-          return result(ref.intent_id,'publish',published);
+          return result(ref.intent_id,operation,published);
         } finally {
           // The scope cannot expire while a timed-out callback still executes.
           // Exclude this enclosing promise from its own actual-unwind drain.
           await Promise.allSettled([...this.#pending].filter(pending=>pending!==finalization));
         }
+      },lease);
+      return this.#await(finalization,lease);
+  }
+
+  async repair(input:unknown,inputScope:unknown,ledger:ExecutionLedger,rawOptions:unknown):Promise<Result> {
+    this.#admit();
+    if(is_worker_controller(this.#supervisor)||this.#authority.recovery===null)throw new UnsupportedCapability();
+    const ref=reference(input),scope=parse_scope(inputScope),options=this.#ledger(ledger,rawOptions);
+    const lookup=parse_context({...ref,scope,owner_token:randomUUID()});
+    return this.#attempt(ledger,options,async lease=>{
+      const writer=this.#authority.writer,recovery=this.#authority.recovery!;
+      // Authorize before scoped source inspection; preflight gates the exact profile.
+      await this.#authorize(lookup,lease);
+      let snapshot=await this.#await(writer.preflight_repair(lookup,lease),lease);
+      if(['published','denied','conflict'].includes(snapshot.intent.state))return result(ref.intent_id,'repair',snapshot.intent);
+      const owner=snapshot.owner;
+      if(owner&&(owner.instance_id!==snapshot.backend.instance_id||owner.intent_id!==ref.intent_id))throw new ProviderUnavailable();
+      if((snapshot.intent.state==='prepared'||snapshot.pending||snapshot.backend.state==='recovery_blocked')
+        &&(!owner||owner.instance_id!==snapshot.backend.instance_id||owner.intent_id!==ref.intent_id))throw new ProviderUnavailable();
+      const context=parse_context({...lookup,owner_token:owner?.intent_id===ref.intent_id?owner.owner_token:lookup.owner_token});
+      const needsRecovery=snapshot.pending||snapshot.backend.state==='recovery_blocked'
+        ||snapshot.intent.state==='prepared'&&owner!.backend_epoch!==snapshot.backend.epoch;
+      if(needsRecovery){
+        await this.#authorize(context,lease);
+        const id=snapshot.backend.recovery_id??'g1-'+createHash('sha256').update(JSON.stringify([
+          'cragkit.qdrant.repair-recovery.v1',snapshot.backend.instance_id,String(snapshot.backend.epoch)])).digest('hex');
+        const uncertain=snapshot.pending;
+        const proof=await this.#await(recovery.recover(id,lease),lease);
+        await this.#await(recovery.advance_owner(proof,context,lease),lease);
+        if(uncertain){
+          const verifier=recovery_components(recovery,writer,this.#supervisor,this.#config);
+          const receipt=await this.#await(verifier.verify(proof,context,lease),lease);
+          await this.#await(recovery.settle_retired(proof,receipt,lease),lease);
+        }
+        await this.#await(recovery.reopen(proof,lease),lease);
+        snapshot=await this.#await(writer.preflight_repair(context,lease),lease);
+        if(['published','denied','conflict'].includes(snapshot.intent.state))return result(ref.intent_id,'repair',snapshot.intent);
+      }
+      if(snapshot.intent.state!=='prepared')return this.#publishBody(ref,context,lease,'repair');
+      const durable=await this.#await(writer.attestation_snapshot(context,lease),lease);
+      if(durable.preparation.backend_epoch===snapshot.backend.epoch)return this.#publishBody(ref,context,lease,'repair');
+      const profile=await this.#profile(lease,true),epoch=count(profile.epoch,1);
+      if(durable.preparation.backend_epoch>snapshot.backend.epoch)throw new IntegrityViolation();
+      if(epoch!==snapshot.backend.epoch||durable.preparation.backend_epoch>=epoch)throw new ProviderUnavailable();
+      if(durable.attestation&&durable.attestation.credential_generation!==profile.credential_generation)throw new ProviderUnavailable();
+      const id=durable.attestation?.verification_id??'g1-'+createHash('sha256').update(JSON.stringify([
+        'cragkit.qdrant.repair-verification.v1',snapshot.backend.instance_id,ref.intent_id,context.owner_token,
+        String(profile.epoch),profile.credential_generation,snapshot.intent.manifest_sha256])).digest('hex');
+      const session=await this.#session(context,epoch,id,lease);
+      await this.#closeHandle(session);
+      const receipt=await this.#await(this.#verifier.verify(session.attempt,context,lease),lease);
+      let finalization!:Promise<Result>;
+      finalization=publication_finalization(this.#supervisor,session.attempt,async()=>{
+        try{
+          const current=await validate_publication_receipt(receipt,this.#verifier,lease);
+          await this.#authorize(context,lease);
+          await this.#await(writer.validate_publication_projection(current.projection,lease),lease);
+          const attested=await this.#await(writer.attest_prepared(receipt,this.#verifier,lease),lease);
+          if(['published','denied','conflict'].includes(attested.intent.state))return result(ref.intent_id,'repair',attested.intent);
+          await this.#authorize(context,lease);
+          let published:IntentView;
+          try{published=await this.#await(writer.publish(context,lease),lease);}
+          catch(error){
+            if(!(error instanceof ProviderUnavailable))throw error;
+            const confirmed=await this.#await(writer.manager_snapshot(context,lease),lease);
+            if(confirmed.intent?.state!=='published')throw error;
+            published=confirmed.intent;
+          }
+          return result(ref.intent_id,'repair',published);
+        }finally{await Promise.allSettled([...this.#pending].filter(pending=>pending!==finalization));}
       },lease);
       return this.#await(finalization,lease);
     });

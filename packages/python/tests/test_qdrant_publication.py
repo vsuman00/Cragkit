@@ -514,3 +514,171 @@ async def test_explicit_cancellation_is_latched_after_callback_suppresses_it(mon
     assert document['active_generation_id'] == 'gen-1'
     assert supervisor._control_token is None and manager._active is None
     assert not writer._closed and not recovery._closed and not supervisor._closed
+
+
+async def repair_setup(monkeypatch, tmp_path):
+    """Unit state-machine fixture; its recovery objects are not physical proof."""
+    manager, writer, recovery, supervisor, transport, state, document = await setup(monkeypatch, tmp_path)
+    limit = asyncio.get_running_loop().time() + 5
+    await manager.initialize(deadline=limit)
+    writer._schema_profile = 3
+    monkeypatch.setattr(writer, '_attestation_profile', lambda: None)
+    async def preflight(context, *, deadline):
+        writer._attestation_profile()
+        value = await writer.manager_snapshot(context, deadline=deadline)
+        if value['intent'] is None:
+            raise InvalidRequest()
+        return {key: value[key] for key in ('intent', 'owner', 'backend', 'pending')}
+    monkeypatch.setattr(writer, 'preflight_repair', preflight)
+    reference = {key: ctx()[key] for key in ('collection', 'document_id', 'intent_id')}
+    return manager, writer, recovery, supervisor, state, document, reference, limit
+
+
+@run_async
+async def test_repair_staged_uses_single_attempt_and_existing_publish_body(monkeypatch, tmp_path):
+    manager, writer, recovery, supervisor, state, document, reference, limit = await repair_setup(monkeypatch, tmp_path)
+    await manager.stage(stage_input(), ctx()['scope'], ledger(), deadline=limit)
+    shared = ledger()
+    result = await manager.repair(reference, ctx()['scope'], shared, deadline=limit)
+    assert result['operation'] == 'repair' and result['state'] == 'published'
+    assert shared.snapshot()['attempts'] == 1 and shared.snapshot()['provider_calls'] == 0
+    assert state['mutations'] == 1
+    writes = state['mutations']
+    repeated = await manager.repair(reference, ctx()['scope'], ledger(), deadline=limit)
+    assert repeated == result and state['mutations'] == writes
+
+
+@run_async
+@pytest.mark.parametrize('failure', ['missing', 'foreign_owner', 'old_profile', 'authorize', 'budget'])
+async def test_repair_refusals_prevent_dispatch(monkeypatch, tmp_path, failure):
+    manager, writer, recovery, supervisor, state, document, reference, limit = await repair_setup(monkeypatch, tmp_path)
+    if failure != 'missing':
+        await manager.stage(stage_input(), ctx()['scope'], ledger(), deadline=limit)
+    expected = InvalidRequest
+    if failure == 'foreign_owner':
+        state['owner'] = dict(instance_id='instance-1', intent_id='foreign', owner_token=ctx()['owner_token'], backend_epoch=2)
+        expected = ProviderUnavailable
+    elif failure == 'old_profile':
+        def unsupported(): raise UnsupportedCapability()
+        monkeypatch.setattr(writer, '_attestation_profile', unsupported)
+        expected = UnsupportedCapability
+    elif failure == 'authorize':
+        async def denied(*args): return False
+        state['authorizer'] = denied
+        expected = UnauthorizedScope
+    shared = ledger()
+    if failure == 'budget':
+        shared = ExecutionLedger(Limits(max_attempts=1), deadline=limit)
+        reservation = shared.reserve(attempts=1); shared.dispatch(reservation); shared.reconcile(reservation)
+        expected = BudgetExhausted
+    with pytest.raises(expected):
+        await manager.repair(reference, ctx()['scope'], shared, deadline=limit)
+    assert state['mutations'] == 0
+
+
+@run_async
+@pytest.mark.parametrize('failure', ['foreign_pending', 'incomplete'])
+async def test_repair_uncertainty_uses_actual_dependency_order_and_stays_failed(monkeypatch, tmp_path, failure):
+    manager, writer, recovery, supervisor, state, document, reference, limit = await repair_setup(monkeypatch, tmp_path)
+    await manager.stage(stage_input(), ctx()['scope'], ledger(), deadline=limit)
+    state['intent']['state'] = 'writing'
+    state['owner'] = dict(instance_id='instance-1', intent_id=reference['intent_id'], owner_token=ctx()['owner_token'], backend_epoch=2)
+    state['pending'] = True
+    prior_active=document['active_generation_id']
+    events = []
+    proof, receipt = object(), object()
+    async def recover(identity, *, deadline):
+        events.append('recover'); assert identity.startswith('g1-') and len(identity) == 67
+        assert deadline <= limit
+        return proof
+    async def advance(actual, context, *, deadline):
+        assert actual is proof and context.owner_token == ctx()['owner_token']; events.append('advance')
+    async def verify(actual, context, *, deadline):
+        assert actual is proof; events.append('verify')
+        if failure == 'incomplete': raise IntegrityViolation()
+        return receipt
+    async def settle(actual, observed, *, deadline):
+        assert actual is proof and observed is receipt; events.append('settle')
+    async def reopen(actual, *, deadline):
+        assert actual is proof; events.append('reopen'); raise ProviderUnavailable()
+    for name, method in [('recover', recover), ('advance_owner', advance), ('settle_retired', settle), ('reopen', reopen)]:
+        monkeypatch.setattr(recovery, name, method)
+    monkeypatch.setattr(manager._original_verifier, 'verify', verify)
+    with pytest.raises(IntegrityViolation if failure == 'incomplete' else ProviderUnavailable):
+        await manager.repair(reference, ctx()['scope'], ledger(), deadline=limit)
+    assert events == (['recover', 'advance', 'verify'] if failure == 'incomplete' else ['recover', 'advance', 'verify', 'settle', 'reopen'])
+    assert state['mutations'] == 0 and document['active_generation_id'] == prior_active
+
+
+@run_async
+async def test_repair_worker_capability_refuses_before_authorization(monkeypatch, tmp_path):
+    manager, writer, recovery, supervisor, state, document, reference, limit = await repair_setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(implementation, 'is_worker', lambda controller: True)
+    before = list(state['events'])
+    with pytest.raises(UnsupportedCapability):
+        await manager.repair(reference, ctx()['scope'], ledger(), deadline=limit)
+    assert state['events'] == before and state['mutations'] == 0
+
+
+@run_async
+@pytest.mark.parametrize('existing', [False, True, 'stale'])
+async def test_repair_cross_epoch_prepared_preserves_original_and_stable_verification(monkeypatch, tmp_path, existing):
+    manager, writer, recovery, supervisor, state, document, reference, limit = await repair_setup(monkeypatch, tmp_path)
+    original_publish = writer.publish
+    async def pause(*args, **kwargs): raise asyncio.CancelledError()
+    monkeypatch.setattr(writer, 'publish', pause)
+    with pytest.raises(asyncio.CancelledError):
+        await stage_and_publish(manager)
+    monkeypatch.setattr(writer, 'publish', original_publish)
+    state['preparation']['backend_epoch'] = 1
+    original = copy.deepcopy(state['preparation'])
+    native = supervisor.profile_binding(config())
+    stored = None if not existing else dict(verification_id='stored-verification',
+        credential_generation='retired' if existing == 'stale' else native['credential_generation'])
+    async def material(context, *, deadline):
+        return dict(preparation=original, attestation=stored)
+    observed=[]
+    actual_issue=implementation.controller_issue
+    async def issue(controller, binding, *, deadline):
+        observed.append(dict(binding));return await actual_issue(controller,binding,deadline=deadline)
+    async def attest(receipt, selected, *, deadline):
+        data=await implementation.validate_publication_receipt(receipt,selected,deadline=deadline)
+        assert data['attempt_binding']['owner_token']==original['owner_token']
+        return dict(intent=dict(state['intent']),attestation=dict(verification_id=data['attempt_binding']['dispatch_id']))
+    monkeypatch.setattr(writer,'attestation_snapshot',material)
+    monkeypatch.setattr(writer,'attest_prepared',attest)
+    monkeypatch.setattr(implementation,'controller_issue',issue)
+    before=state['mutations']
+    if existing=='stale':
+        with pytest.raises(ProviderUnavailable):
+            await manager.repair(reference,ctx()['scope'],ledger(),deadline=limit)
+        assert observed==[] and state['intent']['state']=='prepared'
+    else:
+        result=await manager.repair(reference,ctx()['scope'],ledger(),deadline=limit)
+        assert result['published'] and result['operation']=='repair'
+        expected='stored-verification' if existing else 'g1-'+sha256(json.dumps([
+            'cragkit.qdrant.repair-verification.v1','instance-1',reference['intent_id'],
+            original['owner_token'],'2',native['credential_generation'],state['intent']['manifest_sha256']],
+            separators=(',',':')).encode()).hexdigest()
+        assert observed[0]['dispatch_id']==expected
+    assert state['preparation']==original and state['mutations']==before
+
+
+@run_async
+async def test_repair_current_prepared_reuses_selected_binding_without_attestation_or_upsert(monkeypatch, tmp_path):
+    manager, writer, recovery, supervisor, state, document, reference, limit = await repair_setup(monkeypatch, tmp_path)
+    original_publish=writer.publish
+    async def pause(*args, **kwargs):raise asyncio.CancelledError()
+    monkeypatch.setattr(writer,'publish',pause)
+    with pytest.raises(asyncio.CancelledError):await stage_and_publish(manager)
+    monkeypatch.setattr(writer,'publish',original_publish)
+    original=copy.deepcopy(state['preparation'])
+    async def material(context,*,deadline):return dict(preparation=original,attestation=None)
+    async def forbidden(*args,**kwargs):raise AssertionError('same_epoch_attestation_or_recovery')
+    monkeypatch.setattr(writer,'attestation_snapshot',material)
+    monkeypatch.setattr(writer,'attest_prepared',forbidden)
+    monkeypatch.setattr(recovery,'recover',forbidden)
+    before=state['mutations']
+    result=await manager.repair(reference,ctx()['scope'],ledger(),deadline=limit)
+    assert result['published'] and result['operation']=='repair'
+    assert state['mutations']==before and state['preparation']==original

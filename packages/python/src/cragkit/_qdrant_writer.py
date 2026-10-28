@@ -498,6 +498,48 @@ class PostgresQdrantWriter:
                 'owner': owner, 'max_sequence': max(numbers, default=0), 'pending': bool(pending)})
         return await self._run(ctx, deadline, snapshot)
 
+    async def preflight_repair(self, value: object, *, deadline: float) -> Mapping[str, Any]:
+        self._attestation_profile()
+        ctx = context(value)
+        async def preflight(connection: SessionConnection) -> Mapping[str, Any]:
+            backend = await self._manager_backend(connection, lock=True)
+            owner = await self._manager_owner(connection, ctx, lock=True)
+            document = await self._manager_document(connection, ctx, lock=True)
+            if document is None:
+                raise UnauthorizedScope()
+            intent = await self._manager_intent(connection, ctx)
+            if intent is None:
+                raise InvalidRequest()
+            if intent['action'] != 'stage':
+                raise UnsupportedCapability()
+            if intent['state'] not in ('published', 'conflict', 'denied'):
+                rows = await self._query(connection,
+                    'SELECT expected_authorization_revision,expected_mutation_epoch,'
+                    'expected_active_generation_id,manifest_sha256,generation_id,revision_id,state '
+                    'FROM cragkit_qdrant.publication_intents WHERE ' + _INTENT, _key(ctx))
+                if len(rows) != 1 or len(rows[0]) != 7:
+                    raise IntegrityViolation()
+                original = rows[0]
+                failure = None
+                if document['tombstoned'] or original[:2] != (document['authorization_revision'], document['mutation_epoch']):
+                    failure = 'denied'
+                elif original[2] != document['active_generation_id']:
+                    failure = 'conflict'
+                if failure is not None:
+                    intent = await self._outcome(connection, ctx, failure)
+                else:
+                    plan = await self._load_stage(connection, ctx)
+                    self._attestation_intent(plan, original, intent)
+            rows = await self._query(connection,
+                'SELECT dispatch_id FROM cragkit_qdrant.dispatch_journal WHERE ' + _DOC
+                + " AND state<>'settled' LIMIT 1", _doc(ctx))
+            if len(rows) > 1 or any(len(row) != 1 for row in rows):
+                raise IntegrityViolation()
+            if rows:
+                _stored_identity(rows[0][0])
+            return MappingProxyType({'intent': intent, 'owner': owner, 'backend': backend, 'pending': bool(rows)})
+        return await self._run(ctx, deadline, preflight)
+
     async def admit_publication(self, value: object, *, deadline: float) -> Mapping[str, Any]:
         ctx = context(value)
 

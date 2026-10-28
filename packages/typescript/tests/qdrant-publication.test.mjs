@@ -5,9 +5,9 @@ import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
 import {ExecutionLedger} from '../dist/execution.js';
 import {QdrantPublicationManager,PostgresQdrantPublicationAuthority,ManagedQdrantPublicationTransport,
   PostgresQdrantWriter,PostgresQdrantRecovery,ManagedQdrantSupervisor,QdrantReconciliationVerifier} from '../dist/qdrant-publication.js';
-import {WRITER_ROLE_SQL,prepare_stage} from '../dist/qdrant-writer.js';
+import {WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL,prepare_stage} from '../dist/qdrant-writer.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
-  AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
+  AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {InvalidRequest,UnauthorizedScope,UnsupportedCapability,ProviderUnavailable,IndexNotReady,IntegrityViolation} from '../dist/errors.js';
 
 const fixture=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_publication.json',import.meta.url),'utf8'));
@@ -39,7 +39,7 @@ function change(){
 }
 
 /** SQL and controller method doubles exercise the manager, not native proofs. */
-function setup(authorize=async()=>true){
+function setup(authorize=async()=>true,attestation=false){
   const state={queries:[],clients:[],http:[],points:new Map(),attempts:new Map(),handles:0,authorizations:0,
     callback:authorize,session:false,ackMode:null,afterPut:null,tables:{backend_instances:[{instance_id:'instance-fixture',backend_namespace:config.backend_namespace,
       storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',epoch:1,state:'open',recovery_id:null}]}};
@@ -48,7 +48,7 @@ function setup(authorize=async()=>true){
     publication_intents:['tenant_id','collection','document_id','intent_id'],point_claims:['backend_namespace','physical_collection','collection_incarnation','point_id'],
     vector_replays:['tenant_id','collection','document_id','revision_id','generation_id','chunk_id'],document_owners:['tenant_id','collection','document_id'],
     dispatch_journal:['tenant_id','collection','document_id','intent_id','dispatch_id'],dispatch_points:['tenant_id','collection','document_id','intent_id','dispatch_id','point_id'],
-    preparations:['tenant_id','collection','document_id','intent_id']};
+    preparations:['tenant_id','collection','document_id','intent_id'],preparation_attestations:['tenant_id','collection','document_id','intent_id','instance_id','owner_token','backend_epoch']};
   const pool={ended:0,async end(){this.ended++;},async connect(){
     const client={status:'I',released:false,destroyed:false,getTransactionStatus(){return this.status;},
       release(destroy=false){this.released=true;this.destroyed=destroy;},async query(query){
@@ -57,9 +57,9 @@ function setup(authorize=async()=>true){
         if(sql==='ROLLBACK'){state.tables=this.before;this.status='I';return {rows:[]};}
         if(sql==='COMMIT'){this.status='I';return {rows:[]};}
         if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config'))return {rows:[]};
-        if(sql===WRITER_ROLE_SQL||sql===AUTHORITY_PUBLICATION_CATALOG_SQL)return {rows:[[true]]};
-        if(sql===AUTHORITY_HISTORY_SQL)return {rows:AUTHORITY_PUBLICATION_HISTORY.map(row=>[...row])};
-        if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT]]};
+        if(sql===WRITER_ROLE_SQL||sql===WRITER_ATTESTATION_ROLE_SQL||sql===AUTHORITY_PUBLICATION_CATALOG_SQL||sql===AUTHORITY_ATTESTATION_CATALOG_SQL)return {rows:[[true]]};
+        if(sql===AUTHORITY_HISTORY_SQL)return {rows:(attestation?AUTHORITY_ATTESTATION_HISTORY:AUTHORITY_PUBLICATION_HISTORY).map(row=>[...row])};
+        if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[attestation?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT]]};
         const insert=/^INSERT INTO cragkit_qdrant\.(\w+) \(([^)]+)\)/.exec(sql);
         if(insert){
           const [,table,columns]=insert;
@@ -78,7 +78,7 @@ function setup(authorize=async()=>true){
           let rows=(state.tables[table]??[]).filter(row=>table==='backend_instances'?row.instance_id===p[0]:
             row.tenant_id===p[0]&&row.collection===p[1]&&row.document_id===p[2]);
           for(const field of ['intent_id','dispatch_id','revision_id','generation_id','chunk_id','point_id',
-            'payload_sha256','backend_namespace','physical_collection','collection_incarnation']){
+            'payload_sha256','backend_epoch','owner_token','instance_id','backend_namespace','physical_collection','collection_incarnation']){
             const parameter=new RegExp('(?: AND |\\()'+field+'=\\$(\\d+)(?!\\d)').exec(sql);
             if(parameter)rows=rows.filter(row=>row[field]===p[Number(parameter[1])-1]);
           }
@@ -114,10 +114,10 @@ function setup(authorize=async()=>true){
   const writer=new PostgresQdrantWriter(resource,config,'instance-fixture');
   const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-fixture',config);
   supervisor.profile_binding=()=>({instance_id:'instance-fixture',backend_namespace:config.backend_namespace,storage_identity:'storage-fixture',
-    supervisor_id:'supervisor-fixture',epoch:1,credential_generation:'credential-1',recovery:null,sealed:false,alive:true});
+    supervisor_id:'supervisor-fixture',epoch:state.tables.backend_instances[0].epoch,credential_generation:'credential-'+state.tables.backend_instances[0].epoch,recovery:null,sealed:false,alive:true});
   supervisor.issue_attempt=input=>{
     assert.equal(state.session,false);const attempt=Object.freeze({});
-    state.attempts.set(attempt,{instance_id:'instance-fixture',storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',credential_generation:'credential-1',...input});
+    state.attempts.set(attempt,{instance_id:'instance-fixture',storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',credential_generation:'credential-'+state.tables.backend_instances[0].epoch,...input});
     return attempt;
   };
   supervisor.attempt_binding=attempt=>{const binding=state.attempts.get(attempt);if(!binding)throw new InvalidRequest();return binding;};
@@ -150,7 +150,7 @@ function setup(authorize=async()=>true){
   const transport=new ManagedQdrantPublicationTransport(supervisor);
   const authorizer=async(...args)=>{state.authorizations++;assert.ok(state.clients.every(client=>client.released),'callback outside SQL');return state.callback(...args);};
   const manager=new QdrantPublicationManager(authority,transport,config,supervisor,authorizer);
-  return {state,writer,supervisor,recovery,authority,transport,manager,resource,pool,authorizer,
+  return {state,writer,supervisor,recovery,verifier,authority,transport,manager,resource,pool,authorizer,
     async close(){await manager.close();await writer.close();await recovery.close();await verifier.close();await resource.close();await supervisor.close();}};
 }
 
@@ -384,5 +384,186 @@ test('null recovery bundle cannot initialize under actual in-process supervisor'
     const workerOnly=new PostgresQdrantPublicationAuthority(f.writer,null);
     assert.throws(()=>new QdrantPublicationManager(workerOnly,f.transport,config,f.supervisor,f.authorizer),InvalidRequest);
     assert.equal(f.state.queries.length,0);
+  }finally{await f.close();}
+});
+
+// G1 unit doubles exercise orchestration; physical E2/F1 proof needs native acceptance.
+async function repairPrepared(){
+  const f=setup(async()=>true,true);await f.manager.initialize(options());await f.manager.stage(change(),scope,ledger(),options());
+  f.state.callback=async()=>{if(f.state.tables.publication_intents[0].state==='prepared')throw new ProviderUnavailable();return true;};
+  await assert.rejects(f.manager.publish(ref,scope,ledger(),options()),ProviderUnavailable);
+  f.state.callback=async()=>true;return f;
+}
+
+test('repair requires exact attestation authority and one logical attempt',async()=>{
+  const old=setup();
+  try{
+    await old.manager.initialize(options());await old.manager.stage(change(),scope,ledger(),options());
+    const before=old.state.http.length;await assert.rejects(old.manager.repair(ref,scope,ledger(),options()),UnsupportedCapability);
+    assert.equal(old.state.http.length,before);assert.equal(old.state.tables.document_owners,undefined);
+  }finally{await old.close();}
+  const f=setup(async()=>true,true);
+  try{
+    await f.manager.initialize(options());await f.manager.stage(change(),scope,ledger(),options());
+    const book=ledger(),outcome=await f.manager.repair(ref,scope,book,options());
+    assert.equal(outcome.operation,'repair');assert.equal(outcome.published,true);assert.equal(book.snapshot().attempts,1);
+    assert.equal(book.snapshot().provider_calls,0);assert.equal(book.snapshot().pending,0);
+    const count=f.state.http.length;
+    const historical=await f.manager.repair(ref,scope,ledger(),options());
+    assert.deepEqual(historical,outcome);assert.equal(f.state.http.length,count);
+  }finally{await f.close();}
+});
+
+test('repair current preparation uses original binding and witness without upsert',async()=>{
+  const f=await repairPrepared();
+  try{
+    const original=clone(f.state.tables.preparations[0]),owner=clone(f.state.tables.document_owners[0]);
+    const puts=f.state.http.filter(call=>call.method==='PUT').length;
+    assert.equal((await f.manager.repair(ref,scope,ledger(),options())).published,true);
+    assert.deepEqual(f.state.tables.preparations[0],original);assert.deepEqual(f.state.tables.document_owners[0],owner);
+    assert.equal(f.state.http.filter(call=>call.method==='PUT').length,puts);
+  }finally{await f.close();}
+});
+
+test('repair prepared current owner after recovery appends exact attestation and publishes same identity',async()=>{
+  const f=await repairPrepared();
+  try{
+    const original=clone(f.state.tables.preparations[0]),intent=clone(f.state.tables.publication_intents[0]);
+    f.state.tables.backend_instances[0].epoch=2;f.state.tables.document_owners[0].backend_epoch=2;
+    const puts=f.state.http.filter(call=>call.method==='PUT').length;
+    const outcome=await f.manager.repair(ref,scope,ledger(),options());
+    assert.equal(outcome.published,true);assert.equal(outcome.intent_id,ref.intent_id);assert.equal(outcome.generation_id,intent.generation_id);
+    assert.deepEqual(f.state.tables.preparations[0],original);assert.equal(f.state.tables.preparation_attestations.length,1);
+    assert.equal(f.state.tables.preparation_attestations[0].backend_epoch,2);
+    assert.equal(f.state.tables.preparation_attestations[0].owner_token,original.owner_token);
+    assert.match(f.state.tables.preparation_attestations[0].verification_id,/^g1-[0-9a-f]{64}$/);
+    assert.equal(f.state.http.filter(call=>call.method==='PUT').length,puts);
+  }finally{await f.close();}
+});
+
+test('repair attestation interruption retries exact key without point resend and rejects retired credential',async()=>{
+  for(const retired of [false,true]){
+    const f=await repairPrepared();
+    try{
+      f.state.tables.backend_instances[0].epoch=2;f.state.tables.document_owners[0].backend_epoch=2;
+      const actual=f.writer.attest_prepared.bind(f.writer);let inserted=false;
+      f.writer.attest_prepared=async(...args)=>{const result=await actual(...args);inserted=true;throw new ProviderUnavailable();};
+      await assert.rejects(f.manager.repair(ref,scope,ledger(),options()),ProviderUnavailable);assert.equal(inserted,true);
+      const row=clone(f.state.tables.preparation_attestations[0]),puts=f.state.http.filter(call=>call.method==='PUT').length;
+      assert.equal(f.state.tables.documents[0].active_generation_id,null);
+      f.writer.attest_prepared=actual;
+      if(retired){
+        f.state.tables.preparation_attestations[0].credential_generation='retired';
+        await assert.rejects(f.manager.repair(ref,scope,ledger(),options()),ProviderUnavailable);
+        assert.equal(f.state.tables.documents[0].active_generation_id,null);
+      }else{
+        assert.equal((await f.manager.repair(ref,scope,ledger(),options())).published,true);
+        assert.deepEqual(f.state.tables.preparation_attestations,[row]);
+      }
+      assert.equal(f.state.http.filter(call=>call.method==='PUT').length,puts);
+    }finally{await f.close();}
+  }
+});
+
+test('repair preflight records conflict before recovery and refuses missing prepared ownership',async()=>{
+  for(const mode of ['conflict','missing-owner']){
+    const f=await repairPrepared();
+    try{
+      const count=f.state.http.length;
+      if(mode==='conflict')f.state.tables.documents[0].active_generation_id='winner';else f.state.tables.document_owners=[];
+      f.recovery.recover=async()=>{throw Error('recovery must not start');};
+      if(mode==='conflict')assert.equal((await f.manager.repair(ref,scope,ledger(),options())).state,'conflict');
+      else await assert.rejects(f.manager.repair(ref,scope,ledger(),options()),ProviderUnavailable);
+      assert.equal(f.state.http.length,count);
+    }finally{await f.close();}
+  }
+});
+
+test('repair resumes blocked identity and foreign uncertainty prevents ordinary writes',async()=>{
+  const f=await repairPrepared();
+  try{
+    Object.assign(f.state.tables.backend_instances[0],{epoch:2,state:'recovery_blocked',recovery_id:'stable-blocked'});
+    const calls=[];
+    f.recovery.recover=async id=>{calls.push(['recover',id]);return Object.freeze({});};
+    f.recovery.advance_owner=async()=>{calls.push(['advance']);f.state.tables.document_owners[0].backend_epoch=2;};
+    f.recovery.reopen=async()=>{calls.push(['reopen']);throw new ProviderUnavailable();};
+    const puts=f.state.http.filter(call=>call.method==='PUT').length;
+    await assert.rejects(f.manager.repair(ref,scope,ledger(),options()),ProviderUnavailable);
+    assert.deepEqual(calls,[['recover','stable-blocked'],['advance'],['reopen']]);
+    assert.equal(f.state.tables.backend_instances[0].state,'recovery_blocked');
+    assert.equal(f.state.http.filter(call=>call.method==='PUT').length,puts);
+    assert.equal(f.state.tables.documents[0].active_generation_id,null);
+  }finally{await f.close();}
+});
+
+test('repair partial unknown full-readback failure remains blocked without settlement or resend',async()=>{
+  const f=setup(async()=>true,true);
+  try{
+    await f.manager.initialize(options());await f.manager.stage(change(),scope,ledger(),options());f.state.ackMode='lost';
+    await assert.rejects(f.manager.publish(ref,scope,ledger(),options()),ProviderUnavailable);
+    const puts=f.state.http.filter(call=>call.method==='PUT').length;
+    f.recovery.recover=async()=>{Object.assign(f.state.tables.backend_instances[0],{epoch:2,state:'recovery_blocked',recovery_id:'fixture'});return Object.freeze({});};
+    f.recovery.advance_owner=async()=>{f.state.tables.document_owners[0].backend_epoch=2;};
+    f.verifier.verify=async()=>{throw new IntegrityViolation();};
+    f.recovery.settle_retired=async()=>{throw Error('must not settle incomplete');};
+    f.recovery.reopen=async()=>{throw Error('must not reopen incomplete');};
+    await assert.rejects(f.manager.repair(ref,scope,ledger(),options()),IntegrityViolation);
+    assert.equal(f.state.tables.backend_instances[0].state,'recovery_blocked');
+    assert.equal(f.state.tables.dispatch_journal[0].state,'unknown');
+    assert.equal(f.state.http.filter(call=>call.method==='PUT').length,puts);
+  }finally{await f.close();}
+});
+
+test('repair complete unknown settles before authorized bounded ordinary rewrite with current journal',async()=>{
+  const f=setup(async()=>true,true);
+  try{
+    await f.manager.initialize(options());await f.manager.stage(change(),scope,ledger(),options());f.state.ackMode='lost';
+    await assert.rejects(f.manager.publish(ref,scope,ledger(),options()),ProviderUnavailable);
+    const owner=clone(f.state.tables.document_owners[0]),order=[];f.state.ackMode=null;
+    f.recovery.recover=async id=>{
+      assert.match(id,/^g1-[0-9a-f]{64}$/);order.push('recover');
+      Object.assign(f.state.tables.backend_instances[0],{epoch:2,state:'recovery_blocked',recovery_id:id});return Object.freeze({});
+    };
+    f.recovery.advance_owner=async()=>{order.push('advance');f.state.tables.document_owners[0].backend_epoch=2;};
+    f.verifier.verify=async()=>{order.push('verify');return Object.freeze({});};
+    f.recovery.settle_retired=async()=>{order.push('settle');f.state.tables.dispatch_journal[0].state='settled';f.state.tables.dispatch_journal[0].completion_sha256='a'.repeat(64);};
+    f.recovery.reopen=async()=>{order.push('reopen');Object.assign(f.state.tables.backend_instances[0],{state:'open',recovery_id:null});};
+    const puts=f.state.http.filter(call=>call.method==='PUT').length;
+    const outcome=await f.manager.repair(ref,scope,ledger(),options());
+    assert.equal(outcome.published,true);assert.deepEqual(order,['recover','advance','verify','settle','reopen']);
+    assert.equal(f.state.tables.document_owners[0].owner_token,owner.owner_token);
+    assert.equal(f.state.tables.dispatch_journal.length,2);assert.equal(f.state.tables.dispatch_journal[1].backend_epoch,2);
+    assert.equal(f.state.http.filter(call=>call.method==='PUT').length,puts+1);
+  }finally{await f.close();}
+});
+
+test('repair callback denial, malformed input, exhausted attempt and cancellation do not mutate authority',async()=>{
+  const f=setup(async()=>true,true);
+  try{
+    await f.manager.initialize(options());await f.manager.stage(change(),scope,ledger(),options());
+    const original=clone(f.state.tables),http=f.state.http.length;
+    f.state.callback=async()=>false;
+    await assert.rejects(f.manager.repair(ref,scope,ledger(),options()),UnauthorizedScope);
+    f.state.callback=async()=>true;
+    await assert.rejects(f.manager.repair({...ref,proof:{}},scope,ledger(),options()),InvalidRequest);
+    const exhausted=ledger();const reservation=exhausted.reserve({attempts:1});exhausted.dispatch(reservation);exhausted.reconcile(reservation);
+    await assert.rejects(f.manager.repair(ref,scope,exhausted,options()),error=>error.name==='BudgetExhausted');
+    const controller=new AbortController();controller.abort();
+    await assert.rejects(f.manager.repair(ref,scope,ledger(),{...options(),signal:controller.signal}),error=>error.name==='AbortError');
+    assert.deepEqual(f.state.tables,original);assert.equal(f.state.http.length,http);
+  }finally{await f.close();}
+});
+
+
+test('repair refuses to replace a settled foreign intent owner',async()=>{
+  const f=setup(async()=>true,true);
+  try{
+    await f.manager.initialize(options());await f.manager.stage(change(),scope,ledger(),options());
+    const backend=f.state.tables.backend_instances[0];
+    f.state.tables.document_owners=[{tenant_id:scope.tenant_id,collection:ref.collection,document_id:ref.document_id,
+      instance_id:backend.instance_id,intent_id:'foreign-intent',owner_token:'00000000-0000-4000-8000-000000000099',backend_epoch:backend.epoch}];
+    const original=clone(f.state.tables),http=f.state.http.length;
+    await assert.rejects(f.manager.repair(ref,scope,ledger(),options()),ProviderUnavailable);
+    assert.deepEqual(f.state.tables,original);assert.equal(f.state.http.length,http);
   }finally{await f.close();}
 });

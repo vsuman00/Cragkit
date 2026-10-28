@@ -1008,3 +1008,58 @@ test('snapshot rejects an original preparation from a future epoch without an at
     assert.equal(f.state.tables.preparation_attestations,undefined);
   }finally{await f.close();}
 });
+
+test('repair preflight requires exact attestation profile before checkout',async()=>{
+  const f=setup();
+  try{
+    await f.writer.initialize(opts());const before=f.state.clients.length;
+    await assert.rejects(f.writer.preflight_repair(context,opts()),UnsupportedCapability);
+    assert.equal(f.state.clients.length,before);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('repair preflight inspects blocked uncertainty without ownership or state changes and locks in order',async()=>{
+  const f=setup();useAttestationProfile(f);
+  try{
+    await f.writer.initialize(opts());await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+    await f.writer.acquire_owner(context,opts());await f.writer.reserve_dispatch(context,dispatchRequest,opts());
+    blocked(f);const before=clone(f.state.tables),start=f.state.queries.length;
+    const result=await f.writer.preflight_repair(context,opts());
+    assert.deepEqual(Object.keys(result).sort(),['backend','intent','owner','pending']);
+    assert.equal(result.backend.state,'recovery_blocked');assert.equal(result.pending,true);
+    assert.equal(result.owner.owner_token,token);assert.equal(result.intent.state,'writing');
+    assert.deepEqual(f.state.tables,before);
+    const sql=f.state.queries.slice(start).map(query=>query.text);
+    const backend=sql.findIndex(text=>text.includes('FROM cragkit_qdrant.backend_instances')&&text.endsWith('FOR SHARE'));
+    const owner=sql.findIndex(text=>text.includes('FROM cragkit_qdrant.document_owners')&&text.includes('FOR UPDATE'));
+    const document=sql.findIndex(text=>text.includes('FROM cragkit_qdrant.documents')&&text.includes('FOR UPDATE'));
+    assert(backend>=0&&owner>backend&&document>owner);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('repair preflight commits original fence outcomes while blocked and preserves terminal history',async()=>{
+  for(const failure of ['denied','conflict']){
+    const f=setup();useAttestationProfile(f);
+    try{
+      await f.writer.initialize(opts());await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+      f.state.tables.backend_instances[0].state='recovery_blocked';f.state.tables.backend_instances[0].recovery_id='recovery-fixture';
+      if(failure==='denied')f.state.tables.documents[0].tombstoned=true;
+      else f.state.tables.documents[0].active_generation_id='winner';
+      const result=await f.writer.preflight_repair(context,opts());assert.equal(result.intent.state,failure);
+      assert.equal(result.owner,null);assert.equal(f.state.tables.publication_intents[0].state,failure);
+      f.state.tables.documents[0].active_generation_id='later';
+      assert.equal((await f.writer.preflight_repair(context,opts())).intent.state,failure);
+    }finally{await f.writer.close();await f.resource.close();}
+  }
+});
+
+test('repair preflight denies wrong scope and malformed immutable graph without allocating owner',async()=>{
+  const f=setup();useAttestationProfile(f);
+  try{
+    await f.writer.initialize(opts());await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+    await assert.rejects(f.writer.preflight_repair({...context,scope:{...scope,authorization_revision:'wrong'}},opts()),UnauthorizedScope);
+    f.state.tables.document_revisions[0].canonical_utf8=Buffer.from('corrupt');
+    await assert.rejects(f.writer.preflight_repair(context,opts()),IntegrityViolation);
+    assert.equal(f.state.tables.document_owners,undefined);
+  }finally{await f.writer.close();await f.resource.close();}
+});

@@ -1076,3 +1076,16 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 The parent runs each language serially against fresh disposable PostgreSQL/Qdrant servers, verifies the explicit three-migration catalog and tests native permission drift before releasing the setup administrator. At most two database clients are active. Its acknowledgment fault occurs after an actual successful SQL commit; same-key confirmation must succeed without another point write. Use a fresh artifact directory and retain the pinned Qdrant binary. This task does not call a model or configure a hosted service.
 
 `tools/check_qdrant_publication_source.py` also accepts `--with-attestations` to run its unchanged source-facing scenarios on the explicit three-migration profile. Omit that option to retain the original two-migration fixture. Neither checker changes an application database or applies a migration on import.
+
+## V5-04G1a native managed repair
+
+[Managed repair](qdrant-publication.md#native-managed-repair) supports prepared and already-complete uncertain stages. [G1a evidence](../evaluation/reports/V5/V5-04G1a.md) retains the partial-write and remaining version gates.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_publication.py packages/python/tests/test_qdrant_writer.py tools/tests/test_qdrant_repair_native.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-publication.test.mjs packages/typescript/tests/qdrant-writer.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_repair.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --artifacts-dir artifacts/V5/V5-04G1/a-new-run
+```
+
+Use a fresh directory. The parent applies only the explicit disposable fixture schema, runs native languages serially with at most two database clients, checks least-privilege predicates and verifies listener shutdown. Real completed HTTP/SQL responses are withheld for acknowledgment faults. The Python and Node interruption points differ, as recorded in the report. Neither a passing schema nor a matching result shape proves complete repair or model quality.

@@ -112,3 +112,20 @@ For example, an instance-wide recovery can advance the backend epoch while a doc
 The native writer and recovery authority accept the exact two-migration publication profile and the exact three-migration attestation profile. Source readers also retain the original source-only profile. Applications must apply the selected migration explicitly; initialization only verifies history, structure, catalog and role permissions. The attestation table grants writers SELECT/INSERT only and grants no new access to readers or supervisors.
 
 Private `attestation_snapshot` and `attest_prepared` support the subsequent managed repair implementation. They preserve the intent, generation and original expected pointer. Same-row retry is idempotent; another verification binding for an already attested owner/epoch is an integrity failure. A stale or copied receipt, raw supervisor session or expired helper context cannot authorize insertion. These private operations do not yet provide the public repair/security/purge workflow. [G0 evidence](../evaluation/reports/V5/V5-04G0.md) distinguishes native acceptance from the remaining gates.
+
+## Native managed repair
+
+For example, repair can publish a prepared generation after recovery while preserving the previous active generation until its final transaction succeeds:
+
+```python
+result = await manager.repair(
+    {"collection": collection, "document_id": document_id, "intent_id": intent_id},
+    scope,
+    ledger,
+    deadline=deadline,
+)
+```
+
+Node uses `manager.repair(reference, scope, ledger, {deadline, signal?})`. This operation requires the exact three-migration attestation schema and native supervisor/recovery authority. Worker repair is unsupported. It accepts no owner, proof or replacement generation from caller input and reserves one logical attempt.
+
+Complete uncertain writes undergo real recovery and settlement before any ordinary replay. A prepared retry performs fresh verification without resending points. Foreign uncertainty prevents reopening; missing physical points remain blocked until the recovery-write dispatcher is implemented. Existing same-epoch attestations cannot be replaced after credential rotation. [G1a evidence](../evaluation/reports/V5/V5-04G1a.md) records supported cases and the remaining G1b/security/purge gates.

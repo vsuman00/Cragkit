@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 import hashlib
 import inspect
+import json
 from types import MappingProxyType
 from typing import Any, cast
 from uuid import uuid4
@@ -474,104 +475,208 @@ class QdrantPublicationManager:
         trusted = _scope(scope)
         lookup = context({**target, 'scope': trusted, 'owner_token': str(uuid4())})
 
-        async def publish(limit: float) -> Mapping[str, Any]:
-            await self._authorize(lookup, limit)
-            snapshot = await self._writer.manager_snapshot(lookup, deadline=limit)
+        return cast(Mapping[str, Any], await self._run(
+            lambda limit: self._publish_body(lookup, target, trusted, limit), deadline=deadline, ledger=ledger))
+
+    async def _publish_body(self, lookup: Any, target: Mapping[str, Any], trusted: TrustedScope,
+                            limit: float, operation: str = 'publish',
+                            preserved_owner: str | None = None) -> Mapping[str, Any]:
+        await self._authorize(lookup, limit)
+        snapshot = await self._writer.manager_snapshot(lookup, deadline=limit)
+        self._check(limit)
+        intent = snapshot['intent']
+        if intent is None or intent['action'] != 'stage':
+            raise InvalidRequest()
+        if intent['state'] in ('published', 'conflict', 'denied'):
+            outcome = await self._writer.admit_publication(lookup, deadline=limit)
             self._check(limit)
-            intent = snapshot['intent']
-            if intent is None or intent['action'] != 'stage':
-                raise InvalidRequest()
-            if intent['state'] in ('published', 'conflict', 'denied'):
-                outcome = await self._writer.admit_publication(lookup, deadline=limit)
-                self._check(limit)
-                return _result(lookup.intent_id, 'publish', outcome['intent'])
-            prepared = None
-            if intent['state'] == 'prepared':
-                prepared = await self._writer.publication_preparation(lookup, deadline=limit)
-                self._check(limit)
-                if prepared is None:
-                    raise IntegrityViolation()
-                owner_token = prepared['preparation']['owner_token']
-            else:
-                owner_token = str(uuid4())
-            ctx = context({**target, 'scope': trusted, 'owner_token': owner_token})
-            admission = await self._writer.admit_publication(ctx, deadline=limit)
+            return _result(lookup.intent_id, operation, outcome['intent'])
+        prepared = None
+        if intent['state'] == 'prepared':
+            prepared = await self._writer.publication_preparation(lookup, deadline=limit)
             self._check(limit)
-            if admission['owner'] is None:
-                return _result(ctx.intent_id, 'publish', admission['intent'])
-            snapshot = await self._writer.manager_snapshot(ctx, deadline=limit)
-            self._check(limit)
-            native = await self._controller(snapshot, limit)
-            if snapshot['pending']:
+            if prepared is None:
+                raise IntegrityViolation()
+            owner_token = prepared['preparation']['owner_token']
+        else:
+            owner_token = preserved_owner or str(uuid4())
+        ctx = context({**target, 'scope': trusted, 'owner_token': owner_token})
+        admission = await self._writer.admit_publication(ctx, deadline=limit)
+        self._check(limit)
+        if admission['owner'] is None:
+            return _result(ctx.intent_id, operation, admission['intent'])
+        snapshot = await self._writer.manager_snapshot(ctx, deadline=limit)
+        self._check(limit)
+        native = await self._controller(snapshot, limit)
+        if snapshot['pending']:
+            raise ProviderUnavailable()
+        epoch = admission['owner']['backend_epoch']
+        if prepared is not None:
+            selected = prepared['dispatch']
+            if (selected['credential_generation'] != native['credential_generation']
+                    or selected['backend_epoch'] != epoch):
                 raise ProviderUnavailable()
-            epoch = admission['owner']['backend_epoch']
-            if prepared is not None:
-                selected = prepared['dispatch']
-                if (selected['credential_generation'] != native['credential_generation']
-                        or selected['backend_epoch'] != epoch):
-                    raise ProviderUnavailable()
-                session = await self._transport._open({'intent_id': ctx.intent_id,
-                    'owner_token': owner_token, 'epoch': epoch,
-                    'dispatch_id': selected['dispatch_id']}, deadline=limit)
-                try:
-                    attempt = session.attempt
-                finally:
-                    await self._transport._close(session)
-                self._check(limit)
-            else:
-                plan = await self._writer.load_stage(ctx, deadline=limit)
-                self._check(limit)
-                ids = tuple(sorted(member.point_id for member in stage_data(plan).manifest.members))
-                batches = (len(ids) + 7) // 8
-                if not 1 <= len(ids) <= 64:
-                    raise IntegrityViolation()
-                if snapshot['max_sequence'] + batches > 256:
-                    raise BudgetExhausted()
-                attempt = None
-                for index, start in enumerate(range(0, len(ids), 8), 1):
-                    attempt = await self._batch(ctx, ids[start:start + 8],
-                        snapshot['max_sequence'] + index, epoch, limit)
-                    self._check(limit)
-                if attempt is None:
-                    raise IntegrityViolation()
-            receipt = await self._verifier.verify(attempt, ctx, deadline=limit)
+            session = await self._transport._open({'intent_id': ctx.intent_id,
+                'owner_token': owner_token, 'epoch': epoch,
+                'dispatch_id': selected['dispatch_id']}, deadline=limit)
+            try:
+                attempt = session.attempt
+            finally:
+                await self._transport._close(session)
             self._check(limit)
-            async with controller_finalization(self._supervisor, attempt, deadline=limit):
+        else:
+            plan = await self._writer.load_stage(ctx, deadline=limit)
+            self._check(limit)
+            ids = tuple(sorted(member.point_id for member in stage_data(plan).manifest.members))
+            batches = (len(ids) + 7) // 8
+            if not 1 <= len(ids) <= 64:
+                raise IntegrityViolation()
+            if snapshot['max_sequence'] + batches > 256:
+                raise BudgetExhausted()
+            attempt = None
+            for index, start in enumerate(range(0, len(ids), 8), 1):
+                attempt = await self._batch(ctx, ids[start:start + 8],
+                    snapshot['max_sequence'] + index, epoch, limit)
                 self._check(limit)
-                data = await validate_publication_receipt(receipt, self._verifier, deadline=limit)
-                if prepared is not None and data['readback_sha256'] != prepared['preparation']['readback_sha256']:
-                    raise IntegrityViolation()
-                await self._authorize(ctx, limit)
-                await self._writer.validate_publication_projection(data['projection'], deadline=limit)
-                self._check(limit)
-                if prepared is None:
-                    try:
-                        outcome = await self._writer.prepare(ctx, data['readback_sha256'], deadline=limit)
-                        self._check(limit)
-                    except ProviderUnavailable:
-                        self._check(limit)
-                        confirmed = await self._writer.publication_preparation(ctx, deadline=limit)
-                        self._check(limit)
-                        if (confirmed is None or confirmed['preparation']['readback_sha256'] != data['readback_sha256']
-                                or confirmed['preparation']['owner_token'] != owner_token
-                                or confirmed['preparation']['backend_epoch'] != epoch):
-                            raise ProviderUnavailable() from None
-                    else:
-                        if outcome['state'] in ('denied', 'conflict'):
-                            return _result(ctx.intent_id, 'publish', outcome)
-                await self._authorize(ctx, limit)
+            if attempt is None:
+                raise IntegrityViolation()
+        receipt = await self._verifier.verify(attempt, ctx, deadline=limit)
+        self._check(limit)
+        async with controller_finalization(self._supervisor, attempt, deadline=limit):
+            self._check(limit)
+            data = await validate_publication_receipt(receipt, self._verifier, deadline=limit)
+            if prepared is not None and data['readback_sha256'] != prepared['preparation']['readback_sha256']:
+                raise IntegrityViolation()
+            await self._authorize(ctx, limit)
+            await self._writer.validate_publication_projection(data['projection'], deadline=limit)
+            self._check(limit)
+            if prepared is None:
                 try:
-                    result = await self._writer.publish(ctx, deadline=limit)
+                    outcome = await self._writer.prepare(ctx, data['readback_sha256'], deadline=limit)
                     self._check(limit)
                 except ProviderUnavailable:
                     self._check(limit)
-                    confirmed = await self._writer.manager_snapshot(ctx, deadline=limit)
+                    confirmed = await self._writer.publication_preparation(ctx, deadline=limit)
                     self._check(limit)
-                    result = confirmed['intent']
+                    if (confirmed is None or confirmed['preparation']['readback_sha256'] != data['readback_sha256']
+                            or confirmed['preparation']['owner_token'] != owner_token
+                            or confirmed['preparation']['backend_epoch'] != epoch):
+                        raise ProviderUnavailable() from None
+                else:
+                    if outcome['state'] in ('denied', 'conflict'):
+                        return _result(ctx.intent_id, operation, outcome)
+            await self._authorize(ctx, limit)
+            try:
+                result = await self._writer.publish(ctx, deadline=limit)
+                self._check(limit)
+            except ProviderUnavailable:
+                self._check(limit)
+                confirmed = await self._writer.manager_snapshot(ctx, deadline=limit)
+                self._check(limit)
+                result = confirmed['intent']
+                if result is None or result['state'] != 'published':
+                    raise ProviderUnavailable() from None
+            return _result(ctx.intent_id, operation, result)
+
+    async def repair(self, reference: object, scope: object, ledger: ExecutionLedger, *,
+                     deadline: float) -> Mapping[str, Any]:
+        if type(ledger) is not ExecutionLedger:
+            raise InvalidRequest()
+        target = _reference(reference)
+        trusted = _scope(scope)
+        # Capability refusal is local and precedes callbacks or resource checkout.
+        if is_worker(self._supervisor) or self._recovery is None or self._original_verifier is None:
+            raise UnsupportedCapability()
+        recovery = self._recovery
+        lookup = context({**target, 'scope': trusted, 'owner_token': str(uuid4())})
+
+        async def repair(limit: float) -> Mapping[str, Any]:
+            await self._authorize(lookup, limit)
+            preflight = await self._writer.preflight_repair(lookup, deadline=limit)
+            self._check(limit)
+            intent, backend, owner = preflight['intent'], preflight['backend'], preflight['owner']
+            if intent['state'] in ('published', 'conflict', 'denied'):
+                return _result(lookup.intent_id, 'repair', intent)
+            prepared = intent['state'] == 'prepared'
+            needs_recovery = (preflight['pending'] or backend['state'] != 'open'
+                or (prepared and owner is not None and owner['backend_epoch'] != backend['epoch']))
+            if owner is not None and (owner['instance_id'] != self._instance or owner['intent_id'] != lookup.intent_id):
+                raise ProviderUnavailable()
+            if (prepared or needs_recovery) and owner is None:
+                raise ProviderUnavailable()
+            token = owner['owner_token'] if owner is not None else str(uuid4())
+            ctx = context({**target, 'scope': trusted, 'owner_token': token})
+            if needs_recovery:
+                if backend['state'] == 'recovery_blocked':
+                    identity = backend['recovery_id']
+                else:
+                    raw = ['cragkit.qdrant.repair-recovery.v1', self._instance, str(backend['epoch'])]
+                    identity = 'g1-' + hashlib.sha256(json.dumps(raw, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
+                await self._authorize(ctx, limit)
+                proof = await recovery.recover(identity, deadline=limit)
+                self._check(limit)
+                await recovery.advance_owner(proof, ctx, deadline=limit)
+                self._check(limit)
+                if preflight['pending']:
+                    reconciliation_receipt = await cast(QdrantReconciliationVerifier, self._original_verifier).verify(
+                        proof, ctx, deadline=limit)
+                    self._check(limit)
+                    await recovery.settle_retired(proof, reconciliation_receipt, deadline=limit)
+                    self._check(limit)
+                await recovery.reopen(proof, deadline=limit)
+                self._check(limit)
+                preflight = await self._writer.preflight_repair(ctx, deadline=limit)
+                self._check(limit)
+                intent, backend, owner = preflight['intent'], preflight['backend'], preflight['owner']
+                if intent['state'] in ('published', 'conflict', 'denied'):
+                    return _result(ctx.intent_id, 'repair', intent)
+            if not prepared:
+                return await self._publish_body(ctx, target, trusted, limit, 'repair', token)
+            snapshot = await self._writer.manager_snapshot(ctx, deadline=limit)
+            self._check(limit)
+            native = await self._controller(snapshot, limit)
+            material = await self._writer.attestation_snapshot(ctx, deadline=limit)
+            self._check(limit)
+            original, attestation = material['preparation'], material['attestation']
+            if original['backend_epoch'] == backend['epoch']:
+                if original['owner_token'] != token:
+                    raise ProviderUnavailable()
+                return await self._publish_body(ctx, target, trusted, limit, 'repair', token)
+            if original['backend_epoch'] > backend['epoch']:
+                raise IntegrityViolation()
+            if attestation is not None:
+                if attestation['credential_generation'] != native['credential_generation']:
+                    raise ProviderUnavailable()
+                dispatch = attestation['verification_id']
+            else:
+                raw = ['cragkit.qdrant.repair-verification.v1', self._instance, ctx.intent_id,
+                    token, str(backend['epoch']), native['credential_generation'], intent['manifest_sha256']]
+                dispatch = 'g1-' + hashlib.sha256(json.dumps(raw, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
+            attempt = await controller_issue(self._supervisor, {'intent_id': ctx.intent_id,
+                'owner_token': token, 'epoch': backend['epoch'], 'dispatch_id': dispatch}, deadline=limit)
+            self._check(limit)
+            receipt = await self._verifier.verify(attempt, ctx, deadline=limit)
+            self._check(limit)
+            async with controller_finalization(self._supervisor, attempt, deadline=limit):
+                await self._authorize(ctx, limit)
+                data = await validate_publication_receipt(receipt, self._verifier, deadline=limit)
+                await self._writer.validate_publication_projection(data['projection'], deadline=limit)
+                self._check(limit)
+                attested = await self._writer.attest_prepared(receipt, self._verifier, deadline=limit)
+                self._check(limit)
+                if attested['intent']['state'] in ('denied', 'conflict'):
+                    return _result(ctx.intent_id, 'repair', attested['intent'])
+                await self._authorize(ctx, limit)
+                try:
+                    result = await self._writer.publish(ctx, deadline=limit)
+                except ProviderUnavailable:
+                    self._check(limit)
+                    result = (await self._writer.manager_snapshot(ctx, deadline=limit))['intent']
                     if result is None or result['state'] != 'published':
                         raise ProviderUnavailable() from None
-                return _result(ctx.intent_id, 'publish', result)
-        return cast(Mapping[str, Any], await self._run(publish, deadline=deadline, ledger=ledger))
+                self._check(limit)
+                return _result(ctx.intent_id, 'repair', result)
+        return cast(Mapping[str, Any], await self._run(repair, deadline=deadline, ledger=ledger))
 
     async def close(self) -> None:
         self._closed = True

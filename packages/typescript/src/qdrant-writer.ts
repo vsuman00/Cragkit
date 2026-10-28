@@ -471,6 +471,26 @@ export class PostgresQdrantWriter {
     return rows.length!==0;
   }
 
+  async preflight_repair(input:unknown,rawOptions:unknown):Promise<Readonly<{intent:IntentView;owner:ManagerOwner|null;backend:ManagerBackend;pending:boolean}>> {
+    const context=parseContext(input),options=parseOptions(rawOptions);this.#requireAttestationProfile();
+    return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
+      const backend=await this.#managerBackend(tx,true);
+      const owner=await this.#managerOwner(tx,context,true);
+      const document=await this.#document(tx,context,true);
+      if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
+      const intent=await this.#intent(tx,context);
+      if(!intent)throw new InvalidRequest();
+      if(intent.action!=='stage')throw new UnsupportedCapability();
+      const pending=await this.#managerPending(tx,context);
+      if(['published','conflict','denied'].includes(String(intent.state)))return Object.freeze({intent:intent_view(intent),owner,backend,pending});
+      // Inspect original fences even when ordinary admission is blocked.
+      const failure=await this.#fence(tx,context,intent,false);
+      if(failure)return Object.freeze({intent:await this.#updateIntent(tx,context,failure),owner,backend,pending});
+      await this.#loadStage(tx,context);
+      return Object.freeze({intent:intent_view(intent),owner,backend,pending});
+    },true));
+  }
+
   async manager_snapshot(input:unknown,rawOptions:unknown):Promise<ManagerSnapshot> {
     const context=parseContext(input),options=parseOptions(rawOptions);
     return this.#work(options,lease=>this.#tx(context,lease,async tx=>{
