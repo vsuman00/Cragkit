@@ -19,6 +19,7 @@ from ._qdrant_publication_verification import (
 from ._qdrant_reconciliation import QdrantReconciliationVerifier, _ReadbackTransport, VerificationBudget
 from ._qdrant_recovery import PostgresQdrantRecovery, recovery_components
 from ._qdrant_source import metadata_guard
+from ._qdrant_security import QdrantSecurityManager
 from ._qdrant_supervisor import ManagedQdrantSupervisor
 from ._qdrant_transport import deadline_value
 from ._qdrant_publication_worker import (is_controller, is_worker, controller_profile,
@@ -32,7 +33,7 @@ from .errors import (DeadlineExceeded, IndexNotReady,
                      IntegrityViolation, InvalidRequest, ProviderUnavailable,
                      UnauthorizedScope, UnsupportedCapability)
 
-__all__ = ('QdrantPublicationManager', 'PostgresQdrantPublicationAuthority',
+__all__ = ('QdrantSecurityManager', 'QdrantPublicationManager', 'PostgresQdrantPublicationAuthority',
            'ManagedQdrantPublicationTransport', 'PostgresQdrantWriter',
            'PostgresQdrantRecovery', 'ManagedQdrantSupervisor', 'QdrantReconciliationVerifier',
            'ManagedQdrantPublicationWorkerHost', 'OwnedPublicationWorker')

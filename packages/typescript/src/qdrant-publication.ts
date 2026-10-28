@@ -1,3 +1,4 @@
+export {QdrantSecurityManager} from './qdrant-security.js';
 /** Optional native stage/publish manager. Dependencies remain application-owned. */
 import {randomUUID,createHash} from 'node:crypto';
 import {types} from 'node:util';

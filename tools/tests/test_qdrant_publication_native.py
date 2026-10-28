@@ -197,3 +197,20 @@ def test_attestation_upgrade_is_explicit_additive_and_checks_committed_catalog()
     assert connection.events[-3:]==['commit','query','query']
     with pytest.raises(ValueError,match='publication_fixture_profile'):
         native.PublicationDatabase(Fixture(),with_attestations='yes')
+
+
+def test_writer_failure_diagnostics_do_not_overwrite_an_unowned_artifacts_directory(tmp_path,monkeypatch,capsys):
+    import check_qdrant_writer as writer_parent
+    directory=tmp_path/'existing'
+    directory.mkdir()
+    diagnostic=directory/'failure-locations.json'
+    diagnostic.write_text('user-owned')
+    starts=[]
+    def forbidden_fixture(*args,**kwargs):
+        starts.append(True)
+        raise AssertionError('unexpected fixture construction')
+    monkeypatch.setattr(writer_parent,'PostgresSourceFixture',forbidden_fixture)
+    assert writer_parent.main(['--postgres-bin','/unused','--artifacts-dir',str(directory),'--allow-local-processes'])==1
+    assert json.loads(capsys.readouterr().out)['ok'] is False
+    assert diagnostic.read_text()=='user-owned'
+    assert list(directory.iterdir())==[diagnostic] and starts==[]

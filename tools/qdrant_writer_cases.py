@@ -137,7 +137,9 @@ async def python_writer_cases(config, inputs):
     from cragkit._postgres_pool import PoolConfig, PoolResource
     from cragkit._qdrant_contract import QdrantConfig, parse_model
     from cragkit._qdrant_writer import PostgresQdrantWriter, prepare_stage
-    from cragkit.contracts import TrustedScope
+    from cragkit.contracts import TrustedScope, Limits
+    from cragkit.execution import ExecutionLedger
+    from cragkit.qdrant_publication import QdrantSecurityManager
     from cragkit.errors import IntegrityViolation, UnauthorizedScope, IndexNotReady, ProviderUnavailable
 
     private_config = dict(config)
@@ -162,6 +164,7 @@ async def python_writer_cases(config, inputs):
             return
         raise RuntimeError('writer_expected_failure_missing')
     primary = None
+    security_manager = None
     try:
         await resource.open()
         await expect(IndexNotReady, lambda: writer.inspect(context, deadline=deadline))
@@ -380,13 +383,80 @@ async def python_writer_cases(config, inputs):
         if await writer.bind_purge(purge, purge_scope, owner_token=OWNER_TOKEN, deadline=deadline) != purge_receipt:
             raise RuntimeError('writer_purge_binding_replay_changed')
         checks.append('tombstone_bound_purge_admission_is_idempotent_and_replica_pending')
+        purge_context = dict(context,scope=purge_scope,intent_id=purge['intent_id'])
+        await writer.acquire_owner(purge_context,deadline=deadline)
+        await writer.reserve_dispatch(purge_context,dict(dispatch_id='native-public-pending-purge',sequence=1,
+            credential_generation='native-unconfirmed-delete',operation='delete_points',
+            point_ids=[inputs['stage']['manifest']['members'][0]['point_id']]),deadline=deadline)
+        before_security = await writer.manager_snapshot(purge_context,deadline=deadline)
+        if not before_security['pending']:
+            raise RuntimeError('security_public_missing_uncertainty')
+        await other.close()
+        await other_resource.close()
+        supervisor_config = dict(inputs['supervisor_config'])
+        for key in ('sslrootcert','passfile'):
+            supervisor_config[key] = Path(supervisor_config[key])
+        supervisor_resource = PoolResource(PoolConfig.model_validate(supervisor_config))
+        try:
+            await supervisor_resource.open()
+            async with supervisor_resource.lease(deadline=deadline) as connection:
+                async with connection.transaction():
+                    await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
+                    await connection.execute("SELECT set_config('cragkit_qdrant.backend_instance_id',%s,true)",(inputs['instance_id'],))
+                    await connection.execute("UPDATE cragkit_qdrant.backend_instances SET epoch=epoch+1,state='recovery_blocked',recovery_id=%s WHERE instance_id=%s",
+                        ('native-public-security-gate',inputs['instance_id']))
+        finally:
+            await supervisor_resource.close()
+        authorizations = []
+        async def authorize_security(selected, collection, document):
+            if selected.tenant_id != scope.tenant_id or (collection,document) != (context['collection'],context['document_id']):
+                raise RuntimeError('security_public_callback_target')
+            authorizations.append(selected.authorization_revision)
+            return True
+        security_manager = QdrantSecurityManager(writer,authorize_security)
+        await security_manager.initialize(deadline=deadline)
+        public_change = dict(security,intent_id='native-public-update',action='update_authorization',
+            expected_authorization_revision='auth-3',expected_mutation_epoch=3,
+            authorization=dict(security['authorization'],authorization_revision='auth-4',language='de'))
+        def security_book():
+            return ExecutionLedger(Limits(deadline_ms=60000,max_attempts=1,max_provider_calls=0),deadline=deadline)
+        acknowledgment['armed'] = True
+        book = security_book()
+        public_result = await security_manager.update_authorization(public_change,purge_scope,book,deadline=deadline)
+        if (set(public_result) != {'intent_id','operation','state','revision_id','generation_id','authority_committed',
+                'replica_complete','published','purge_complete'} or public_result['operation']!='update_authorization'
+                or not public_result['authority_committed'] or public_result['replica_complete'] or public_result['published']
+                or public_result['purge_complete'] or acknowledgment['fired']!=3 or acknowledgment['armed']):
+            raise RuntimeError('security_public_admission_flags')
+        if (book.snapshot()['attempts'],book.snapshot()['provider_calls'],book.snapshot()['pending'])!=(1,0,0):
+            raise RuntimeError('security_public_admission_usage')
+        public_tombstone = dict(public_change,action='tombstone',intent_id='native-public-tombstone',
+            expected_authorization_revision='auth-4',expected_mutation_epoch=4,
+            authorization=dict(public_change['authorization'],authorization_revision='auth-5'))
+        public_scope = parse_model(TrustedScope,dict(inputs['scope'],authorization_revision='auth-4'))
+        result = await security_manager.tombstone(public_tombstone,public_scope,security_book(),deadline=deadline)
+        if not result['authority_committed'] or result['replica_complete'] or result['operation']!='tombstone':
+            raise RuntimeError('security_public_tombstone_flags')
+        checks.append('public_security_admission_callbacks_usage_and_lost_commit')
+        await security_manager.close()
+        if not (await writer.inspect(dict(context,intent_id=public_tombstone['intent_id']),deadline=deadline))['authority_committed']:
+            raise RuntimeError('security_public_closed_borrowed_writer')
+        if authorizations!=['auth-3','auth-4']:
+            raise RuntimeError('security_public_callback_scope')
+        checks.append('public_security_close_preserves_borrowed_writer')
+        latest_scope = parse_model(TrustedScope,dict(inputs['scope'],authorization_revision='auth-5'))
+        after_security = await writer.manager_snapshot(dict(purge_context,scope=latest_scope),deadline=deadline)
+        if (not after_security['pending'] or after_security['owner']!=before_security['owner']
+                or after_security['backend']['state']!='recovery_blocked'):
+            raise RuntimeError('security_public_changed_recovery_ownership')
+        checks.append('public_security_commits_with_blocked_backend_and_uncertain_purge')
         return dict(runtime='python', checks=checks, publication_proof='authority_transactions_only')
     except BaseException as error:
         primary = error
         raise
     finally:
         failures = []
-        for owned in (writer, other, resource, other_resource):
+        for owned in ((security_manager,) if security_manager is not None else ())+(writer, other, resource, other_resource):
             try:
                 await owned.close()
             except BaseException as error:

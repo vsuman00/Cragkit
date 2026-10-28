@@ -141,3 +141,20 @@ A session owns at most eight live recovery handles. Its exit rejects new work, d
 For example, two MiB consumed by recovery readback leaves six MiB for later generation verification in that same repair operation. Native managers now share one fixed eight-MiB budget across E2/F1 phases. Malformed returned bytes also consume it, and exhaustion stops the next verification request or ordinary point batch.
 
 The private missing-only inspector returns sorted missing IDs after validating present points and consistent full-scope enumeration. Wrong vectors, foreign payloads, extras and GET/scroll drift remain integrity failures. Missing IDs grant no write, settlement or publication authority. [B2a evidence](../evaluation/reports/V5/V5-04G1b-B2a.md) records the tests and the remaining recovery-dispatch gate.
+
+## Independent security admission
+
+For example, revocation can commit while a different manager waits for a vector-write reply. Use the optional native `QdrantSecurityManager` with its own writer object and the application's write-authorization callback:
+
+```python
+from cragkit.qdrant_publication import QdrantSecurityManager
+
+security = QdrantSecurityManager(security_writer, authorize_write)
+await security.initialize(deadline=deadline)
+result = await security.update_authorization(change, trusted_scope, ledger, deadline=deadline)
+await security.close()
+```
+
+Node exports the same class from `cragkit/qdrant-publication`; methods use `{deadline, signal?}` options. `tombstone(record, scope, ledger, deadline/options)` admits the matching monotonic tombstone record. The record is the existing complete canonical security intent, and the application supplies trusted scope independently. Separate writer objects may share one bounded pool. The manager borrows the writer and pool and leaves them open; the application owns their lifetime.
+
+This component has no supervisor or vector transport and does not wait for the publication manager's operation slot. SQL contention and pool deadlines still apply. New success means source authority committed, with replica/purge completion still false. Exact historical retries preserve their durable flags and do not certify that replicas match a later authorization revision. Callback denial, invalid action/tenant and cancellation prevent a subsequent mutation. Physical convergence and scoped purge remain separate operations under development.

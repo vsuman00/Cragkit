@@ -201,6 +201,7 @@ async def check(fixture, runtime):
                     ('manager-conflict', inputs['stage']['manifest']['generation_id']),
                     ('manager-denied', 'gen-race-b'))}
             runtime_config = database.config('writer')
+            inputs['supervisor_config'] = database.config('supervisor')
             # Each runtime exercises two independent writer clients. Setup is
             # complete, so no administrative client remains in that window.
             await database.release_admin()
@@ -220,10 +221,12 @@ def main(argv=None):
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
     result_path = args.artifacts_dir / 'results.json'
+    owned_artifacts = False
     try:
         if args.artifacts_dir.exists():
             raise RuntimeError('writer_fresh_artifacts_required')
         args.artifacts_dir.mkdir(parents=True, mode=0o700)
+        owned_artifacts = True
         results = []
         for runtime in ('sql', 'python', 'typescript') if args.runtime == 'all' else (args.runtime,):
             fixture = PostgresSourceFixture(args.postgres_bin, args.artifacts_dir / runtime)
@@ -236,6 +239,21 @@ def main(argv=None):
             checks=sum(len(result['checks']) for result in results), cleanup_verified=True)))
         return 0
     except Exception as error:
+        # Record locations only; never persist SQL, driver messages or locals.
+        import traceback
+        locations=[]
+        for frame in traceback.extract_tb(error.__traceback__):
+            try:
+                relative=Path(frame.filename).resolve().relative_to(ROOT)
+            except ValueError:
+                continue
+            if str(relative).startswith(('tools/','packages/python/src/')):
+                locations.append(dict(path=str(relative),line=frame.lineno))
+        if owned_artifacts and args.artifacts_dir.is_dir():
+            try:
+                (args.artifacts_dir/'failure-locations.json').write_text(json.dumps(locations)+'\n')
+            except OSError:
+                pass  # Auxiliary diagnostics cannot replace the primary error.
         diagnostic = error.to_dict() if isinstance(error, CleanupFailure) else describe_error(
             error, operation='primary', stage='fixture_setup')
         # Failed runs retain no source, key, connection string or SQL message.

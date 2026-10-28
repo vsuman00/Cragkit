@@ -1,3 +1,5 @@
+import {QdrantSecurityManager} from '../packages/typescript/dist/qdrant-publication.js';
+import {ExecutionLedger} from '../packages/typescript/dist/execution.js';
 /** Native authority transaction cases. Actual Qdrant completion is checked in F/H. */
 import {PoolResource, parse_pool_config, now} from '../packages/typescript/dist/postgres-pool.js';
 import {PostgresQdrantWriter, prepare_stage} from '../packages/typescript/dist/qdrant-writer.js';
@@ -75,7 +77,7 @@ async function cases(value) {
     try { await operation(); } catch (error) { if (error instanceof type) return; throw error; }
     throw new Error('expected_failure_missing');
   }
-  let primary;
+  let primary,securityManager;
   try {
     phase = 'initialize';
     await resource.open();
@@ -264,12 +266,64 @@ async function cases(value) {
     if (purgeReceipt.state !== 'authority_committed' || !purgeReceipt.authority_committed || purgeReceipt.purge_complete || purgeReceipt.replica_complete) throw new Error('purge_binding_completion_flags');
     if (!isDeepStrictEqual(await writer.bind_purge(purge, purgeScope, {...options, owner_token: OWNER_TOKEN}), purgeReceipt)) throw new Error('purge_binding_replay_changed');
     checks.push('tombstone_bound_purge_admission_is_idempotent_and_replica_pending');
+    const purgeContext={...context,scope:purgeScope,intent_id:purge.intent_id};
+    await writer.acquire_owner(purgeContext,options);
+    await writer.reserve_dispatch(purgeContext,{dispatch_id:'native-public-pending-purge',sequence:1,
+      credential_generation:'native-unconfirmed-delete',operation:'delete_points',
+      point_ids:[inputs.stage.manifest.members[0].point_id]},options);
+    const beforeSecurity=await writer.manager_snapshot(purgeContext,options);
+    if(!beforeSecurity.pending)throw new Error('security_public_missing_uncertainty');
+    await other.close();await otherResource.close();
+    const supervisorResource=new PoolResource(parse_pool_config(inputs.supervisor_config));
+    try{
+      await supervisorResource.open();
+      await supervisorResource.withLease(options,async client=>{
+        let committed=false;
+        try{
+          await client.query({text:'BEGIN ISOLATION LEVEL READ COMMITTED'});
+          await client.query({text:"SELECT set_config('cragkit_qdrant.backend_instance_id',$1,true)",values:[inputs.instance_id]});
+          await client.query({text:"UPDATE cragkit_qdrant.backend_instances SET epoch=epoch+1,state='recovery_blocked',recovery_id=$1 WHERE instance_id=$2",
+            values:['native-public-security-gate',inputs.instance_id]});
+          await client.query({text:'COMMIT'});committed=true;
+        }finally{if(!committed)await client.query({text:'ROLLBACK'});client.release(!committed);}
+      });
+    }finally{await supervisorResource.close();}
+    const authorizations=[];
+    securityManager=new QdrantSecurityManager(writer,async(selected,collection,document)=>{
+      if(selected.tenant_id!==scope.tenant_id||collection!==context.collection||document!==context.document_id)throw new Error('security_public_callback_target');
+      authorizations.push(selected.authorization_revision);return true;
+    });
+    await securityManager.initialize(options);
+    const publicChange={...security,intent_id:'native-public-update',action:'update_authorization',
+      expected_authorization_revision:'auth-3',expected_mutation_epoch:3,
+      authorization:{...security.authorization,authorization_revision:'auth-4',language:'de'}};
+    const securityBook=()=>new ExecutionLedger({limits:{deadline_ms:60000,max_attempts:1,max_provider_calls:0},deadline:options.deadline});
+    const book=securityBook();acknowledgment.armed=true;
+    const publicResult=await securityManager.update_authorization(publicChange,purgeScope,book,options);
+    if(!isDeepStrictEqual(Object.keys(publicResult).sort(),['intent_id','operation','state','revision_id','generation_id','authority_committed','replica_complete','published','purge_complete'].sort())
+      ||publicResult.operation!=='update_authorization'||!publicResult.authority_committed||publicResult.replica_complete||publicResult.published||publicResult.purge_complete
+      ||acknowledgment.fired!==3||acknowledgment.destroyed!==3||acknowledgment.armed)throw new Error('security_public_admission_flags');
+    if(book.snapshot().attempts!==1||book.snapshot().provider_calls!==0||book.snapshot().pending!==0)throw new Error('security_public_admission_usage');
+    const publicTombstone={...publicChange,action:'tombstone',intent_id:'native-public-tombstone',
+      expected_authorization_revision:'auth-4',expected_mutation_epoch:4,
+      authorization:{...publicChange.authorization,authorization_revision:'auth-5'}};
+    const result=await securityManager.tombstone(publicTombstone,{...scope,authorization_revision:'auth-4'},securityBook(),options);
+    if(!result.authority_committed||result.replica_complete||result.operation!=='tombstone')throw new Error('security_public_tombstone_flags');
+    checks.push('public_security_admission_callbacks_usage_and_lost_commit');
+    await securityManager.close();
+    if(!(await writer.inspect({...context,intent_id:publicTombstone.intent_id},options)).authority_committed)throw new Error('security_public_closed_borrowed_writer');
+    if(!isDeepStrictEqual(authorizations,['auth-3','auth-4']))throw new Error('security_public_callback_scope');
+    checks.push('public_security_close_preserves_borrowed_writer');
+    const afterSecurity=await writer.manager_snapshot({...purgeContext,scope:{...scope,authorization_revision:'auth-5'}},options);
+    if(!afterSecurity.pending||!isDeepStrictEqual(afterSecurity.owner,beforeSecurity.owner)||afterSecurity.backend.state!=='recovery_blocked')throw new Error('security_public_changed_recovery_ownership');
+    checks.push('public_security_commits_with_blocked_backend_and_uncertain_purge');
     return {runtime: 'typescript', checks, publication_proof: 'authority_transactions_only'};
   } catch (error) {
     primary = error;
     throw error;
   } finally {
     const failures = [];
+    if(securityManager)try{await securityManager.close();}catch(error){failures.push({operation:'writer_close',outcome:outcome(error)});}
     try { await writer.close(); } catch (error) { failures.push({operation: 'writer_close', outcome: outcome(error)}); }
     try { await other.close(); } catch (error) { failures.push({operation: 'writer_close', outcome: outcome(error)}); }
     try { await resource.close(); } catch (error) { failures.push({operation: 'resource_close', outcome: outcome(error)}); }
