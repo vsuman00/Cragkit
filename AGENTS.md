@@ -29,6 +29,7 @@ The user's current instructions control project scope, subject to the tool/platf
 
 - Follow the active version and task dependencies. Do not silently add a dashboard, cloud service, OCR pipeline, multi-hop engine or other later research.
 - Keep each slice reviewable in one focused session. Split a task if it expands beyond roughly five implementation/test files or introduces independent subsystems.
+- Preserve README.md's section order, centered banner, status table, callouts and collapsible guide. Update content within that structure unless the user requests a redesign.
 - Preserve user-owned edits and unrelated files. Do not reset, clean, stage, commit, push or publish without authorization covering that action.
 - Resolve routine implementation details within the existing contracts. Ask only when a missing decision materially affects scope, public behavior, architecture, cost or data disclosure.
 - Before teaching a new concept, give one short example. After the change, explain why it works and show one failure case. Follow [the learning guide](tasks/LEARNING.md); offer a small exercise without making every step wait for a quiz.

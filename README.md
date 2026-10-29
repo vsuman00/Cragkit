@@ -8,7 +8,7 @@ Source-linked evidence · Coverage estimates · Limitations · Execution diagnos
 
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](packages/python)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Node_26-3178C6?logo=typescript&logoColor=white)](packages/typescript)
-[![Status](https://img.shields.io/badge/Status-V3_Complete-brightgreen)](#current-status)
+[![Status](https://img.shields.io/badge/Status-V5_In_Progress-yellow)](#current-status)
 [![License](https://img.shields.io/badge/License-TBD-lightgrey)](#)
 
 </div>
@@ -43,10 +43,12 @@ The **npm** package runs natively in Node.js — no Python server required. The 
 | **V1** | Native lexical library, source authorization, cancellation, installed-artifact acceptance | ✅ Complete | [V1 evidence & limitations](evaluation/reports/V1/V1-10-12.md) |
 | **V2** | Dense/identifier retrieval, rank fusion, hybrid orchestration, synthetic comparison | ✅ Complete | [V2 exit evidence](evaluation/reports/V2/V2-07-08-exit.md) · [HY-r1 config](contracts/HYBRID_V2.md) |
 | **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
-| **V4** | Corrective retrieval | 🔲 Planned | — |
+| **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [V4 exit evidence](evaluation/reports/V4/V4-08-exit.md) |
+| **V5** | Qdrant publication and repair, existing indexes and optional MCP | 🚧 In progress | [V5 plan](tasks/versions/V5-integrations.md) · [Latest accepted recovery checkpoint](evaluation/reports/V5/V5-04G2b2d2b2.md) |
+| **V6** | Evaluation and release | 🔲 Planned | [V6 plan](tasks/versions/V6-release.md) |
 
 > [!NOTE]
-> V3 calibration is curated in-sample evidence, not general semantic quality. The V3 exit checkpoint passed local, installed and native acceptance. Production acceptance is unvalidated.
+> V3 calibration is curated in-sample evidence, not general semantic quality. The V3 exit checkpoint passed local, installed and native acceptance. V4 is complete for its internal native/synthetic milestone. V5 source authorization and profile-4 source/writer/recovery admission are verified for their recorded native profiles; guarded validation, security settlement and the remaining V5 gates are still in progress. Production acceptance is unvalidated.
 
 Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
 
@@ -57,7 +59,7 @@ Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
 | Tool | Version |
 |------|---------|
 | Python | 3.14 |
-| Node.js | 26.5+ (Node 26) |
+| Node.js | `>=26.5.0, <27` |
 | npm | latest |
 | uv | latest |
 
@@ -73,7 +75,7 @@ This runner:
 3. Verifies approved development labels and sealed inputs
 4. Builds and checks clean Python/npm artifacts
 
-No database, model download or live provider is required. Temporary install environments are cleaned up; generated artifacts go to `artifacts/V0/` (git-ignored).
+No database, model download or live provider is required. Temporary install environments are cleaned up; generated artifacts go to `artifacts/V0/` (git-ignored). This is the baseline check; use the development guide for current-version focused tests and optional native acceptance runs.
 
 📖 [Development commands](docs/development.md) · [Local CI profile](docs/ci.md)
 
@@ -121,6 +123,7 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 
 - [Neon migration plan](docs/neon-migration-plan.md) — Selected development PostgreSQL host
 - [Secure setup runbook](docs/neon.md) — Security requirements and acceptance gates
+- [Direct Neon acceptance](evaluation/reports/V2/DB-NEON-01.md) — Verified development transport and native checks, with production and pooling limits
 
 > Historical Supabase results do not establish Neon acceptance; see the tracker before hosted use.
 
@@ -142,4 +145,4 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 
 GitHub: [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) (private) · Remote: `origin` (HTTPS)
 
-Initial V0 baseline committed and pushed to `main` as [`feb2bdd`](https://github.com/vsuman00/Cragkit/commit/feb2bdd); local and remote verified in sync. Hosted CI remains unconfigured — local pipeline results do not establish a hosted run.
+The initial V0 baseline was committed and pushed to `main` as [`feb2bdd`](https://github.com/vsuman00/Cragkit/commit/feb2bdd). Current milestone evidence and Git handoffs are recorded in the [task tracker](tasks/todo.md). No hosted CI run is claimed here; local pipeline results do not establish a hosted run.
