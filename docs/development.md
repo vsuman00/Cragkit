@@ -1245,3 +1245,14 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory and the current TypeScript build. Guard mode uses three runtime clients (writer/supervisor/operator), releases the parent admin and provides six PostgreSQL slots. It preserves the existing 120-second business and twelve-second cleanup profile and serial runtime execution. The optional result reports four metadata fault checks and zero denied-path backend bindings separately from the eight receipt checks. Restored faults allow idempotent owner advance; the guard function itself is not invoked. Actual listener/process cleanup and stable witness parity are checked. No provider or hosted target is used.
+
+
+## V5-04G2b2d3 guarded graph validation
+
+[Guarded graph evidence](../evaluation/reports/V5/V5-04G2b2d3.md) covers the private read-only guard/graph driver. It does not settle journals or establish replica convergence.
+
+```bash
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_security_verification.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --with-security-guard --guarded-graph --runtime all --artifacts-dir artifacts/V5/V5-04G2b2d3/a-new-guarded-run
+```
+
+Use a fresh directory and the current TypeScript build. Guarded mode requires `--with-security-guard`; omit `--guarded-graph` to retain the earlier admission mode. It adds nine checks per runtime to the existing eight receipt and four admission checks. Four actual SQL clients use seven server slots; the old operator is closed before the fixture admin opens. Corruption maintenance is restricted to synthetic fixture data. Actual lock waits, backend termination, delayed callback ownership and closed-resource cleanup are checked. No model, provider, hosted target or new dependency is used.

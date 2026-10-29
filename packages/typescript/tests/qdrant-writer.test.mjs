@@ -1,9 +1,15 @@
-import test from 'node:test';
+import test,{mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import fs from 'node:fs/promises';
+import childProcess from 'node:child_process';
+import http from 'node:http';
+import net from 'node:net';
+import crypto from 'node:crypto';
+import {EventEmitter} from 'node:events';
 import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,recovery_dispatch_plan_data,security_projection_data,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,recovery_dispatch_plan_data,security_projection_data,validate_guarded_security_projection,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
@@ -11,7 +17,8 @@ import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATIO
 import {AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL,publication_schema_profile} from '../dist/qdrant-authority.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,SECURITY_GUARD_SQL,validate_security_guarded,security_guard_binding,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
+import {QdrantSecurityVerifier} from '../dist/qdrant-security-verification.js';
 import {QdrantPublicationVerifier} from '../dist/qdrant-publication-verification.js';
 import {publication_finalization} from '../dist/qdrant-publication-worker.js';
 import {encode_dense_replay,encode_manifest} from '../dist/qdrant-manifest.js';
@@ -28,8 +35,92 @@ const context={scope,collection:'docs',document_id:'doc-1',intent_id:'intent-2',
 const opts=()=>({deadline:now()+5});
 const stageOpts=()=>({...opts(),owner_token:token});
 const digest=value=>createHash('sha256').update(value).digest('hex');
+const bytes=value=>Array.from(Buffer.from(JSON.stringify(value)));
 const dispatchRequest={dispatch_id:'dispatch-manager',sequence:1,credential_generation:'credential-1',
   operation:'complete_point_upsert',point_ids:fixture.members.map(member=>member.point_id)};
+function guardedRuntime(){
+  const state={directories:new Set(),files:new Map(),pendingConfig:null,key:null,children:[],requests:[],collections:new Map(),
+    nextPid:12000,listenerWrong:false,wait:null,stops:0,spawns:0,oldKeyAccepted:false,
+    binaryHash:'830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3',binaryClosed:0};
+  const mocks=[];
+  const replace=(object,key,implementation)=>mocks.push(mock.method(object,key,implementation));
+  replace(fs,'realpath',async path=>path);
+  replace(fs,'mkdir',async path=>{if(state.directories.has(path))throw Object.assign(Error('private'),{code:'EEXIST'});state.directories.add(path);});
+  replace(fs,'lstat',async path=>({dev:1,ino:path.length,uid:process.getuid(),size:path==='/owned/qdrant'?1:0,mode:path==='/owned/qdrant'?0o100700:0o40700,
+    isFile:()=>path==='/owned/qdrant',isDirectory:()=>path!=='/owned/qdrant',isSymbolicLink:()=>false}));
+  replace(fs,'open',async(path,flags,mode)=>{
+    if(path==='/owned/qdrant'){
+      let read=false;
+      return {async read(buffer){if(read)return {bytesRead:0};read=true;buffer[0]=97;return {bytesRead:1};},async close(){state.binaryClosed++;}};
+    }
+    assert.equal(mode,0o600);
+    return {async writeFile(value){state.files.set(path,value);},async sync(){},async close(){}};
+  });
+  replace(crypto,'createHash',()=>{const hash={update(){return hash;},digest(){return state.binaryHash;}};return hash;});
+  replace(fs,'rename',async(from,to)=>{state.files.set(to,state.files.get(from));state.files.delete(from);state.pendingConfig=JSON.parse(state.files.get(to));});
+  replace(net,'createServer',()=>{
+    const server=new EventEmitter();server.listen=(_port,_host,callback)=>queueMicrotask(callback);
+    server.address=()=>({port:32123});server.close=callback=>queueMicrotask(callback);return server;
+  });
+  replace(childProcess,'spawn',(binary,args,settings)=>{
+    assert.equal(binary,'/owned/qdrant');assert.equal(args[0],'--config-path');
+    assert.equal(Object.keys(settings.env).some(key=>key.startsWith('QDRANT')),false);
+    assert.equal(JSON.stringify(args).includes(state.pendingConfig.service.api_key),false);
+    const child=new EventEmitter();Object.assign(child,{pid:state.nextPid++,exitCode:null,signalCode:null});
+    child.kill=signal=>{state.stops++;child.signalCode=signal;queueMicrotask(()=>child.emit('exit',null,signal));return true;};
+    state.children.push(child);state.spawns++;state.key=state.pendingConfig.service.api_key;return child;
+  });
+  replace(childProcess,'execFile',(_binary,args,_options,callback)=>{
+    const child={exitCode:0,signalCode:null,kill(){return true;}};
+    queueMicrotask(()=>callback(null,'p'+args[3]+'\nn127.0.0.1:'+(state.listenerWrong?32124:32123)+'\n',''));
+    return child;
+  });
+  replace(http,'request',(settings,callback)=>{
+    const request=new EventEmitter();let body=Buffer.alloc(0),destroyed=false;
+    request.write=value=>{body=Buffer.from(value);};
+    request.destroy=()=>{destroyed=true;};
+    request.end=()=>queueMicrotask(async()=>{
+      state.waitStarted?.();
+      if(state.wait)await state.wait;
+      if(destroyed)return;
+      state.requests.push({method:settings.method,path:settings.path,key:settings.headers['api-key']});
+      let status=200,payload;
+      const accepted=settings.headers['api-key']===state.key||state.oldKeyAccepted;
+      const parsed=body.length?JSON.parse(body):null;
+      const path=settings.path.split('?')[0];
+      const parts=path.split('/');const name=parts[2];
+      if(!accepted){status=401;payload={status:'error'};}
+      else if(path==='/')payload={version:'1.20.0'};
+      else if(path==='/cluster')payload={status:'ok',result:{status:'disabled'}};
+      else if(path==='/collections')payload={status:'ok',result:{collections:[...state.collections.keys()].map(name=>({name}))}};
+      else if(parts.length===3&&settings.method==='PUT'){
+        state.collections.set(name,{params:{vectors:parsed.vectors,sparse_vectors:parsed.sparse_vectors??null,
+          replication_factor:parsed.replication_factor,write_consistency_factor:parsed.write_consistency_factor},
+          optimizer_config:parsed.optimizers_config,points:new Map()});payload={status:'ok',result:true};
+      }else if(parts.length===3&&settings.method==='GET'){
+        const collection=state.collections.get(name);
+        payload={status:'ok',result:{status:'green',optimizer_status:'ok',config:{params:collection.params,optimizer_config:collection.optimizer_config}}};
+      }else if(parts[3]==='points'&&settings.method==='PUT'){
+        const collection=state.collections.get(name);for(const point of parsed.points)collection.points.set(point.id,point);
+        payload={status:'ok',result:{status:'completed'}};
+      }else if(parts[3]==='points'&&settings.method==='POST'){
+        if(parts[4]==='scroll')payload={status:'ok',result:{points:[...state.collections.get(name).points.values()],next_page_offset:null}};
+        else payload={status:'ok',result:parsed.ids.map(id=>state.collections.get(name).points.get(id)).filter(Boolean)};
+      }else throw Error('unexpected synthetic HTTP path');
+      const incoming=new EventEmitter();incoming.headers={};incoming.statusCode=status;incoming.destroy=()=>{};
+      callback(incoming);queueMicrotask(()=>{incoming.emit('data',Buffer.from(JSON.stringify(payload)));incoming.emit('end');});
+    });
+    return request;
+  });
+  return {state,restore(){for(const item of mocks.reverse())item.mock.restore();}};
+}
+async function guardedProvision(admin,probe){
+  await admin.request('PUT','/collections/'+config.physical_collection,{...opts(),body:bytes({
+    vectors:{dense:{size:1536,distance:'Cosine'}},sparse_vectors:{sparse:{}},optimizers_config:{prevent_unoptimized:false},
+    replication_factor:1,write_consistency_factor:1})});
+  await admin.request('PUT','/collections/'+probe.collection,{...opts(),body:bytes(probe.collection_config)});
+  await admin.request('PUT','/collections/'+probe.collection+'/points?wait=true&ordering=strong',{...opts(),body:bytes({points:[probe.point]})});
+}
 function input(){
   const manifest={...fixture.physical,tenant_id:'tenant-a',collection:'docs',document_id:'doc-1',
     revision_id:fixture.source_revision.revision_id,generation_id:fixture.intent.generation_id,
@@ -87,14 +178,23 @@ function setup(){
           return {rows:[]};
         }
         if(sql===WRITER_ATTESTATION_ROLE_SQL)return {rows:[[state.role&&state.attestationRole!==false]]};
-        if(sql===RECOVERY_ROLE_SQL)return {rows:[[state.recoveryRole!==false]]};
+        if(sql===RECOVERY_ROLE_SQL||sql===RECOVERY_SECURITY_GUARD_ROLE_SQL)return {rows:[[state.recoveryRole!==false]]};
+        if(sql===SECURITY_GUARD_SQL){
+          state.guardArguments=clone(params);state.guardSeen?.();
+          if(state.guardError)throw state.guardError;
+          await state.afterGuard?.();state.guarded=true;
+          return {rows:state.guardRows??[[true]]};
+        }
         if(sql===WRITER_ROLE_SQL){if(state.wait)await state.wait;return {rows:[[state.role]]};}
         if(sql===AUTHORITY_HISTORY_SQL)return {rows:state.history};
         if(sql===SECURITY_GUARD_OWNER_SQL){if(state.guardWait)await state.guardWait;return {rows:state.guardOwnerRows??[[true]]};}
         if(sql===AUTHORITY_SECURITY_GUARD_CATALOG_SQL)return {rows:state.guardCatalogRows??[[state.catalog]]};
         if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL||sql===AUTHORITY_ATTESTATION_CATALOG_SQL)return {rows:[[state.catalog]]};
         if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
-        if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config'))return {rows:[]};
+        if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config')){
+          if(state.guarded&&sql.includes("set_config('cragkit_qdrant.writer_intent_id'")&&params[0]==='security-confirmation')state.afterGuardGraph?.();
+          return {rows:[]};
+        }
         const insert=/^INSERT INTO cragkit_qdrant\.(\w+) \(([^)]+)\)/.exec(sql);
         if(insert){
           const [,table,columns]=insert;
@@ -112,6 +212,10 @@ function setup(){
         const select=/^SELECT (.+?) FROM cragkit_qdrant\.(\w+) WHERE /.exec(sql);
         if(select){
           const [,columns,table]=select;
+          if(state.guarded&&table==='documents'&&!sql.includes('FOR UPDATE')){
+            state.guardDocumentReads=(state.guardDocumentReads??0)+1;
+            await state.onGuardDocument?.(query);
+          }
           if(table==='document_owners'&&sql.includes('FOR UPDATE')&&state.onOwnerLock){
             const boundary=state.onOwnerLock;state.onOwnerLock=null;boundary(state);
           }
@@ -1517,6 +1621,151 @@ for(const malformed of ['payload','expected_fence','uncommitted','scope'])test(`
 
 function useSecurityGuardProfile(f){f.state.history=AUTHORITY_SECURITY_GUARD_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT;}
 async function guardedWriter(){const f=setup();useSecurityGuardProfile(f);await f.writer.initialize(opts());return f;}
+
+// Actual nominal verifier/controller registries with fake SQL, OS and HTTP only.
+// These tests establish local protocol behavior, not PostgreSQL lock custody.
+async function guardedValidationFixture(){
+  const f=await securityProjectionFixture('tombstone'),fake=guardedRuntime();
+  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-fixture',config);
+  let recovery,securityVerifier,reconciliation,supResource;
+  try{
+    useSecurityGuardProfile(f);await f.writer.initialize(opts());
+    await supervisor.initialize({...opts(),provision:guardedProvision});
+    const proof=await supervisor.recover({recovery_id:'guarded-recovery',old_epoch:1,new_epoch:2},opts());
+    const identity=supervisor.control_binding();
+    Object.assign(f.state.tables.backend_instances[0],{storage_identity:identity.storage_identity,supervisor_id:identity.supervisor_id,
+      epoch:2,state:'recovery_blocked',recovery_id:'guarded-recovery'});
+    const owner={...context,scope:{...scope,authorization_revision:'auth-2'}};
+    f.state.tables.document_owners=[{tenant_id:owner.scope.tenant_id,collection:owner.collection,document_id:owner.document_id,
+      instance_id:'instance-fixture',intent_id:owner.intent_id,owner_token:owner.owner_token,backend_epoch:2}];
+    supResource=new PoolResource(parse_pool_config({host:'host.invalid',dbname:'fixture',user:'supervisor',
+      sslrootcert:'/fake/ca',passfile:'/fake/pass',release_timeout:.025,close_timeout:.05}),{pool:f.pool});
+    reconciliation=new QdrantReconciliationVerifier(f.writer,supervisor);
+    recovery=new PostgresQdrantRecovery(supResource,config,supervisor,reconciliation);
+    await recovery.initialize(opts());securityVerifier=new QdrantSecurityVerifier(f.writer,supervisor);
+    const close=async()=>{for(const value of [securityVerifier,recovery,reconciliation,f.writer,supResource,f.resource,supervisor]){
+      try{await value?.close();}catch{/* A deliberately poisoned local owner stays closed. */}
+    }fake.restore();};
+    return {...f,fake,supervisor,recovery,securityVerifier,proof,owner,supResource,close};
+  }catch(error){for(const value of [securityVerifier,recovery,reconciliation,f.writer,supResource,f.resource,supervisor]){
+    try{await value?.close();}catch{}
+  }fake.restore();throw error;}
+}
+const guardedLocal={skip:process.platform!=='darwin'||process.arch!=='arm64'};
+test('guarded graph uses actual nominal receipt, exact22 args and full nonlocking source graph',guardedLocal,async()=>{
+  const f=await guardedValidationFixture();
+  try{
+    const original=clone(f.state.tables),start=f.state.queries.length;
+    assert.equal(await validate_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,opts()),undefined);
+    const queries=f.state.queries.slice(start),at=queries.findIndex(query=>query.text===SECURITY_GUARD_SQL);
+    assert.ok(at>0);assert.equal(f.state.guardArguments.length,22);
+    const source=f.state.tables.publication_intents.find(row=>row.intent_id===f.securityContext.intent_id);
+    assert.deepEqual(f.state.guardArguments.slice(6,13),['tenant-a','docs','doc-1',context.intent_id,token,f.securityContext.intent_id,source.payload_sha256]);
+    assert.deepEqual(f.state.guardArguments.slice(13),[null,'auth-2',2,[],[],null,null,null,true]);
+    const after=queries.slice(at+1).map(query=>query.text);
+    assert.ok(after.some(sql=>sql.includes('FROM cragkit_qdrant.vector_replays')));
+    assert.ok(after.some(sql=>sql.includes('FROM cragkit_qdrant.document_revisions')));
+    assert.equal(after.some(sql=>/FOR (UPDATE|SHARE)/.test(sql)),false);
+    assert.equal(after.filter(sql=>sql==='COMMIT').length,2);
+    assert.deepEqual(f.state.tables,original);
+    assert.ok(queries.slice(0,at).some(query=>query.text.includes('FROM cragkit_qdrant.documents')&&query.text.endsWith('FOR UPDATE')));
+  }finally{await f.close();}
+});
+for(const [code,Kind] of [['42501',UnauthorizedScope],['22023',UnsupportedCapability],['23514',UnauthorizedScope],['08006',ProviderUnavailable]]){
+  test(`guard invocation maps only its native ${code} refusal and never enters graph`,guardedLocal,async()=>{
+    const f=await guardedValidationFixture();try{
+      f.state.guardError=Object.assign(Error('private SQL detail'),{code});
+      await assert.rejects(validate_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,opts()),Kind);
+      assert.equal(f.state.guardDocumentReads??0,0);
+      assert.equal(f.state.guarded??false,false);
+    }finally{await f.close();}
+  });
+}
+for(const rows of [[],[[1]],[[true,true]],[[true],[true]]])test('guard acknowledgement requires one native true scalar',guardedLocal,async()=>{
+  const f=await guardedValidationFixture();try{
+    f.state.guardRows=rows;
+    await assert.rejects(validate_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,opts()),IntegrityViolation);
+    assert.equal(f.state.guardDocumentReads??0,0);
+  }finally{await f.close();}
+});
+for(const kind of ['source','manifest','vector','raw_claim'])test(`guarded full reconstruction rejects late ${kind} corruption`,guardedLocal,async()=>{
+  const f=await guardedValidationFixture();try{
+    f.state.afterGuard=()=>{
+      if(kind==='source')f.state.tables.document_revisions[0].canonical_utf8=Buffer.from('corrupt');
+      if(kind==='manifest')f.state.tables.publication_intents.find(row=>row.action==='stage').manifest_bytes=Buffer.from('[]');
+      if(kind==='vector')f.state.tables.vector_replays[0].dense_blob[0]^=1;
+      if(kind==='raw_claim')f.state.tables.point_claims.push({...f.state.tables.point_claims[0],chunk_id:'orphan'});
+    };
+    const start=f.state.queries.length;
+    await assert.rejects(validate_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,opts()),IntegrityViolation);
+    const queries=f.state.queries.slice(start),at=queries.findIndex(query=>query.text===SECURITY_GUARD_SQL);
+    assert.equal(queries.slice(at+1).some(query=>query.text==='COMMIT'),false);
+  }finally{await f.close();}
+});
+test('guarded cancellation after guard acknowledgement cannot read source or construct COMMIT',guardedLocal,async()=>{
+  const f=await guardedValidationFixture(),controller=new AbortController();try{
+    f.state.afterGuard=()=>controller.abort();const start=f.state.queries.length;
+    await assert.rejects(validate_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,{...opts(),signal:controller.signal}),error=>error.name==='AbortError');
+    const queries=f.state.queries.slice(start),at=queries.findIndex(query=>query.text===SECURITY_GUARD_SQL);
+    assert.equal(f.state.guardDocumentReads??0,0);
+    assert.equal(queries.slice(at+1).some(query=>query.text==='COMMIT'),false);
+  }finally{await f.close();}
+});
+test('cancellation after complete graph restoration refuses both read-only COMMITs',guardedLocal,async()=>{
+  const f=await guardedValidationFixture(),controller=new AbortController();try{
+    f.state.afterGuardGraph=()=>controller.abort();const start=f.state.queries.length;
+    await assert.rejects(validate_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,{...opts(),signal:controller.signal}),error=>error.name==='AbortError');
+    const queries=f.state.queries.slice(start),at=queries.findIndex(query=>query.text===SECURITY_GUARD_SQL);
+    assert.ok(f.state.guardDocumentReads>0);
+    assert.equal(queries.slice(at+1).some(query=>query.text==='COMMIT'),false);
+  }finally{await f.close();}
+});
+test('deadline while actual guard query waits never admits graph or a replacement transaction',guardedLocal,async()=>{
+  const f=await guardedValidationFixture();let release;
+  f.state.afterGuard=()=>new Promise(resolve=>{release=resolve;});
+  try{
+    const start=f.state.queries.length;
+    await assert.rejects(validate_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,{deadline:now()+.25}),DeadlineExceeded);
+    const queries=f.state.queries.slice(start),at=queries.findIndex(query=>query.text===SECURITY_GUARD_SQL);
+    assert.ok(at>=0);assert.equal(f.state.guardDocumentReads??0,0);
+    assert.equal(queries.slice(at+1).some(query=>query.text==='COMMIT'||query.text.startsWith('BEGIN')),false);
+  }finally{release?.();await f.close();}
+});
+test('unregistered guards cannot obtain writer admission or inspect private binding',async()=>{
+  const f=await guardedWriter();try{
+    const start=f.state.queries.length;
+    for(const guard of [{},Object.freeze({}),new Proxy({},{}),null]){
+      assert.throws(()=>security_guard_binding(guard,f.writer,{},opts()),InvalidRequest);
+      await assert.rejects(validate_guarded_security_projection(f.writer,guard,{},opts()),InvalidRequest);
+    }
+    assert.equal(f.state.queries.length,start);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+test('guarded inner scope retains controller and writer while noncooperative callback outlives caller drain',guardedLocal,async()=>{
+  const f=await guardedValidationFixture(),controller=new AbortController();
+  let unblock,entered;const delayed=new Promise(resolve=>{unblock=resolve;}),started=new Promise(resolve=>{entered=resolve;});
+  const original=f.resource.withLease.bind(f.resource);
+  // This fixture deliberately suppresses pool cancellation to model an early
+  // outer failure/noncooperative driver; it is not PostgreSQL loss evidence.
+  f.resource.withLease=(lease,body)=>original(f.state.guarded?{deadline:now()+5}:lease,body);
+  f.state.onGuardDocument=async()=>{entered();await delayed;};
+  const pending=validate_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,{...opts(),signal:controller.signal});
+  void pending.catch(()=>{});
+  try{
+    await started;controller.abort();await assert.rejects(pending,error=>error.name==='AbortError');
+    await assert.rejects(f.recovery.advance_owner(f.proof,f.owner,opts()),ProviderUnavailable);
+    await assert.rejects(f.writer.project_security(f.securityContext,opts()),ProviderUnavailable);
+    await assert.rejects(f.supervisor.control_session(async()=>{}),ProviderUnavailable);
+    assert.throws(()=>f.supervisor.block_ordinary(),ProviderUnavailable);
+    await assert.rejects(f.recovery.close(),error=>error instanceof DeadlineExceeded||error instanceof ProviderUnavailable);
+    const boundary=f.state.queries.length;unblock();
+    // Await actual writer admission drainage through its close operation.
+    await f.writer.close().catch(()=>{});
+    const late=f.state.queries.slice(boundary).map(query=>query.text);
+    assert.equal(late.some(sql=>sql==='COMMIT'||sql.includes('FROM cragkit_qdrant.publication_intents')),false);
+    await assert.rejects(f.recovery.advance_owner(f.proof,f.owner,opts()),ProviderUnavailable);
+  }finally{unblock();await f.close();}
+});
 
 test('writer profile4 uses exact attestation role with complete metadata before scope or business SQL',async()=>{
  const f=await guardedWriter();

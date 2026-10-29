@@ -323,6 +323,9 @@ class Database:
         self.catalog = [(True,)]
         self.guard_owner = [(True,)]
         self.metadata = {}
+        self.guard_hook = None
+        self.guard_error = None
+        self.guard_rows = [(True,)]
         self.drop_next_commit = False
         self.after_lost_commit = None
         self.block_query = None
@@ -387,6 +390,11 @@ class Connection:
         if sql == implementation._SECURITY_GUARD_OWNER_SQL:return Cursor(db.guard_owner)
         if sql == implementation._CATALOG_FINGERPRINT_SQL:
             return Cursor([(db.fingerprint,)])
+        if sql.startswith('SELECT true FROM cragkit_qdrant.lock_current_security('):
+            db.events.append('security_guard')
+            if db.guard_hook is not None:await db.guard_hook(self,params)
+            if db.guard_error is not None:raise db.guard_error
+            return Cursor(db.guard_rows)
         if sql.startswith('SELECT instance_id FROM cragkit_qdrant.backend_instances'):
             return Cursor([] if db.backend is None else [('instance-1',)])
         if sql.startswith('INSERT INTO cragkit_qdrant.backend_instances'):
@@ -724,6 +732,168 @@ async def test_lost_initialization_commit_cannot_change_profile_before_confirmat
     assert sum(sql.startswith('INSERT INTO cragkit_qdrant.backend_instances') for sql,_ in db.calls)==1
     assert sum("set_config('cragkit_qdrant.backend_instance_id'" in sql for sql,_ in db.calls)==1
     assert sum(sql==implementation._HISTORY_SQL for sql,_ in db.calls)==2
+
+
+async def guarded_fixture(monkeypatch,tmp_path):
+    """Genuine nominal proof/receipt registries over explicit SQL/HTTP doubles."""
+    from test_qdrant_security_verification import setup as security_setup
+    import cragkit._qdrant_writer as writer_module
+    security_verifier,writer,supervisor,proof,owner,target,state,writer_connections,handle = await security_setup(monkeypatch,tmp_path)
+    db=Database();schema_profile(db,4)
+    db.backend=dict(backend_namespace=config()['backend_namespace'],storage_identity='storage-1',
+                    supervisor_id='supervisor-1',epoch=2,state='recovery_blocked',recovery_id='fixture-recovery')
+    db.owner=dict(instance_id='instance-1',intent_id=owner['intent_id'],owner_token=owner['owner_token'],backend_epoch=2)
+    resource=PoolResource(writer.resource.config)
+    recovery=PostgresQdrantRecovery(resource,config(),supervisor,QdrantReconciliationVerifier(writer,supervisor))
+    recovery._ready=True;recovery._schema_profile=4;recovery._security_guard_admitted=True
+    recovery._identity=MappingProxyType(dict(instance_id='instance-1',storage_identity='storage-1',supervisor_id='supervisor-1'))
+    writer._schema_profile=4;writer._security_guard_admitted=True
+    state['allow_nonlocking']=True
+    original_lease=PoolResource.lease
+    @asynccontextmanager
+    async def lease(self,*,deadline):
+        if self is writer.resource:
+            async with original_lease(self,deadline=deadline) as connection:
+                connection.history=list(writer_module.EXPECTED_SECURITY_GUARD_HISTORY)
+                connection.hash=writer_module.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT
+                yield connection
+        elif self is resource:
+            connection=Connection(db);db.connections.append(connection);db.active_leases+=1
+            try:yield connection
+            finally:db.active_leases-=1
+        else:raise AssertionError('unregistered fixture resource')
+    monkeypatch.setattr(PoolResource,'lease',lease)
+    return recovery,security_verifier,writer,supervisor,proof,owner,target,state,db,writer_connections
+
+
+@run_async
+async def test_guarded_driver_uses_exact_sql_receipt_and_full_nonlocking_graph(monkeypatch,tmp_path):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await guarded_fixture(monkeypatch,tmp_path)
+    captures=[];original=implementation.validate_guarded_security_projection
+    async def inspect(actual_writer,token,projection,*,deadline):
+        bound=implementation.security_guard_binding(token,actual_writer,projection,deadline=deadline)
+        assert set(bound)=={'context','owner_context','document'} and set(bound['document'])==set(implementation._DOCUMENT_FIELDS)
+        with pytest.raises(TypeError):bound['document']['mutation_epoch']=99
+        assert bound['owner_context'].intent_id==owner['intent_id']
+        with pytest.raises(InvalidRequest):implementation.security_guard_binding(token,object(),projection,deadline=deadline)
+        with pytest.raises(InvalidRequest):implementation.security_guard_binding(token,actual_writer,object(),deadline=deadline)
+        with pytest.raises(InvalidRequest):implementation.security_guard_binding(token,actual_writer,projection,deadline=deadline+1)
+        async def wrong_task():
+            with pytest.raises(InvalidRequest):implementation.security_guard_binding(token,actual_writer,projection,deadline=deadline)
+        await asyncio.create_task(wrong_task())
+        captures.append((token,projection))
+        await original(actual_writer,token,projection,deadline=deadline)
+    monkeypatch.setattr(implementation,'validate_guarded_security_projection',inspect)
+    before=len(state['loads'])
+    assert await implementation.validate_security_guarded(recovery,verifier,proof,owner,target,
+        deadline=asyncio.get_running_loop().time()+5) is None
+    assert len(state['loads'])==before+9  # Three generations, initial/final locked read + guarded read.
+    assert state['document_locks'][-3:]==[True,True,False]
+    statements=[(sql,args) for sql,args in db.calls if sql.startswith('SELECT true FROM ')]
+    assert len(statements)==1
+    sql,args=statements[0]
+    assert sql=='SELECT true FROM cragkit_qdrant.lock_current_security('+','.join(['%s']*22)+')'
+    assert len(args)==22 and args[:6]==('instance-1',config()['backend_namespace'],'storage-1','supervisor-1','fixture-recovery',2)
+    assert args[6:12]==('tenant-a','docs','doc-1',owner['intent_id'],owner['owner_token'],target['intent_id'])
+    assert args[14:18]==('auth-2',2,list(state['document']['principal_ids']),list(state['document']['grant_ids']))
+    assert not any(sql.startswith(('INSERT ','UPDATE ','DELETE ')) for sql,_ in db.calls)
+    assert recovery._active is None and recovery._guard_scope is None and recovery._guard_transaction is None
+    assert writer._active is None and not writer._closed and not supervisor._closed
+    token,projection=captures[0]
+    with pytest.raises((InvalidRequest,ProviderUnavailable)):
+        implementation.security_guard_binding(token,writer,projection,deadline=asyncio.get_running_loop().time()+1)
+
+
+@pytest.mark.parametrize('code,error',[('42501',UnauthorizedScope),('22023',UnsupportedCapability),
+    ('23514',UnauthorizedScope),('08006',ProviderUnavailable)])
+@run_async
+async def test_only_actual_guard_invocation_maps_native_sqlstates(monkeypatch,tmp_path,code,error):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await guarded_fixture(monkeypatch,tmp_path)
+    failure=RuntimeError('PRIVATE SQL CONNECTION');failure.sqlstate=code;db.guard_error=failure
+    with pytest.raises(error) as caught:
+        await implementation.validate_security_guarded(recovery,verifier,proof,owner,target,
+            deadline=asyncio.get_running_loop().time()+5)
+    assert 'PRIVATE' not in str(caught.value)
+    assert state['document_locks'][-2:]==[True,True]
+    assert db.events==['security_guard','rollback'] and db.active_leases==0
+
+
+@pytest.mark.parametrize('fault',['ack','raw_claim','raw_replay','loader_corrupt','authority','connection_loss'])
+@run_async
+async def test_guarded_full_graph_refuses_late_corruption_and_connection_loss(monkeypatch,tmp_path,fault):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await guarded_fixture(monkeypatch,tmp_path)
+    async def corrupt(connection,args):
+        if fault=='ack':db.guard_rows=[(1,)]
+        elif fault=='raw_claim':state['claims'].append(state['claims'][0])
+        elif fault=='raw_replay':state['replays'].pop()
+        elif fault=='loader_corrupt':state['graph_error']=True
+        elif fault=='authority':state['document']['mutation_epoch']+=1
+        else:connection.info.transaction_status=4
+    db.guard_hook=corrupt
+    expected=ProviderUnavailable if fault=='connection_loss' else UnauthorizedScope if fault=='authority' else IntegrityViolation
+    with pytest.raises(expected):
+        await implementation.validate_security_guarded(recovery,verifier,proof,owner,target,
+            deadline=asyncio.get_running_loop().time()+5)
+    assert 'commit' not in db.events and recovery._guard_scope is None
+
+
+@run_async
+async def test_driver_rejects_wrong_scope_profile_and_unregistered_dependencies_before_io(monkeypatch,tmp_path):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await guarded_fixture(monkeypatch,tmp_path)
+    before=len(connections)
+    wrong=deepcopy(owner);wrong['scope']['authorization_revision']='other'
+    for actual,security_verifier,old,current in [(object(),verifier,owner,target),(recovery,object(),owner,target),
+        (recovery,verifier,wrong,target),(recovery,verifier,target,target)]:
+        with pytest.raises(InvalidRequest):
+            await implementation.validate_security_guarded(actual,security_verifier,proof,old,current,
+                deadline=asyncio.get_running_loop().time()+5)
+    recovery._schema_profile=3
+    with pytest.raises(UnsupportedCapability):
+        await implementation.validate_security_guarded(recovery,verifier,proof,owner,target,
+            deadline=asyncio.get_running_loop().time()+5)
+    assert db.calls==[] and len(connections)==before
+
+
+@run_async
+async def test_cancellation_on_guard_ack_never_admits_writer_or_commit(monkeypatch,tmp_path):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await guarded_fixture(monkeypatch,tmp_path)
+    async def cancelled(connection,args):asyncio.current_task().cancel()
+    db.guard_hook=cancelled
+    with pytest.raises(asyncio.CancelledError):
+        await implementation.validate_security_guarded(recovery,verifier,proof,owner,target,
+            deadline=asyncio.get_running_loop().time()+5)
+    assert state['document_locks'][-2:]==[True,True]
+    assert 'commit' not in db.events and recovery._active is None and writer._active is None
+
+
+@run_async
+async def test_cancelled_noncooperative_graph_retains_actual_control_and_writer_ownership(monkeypatch,tmp_path):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await guarded_fixture(monkeypatch,tmp_path)
+    recovery.resource.config=recovery.resource.config.model_copy(update={'release_timeout':.02})
+    entered=asyncio.Event();release=asyncio.Event();cancelled=asyncio.Event()
+    original=writer._security_graph
+    async def delayed(connection,current,document):
+        if not state['document_locks'][-1]:
+            entered.set()
+            while not release.is_set():
+                try:await release.wait()
+                except asyncio.CancelledError:cancelled.set()
+        return await original(connection,current,document)
+    monkeypatch.setattr(writer,'_security_graph',delayed)
+    task=asyncio.create_task(implementation.validate_security_guarded(recovery,verifier,proof,owner,target,
+        deadline=asyncio.get_running_loop().time()+5))
+    await entered.wait();inner=recovery._active;guarded_connection=connections[-1]
+    task.cancel();await cancelled.wait()
+    with pytest.raises(asyncio.CancelledError):await task
+    assert recovery._active is inner and writer._active is inner and recovery._scoped_control is not None
+    assert recovery._closed and writer._closed
+    with pytest.raises(ProviderUnavailable):
+        async with supervisor.control_session():pytest.fail('active facade released early')
+    with pytest.raises(ProviderUnavailable):await writer.inspect(target,deadline=asyncio.get_running_loop().time()+1)
+    with pytest.raises(ProviderUnavailable):await recovery.close()
+    release.set();await asyncio.gather(inner,return_exceptions=True)
+    assert recovery._active is None and writer._active is None and recovery._guard_scope is None
+    assert 'commit' not in db.events and guarded_connection.commits==0
 
 
 @run_async

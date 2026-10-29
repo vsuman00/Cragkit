@@ -60,3 +60,18 @@ def test_guard_mode_evidence_requires_its_closed_checks_without_claiming_settlem
         with pytest.raises(RuntimeError):validate_result(dict(baseline,guard_admission=change),'python',security_guard=True)
     guarded['guard_admission']['checks'].clear()
     assert accepted['guard_admission']['checks']==list(GUARD_CHECKS)
+
+
+def test_guarded_graph_mode_keeps_closed_evidence_and_requires_guard_admission():
+    from check_qdrant_security_verification import GRAPH_CHECKS
+    from qdrant_security_verification_cases import GUARD_CHECKS
+    baseline=dict(runtime='python',checks=list(CHECKS),proof_scope='native_security_receipt_only',semantic_witness_sha256='a'*64)
+    baseline['guard_admission']=dict(checks=list(GUARD_CHECKS),denied_backend_queries=0)
+    value=dict(baseline,guarded_graph=dict(checks=list(GRAPH_CHECKS),denied_commits=0))
+    accepted=validate_result(value,'python',security_guard=True,guarded_graph=True)
+    with pytest.raises(RuntimeError):validate_result(value,'python',security_guard=True)
+    for graph in (dict(checks=list(GRAPH_CHECKS),denied_commits=True),dict(checks=list(GRAPH_CHECKS),denied_commits=1),
+            dict(checks=[],denied_commits=0),dict(checks=list(GRAPH_CHECKS),denied_commits=0,source='private')):
+        with pytest.raises(RuntimeError):validate_result(dict(baseline,guarded_graph=graph),'python',security_guard=True,guarded_graph=True)
+    value['guarded_graph']['checks'].clear()
+    assert accepted['guarded_graph']['checks']==list(GRAPH_CHECKS)

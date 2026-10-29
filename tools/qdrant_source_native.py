@@ -23,7 +23,7 @@ class PostgresSourceFixture:
     used, and the fixture never reads a password from ambient PostgreSQL variables.
     """
     def __init__(self, binary_dir: Path, artifacts: Path, *, max_connections: int = 5) -> None:
-        if type(max_connections) is not int or max_connections not in (5, 6):
+        if type(max_connections) is not int or max_connections not in (5, 6, 7):
             raise RuntimeError('postgres_fixture_connection_ceiling')
         self._max_connections = max_connections
         self.binary_dir = Path(binary_dir)

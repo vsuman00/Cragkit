@@ -5,7 +5,8 @@ import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
 import {PostgresQdrantWriter} from '../dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,settlement_data,recovery_components} from '../dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,settlement_data,recovery_components,validate_security_guarded,security_guard_binding} from '../dist/qdrant-recovery.js';
+import {QdrantSecurityVerifier} from '../dist/qdrant-security-verification.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,
@@ -107,6 +108,36 @@ function setup(){
   const coordinator=new PostgresQdrantRecovery(resource,config,supervisor,verifier);
   return {state,resource,writer,supervisor,verifier,coordinator};
 }
+
+test('guarded driver rejects forged Recovery and mismatched contexts before admission or SQL',async()=>{
+  const f=setup(),securityVerifier=new QdrantSecurityVerifier(f.writer,f.supervisor);
+  const security={...context,intent_id:'security-1'};
+  try{
+    for(const recovery of [{},Object.create(PostgresQdrantRecovery.prototype),new Proxy(f.coordinator,{})]){
+      await assert.rejects(validate_security_guarded(recovery,securityVerifier,{},context,security,options()),InvalidRequest);
+    }
+    for(const changed of [context,{...security,document_id:'different'},{...security,scope:{...security.scope,principal_id:'different'}}]){
+      await assert.rejects(validate_security_guarded(f.coordinator,securityVerifier,{},context,changed,options()),InvalidRequest);
+    }
+    assert.equal(f.state.queries.length,0);
+    for(const guard of [null,{},Object.freeze({}),new Proxy({},{})]){
+      assert.throws(()=>security_guard_binding(guard,f.writer,{},options()),InvalidRequest);
+    }
+  }finally{await securityVerifier.close();await f.coordinator.close();await f.writer.close();}
+});
+
+test('guarded driver requires ready profile4 and original verifier dependencies',async()=>{
+  const f=setup(),securityVerifier=new QdrantSecurityVerifier(f.writer,f.supervisor),security={...context,intent_id:'security-1'};
+  const otherWriter=new PostgresQdrantWriter(f.resource,config,'different-instance');
+  const wrong=new QdrantSecurityVerifier(otherWriter,f.supervisor);
+  try{
+    await assert.rejects(validate_security_guarded(f.coordinator,securityVerifier,{},context,security,options()),IndexNotReady);
+    await f.coordinator.initialize(options());const start=f.state.queries.length;
+    await assert.rejects(validate_security_guarded(f.coordinator,securityVerifier,{},context,security,options()),UnsupportedCapability);
+    await assert.rejects(validate_security_guarded(f.coordinator,wrong,{},context,security,options()),InvalidRequest);
+    assert.equal(f.state.queries.length,start);
+  }finally{await wrong.close();await securityVerifier.close();await f.coordinator.close();await otherWriter.close();await f.writer.close();}
+});
 
 test('recovery components return exactly the original verifier without I/O or resource disclosure',async()=>{
   const f=setup();

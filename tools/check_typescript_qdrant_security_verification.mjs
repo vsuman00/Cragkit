@@ -5,10 +5,10 @@ import {isDeepStrictEqual as same} from 'node:util';
 import {PoolResource,parse_pool_config,bounded,now} from '../packages/typescript/dist/postgres-pool.js';
 import {PostgresQdrantWriter,prepare_stage,security_projection_data} from '../packages/typescript/dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../packages/typescript/dist/qdrant-supervisor.js';
-import {PostgresQdrantRecovery} from '../packages/typescript/dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,validate_security_guarded,SECURITY_GUARD_SQL} from '../packages/typescript/dist/qdrant-recovery.js';
 import {QdrantReconciliationVerifier} from '../packages/typescript/dist/qdrant-reconciliation.js';
 import {QdrantSecurityVerifier,security_receipt_data} from '../packages/typescript/dist/qdrant-security-verification.js';
-import {InvalidRequest,IntegrityViolation,UnsupportedCapability,UnauthorizedScope} from '../packages/typescript/dist/errors.js';
+import {InvalidRequest,IntegrityViolation,UnsupportedCapability,UnauthorizedScope,ProviderUnavailable} from '../packages/typescript/dist/errors.js';
 
 const CHECKS=Object.freeze([
   'actual_current_authority_two_generations_binds_historical_owner',
@@ -26,6 +26,10 @@ const GUARD_CHECKS=Object.freeze([
   'fifth_history_refused_before_backend_binding',
   'extra_definer_refused_before_backend_binding',
 ]);
+const GRAPH_CHECKS=Object.freeze(['actual_guard_nonlocking_full_graph','document_lock_wait_observed_until_guard_commit',
+  'late_canonical_drift_refused','late_vector_drift_refused','late_manifest_drift_refused','extra_raw_claim_refused',
+  'post_wait_authority_mismatch_refused','supervisor_connection_loss_releases_document_without_commit',
+  'late_callback_retains_control_and_writer_until_drained']);
 const ERRORS=new Set(['IntegrityViolation','InvalidRequest','ProviderUnavailable','UnauthorizedScope','UnsupportedCapability','DeadlineExceeded','IndexNotReady','AbortError']);
 const OWNER='00000000-0000-4000-8000-000000000001',SECURITY='00000000-0000-4000-8000-000000000002';
 const cancellation=new AbortController();let readingInput=true,step=0;
@@ -40,9 +44,12 @@ async function input(){
   for await(const chunk of process.stdin){size+=chunk.length;if(size>1048576)throw new Error('bounded_input');chunks.push(chunk);}
   const value=decode(Buffer.concat(chunks));
   if(!value||typeof value!=='object'||Array.isArray(value)||!same(Object.keys(value).sort(),
-      (Object.hasOwn(value,'guard_operator_config')?['binary','guard_operator_config','inputs','supervisor_config','work_dir','writer_config']:
-        ['binary','inputs','supervisor_config','work_dir','writer_config']))
+      ['binary','inputs','supervisor_config','work_dir','writer_config',
+        ...(Object.hasOwn(value,'guard_operator_config')?['guard_operator_config']:[]),
+        ...(Object.hasOwn(value,'guard_graph_config')?['guard_graph_config']:[])].sort())
     ||typeof value.binary!=='string'||typeof value.work_dir!=='string'||!value.inputs?.second_stage||!value.inputs?.security||!value.inputs?.tombstone)throw new Error('input_shape');
+  if(Object.hasOwn(value,'guard_graph_config')&&(!Object.hasOwn(value,'guard_operator_config')
+    ||!value.guard_graph_config||!same(Object.keys(value.guard_graph_config),['admin_config'])))throw new Error('graph_input_shape');
   return value;
 }
 async function listener(address,absent=false){
@@ -62,35 +69,98 @@ async function cases(value){
   if(writerConfig.max_size!==1||supervisorConfig.max_size!==1)throw new Error('two_client_ceiling');
   const options={deadline:now()+120,signal:cancellation.signal};
   const guarded=Object.hasOwn(value,'guard_operator_config');
+  const graphMode=Object.hasOwn(value,'guard_graph_config');
   let backendQueries=0,deniedBackendQueries=0,activeRestore;
+  let supBefore,supAfter,writerAfter,contenderAfter,supPid,contenderPid,forbidCommit=false,deniedCommits=0,nonlockingReads=0,supFaultClosed=false;
+  const documentQuery=query=>typeof query?.text==='string'&&query.text.startsWith('SELECT ')
+    &&query.text.includes('FROM cragkit_qdrant.documents ');
+  const ownedTasks=new Set(),gates=new Set();
   const factoryResource=guarded?new PoolResource(supervisorConfig):undefined;
   const defaultFactory=factoryResource?.factory;
   if(guarded&&typeof defaultFactory!=='function')throw new Error('native_factory_unavailable');
-  const resource=new PoolResource(writerConfig),supervisorResource=new PoolResource(supervisorConfig,guarded?{factory:async config=>{
+  const resource=new PoolResource(writerConfig,graphMode?{factory:async config=>{
+    const actual=await defaultFactory(config);
+    return {async connect(){const client=await actual.connect();
+      return {async query(query){
+        if(documentQuery(query)&&!query.text.endsWith('FOR UPDATE'))nonlockingReads++;
+        const result=await client.query(query);if(writerAfter)await writerAfter(query,result);return result;
+      },
+        getTransactionStatus(){return client.getTransactionStatus();},release(destroy){client.release(destroy);}};
+    },end(){return actual.end();}};
+  }}:{}),supervisorResource=new PoolResource(supervisorConfig,guarded?{factory:async config=>{
     const actual=await defaultFactory(config);
     return {async connect(){
       const client=await actual.connect();
-      return {query(query){
+      supPid=graphMode?(await client.query({text:'SELECT pg_backend_pid()',rowMode:'array'})).rows[0][0]:undefined;let guardedTransaction=false;
+      return {async query(query){
         if(typeof query?.text==='string'&&query.text.includes("set_config('cragkit_qdrant.backend_instance_id'"))backendQueries++;
-        return client.query(query);
+        if(query.text.startsWith('BEGIN'))guardedTransaction=false;
+        if(query.text===SECURITY_GUARD_SQL){guardedTransaction=true;if(supBefore)await supBefore();}
+        if(query.text==='COMMIT'&&guardedTransaction&&forbidCommit)deniedCommits++;
+        const result=await client.query(query);
+        if(query.text===SECURITY_GUARD_SQL&&supAfter)await supAfter();
+        return result;
       },getTransactionStatus(){return client.getTransactionStatus();},release(destroy){client.release(destroy);}};
     },end(){return actual.end();}};
   }}:{});
   const operatorConfig=guarded?parse_pool_config(value.guard_operator_config):undefined;
   if(operatorConfig&&operatorConfig.max_size!==1)throw new Error('operator_client_ceiling');
   const operator=operatorConfig?new PoolResource(operatorConfig):undefined;
+  const adminConfig=graphMode?parse_pool_config(value.guard_graph_config.admin_config):undefined;
+  if(adminConfig&&adminConfig.max_size!==1)throw new Error('admin_client_ceiling');
+  const admin=adminConfig?new PoolResource(adminConfig):undefined;
+  const contenderResource=graphMode?new PoolResource(writerConfig,{factory:async config=>{
+    const actual=await defaultFactory(config);
+    return {async connect(){const client=await actual.connect();contenderPid=(await client.query({text:'SELECT pg_backend_pid()',rowMode:'array'})).rows[0][0];
+      return {async query(query){const result=await client.query(query);if(contenderAfter)await contenderAfter(query,result);return result;},
+        getTransactionStatus(){return client.getTransactionStatus();},release(destroy){client.release(destroy);}};
+    },end(){return actual.end();}};
+  }}):undefined;
+  const contender=contenderResource?new PostgresQdrantWriter(contenderResource,inputs.config,inputs.instance_id):undefined;
   const writer=new PostgresQdrantWriter(resource,inputs.config,inputs.instance_id);
   const supervisor=new ManagedQdrantSupervisor(value.binary,value.work_dir,inputs.instance_id,inputs.config);
   const reconciliation=new QdrantReconciliationVerifier(writer,supervisor);
   const recovery=new PostgresQdrantRecovery(supervisorResource,inputs.config,supervisor,reconciliation);
   const verifier=new QdrantSecurityVerifier(writer,supervisor),other=new QdrantSecurityVerifier(writer,supervisor);
-  const target='/collections/'+inputs.config.physical_collection,checks=[],guardChecks=[];
+  const target='/collections/'+inputs.config.physical_collection,checks=[],guardChecks=[],graphChecks=[];
   const mark=()=>{checks.push(CHECKS[checks.length]);step=checks.length;};
   const base={collection:inputs.stage.manifest.collection,document_id:inputs.stage.manifest.document_id};
   const context=(scope,intent,owner)=>({...base,scope,intent_id:intent,owner_token:owner});
   const currentScope={...inputs.scope,authorization_revision:'auth-2'};
   const owner=context(currentScope,inputs.stage.intent.intent_id,OWNER),security=context(currentScope,inputs.security.intent_id,SECURITY);
-  let address,primary,receipt,oldControl,oldProjection,semanticWitnessSha256;
+  let address,primary,receipt,oldControl,oldProjection,semanticWitnessSha256,activeGraphRestore,restoringGraph=false;
+  const docKeys=[inputs.scope.tenant_id,base.collection,base.document_id];
+  const docWhere='tenant_id=$1 AND collection=$2 AND document_id=$3';
+  const hash=value=>createHash('sha256').update(value).digest('hex');
+  const sql=(pool,text,values=[],selected=options)=>pool.withLease(selected,client=>client.query({text,values,rowMode:'array'}));
+  function gate(){
+    let reached,open;const arrived=new Promise(resolve=>{reached=resolve;}),waiting=new Promise(resolve=>{open=resolve;});
+    const release=()=>{open();gates.delete(release);};gates.add(release);
+    return {arrived,reach:reached,wait:()=>bounded(waiting,options),release};
+  }
+  function owned(work){ownedTasks.add(work);void work.then(()=>ownedTasks.delete(work),()=>ownedTasks.delete(work));return work;}
+  async function observe(pool,text,values){
+    const end=Math.min(options.deadline,now()+4);
+    while(now()<end){
+      const result=await sql(pool,text,values);
+      if(same(result.rows,[[true]]))return;
+      await bounded(new Promise(resolve=>setTimeout(resolve,10)),options);
+    }
+    throw new Error('lock_observation_deadline');
+  }
+  const waitBlock="SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=$1 AND NOT granted AND locktype IN ('transactionid','tuple') AND $2=ANY(pg_blocking_pids(pid)))";
+  async function replica(work){
+    return admin.withLease({deadline:restoringGraph?now()+5:Math.min(options.deadline,now()+6)},async client=>{
+      const run=(text,values=[])=>client.query({text,values,rowMode:'array'});
+      await run('BEGIN');
+      try{await run("SET LOCAL session_replication_role='replica'");const result=await work(run);await run('COMMIT');return result;}
+      catch(error){await run('ROLLBACK');throw error;}
+    });
+  }
+  async function restoreGraph(){
+    restoringGraph=true;
+    try{await activeGraphRestore();activeGraphRestore=undefined;}finally{restoringGraph=false;}
+  }
   function receiptData(control){return security_receipt_data(receipt,verifier,control,options);}
   function actualPoints(source){return source.points.map(point=>({id:point.point_id,payload:point.payload,
     vector:{dense:point.dense.values,sparse:{indices:point.sparse.indices,values:point.sparse.values}}}));}
@@ -153,6 +223,7 @@ async function cases(value){
         ['9999_native_guard_recovery_probe','0'.repeat(64)],['9999_native_guard_recovery_probe','0'.repeat(64)]);
       await mutation("CREATE FUNCTION cragkit_qdrant.native_guard_recovery_probe() RETURNS boolean LANGUAGE SQL SECURITY DEFINER AS 'SELECT true'",
         'DROP FUNCTION cragkit_qdrant.native_guard_recovery_probe()');
+      if(graphMode)await operator.close();
     }
     await supervisor.control_session(async control=>{
       oldControl=control;
@@ -177,6 +248,62 @@ async function cases(value){
       await mutation.close();
     });
     await refuses(()=>receiptData(oldControl),InvalidRequest);
+    if(graphMode){
+      await admin.open();await contenderResource.open();await contender.initialize(options);
+      await validate_security_guarded(recovery,verifier,proof,owner,security,options);graphChecks.push(GRAPH_CHECKS[0]);
+      let lockTask;
+      supAfter=async()=>{
+        supAfter=undefined;
+        let adminPid;
+        const started=gate();
+        lockTask=owned(admin.withLease(options,async client=>{
+          const run=(text,values=[])=>client.query({text,values,rowMode:'array'});
+          adminPid=(await run('SELECT pg_backend_pid()')).rows[0][0];await run('BEGIN');started.reach();
+          try{await run('SELECT document_id FROM cragkit_qdrant.documents WHERE '+docWhere+' FOR UPDATE',docKeys);}
+          finally{await run('ROLLBACK');}
+        }));
+        await bounded(started.arrived,options);started.release();
+        await observe(resource,waitBlock,[adminPid,supPid]);
+      };
+      await validate_security_guarded(recovery,verifier,proof,owner,security,options);
+      await bounded(lockTask,options);graphChecks.push(GRAPH_CHECKS[1]);
+      for(const kind of ['canonical','vector','manifest','claim']){
+        const before=deniedCommits;let injected=false;
+        supAfter=async()=>{
+          supAfter=undefined;injected=true;
+          if(kind==='canonical'){
+            const keys=[...docKeys,inputs.stage.manifest.revision_id];
+            const saved=(await sql(admin,'SELECT canonical_utf8,source_sha256 FROM cragkit_qdrant.document_revisions WHERE '+docWhere+' AND revision_id=$4',keys)).rows[0];
+            const changed=Buffer.from(saved[0]);changed[0]^=1;
+            activeGraphRestore=()=>replica(run=>run('UPDATE cragkit_qdrant.document_revisions SET canonical_utf8=$5,source_sha256=$6 WHERE '+docWhere+' AND revision_id=$4',[...keys,saved[0],saved[1]]));
+            await replica(run=>run('UPDATE cragkit_qdrant.document_revisions SET canonical_utf8=$5,source_sha256=$6 WHERE '+docWhere+' AND revision_id=$4',[...keys,changed,hash(changed)]));
+          }else if(kind==='vector'){
+            const id=inputs.stage.manifest.members[0].point_id;
+            const saved=(await sql(admin,'SELECT dense_blob,dense_blob_sha256 FROM cragkit_qdrant.vector_replays WHERE point_id=$1',[id])).rows[0];
+            const changed=Buffer.from(saved[0]);changed.writeDoubleLE(changed.readDoubleLE(changed.length-8)+.01,changed.length-8);
+            activeGraphRestore=()=>replica(run=>run('UPDATE cragkit_qdrant.vector_replays SET dense_blob=$2,dense_blob_sha256=$3 WHERE point_id=$1',[id,saved[0],saved[1]]));
+            await replica(run=>run('UPDATE cragkit_qdrant.vector_replays SET dense_blob=$2,dense_blob_sha256=$3 WHERE point_id=$1',[id,changed,hash(changed)]));
+          }else if(kind==='manifest'){
+            const keys=[...docKeys,inputs.stage.intent.intent_id];
+            const saved=(await sql(admin,'SELECT manifest_bytes,manifest_sha256 FROM cragkit_qdrant.publication_intents WHERE '+docWhere+' AND intent_id=$4',keys)).rows[0];
+            const changed=Buffer.concat([saved[0],Buffer.from(' ')]);
+            activeGraphRestore=()=>replica(run=>run('UPDATE cragkit_qdrant.publication_intents SET manifest_bytes=$5,manifest_sha256=$6 WHERE '+docWhere+' AND intent_id=$4',[...keys,saved[0],saved[1]]));
+            await replica(run=>run('UPDATE cragkit_qdrant.publication_intents SET manifest_bytes=$5,manifest_sha256=$6 WHERE '+docWhere+' AND intent_id=$4',[...keys,changed,hash(changed)]));
+          }else{
+            const extra='ffffffff-ffff-5fff-8fff-ffffffffffff',original=inputs.stage.manifest.members[0].point_id;
+            activeGraphRestore=()=>replica(run=>run('DELETE FROM cragkit_qdrant.point_claims WHERE point_id=$1 AND '+
+              'tenant_id=$2 AND collection=$3 AND document_id=$4',[extra,...docKeys]));
+            await replica(run=>run('INSERT INTO cragkit_qdrant.point_claims SELECT (jsonb_populate_record(NULL::cragkit_qdrant.point_claims,'+
+              "to_jsonb(p)||jsonb_build_object('point_id',$1::text,'chunk_id','guard-orphan-claim'))).* FROM cragkit_qdrant.point_claims p WHERE point_id=$2",[extra,original]));
+          }
+        };
+        forbidCommit=true;
+        try{await refuses(()=>validate_security_guarded(recovery,verifier,proof,owner,security,options),IntegrityViolation);}
+        finally{forbidCommit=false;supAfter=undefined;if(activeGraphRestore)await restoreGraph();}
+        if(!injected||deniedCommits!==before)throw new Error('late_graph_corruption_not_refused');
+        graphChecks.push(GRAPH_CHECKS[graphChecks.length]);
+      }
+    }
     await supervisor.control_session(async control=>{
       await refuses(()=>receiptData(control),InvalidRequest);
       receipt=await verifier.verify(proof,control,owner,security,options);assertReceipt(control);mark();
@@ -195,18 +322,108 @@ async function cases(value){
       const tombData=security_receipt_data(tombReceipt,verifier,control,options);
       if(!security_projection_data(tombData.projection,writer).tombstoned||tombData.point_ids.length!==4)throw new Error('tombstone_receipt');mark();
     });
+    if(graphMode){
+      const auth3Scope={...currentScope,authorization_revision:'auth-3'};
+      const tombOwner={...owner,scope:auth3Scope},tombSecurity=context(auth3Scope,inputs.tombstone.intent_id,SECURITY);
+      const next={...inputs.tombstone,intent_id:'native-guard-contender-auth-4',expected_authorization_revision:'auth-3',
+        expected_mutation_epoch:3,authorization:{...inputs.tombstone.authorization,authorization_revision:'auth-4'}};
+      const contenderGate=gate(),submitted=gate();let authorityTask;
+      contenderAfter=async query=>{
+        if(documentQuery(query)&&query.text.endsWith('FOR UPDATE')){
+          contenderAfter=undefined;contenderGate.reach();await contenderGate.wait();
+        }
+      };
+      supBefore=async()=>{
+        supBefore=undefined;
+        authorityTask=owned(contender.apply_security(next,auth3Scope,{...options,owner_token:SECURITY}));
+        await bounded(contenderGate.arrived,options);submitted.reach();
+      };
+      forbidCommit=true;
+      const beforeGraph=nonlockingReads,beforeCommit=deniedCommits;
+      const waiting=owned(validate_security_guarded(recovery,verifier,proof,tombOwner,tombSecurity,options));
+      try{
+        await bounded(submitted.arrived,options);submitted.release();
+        await observe(admin,waitBlock,[supPid,contenderPid]);
+        contenderGate.release();const authority=await bounded(authorityTask,options);
+        if(!authority.authority_committed)throw new Error('contender_authority_missing');
+        await refuses(()=>waiting,UnauthorizedScope);
+        if(nonlockingReads!==beforeGraph||deniedCommits!==beforeCommit)throw new Error('post_wait_guard_reached_graph_or_commit');
+      }finally{contenderGate.release();submitted.release();supBefore=undefined;contenderAfter=undefined;forbidCommit=false;}
+      graphChecks.push(GRAPH_CHECKS[6]);
+
+      const auth4Scope={...auth3Scope,authorization_revision:'auth-4'},lossOwner={...owner,scope:auth4Scope},
+        lossSecurity=context(auth4Scope,next.intent_id,SECURITY);
+      const callbackGate=gate(),lossController=new AbortController();let lateSuccess=false;
+      writerAfter=async query=>{
+        if(documentQuery(query)&&!query.text.endsWith('FOR UPDATE')){
+          writerAfter=undefined;callbackGate.reach();await callbackGate.wait();
+        }
+      };
+      const originalWriterLease=resource.withLease.bind(resource);
+      // ponytail: reuse the native pool; hold this fault case's callback behind its gate without relaying the caller signal.
+      resource.withLease=(selected,body)=>originalWriterLease({deadline:selected.deadline},body);
+      let lostPid;const beforeLossCommit=deniedCommits;
+      forbidCommit=true;
+      const lossOptions={deadline:Math.min(options.deadline,now()+15),signal:AbortSignal.any([cancellation.signal,lossController.signal])};
+      const loss=owned(validate_security_guarded(recovery,verifier,proof,lossOwner,lossSecurity,lossOptions).then(()=>{lateSuccess=true;}));
+      try{
+        await bounded(callbackGate.arrived,options);
+        lostPid=supPid;
+        try{await supervisorResource.close();}catch(error){if(!(error instanceof ProviderUnavailable))throw error;}
+        await observe(admin,'SELECT NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=$1)',[lostPid]);
+        const last={...next,intent_id:'native-guard-contender-auth-5',expected_authorization_revision:'auth-4',
+          expected_mutation_epoch:4,authorization:{...next.authorization,authorization_revision:'auth-5'}};
+        const changed=await contender.apply_security(last,auth4Scope,{...options,owner_token:SECURITY});
+        if(!changed.authority_committed||deniedCommits!==beforeLossCommit)throw new Error('lost_supervisor_kept_document_or_committed');
+        const state=await sql(admin,'SELECT authorization_revision,mutation_epoch FROM cragkit_qdrant.documents WHERE '+docWhere,docKeys);
+        if(!same(state.rows,[['auth-5','5']])&&!same(state.rows,[['auth-5',5]]))throw new Error('lost_supervisor_authority_not_durable');
+        graphChecks.push(GRAPH_CHECKS[7]);
+        lossController.abort();
+        await refuses(()=>bounded(loss,{deadline:Math.min(options.deadline,now()+5)}),ProviderUnavailable,DOMException);
+        await refuses(()=>writer.project_security(lossSecurity,options),ProviderUnavailable);
+        await refuses(()=>supervisor.control_session(async()=>{}),ProviderUnavailable);
+        callbackGate.release();
+        await bounded(Promise.allSettled([...ownedTasks]),{deadline:Math.min(options.deadline,now()+5)});
+        await observe(admin,'SELECT NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=$1)',[lostPid]);
+        if(lateSuccess||deniedCommits!==beforeLossCommit)throw new Error('late_graph_committed_or_succeeded');
+        // Actual callback drainage, rather than an elapsed wait, must free control custody.
+        let released=false;const drainDeadline=Math.min(options.deadline,now()+4);
+        while(now()<drainDeadline&&!released){
+          try{await supervisor.control_session(async()=>{released=true;});}
+          catch(error){if(!(error instanceof ProviderUnavailable))throw error;await new Promise(resolve=>setTimeout(resolve,10));}
+        }
+        if(!released)throw new Error('late_callback_not_drained');
+        if(supervisorResource.state!=='closed'||supervisorResource.work.size||supervisorResource.connecting.size)throw new Error('fault_close_not_drained');
+        await bounded(supervisorResource.driverEnded.get(supervisorResource.pool),options);supFaultClosed=true;
+        graphChecks.push(GRAPH_CHECKS[8]);
+      }finally{lossController.abort();callbackGate.release();writerAfter=undefined;forbidCommit=false;resource.withLease=originalWriterLease;}
+    }
     return {runtime:'typescript',checks,proof_scope:'native_security_receipt_only',semantic_witness_sha256:semanticWitnessSha256,
-      ...(guarded?{guard_admission:{checks:guardChecks,denied_backend_queries:deniedBackendQueries}}:{})};
+      ...(guarded?{guard_admission:{checks:guardChecks,denied_backend_queries:deniedBackendQueries}}:{}),
+      ...(graphMode?{guarded_graph:{checks:graphChecks,denied_commits:deniedCommits}}:{})};
   }catch(error){primary=error;throw error;}
   finally{
     const failures=[],deadline=now()+12;
+    for(const release of gates)release();
+    supBefore=supAfter=writerAfter=contenderAfter=undefined;
+    if(ownedTasks.size){
+      try{await bounded(Promise.allSettled([...ownedTasks]),{deadline:Math.max(now()+.001,Math.min(now()+4,deadline))});}
+      catch(error){failures.push({operation:'guard_graph_drain',outcome:outcome(error)});}
+    }
+    if(activeGraphRestore){
+      try{await bounded(restoreGraph(),{deadline:Math.max(now()+.001,Math.min(now()+5,deadline))});}
+      catch(error){failures.push({operation:'guard_graph_restore',outcome:outcome(error)});}
+    }
     if(activeRestore){
       try{await bounded(Promise.resolve().then(activeRestore),{deadline:Math.max(now()+.001,Math.min(now()+5,deadline))});}
       catch(error){failures.push({operation:'catalog_restore',outcome:outcome(error)});}
     }
     for(const [operation,owned]of [['verifier_close',verifier],['wrong_verifier_close',other],['reconciliation_close',reconciliation],
       ['recovery_close',recovery],['writer_close',writer],['resource_close',resource],['supervisor_resource_close',supervisorResource],
+      ...(contender?[['contender_writer_close',contender]]:[]),...(contenderResource?[['contender_pool_close',contenderResource]]:[]),
+      ...(admin?[['admin_pool_close',admin]]:[]),
       ...(operator?[['operator_pool_close',operator]]:[]),...(factoryResource?[['factory_pool_close',factoryResource]]:[]),['controller_close',supervisor]]){
+      if(operation==='supervisor_resource_close'&&supFaultClosed&&supervisorResource.state==='closed'&&!supervisorResource.work.size&&!supervisorResource.connecting.size)continue;
       try{await bounded(Promise.resolve().then(()=>owned.close()),{deadline:Math.max(now()+.001,Math.min(now()+8,deadline))});}catch(error){failures.push({operation,outcome:outcome(error)});}
     }
     if(address){try{await listener(address,true);}catch(error){failures.push({operation:'listener_close',outcome:outcome(error)});}}

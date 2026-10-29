@@ -9,7 +9,7 @@ import re
 from types import MappingProxyType
 from collections.abc import Mapping
 from typing import Any, Awaitable, Callable, TypeVar, cast
-from weakref import WeakKeyDictionary
+from weakref import WeakKeyDictionary, ref
 
 from ._postgres_pool import PoolResource
 from ._postgres_session import SessionConnection
@@ -55,6 +55,43 @@ class SecurityProjection:
 
 
 _SECURITY_PROJECTIONS: WeakKeyDictionary[SecurityProjection, tuple[object, Mapping[str, Any]]] = WeakKeyDictionary()
+_GUARDED_WRITERS: WeakKeyDictionary[object, Callable[..., Awaitable[None]]] = WeakKeyDictionary()
+
+
+async def validate_guarded_security_projection(writer: object, guard: object, projection: object, *,
+                                                deadline: float) -> None:
+    writer_binding(writer)
+    if writer not in _GUARDED_WRITERS:
+        raise InvalidRequest()
+    await _GUARDED_WRITERS[writer](guard, projection, deadline=deadline)
+
+
+class _GuardedWriterConnection:
+    """Check custody on both sides of every actual graph database await."""
+    def __init__(self, actual: SessionConnection, check: Callable[[], object]) -> None:
+        self.actual, self.check = actual, check
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.actual,name)
+
+    def boundary(self) -> None:
+        self.check()
+        status = self.actual.info.transaction_status
+        if isinstance(status,bool) or not isinstance(status,int) or status != 2:
+            raise ProviderUnavailable()
+
+    async def execute(self, sql: str, params: tuple[object, ...] | None = None) -> Any:
+        self.boundary()
+        cursor = await self.actual.execute(sql,params)
+        self.boundary()
+        owner = self
+        class Cursor:
+            async def fetchall(self) -> Any:
+                owner.boundary()
+                rows = await cursor.fetchall()
+                owner.boundary()
+                return rows
+        return Cursor()
 _SECURITY_GRAPH_BYTES = 64*1024*1024
 
 
@@ -300,6 +337,14 @@ class PostgresQdrantWriter:
         self._closed = False
         self._active: asyncio.Task[Any] | None = None
         _WRITER_ORIGINS[self] = (self.resource, self.config, self.instance_id)
+        fixed = PostgresQdrantWriter.fixed_validate_security_guarded
+        original = ref(self)
+        async def guarded(guard: object, projection: object, *, deadline: float) -> None:
+            writer = original()
+            if writer is None:
+                raise InvalidRequest()
+            await fixed(writer,guard,projection,deadline=deadline)
+        _GUARDED_WRITERS[self] = guarded
 
     async def _query(self, connection: SessionConnection, sql: str,
                      params: tuple[object, ...] = ()) -> list[tuple[Any, ...]]:
@@ -343,12 +388,15 @@ class PostgresQdrantWriter:
 
     async def _run(self, ctx: WriterContext | None, deadline: float,
                    operation: Callable[[SessionConnection], Awaitable[_T]], *, initializing: bool = False,
-                   detect_commit_unknown: bool = False) -> _T:
+                   detect_commit_unknown: bool = False,
+                   guarded_check: Callable[[], object] | None = None) -> _T:
         deadline = deadline_value(deadline)
         if self._closed or self._active is not None:
             raise ProviderUnavailable()
         if not initializing and not self._ready:
             raise IndexNotReady()
+        if guarded_check is not None:
+            guarded_check()
         self._active = asyncio.current_task()
         try:
             async with asyncio.timeout_at(deadline):
@@ -362,6 +410,8 @@ class PostgresQdrantWriter:
                     try:
                         await transaction.__aenter__()
                         entered = True
+                        if guarded_check is not None:
+                            connection = cast(SessionConnection,_GuardedWriterConnection(connection,guarded_check))
                         await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
                         await connection.execute('SET LOCAL search_path=pg_catalog')
                         milliseconds = max(1, min(2147483647, int((deadline-asyncio.get_running_loop().time())*1000)))
@@ -392,6 +442,8 @@ class PostgresQdrantWriter:
                                 ctx.document_id, ctx.intent_id, ctx.owner_token, self.instance_id))
                         result = await operation(connection)
                         deadline_value(deadline)
+                        if guarded_check is not None:
+                            guarded_check()
                         committing = True
                         try:
                             await transaction.__aexit__(None, None, None)
@@ -411,6 +463,8 @@ class PostgresQdrantWriter:
                         if connection.info.transaction_status != 0:
                             raise ProviderUnavailable()
                         deadline_value(deadline)
+                        if guarded_check is not None:
+                            guarded_check()
                         if initializing:
                             self._schema_profile = profile
                             self._security_guard_admitted = self._security_guard_admitted or profile == 4
@@ -1378,129 +1432,134 @@ class PostgresQdrantWriter:
                 cast(_SparseVector, sparse.encoded) if sparse is not None else None))
         return tuple(points)
 
+    async def _security_graph(self, connection: SessionConnection, ctx: WriterContext,
+                              document: Mapping[str, Any]) -> Mapping[str, Any]:
+        rows = await self._query(connection,
+            'SELECT instance_id,action,payload_bytes,payload_sha256,expected_authorization_revision,'
+            'expected_mutation_epoch,authority_committed,manifest_bytes,manifest_sha256,revision_id,generation_id,'
+            'expected_active_generation_id FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,
+            _key(ctx))
+        if not rows:
+            raise UnauthorizedScope()
+        if len(rows) != 1 or len(rows[0]) != 12:
+            raise IntegrityViolation()
+        instance,action,raw,digest,revision,epoch,committed = rows[0][:7]
+        if action not in ('update_authorization','tombstone'):
+            raise UnauthorizedScope()
+        if (any(item is not None for item in rows[0][7:]) or instance != self.instance_id
+                or type(raw) is not bytes or not 1 <= len(raw) <= 1048576
+                or hashlib.sha256(raw).hexdigest() != digest or type(epoch) is not int
+                or type(committed) is not bool):
+            raise IntegrityViolation()
+        try:
+            payload = json.loads(raw.decode('utf-8',errors='strict'))
+            if (type(payload) is not list or len(payload) != 9
+                    or payload[:2] != ['cragkit.qdrant.intent.v1',action]
+                    or type(payload[8]) is not list or len(payload[8]) != 7
+                    or payload[8][6] not in ('true','false')):
+                raise ValueError()
+            desired = payload[8]
+            record = dict(action=action,intent_id=payload[2],tenant_id=payload[3],collection=payload[4],
+                document_id=payload[5],expected_authorization_revision=payload[6],
+                expected_mutation_epoch=int(payload[7]),authorization=dict(authorization_revision=desired[0],
+                principal_ids=desired[1],grant_ids=desired[2],language=desired[3],kind=desired[4],tag=desired[5],
+                tombstoned=desired[6]=='true'))
+            encoded = encode_security_intent(record)
+            security = _parse(_Security,record)
+            if (encoded.encoded_bytes != raw or encoded.sha256 != digest
+                    or (security.tenant_id,security.collection,security.document_id,security.intent_id)
+                    != (*_doc(ctx),ctx.intent_id)
+                    or (security.expected_authorization_revision,security.expected_mutation_epoch) != (revision,epoch)):
+                raise ValueError()
+            current_record = {**record,'authorization':{key:document[key] for key in
+                ('authorization_revision','principal_ids','grant_ids','language','kind','tag','tombstoned')}}
+            current = _parse(_Security,current_record).authorization
+            _stored_identity(document['active_generation_id'],nullable=True)
+            _stored_count(document['mutation_epoch'])
+        except (ValueError,TypeError,IndexError,KeyError,UnicodeError,InvalidRequest):
+            raise IntegrityViolation() from None
+        if (not committed or document['mutation_epoch'] != epoch+1 or current != security.authorization):
+            raise UnauthorizedScope()
+        claims = await self._query(connection,
+            'SELECT revision_id,generation_id,chunk_id,point_id::text,instance_id,backend_namespace,'
+            'physical_collection,collection_incarnation FROM cragkit_qdrant.point_claims WHERE '+_DOC+' LIMIT 2049',_doc(ctx))
+        replays = await self._query(connection,
+            'SELECT revision_id,generation_id,chunk_id,point_id::text,backend_namespace,'
+            'physical_collection,collection_incarnation FROM cragkit_qdrant.vector_replays WHERE '+_DOC+' LIMIT 2049',_doc(ctx))
+        physical = (self.config.backend_namespace,self.config.physical_collection,self.config.collection_incarnation)
+        for inventory,width,binding in ((claims,8,(self.instance_id,*physical)),(replays,7,physical)):
+            if (any(len(row) != width or any(type(item) is not str for item in row)
+                    or row[4:] != binding for row in inventory)
+                    or len(set(inventory)) != len(inventory)):
+                raise IntegrityViolation()
+            for row in inventory:
+                for item in row[:3]:
+                    _stored_identity(item)
+                _stored_uuid(row[3])
+        if len(claims) > 2048 or len(replays) > 2048:
+            raise UnsupportedCapability()
+        claim_keys = {row[:4] for row in claims}
+        if (claim_keys != {row[:4] for row in replays}
+                or len({row[3] for row in claims}) != len(claims)):
+            raise IntegrityViolation()
+        identities = sorted({row[:2] for row in claims},key=lambda pair:tuple(item.encode('utf-8') for item in pair))
+        if len(identities) > 64:
+            raise UnsupportedCapability()
+        if any(sum(row[:2] == identity for row in claims) > 64 for identity in identities):
+            raise UnsupportedCapability()
+        groups: list[Mapping[str, Any]] = []
+        points: list[ExpectedPoint] = []
+        reconstructed = 0
+        for revision_id,generation_id in identities:
+            original = await self._query(connection,
+                'SELECT intent_id FROM cragkit_qdrant.publication_intents WHERE '+_DOC+
+                " AND revision_id=%s AND generation_id=%s AND action='stage' ORDER BY convert_to(intent_id,'UTF8') LIMIT 1",
+                (*_doc(ctx),revision_id,generation_id))
+            if len(original) != 1 or len(original[0]) != 1:
+                raise IntegrityViolation()
+            stage_intent = _stored_identity(original[0][0])
+            stage_ctx = context(dict(scope=ctx.scope,collection=ctx.collection,document_id=ctx.document_id,
+                                     intent_id=stage_intent,owner_token=ctx.owner_token))
+            try:
+                await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(stage_intent,))
+                try:
+                    graph = stage_data(await self._load_stage(connection,stage_ctx))
+                except (InvalidRequest,EmbeddingProfileMismatch):
+                    raise IntegrityViolation() from None
+            finally:
+                await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(ctx.intent_id,))
+            if (graph.manifest.revision_id,graph.manifest.generation_id) != (revision_id,generation_id):
+                raise IntegrityViolation()
+            reconstructed += len(graph.source)+len(graph.manifest_encoding.encoded_bytes)
+            if reconstructed > _SECURITY_GRAPH_BYTES:
+                raise UnsupportedCapability()
+            members = {(revision_id,generation_id,member.chunk_id,member.point_id) for member in graph.manifest.members}
+            if members != {row for row in claim_keys if row[:2] == (revision_id,generation_id)}:
+                raise IntegrityViolation()
+            ids = tuple(sorted(member.point_id for member in graph.manifest.members))
+            groups.append(MappingProxyType(dict(revision_id=revision_id,generation_id=generation_id,
+                manifest_sha256=graph.manifest_encoding.sha256,point_ids=ids)))
+            points.extend(self._projection_points(graph,document))
+        points.sort(key=lambda point:point.point_id)
+        encoded_inventory = _json(['cragkit.qdrant.security-inventory.v1',*physical,*_doc(ctx),self.instance_id,
+            [[group['revision_id'],group['generation_id'],group['manifest_sha256'],list(group['point_ids'])]
+             for group in groups]]).encode('utf-8')
+        data = dict(context=ctx,intent_sha256=digest,inventory_sha256=hashlib.sha256(encoded_inventory).hexdigest(),
+            authorization_revision=document['authorization_revision'],mutation_epoch=document['mutation_epoch'],
+            active_generation_id=document['active_generation_id'],tombstoned=document['tombstoned'],
+            principal_ids=tuple(_acl(document['principal_ids'])),grant_ids=tuple(_acl(document['grant_ids'])),
+            language=document['language'],kind=document['kind'],tag=document['tag'],generations=tuple(groups),
+            point_ids=tuple(point.point_id for point in points),points=tuple(points))
+        return MappingProxyType(data)
+
     async def project_security(self, value: object, *, deadline: float) -> SecurityProjection:
         writer_binding(self)
         ctx = context(value)
         async def project(connection: SessionConnection) -> SecurityProjection:
             document = await self._document(connection,ctx)
-            rows = await self._query(connection,
-                'SELECT instance_id,action,payload_bytes,payload_sha256,expected_authorization_revision,'
-                'expected_mutation_epoch,authority_committed,manifest_bytes,manifest_sha256,revision_id,generation_id,'
-                'expected_active_generation_id FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,
-                _key(ctx))
-            if not rows:
-                raise UnauthorizedScope()
-            if len(rows) != 1 or len(rows[0]) != 12:
-                raise IntegrityViolation()
-            instance,action,raw,digest,revision,epoch,committed = rows[0][:7]
-            if action not in ('update_authorization','tombstone'):
-                raise UnauthorizedScope()
-            if (any(item is not None for item in rows[0][7:]) or instance != self.instance_id
-                    or type(raw) is not bytes or not 1 <= len(raw) <= 1048576
-                    or hashlib.sha256(raw).hexdigest() != digest or type(epoch) is not int
-                    or type(committed) is not bool):
-                raise IntegrityViolation()
-            try:
-                payload = json.loads(raw.decode('utf-8',errors='strict'))
-                if (type(payload) is not list or len(payload) != 9
-                        or payload[:2] != ['cragkit.qdrant.intent.v1',action]
-                        or type(payload[8]) is not list or len(payload[8]) != 7
-                        or payload[8][6] not in ('true','false')):
-                    raise ValueError()
-                desired = payload[8]
-                record = dict(action=action,intent_id=payload[2],tenant_id=payload[3],collection=payload[4],
-                    document_id=payload[5],expected_authorization_revision=payload[6],
-                    expected_mutation_epoch=int(payload[7]),authorization=dict(authorization_revision=desired[0],
-                    principal_ids=desired[1],grant_ids=desired[2],language=desired[3],kind=desired[4],tag=desired[5],
-                    tombstoned=desired[6]=='true'))
-                encoded = encode_security_intent(record)
-                security = _parse(_Security,record)
-                if (encoded.encoded_bytes != raw or encoded.sha256 != digest
-                        or (security.tenant_id,security.collection,security.document_id,security.intent_id)
-                        != (*_doc(ctx),ctx.intent_id)
-                        or (security.expected_authorization_revision,security.expected_mutation_epoch) != (revision,epoch)):
-                    raise ValueError()
-                current_record = {**record,'authorization':{key:document[key] for key in
-                    ('authorization_revision','principal_ids','grant_ids','language','kind','tag','tombstoned')}}
-                current = _parse(_Security,current_record).authorization
-                _stored_identity(document['active_generation_id'],nullable=True)
-                _stored_count(document['mutation_epoch'])
-            except (ValueError,TypeError,IndexError,KeyError,UnicodeError,InvalidRequest):
-                raise IntegrityViolation() from None
-            if (not committed or document['mutation_epoch'] != epoch+1 or current != security.authorization):
-                raise UnauthorizedScope()
-            claims = await self._query(connection,
-                'SELECT revision_id,generation_id,chunk_id,point_id::text,instance_id,backend_namespace,'
-                'physical_collection,collection_incarnation FROM cragkit_qdrant.point_claims WHERE '+_DOC+' LIMIT 2049',_doc(ctx))
-            replays = await self._query(connection,
-                'SELECT revision_id,generation_id,chunk_id,point_id::text,backend_namespace,'
-                'physical_collection,collection_incarnation FROM cragkit_qdrant.vector_replays WHERE '+_DOC+' LIMIT 2049',_doc(ctx))
-            physical = (self.config.backend_namespace,self.config.physical_collection,self.config.collection_incarnation)
-            for inventory,width,binding in ((claims,8,(self.instance_id,*physical)),(replays,7,physical)):
-                if (any(len(row) != width or any(type(item) is not str for item in row)
-                        or row[4:] != binding for row in inventory)
-                        or len(set(inventory)) != len(inventory)):
-                    raise IntegrityViolation()
-                for row in inventory:
-                    for item in row[:3]:
-                        _stored_identity(item)
-                    _stored_uuid(row[3])
-            if len(claims) > 2048 or len(replays) > 2048:
-                raise UnsupportedCapability()
-            claim_keys = {row[:4] for row in claims}
-            if (claim_keys != {row[:4] for row in replays}
-                    or len({row[3] for row in claims}) != len(claims)):
-                raise IntegrityViolation()
-            identities = sorted({row[:2] for row in claims},key=lambda pair:tuple(item.encode('utf-8') for item in pair))
-            if len(identities) > 64:
-                raise UnsupportedCapability()
-            if any(sum(row[:2] == identity for row in claims) > 64 for identity in identities):
-                raise UnsupportedCapability()
-            groups: list[Mapping[str, Any]] = []
-            points: list[ExpectedPoint] = []
-            reconstructed = 0
-            for revision_id,generation_id in identities:
-                original = await self._query(connection,
-                    'SELECT intent_id FROM cragkit_qdrant.publication_intents WHERE '+_DOC+
-                    " AND revision_id=%s AND generation_id=%s AND action='stage' ORDER BY convert_to(intent_id,'UTF8') LIMIT 1",
-                    (*_doc(ctx),revision_id,generation_id))
-                if len(original) != 1 or len(original[0]) != 1:
-                    raise IntegrityViolation()
-                stage_intent = _stored_identity(original[0][0])
-                stage_ctx = context(dict(scope=ctx.scope,collection=ctx.collection,document_id=ctx.document_id,
-                                         intent_id=stage_intent,owner_token=ctx.owner_token))
-                try:
-                    await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(stage_intent,))
-                    try:
-                        graph = stage_data(await self._load_stage(connection,stage_ctx))
-                    except (InvalidRequest,EmbeddingProfileMismatch):
-                        raise IntegrityViolation() from None
-                finally:
-                    await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(ctx.intent_id,))
-                if (graph.manifest.revision_id,graph.manifest.generation_id) != (revision_id,generation_id):
-                    raise IntegrityViolation()
-                reconstructed += len(graph.source)+len(graph.manifest_encoding.encoded_bytes)
-                if reconstructed > _SECURITY_GRAPH_BYTES:
-                    raise UnsupportedCapability()
-                members = {(revision_id,generation_id,member.chunk_id,member.point_id) for member in graph.manifest.members}
-                if members != {row for row in claim_keys if row[:2] == (revision_id,generation_id)}:
-                    raise IntegrityViolation()
-                ids = tuple(sorted(member.point_id for member in graph.manifest.members))
-                groups.append(MappingProxyType(dict(revision_id=revision_id,generation_id=generation_id,
-                    manifest_sha256=graph.manifest_encoding.sha256,point_ids=ids)))
-                points.extend(self._projection_points(graph,document))
-            points.sort(key=lambda point:point.point_id)
-            encoded_inventory = _json(['cragkit.qdrant.security-inventory.v1',*physical,*_doc(ctx),self.instance_id,
-                [[group['revision_id'],group['generation_id'],group['manifest_sha256'],list(group['point_ids'])]
-                 for group in groups]]).encode('utf-8')
-            data = dict(context=ctx,intent_sha256=digest,inventory_sha256=hashlib.sha256(encoded_inventory).hexdigest(),
-                authorization_revision=document['authorization_revision'],mutation_epoch=document['mutation_epoch'],
-                active_generation_id=document['active_generation_id'],tombstoned=document['tombstoned'],
-                principal_ids=tuple(_acl(document['principal_ids'])),grant_ids=tuple(_acl(document['grant_ids'])),
-                language=document['language'],kind=document['kind'],tag=document['tag'],generations=tuple(groups),
-                point_ids=tuple(point.point_id for point in points),points=tuple(points))
+            data = await self._security_graph(connection,ctx,document)
             projection = SecurityProjection()
-            _SECURITY_PROJECTIONS[projection] = (self,MappingProxyType(data))
+            _SECURITY_PROJECTIONS[projection] = (self,data)
             return projection
         return await self._run(ctx,deadline,project)
 
@@ -1512,6 +1571,28 @@ class PostgresQdrantWriter:
         # rather than the private vector objects' deliberately distinct identity.
         if any(original[key] != fresh[key] for key in original if key != 'points'):
             raise UnauthorizedScope()
+
+    async def fixed_validate_security_guarded(self, guard: object, projection: object, *, deadline: float) -> None:
+        from ._qdrant_recovery import security_guard_binding
+        original = security_projection_data(projection,self)
+        def check() -> Mapping[str, Any]:
+            return security_guard_binding(guard,self,projection,deadline=deadline)
+        bound = check()
+        if self._schema_profile != 4:
+            raise UnsupportedCapability()
+        async def validate(connection: SessionConnection) -> None:
+            check()
+            document = await self._document(connection,original['context'],lock=False)
+            check()
+            observed = {key:tuple(value) if key in ('principal_ids','grant_ids') else value
+                        for key,value in document.items()}
+            if observed != dict(bound['document']):
+                raise UnauthorizedScope()
+            fresh = await self._security_graph(connection,original['context'],document)
+            check()
+            if any(original[key] != fresh[key] for key in original if key != 'points'):
+                raise UnauthorizedScope()
+        await self._run(original['context'],deadline,validate,guarded_check=check)
 
     async def project_publication(self, value: object, binding: object, *,
                                   deadline: float) -> PublicationProjection:

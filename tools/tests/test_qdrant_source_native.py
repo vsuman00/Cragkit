@@ -86,14 +86,15 @@ def test_private_tls_scram_configuration_and_cleanup(tmp_path,monkeypatch):
     assert 'owned_postgres_private_data_removed' in fixture.checks
 
 
-def test_explicit_three_runtime_client_fixture_preserves_reserved_slots(tmp_path,monkeypatch):
+def test_explicit_bounded_runtime_client_fixtures_preserve_reserved_slots(tmp_path,monkeypatch):
     binaries,_=mocks(tmp_path,monkeypatch)
-    with module.PostgresSourceFixture(binaries,tmp_path/'worker-artifacts',max_connections=6) as fixture:
-        server=(fixture._data/'postgresql.conf').read_text()
-        assert 'max_connections = 6' in server
-        assert 'superuser_reserved_connections' not in server
-        assert "shared_buffers = '16MB'" in server
-    for invalid in (True,0,4,7,100,'6'):
+    for ceiling in (6,7):
+        with module.PostgresSourceFixture(binaries,tmp_path/'worker-artifacts',max_connections=ceiling) as fixture:
+            server=(fixture._data/'postgresql.conf').read_text()
+            assert f'max_connections = {ceiling}' in server
+            assert 'superuser_reserved_connections' not in server
+            assert "shared_buffers = '16MB'" in server
+    for invalid in (True,0,4,8,100,'6'):
         with pytest.raises(RuntimeError,match='postgres_fixture_connection_ceiling'):
             module.PostgresSourceFixture(tmp_path,tmp_path/'unused',max_connections=invalid)
 

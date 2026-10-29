@@ -1,10 +1,12 @@
 /** Supervisor SQL control. Physical fencing and source authority stay separate. */
 import { types } from 'node:util';
 import {randomUUID} from 'node:crypto';
-import { PoolResource, bounded, now, type LeaseOptions } from './postgres-pool.js';
+import { PoolResource, bounded, now, type LeaseOptions, type PgClient } from './postgres-pool.js';
 import { ManagedQdrantSupervisor, type SupervisorControlSession } from './qdrant-supervisor.js';
 import { QdrantReconciliationVerifier, receipt_data, verifier_authority, inspect_missing_readback, verification_budget, type VerificationBudget } from './qdrant-reconciliation.js';
-import { projection_data, writer_binding, recovery_dispatch_plan_data, type RecoveryDispatchPlanData, type PostgresQdrantWriter } from './qdrant-writer.js';
+import { projection_data, writer_binding, recovery_dispatch_plan_data,security_projection_data,validate_guarded_security_projection,require_security_guard_writer, type RecoveryDispatchPlanData, type PostgresQdrantWriter } from './qdrant-writer.js';
+import {QdrantSecurityVerifier,security_verifier_binding,security_receipt_data} from './qdrant-security-verification.js';
+import {security_readback_budget,type SecurityReadbackBudget} from './qdrant-security-readback.js';
 import { AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY, AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
   AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,
@@ -30,6 +32,30 @@ type RecoveryRegistration=Readonly<{
   verifier:QdrantReconciliationVerifier;
 }>;
 const recoveryRegistrations=new WeakMap<object,RecoveryRegistration>();
+const guardedDrivers=new WeakMap<object,(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,security:WriterContext,options:LeaseOptions,budget:SecurityReadbackBudget)=>Promise<void>>();
+type GuardMetadata=Readonly<{context:WriterContext;owner_context:WriterContext;document:Readonly<Data>}>;
+type GuardRecord=Readonly<{writer:PostgresQdrantWriter;projection:unknown;options:LeaseOptions;data:GuardMetadata;check:()=>void}>;
+const securityGuards=new WeakMap<object,GuardRecord>();
+type GuardedTransaction=Readonly<{attach:(client:PgClient,signal:AbortSignal)=>void;check:()=>void;commit:()=>void;invalidate:()=>void}>;
+/** Read-only private capability inspection. No transaction or callable escapes. */
+export function security_guard_binding(token:unknown,writer:PostgresQdrantWriter,projection:unknown,rawOptions:unknown):GuardMetadata{
+  writer_binding(writer);const options=parse_options(rawOptions);
+  if(typeof token!=='object'||token===null||types.isProxy(token))throw new InvalidRequest();
+  const issued=securityGuards.get(token);
+  if(!issued||issued.writer!==writer||issued.projection!==projection||options.signal!==issued.options.signal
+    ||options.deadline>issued.options.deadline)throw new InvalidRequest();
+  issued.check();return issued.data;
+}
+/** Fixed internal driver, authenticated by its original constructor closure. */
+export async function validate_security_guarded(recovery:unknown,verifier:QdrantSecurityVerifier,proof:unknown,rawOwner:unknown,rawSecurity:unknown,rawOptions:unknown,inputBudget?:SecurityReadbackBudget):Promise<void>{
+  const owner=parse_context(rawOwner),security=parse_context(rawSecurity),options=parse_options(rawOptions),budget=security_readback_budget(inputBudget);
+  if(typeof recovery!=='object'||recovery===null||types.isProxy(recovery)||Object.getPrototypeOf(recovery)!==PostgresQdrantRecovery.prototype)throw new InvalidRequest();
+  const driver=guardedDrivers.get(recovery);if(!driver)throw new InvalidRequest();
+  if(owner.intent_id===security.intent_id||owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
+  await driver(verifier,proof,owner,security,options,budget);
+}
+export const SECURITY_GUARD_SQL="SELECT true FROM cragkit_qdrant.lock_current_security("+
+  Array.from({length:22},(_,index)=>'$'+(index+1)).join(',')+")";
 
 export type RecoveryDispatchAuthorizationData=Readonly<{context:WriterContext;physical_binding:Binding;attempt_binding:Binding;sequence:number}>;
 type DispatchAuthorization=Readonly<{issuer:PostgresQdrantRecovery;writer:PostgresQdrantWriter;supervisor:ManagedQdrantSupervisor;
@@ -197,6 +223,7 @@ export class PostgresQdrantRecovery {
     this.#writer=verifier_authority(verifier,supervisor);
     recoveryRegistrations.set(this,Object.freeze({resource:this.#resource,config:this.#config,writer:this.#writer,
       supervisor:this.#supervisor,verifier:this.#verifier}));
+    guardedDrivers.set(this,(securityVerifier,proof,owner,security,options,budget)=>this.#validateSecurityGuarded(securityVerifier,proof,owner,security,options,budget));
   }
   #admit(initializing=false):void {
     if (this.#closed||this.#active) throw new ProviderUnavailable();
@@ -221,17 +248,98 @@ export class PostgresQdrantRecovery {
       finish();
     }
   }
-  async #tx<T>(instance_id:string,options:LeaseOptions,body:(tx:Tx,profile:RecoverySchemaProfile)=>Promise<T>,initializing=false,expectedProfile?:RecoverySchemaProfile):Promise<T> {
-    return this.#resource.withLease(options,async(client,signal)=>{
+  async #validateSecurityGuarded(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,security:WriterContext,caller:LeaseOptions,budget:SecurityReadbackBudget):Promise<void>{
+    security_verifier_binding(verifier,this.#writer,this.#supervisor);
+    this.#admit();if(this.#profile!=='security_guard')throw new UnsupportedCapability();
+    require_security_guard_writer(this.#writer);
+    const controller=new AbortController(),relay=()=>controller.abort();
+    caller.signal?.addEventListener('abort',relay,{once:true});if(caller.signal?.aborted)controller.abort();
+    const options={deadline:caller.deadline,signal:controller.signal};
+    let finish!:()=>void;const done=new Promise<void>(resolve=>{finish=resolve;});
+    const operation={controller,done};this.#active=operation;
+    // The inner promise owns the real facade through actual callback cleanup.
+    // Only the external wait is bounded; its finally never clears admission.
+    const inner=(async()=>{
+      try{await this.#supervisor.control_session(async session=>{
+        parse_options(options);
+        const binding=physical(this.#supervisor.recovery_binding(proof));
+        if(binding.instance_id!==writer_binding(this.#writer).instance_id)throw new UnsupportedCapability();
+        const receipt=await QdrantSecurityVerifier.prototype.verify.call(verifier,proof,session,owner,security,options,budget);
+        const receiptData=security_receipt_data(receipt,verifier,session,options);
+        if(!same(receiptData.owner_context,owner)||!same(receiptData.security_context,security)
+          ||!same(receiptData.physical_binding,binding))throw new IntegrityViolation();
+        const projection=receiptData.projection,source=security_projection_data(projection,this.#writer);
+        const document=Object.freeze({active_generation_id:source.active_generation_id,principal_ids:source.principal_ids,
+          grant_ids:source.grant_ids,authorization_revision:source.authorization_revision,mutation_epoch:source.mutation_epoch,
+          language:source.language,kind:source.kind,tag:source.tag,tombstoned:source.tombstoned});
+        const data=Object.freeze({context:security,owner_context:owner,document});
+        let client:PgClient|undefined,leaseSignal:AbortSignal|undefined;
+        let active=true,required=false,acknowledged=false,validated=false,poisoned=false,tokenLive=false;
+        const invalidate=()=>{active=false;tokenLive=false;poisoned=true;};
+        const check=()=>{
+          try{
+            parse_options(options);if(leaseSignal)parse_options({deadline:options.deadline,signal:leaseSignal});
+            if(this.#closed||this.#active!==operation||!active||poisoned||!client||client.getTransactionStatus()!=='T')throw new ProviderUnavailable();
+            security_verifier_binding(verifier,this.#writer,this.#supervisor);
+            if(security_receipt_data(receipt,verifier,session,options)!==receiptData)throw new IntegrityViolation();
+          }catch(error){invalidate();throw error;}
+        };
+        const guarded:GuardedTransaction={attach:(actual,signal)=>{client=actual;leaseSignal=signal;},check,invalidate,
+          commit:()=>{check();if(!required||!acknowledged||!validated||tokenLive)throw new ProviderUnavailable();active=false;}};
+        try{await this.#tx(String(binding.instance_id),options,async(tx,profile)=>{
+          if(profile!=='security_guard')throw new UnsupportedCapability();
+          check();required=true;
+          let rows:unknown[][];
+          try{rows=await tx.query(SECURITY_GUARD_SQL,[binding.instance_id,this.#config.backend_namespace,binding.storage_identity,
+            binding.supervisor_id,binding.recovery_id,binding.new_epoch,owner.scope.tenant_id,owner.collection,owner.document_id,
+            owner.intent_id,owner.owner_token,security.intent_id,source.intent_sha256,source.active_generation_id,
+            source.authorization_revision,source.mutation_epoch,source.principal_ids,source.grant_ids,
+            source.language,source.kind,source.tag,source.tombstoned],1);}
+          catch(error){
+            invalidate();let code:unknown;
+            try{if(typeof error==='object'&&error!==null&&!types.isProxy(error))code=Object.getOwnPropertyDescriptor(error,'code')?.value;}catch{/* Redacted. */}
+            if(code==='42501'||code==='23514')throw new UnauthorizedScope();
+            if(code==='22023')throw new UnsupportedCapability();throw error;
+          }
+          if(rows.length!==1||rows[0].length!==1||rows[0][0]!==true){invalidate();throw new IntegrityViolation();}
+          check();acknowledged=true;tokenLive=true;
+          const token=Object.freeze({});
+          securityGuards.set(token,{writer:this.#writer,projection,options,data,check:()=>{
+            if(!tokenLive||!acknowledged)throw new InvalidRequest();check();
+          }});
+          try{await validate_guarded_security_projection(this.#writer,token,projection,options);check();validated=true;}
+          catch(error){invalidate();throw error;}
+          finally{tokenLive=false;}
+        },false,undefined,guarded);}
+        finally{invalidate();}
+      });}
+      finally{caller.signal?.removeEventListener('abort',relay);this.#active=undefined;finish();}
+    })();
+    void inner.catch(()=>{});
+    try{await bounded(inner,caller);}
+    catch(error){
+      controller.abort();
+      try{await bounded(Promise.allSettled([inner]),{deadline:now()+this.#resource.config.release_timeout});}
+      catch{this.#closed=true;}
+      throw safe(error,caller.deadline);
+    }
+  }
+  async #tx<T>(instance_id:string,options:LeaseOptions,body:(tx:Tx,profile:RecoverySchemaProfile)=>Promise<T>,initializing=false,expectedProfile?:RecoverySchemaProfile,guarded?:GuardedTransaction):Promise<T> {
+    let actual:Promise<T>|undefined;
+    const outer=this.#resource.withLease(options,(client,signal)=>{
+      const running=(async()=>{
       const lease={deadline:options.deadline,signal};
       let status:string|null;
       try { status=client.getTransactionStatus(); } catch { client.release(true);throw new ProviderUnavailable(); }
       if (status!=='I') { client.release(true);throw new InvalidRequest(); }
       let begun=false,committing=false,committed=false;
       const tx:Tx={query:async(sql,values,max=257)=>{
+        if(guarded){parse_options(lease);guarded.check();}
         const milliseconds=String(Math.max(1,Math.floor(Math.min(options.deadline-now(),2147483.647)*1000)));
         await bounded(client.query({text:"SELECT set_config('statement_timeout',$1,true)",values:[milliseconds],rowMode:'array'}),lease);
+        if(guarded){parse_options(lease);guarded.check();}
         const result=await bounded(client.query({text:sql,values,rowMode:'array'}),lease);
+        if(guarded){parse_options(lease);guarded.check();}
         try {
           if (typeof result!=='object'||result===null||types.isProxy(result)) throw new IntegrityViolation();
           const descriptor=Object.getOwnPropertyDescriptor(result,'rows');
@@ -242,6 +350,8 @@ export class PostgresQdrantRecovery {
       try {
         await bounded(client.query({text:'BEGIN ISOLATION LEVEL READ COMMITTED',rowMode:'array'}),lease);
         begun=true;
+        guarded?.attach(client,signal);
+        guarded?.check();
         await bounded(client.query({text:'SET LOCAL search_path=pg_catalog',rowMode:'array'}),lease);
         let profile:RecoverySchemaProfile;
         try{profile=recovery_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,5));}
@@ -265,6 +375,8 @@ export class PostgresQdrantRecovery {
         await tx.query("SELECT set_config('cragkit_qdrant.backend_instance_id',$1,true)",[instance_id],1);
         const value=await body(tx,profile);
         parse_options(options);
+        // Must precede query construction: bounded(query(...)) is too late.
+        guarded?.commit();
         committing=true;
         await bounded(client.query({text:'COMMIT',rowMode:'array'}),lease);
         if (client.getTransactionStatus()!=='I') throw new ProviderUnavailable();
@@ -280,6 +392,7 @@ export class PostgresQdrantRecovery {
         }
         throw safe(error,options.deadline);
       } finally {
+        guarded?.invalidate();
         if (begun&&!committing) {
           let clean=false;
           try {
@@ -289,7 +402,11 @@ export class PostgresQdrantRecovery {
           if (!clean) client.release(true);
         }
       }
+      })();actual=running;void running.catch(()=>{});return running;
     });
+    try{return await outer;}
+    catch(error){guarded?.invalidate();throw error;}
+    finally{if(guarded&&actual)await Promise.allSettled([actual]);}
   }
   async #commit<T>(instance:string,options:LeaseOptions,body:(tx:Tx,profile:RecoverySchemaProfile)=>Promise<T>,readback:(tx:Tx,profile:RecoverySchemaProfile)=>Promise<T>,initializing=false):Promise<T> {
     let attempted:RecoverySchemaProfile|undefined;

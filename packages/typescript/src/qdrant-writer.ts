@@ -9,7 +9,7 @@ import { AUTHORITY_FINGERPRINT_SQL, AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION
   AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL } from './qdrant-authority.js';
 import {attestation_receipt_data,publication_verifier_controller,type QdrantPublicationVerifier} from './qdrant-publication-verification.js';
 import {require_publication_finalization} from './qdrant-publication-worker.js';
-import {recovery_dispatch_authorization} from './qdrant-recovery.js';
+import {recovery_dispatch_authorization,security_guard_binding} from './qdrant-recovery.js';
 import { encode_manifest, encode_stage_intent, restore_dense_replay, restore_sparse_replay } from './qdrant-manifest.js';
 import { same, point_id, parse_response, type QdrantConfig } from './qdrant-contract.js';
 import { type TrustedScope } from './requests.js';
@@ -50,6 +50,19 @@ export type PreparationAttestation=Readonly<{tenant_id:string;collection:string;
 const ATTESTATION_COLUMNS=['tenant_id','collection','document_id','intent_id','instance_id','owner_token','backend_epoch','authorization_revision','mutation_epoch','manifest_sha256','expected_active_generation_id','credential_generation','verification_id','readback_sha256'] as const;
 type WriterRegistration=Readonly<{resource:PoolResource;config:QdrantConfig;instance_id:string}>;
 const writerRegistrations=new WeakMap<object,WriterRegistration>();
+const guardedReaders=new WeakMap<object,(guard:unknown,projection:unknown,options:LeaseOptions)=>Promise<void>>();
+const guardedAdmission=new WeakMap<object,()=>void>();
+export function require_security_guard_writer(writer:PostgresQdrantWriter):void{
+  writer_binding(writer);const check=guardedAdmission.get(writer);if(!check)throw new InvalidRequest();check();
+}
+/** Fixed internal consumer; no caller callback or lock mode crosses this boundary. */
+export async function validate_guarded_security_projection(writer:PostgresQdrantWriter,guard:unknown,projection:unknown,rawOptions:unknown):Promise<void>{
+  writer_binding(writer);const parsed=parseOptions(rawOptions),options={deadline:parsed.deadline,signal:parsed.signal};
+  security_guard_binding(guard,writer,projection,options);
+  const read=guardedReaders.get(writer);if(!read)throw new InvalidRequest();
+  await read(guard,projection,options);
+}
+type GuardedRead=Readonly<{check:()=>void;invalidate:()=>void}>;
 
 /** Constructor identity only: this metadata grants no readiness or write authority. */
 export function writer_binding(input:unknown):Readonly<{config:QdrantConfig;instance_id:string}> {
@@ -278,6 +291,12 @@ export class PostgresQdrantWriter {
     if (!(resource instanceof PoolResource)) throw new InvalidRequest();
     this.#resource=resource; this.#config=parseConfig(config); this.#instance=text(instance_id);
     writerRegistrations.set(this,Object.freeze({resource:this.#resource,config:this.#config,instance_id:this.#instance}));
+    guardedReaders.set(this,(guard,projection,options)=>this.#validateSecurityGuarded(guard,projection,options));
+    guardedAdmission.set(this,()=>{
+      if(this.#closed||this.#active)throw new ProviderUnavailable();
+      if(!this.#initialized)throw new IndexNotReady();
+      if(this.#profile!=='security_guard')throw new UnsupportedCapability();
+    });
   }
   async #work<T>(options: LeaseOptions, task:(options:LeaseOptions)=>Promise<T>, initialize=false):Promise<T> {
     if(this.#closed||this.#active) throw new ProviderUnavailable();
@@ -293,17 +312,24 @@ export class PostgresQdrantWriter {
     catch(error) { throw safe(error, options.deadline); }
     finally { options.signal?.removeEventListener('abort',onAbort); this.#active=undefined; finish(); }
   }
-  async #tx<T>(context:WriterContext|null,options:LeaseOptions,body:(tx:Tx,profile:WriterSchemaProfile)=>Promise<T>,preserveCommitCancellation=false,initializing=false):Promise<T> {
-    return this.#resource.withLease(options,async(client,signal)=>{
+  async #tx<T>(context:WriterContext|null,options:LeaseOptions,body:(tx:Tx,profile:WriterSchemaProfile)=>Promise<T>,preserveCommitCancellation=false,initializing=false,guarded?:GuardedRead):Promise<T> {
+    let actual:Promise<T>|undefined;
+    const outer=this.#resource.withLease(options,(client,signal)=>{
+      const running=(async()=>{
       const lease={deadline:options.deadline,signal};
+      const check=()=>{if(guarded){parseOptions(lease);guarded.check();}};
+      check();
       let initialStatus:string|null;
       try{initialStatus=client.getTransactionStatus();}catch{client.release(true);throw new ProviderUnavailable();}
       if(initialStatus!=='I'){client.release(true);throw new InvalidRequest();}
       let begun=false,committed=false,commitAttempted=false;
       const tx:Tx={query:async(sql,values,max=65)=>{
+        check();if(guarded&&client.getTransactionStatus()!=='T')throw new ProviderUnavailable();
         const timeout=String(Math.max(1,Math.floor(Math.min(options.deadline-now(),2147483.647)*1000)));
         await bounded(client.query({text:"SELECT set_config('statement_timeout',$1,true)",values:[timeout],rowMode:'array'}),lease);
+        check();
         const result=await bounded(client.query({text:sql,values,rowMode:'array'}),lease);
+        check();
         try {
           if(typeof result!=='object'||result===null||types.isProxy(result)) throw new IntegrityViolation();
           const descriptor=Object.getOwnPropertyDescriptor(result,'rows');
@@ -313,6 +339,7 @@ export class PostgresQdrantWriter {
       }};
       try {
         await bounded(client.query({text:'BEGIN ISOLATION LEVEL READ COMMITTED',rowMode:'array'}),lease); begun=true;
+        check();
         await bounded(client.query({text:'SET LOCAL search_path=pg_catalog',rowMode:'array'}),lease);
         let profile:WriterSchemaProfile;
         try{profile=writer_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,5));}
@@ -337,6 +364,7 @@ export class PostgresQdrantWriter {
             context.scope.authorization_revision,context.document_id,context.intent_id,context.owner_token,this.#instance],1);
         }
         const value=await body(tx,profile);
+        check();if(guarded&&client.getTransactionStatus()!=='T')throw new ProviderUnavailable();
         commitAttempted=true;
         await bounded(client.query({text:'COMMIT',rowMode:'array'}),lease);
         if(client.getTransactionStatus()!=='I') throw new ProviderUnavailable();
@@ -363,7 +391,16 @@ export class PostgresQdrantWriter {
           if(!clean)client.release(true);
         }
       }
+      })();actual=running;void running.catch(()=>{});return running;
     });
+    try{return await outer;}
+    catch(error){guarded?.invalidate();throw error;}
+    finally{if(guarded&&actual){
+      const drain=Promise.allSettled([actual]);
+      try{await bounded(drain,{deadline:now()+this.#resource.config.release_timeout});}
+      catch{this.#closed=true;}
+      await drain;
+    }}
   }
   #key(context:WriterContext):unknown[]{return [context.scope.tenant_id,context.collection,context.document_id];}
   async #select(tx:Tx,table:string,columns:readonly string[],context:WriterContext,extra='',params:readonly unknown[]=[],max=65):Promise<Data[]> {
@@ -937,8 +974,8 @@ export class PostgresQdrantWriter {
     try{return await this.#securityGraph(tx,context);}
     catch(error){if(error instanceof InvalidRequest||error instanceof EmbeddingProfileMismatch)throw new IntegrityViolation();throw error;}
   }
-  async #securityGraph(tx:Tx,context:WriterContext):Promise<SecurityProjectionData>{
-    const document=await this.#document(tx,context,true);
+  async #securityGraph(tx:Tx,context:WriterContext,document=undefined as Data|null|undefined):Promise<SecurityProjectionData>{
+    if(document===undefined)document=await this.#document(tx,context,true);
     if(!document||document.authorization_revision!==context.scope.authorization_revision)throw new UnauthorizedScope();
     const intent=await this.#intent(tx,context);
     if(!intent||!['update_authorization','tombstone'].includes(String(intent.action))||!intent.authority_committed)throw new UnauthorizedScope();
@@ -1032,6 +1069,35 @@ export class PostgresQdrantWriter {
       const current=await this.#projectSecurity(tx,previous.context);
       if(!same(current,previous))throw new UnauthorizedScope();
     }));
+  }
+  async #validateSecurityGuarded(guard:unknown,projection:unknown,options:LeaseOptions):Promise<void>{
+    const previous=security_projection_data(projection,this);
+    security_guard_binding(guard,this,projection,options);
+    // This private consumer is awaited by Recovery's owned inner scope. It must
+    // retain writer admission through the actual pool callback, not its race.
+    await this.#work(options,async writerOptions=>{
+      let valid=true;
+      const abort=()=>{
+        valid=false;const active=this.#active;
+        if(active)void bounded(active.done,{deadline:now()+this.#resource.config.release_timeout}).catch(()=>{
+          if(this.#active===active)this.#closed=true;
+        });
+      };
+      writerOptions.signal?.addEventListener('abort',abort,{once:true});if(writerOptions.signal?.aborted)abort();
+      const check=()=>{if(!valid)throw new ProviderUnavailable();security_guard_binding(guard,this,projection,options);};
+      try{await this.#tx(previous.context,writerOptions,async(tx,profile)=>{
+        check();if(profile!=='security_guard')throw new UnsupportedCapability();
+        const binding=security_guard_binding(guard,this,projection,options);
+        const document=await this.#document(tx,previous.context);
+        check();
+        if(!document||!same({...document,mutation_epoch:db_count(document.mutation_epoch)},binding.document))throw new UnauthorizedScope();
+        let current:SecurityProjectionData;
+        try{current=await this.#securityGraph(tx,previous.context,document);}
+        catch(error){if(error instanceof InvalidRequest||error instanceof EmbeddingProfileMismatch)throw new IntegrityViolation();throw error;}
+        check();if(!same(current,previous))throw new UnauthorizedScope();
+      },false,false,{check,invalidate:()=>{valid=false;}});}
+      finally{valid=false;writerOptions.signal?.removeEventListener('abort',abort);}
+    });
   }
   async project_stage(input:unknown,rawPhysical:unknown,rawOptions:unknown):Promise<ExpectedProjection>{
     const context=parseContext(input),options=parseOptions(rawOptions),physical=metadata(rawPhysical);

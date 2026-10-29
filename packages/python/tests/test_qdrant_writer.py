@@ -190,7 +190,7 @@ def security_projection_writer(monkeypatch, *, tombstone=False):
         language=desired['language'],kind=desired['kind'],tag=desired['tag'],tombstoned=tombstone)
     state = dict(plans=plans,document=document,raw=('instance-1',security['action'],encoded.encoded_bytes,
         encoded.sha256,'auth-1',1,True,None,None,None,None,None),claims=[],replays=[],loads=[],selected=None,graph_error=False,
-        original_missing=False)
+        original_missing=False,document_locks=[])
     physical = (config()['backend_namespace'],config()['physical_collection'],config()['collection_incarnation'])
     def inventories():
         state['claims'] = []
@@ -214,7 +214,8 @@ def security_projection_writer(monkeypatch, *, tombstone=False):
                 return Cursor([])
             if sql.startswith('SELECT active_generation_id,authorization_revision,mutation_epoch,principal_ids'):
                 self.calls.append((sql,params))
-                assert sql.endswith(' FOR UPDATE')
+                state['document_locks'].append(sql.endswith(' FOR UPDATE'))
+                assert sql.endswith(' FOR UPDATE') or state.get('allow_nonlocking',False)
                 return Cursor([tuple(state['document'].values())])
             if sql.startswith('SELECT instance_id,action,payload_bytes'):
                 self.calls.append((sql,params));return Cursor([state['raw']])
@@ -1885,3 +1886,35 @@ async def test_profile4_cannot_publish_retired_preparation_without_current_attes
         await writer.publish(ctx(),deadline=asyncio.get_running_loop().time()+5)
     assert connections and not state.get('publication_updates')
     assert state['intent']['state']=='prepared'
+
+
+@run_async
+async def test_guarded_writer_rejects_unissued_tokens_and_projection_copies_before_checkout(monkeypatch):
+    from cragkit._qdrant_recovery import _SecurityGuard
+    writer,state,connections,target=security_projection_writer(monkeypatch)
+    projection=await writer.project_security(target,deadline=asyncio.get_running_loop().time()+5)
+    before=len(connections)
+    for guard in (object(),_SecurityGuard(),{},dict(context=target)):
+        with pytest.raises(InvalidRequest):
+            await implementation.validate_guarded_security_projection(writer,guard,projection,
+                deadline=asyncio.get_running_loop().time()+5)
+    with pytest.raises(InvalidRequest):
+        await implementation.validate_guarded_security_projection(writer,object(),dict(implementation.security_projection_data(projection,writer)),
+            deadline=asyncio.get_running_loop().time()+5)
+    assert len(connections)==before and state['document_locks']==[True]
+
+
+def test_guarded_writer_transaction_boundary_accepts_native_intenum_intrans_only():
+    from enum import IntEnum
+    class Status(IntEnum):
+        IDLE=0
+        INTRANS=2
+        INERROR=3
+    actual=SimpleNamespace(info=SimpleNamespace(transaction_status=Status.INTRANS))
+    calls=[]
+    wrapped=implementation._GuardedWriterConnection(actual,lambda:calls.append('custody'))
+    wrapped.boundary()
+    assert calls==['custody']
+    for invalid in (Status.IDLE,Status.INERROR,True,None,2.0):
+        actual.info.transaction_status=invalid
+        with pytest.raises(ProviderUnavailable):wrapped.boundary()

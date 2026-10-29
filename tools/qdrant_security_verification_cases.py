@@ -27,6 +27,18 @@ GUARD_CHECKS=(
  'extra_definer_refused_before_backend_binding',
 )
 
+GRAPH_CHECKS=(
+ 'actual_guard_nonlocking_full_graph',
+ 'document_lock_wait_observed_until_guard_commit',
+ 'late_canonical_drift_refused',
+ 'late_vector_drift_refused',
+ 'late_manifest_drift_refused',
+ 'extra_raw_claim_refused',
+ 'post_wait_authority_mismatch_refused',
+ 'supervisor_connection_loss_releases_document_without_commit',
+ 'late_callback_retains_control_and_writer_until_drained',
+)
+
 
 class NativeSecurityVerificationFailure(RuntimeError):
     def __init__(self, observation):
@@ -55,15 +67,17 @@ async def python_security_verification_cases(value):
     import hashlib
     import inspect
     import json
+    import struct
     from pathlib import Path
     from cragkit._postgres_pool import PoolConfig,PoolResource,_owned_pool
     from cragkit._qdrant_writer import PostgresQdrantWriter,security_projection_data
     from cragkit._qdrant_writer_contract import prepare_stage
     from cragkit._qdrant_reconciliation import QdrantReconciliationVerifier
-    from cragkit._qdrant_recovery import PostgresQdrantRecovery
+    from cragkit._qdrant_recovery import PostgresQdrantRecovery,validate_security_guarded
     from cragkit._qdrant_supervisor import ManagedQdrantSupervisor
     from cragkit._qdrant_security_verification import QdrantSecurityVerifier,security_receipt_data
-    from cragkit.errors import InvalidRequest,IntegrityViolation,UnsupportedCapability,UnauthorizedScope
+    from cragkit.errors import (InvalidRequest,IntegrityViolation,UnsupportedCapability,UnauthorizedScope,
+                               ProviderUnavailable,DeadlineExceeded)
     from qdrant_supervisor_cases import plain,request_bytes,observed_listener
 
     inputs=value['inputs']
@@ -73,7 +87,51 @@ async def python_security_verification_cases(value):
         result=PoolConfig.model_validate(raw)
         if result.max_size!=1:raise RuntimeError('security_receipt_pool_bound')
         return result
-    resource=PoolResource(pool_config(value['writer_config']))
+    graph_mode='guard_graph_config' in value
+    graph=dict(before=None,after=None,reply=None,contender_reply=None,active=False,reads=0,
+               denied_commits=0,deny_commit=False,sup_pid=None,commits=0,tasks=[],gates=[])
+    class GraphConnection:
+        # ponytail: wrap the existing real pool; only controlled callback timing changes.
+        def __init__(self,actual,role):self.actual,self.role,self.guarded,self.denied=actual,role,False,False
+        def __getattr__(self,name):return getattr(self.actual,name)
+        def transaction(self,*args,**kwargs):
+            transaction=self.actual.transaction(*args,**kwargs);connection=self
+            class Transaction:
+                async def __aenter__(self):
+                    connection.guarded=False;connection.denied=False
+                    return await transaction.__aenter__()
+                async def __aexit__(self,kind,error,traceback):
+                    if connection.guarded and kind is None:
+                        graph['commits']+=1
+                        if connection.denied:graph['denied_commits']+=1
+                    try:return await transaction.__aexit__(kind,error,traceback)
+                    finally:
+                        if connection.guarded:graph['active']=False
+            return Transaction()
+        async def execute(self,statement,params=None,**options):
+            nonlocal guard_count
+            sql=statement if type(statement) is str else ''
+            if self.role=='supervisor' and "set_config('cragkit_qdrant.backend_instance_id'" in sql:guard_count+=1
+            guard=self.role=='supervisor' and sql.startswith('SELECT true FROM cragkit_qdrant.lock_current_security(')
+            if guard:
+                self.guarded=True;self.denied=graph['deny_commit'];graph['active']=True;graph['sup_pid']=self.actual.info.backend_pid
+                if graph['before'] is not None:await graph['before'](self)
+            cursor=await self.actual.execute(statement,params,**options)
+            if guard and graph['after'] is not None:await graph['after'](self)
+            document=sql.startswith('SELECT active_generation_id,authorization_revision,mutation_epoch,principal_ids')
+            if self.role=='writer' and document and graph['active']:
+                if 'FOR UPDATE' in sql or 'FOR SHARE' in sql:raise RuntimeError('security_graph_document_lock')
+                graph['reads']+=1
+                if graph['reply'] is not None:await graph['reply'](self)
+            if self.role=='contender' and document and 'FOR UPDATE' in sql and graph['contender_reply'] is not None:
+                await graph['contender_reply'](self)
+            return cursor
+    class GraphPool:
+        def __init__(self,configuration,role):self.actual,self.role=_owned_pool(configuration),role
+        def __getattr__(self,name):return getattr(self.actual,name)
+        async def getconn(self,**options):return GraphConnection(await self.actual.getconn(**options),self.role)
+        async def putconn(self,connection):await self.actual.putconn(connection.actual)
+    resource=PoolResource(pool_config(value['writer_config']),**({'factory':lambda cfg:GraphPool(cfg,'writer')} if graph_mode else {}))
     guard_mode='guard_operator_config' in value
     guard_count=0
     class GuardConnection:
@@ -88,9 +146,11 @@ async def python_security_verification_cases(value):
         def __getattr__(self,name):return getattr(self.actual,name)
         async def getconn(self,**options):return GuardConnection(await self.actual.getconn(**options))
         async def putconn(self,connection):await self.actual.putconn(connection.actual)
-    supervisor_resource=PoolResource(pool_config(value['supervisor_config']),**({'factory':GuardPool} if guard_mode else {}))
+    supervisor_resource=PoolResource(pool_config(value['supervisor_config']),
+        **({'factory':lambda cfg:GraphPool(cfg,'supervisor')} if graph_mode else {'factory':GuardPool} if guard_mode else {}))
     operator=PoolResource(pool_config(value['guard_operator_config'])) if guard_mode else None
     guard_checks=[];guard_denied_queries=0;guard_restore=None
+    graph_checks=[];admin=None;contender_resource=None;contender=None;graph_restore=None
     supervisor=ManagedQdrantSupervisor(Path(value['binary']),Path(value['work_dir']),inputs['instance_id'],inputs['config'])
     writer=PostgresQdrantWriter(resource,inputs['config'],inputs['instance_id'])
     stage_verifier=QdrantReconciliationVerifier(writer,supervisor)
@@ -131,6 +191,172 @@ async def python_security_verification_cases(value):
     def received(receipt,control):return security_receipt_data(receipt,verifier,control,deadline=deadline)
     def verify(proof,control,selected_owner=owner,selected_security=security):
         return verifier.verify(proof,control,selected_owner,selected_security,deadline=deadline)
+    document_key=(inputs['security']['tenant_id'],inputs['security']['collection'],inputs['security']['document_id'])
+    document_where='tenant_id=%s AND collection=%s AND document_id=%s'
+    async def admin_query(sql,params=(),*,replica=False):
+        async with admin.lease(deadline=deadline) as connection:
+            async with connection.transaction():
+                await connection.execute("SET LOCAL statement_timeout='5000ms'")
+                if replica:await connection.execute('SET LOCAL session_replication_role=replica')
+                cursor=await connection.execute(sql,params)
+                return await cursor.fetchall() if cursor.description is not None else []
+    async def observe(sql,params=(),*,source=False,pending=None):
+        end=min(deadline,asyncio.get_running_loop().time()+3)
+        while asyncio.get_running_loop().time()<end:
+            if pending is not None and pending.done():raise RuntimeError('security_graph_wait_finished_early')
+            selected=resource if source else admin
+            async with selected.lease(deadline=end) as connection:
+                async with connection.transaction(force_rollback=True):
+                    rows=await (await connection.execute(sql,params)).fetchall()
+            if rows==[(True,)]:return
+            await asyncio.sleep(.02)
+        raise RuntimeError('security_graph_wait_not_observed')
+    def owned_task(operation):
+        task=asyncio.create_task(operation);graph['tasks'].append(task);return task
+    def owned_gate():
+        gate=asyncio.Event();graph['gates'].append(gate);return gate
+    async def guarded(selected_owner=owner,selected_security=security,*,limit=None):
+        return await validate_security_guarded(recovery,verifier,proof,selected_owner,selected_security,
+                                              deadline=deadline if limit is None else limit)
+    async def live_graph_cases():
+        nonlocal graph_restore
+        before=graph['reads'];await guarded()
+        if graph['reads']!=before+1:raise RuntimeError('security_graph_missing_nonlocking_read')
+        graph_checks.append(GRAPH_CHECKS[0])
+        waiter=None
+        async def wait_document(connection):
+            nonlocal waiter
+            waiting=owned_gate();observed={}
+            async def lock():
+                async with admin.lease(deadline=deadline) as client:
+                    async with client.transaction(force_rollback=True):
+                        await client.execute("SET LOCAL lock_timeout='5000ms'")
+                        observed['pid']=client.info.backend_pid;waiting.set()
+                        await client.execute('SELECT document_id FROM cragkit_qdrant.documents WHERE '+document_where+' FOR UPDATE',document_key)
+                        observed['acquired']=True
+            waiter=owned_task(lock());await waiting.wait()
+            await observe('SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=%s AND NOT granted '
+                "AND locktype IN ('transactionid','tuple') AND %s=ANY(pg_blocking_pids(pid)))",
+                (observed['pid'],graph['sup_pid']),source=True,pending=waiter)
+            if observed.get('acquired'):raise RuntimeError('security_graph_lock_not_held')
+        graph['after']=wait_document
+        try:await guarded();await waiter
+        finally:graph['after']=None
+        graph_checks.append(GRAPH_CHECKS[1])
+        canonical=(await admin_query('SELECT revision_id,canonical_utf8,source_sha256 FROM cragkit_qdrant.document_revisions WHERE '+document_where+' ORDER BY revision_id LIMIT 1',document_key))[0]
+        replay=(await admin_query('SELECT revision_id,generation_id,chunk_id,dense_blob,dense_blob_sha256 FROM cragkit_qdrant.vector_replays WHERE '+document_where+' ORDER BY revision_id,generation_id,chunk_id LIMIT 1',document_key))[0]
+        manifest=(await admin_query("SELECT intent_id,manifest_bytes,manifest_sha256 FROM cragkit_qdrant.publication_intents WHERE "+document_where+" AND action='stage' ORDER BY intent_id LIMIT 1",document_key))[0]
+        import uuid
+        orphan=str(uuid.uuid5(uuid.NAMESPACE_URL,'cragkit-security-graph-orphan'))
+        corrupted=bytes(replay[3][:-8])+struct.pack('<d',.01)
+        faults=(
+            ('UPDATE cragkit_qdrant.document_revisions SET canonical_utf8=%s,source_sha256=%s WHERE '+document_where+' AND revision_id=%s',
+             (bytes(canonical[1])+b' ',hashlib.sha256(bytes(canonical[1])+b' ').hexdigest(),*document_key,canonical[0]),
+             (canonical[1],canonical[2],*document_key,canonical[0])),
+            ('UPDATE cragkit_qdrant.vector_replays SET dense_blob=%s,dense_blob_sha256=%s WHERE '+document_where+' AND revision_id=%s AND generation_id=%s AND chunk_id=%s',
+             (corrupted,hashlib.sha256(corrupted).hexdigest(),*document_key,*replay[:3]),
+             (replay[3],replay[4],*document_key,*replay[:3])),
+            ('UPDATE cragkit_qdrant.publication_intents SET manifest_bytes=%s,manifest_sha256=%s WHERE '+document_where+' AND intent_id=%s',
+             (bytes(manifest[1])+b' ',hashlib.sha256(bytes(manifest[1])+b' ').hexdigest(),*document_key,manifest[0]),
+             (manifest[1],manifest[2],*document_key,manifest[0])),
+        )
+        for index,(sql,changed,original) in enumerate(faults):
+            async def inject(connection,sql=sql,changed=changed):await admin_query(sql,changed,replica=True)
+            graph['after']=inject;graph['deny_commit']=True;graph_restore=(sql,original)
+            try:await expect(IntegrityViolation,guarded)
+            finally:
+                graph['after']=None;await admin_query(sql,original,replica=True);graph_restore=None;graph['deny_commit']=False
+            graph_checks.append(GRAPH_CHECKS[index+2])
+        columns=('backend_namespace,physical_collection,collection_incarnation,point_id,instance_id,tenant_id,collection,document_id,'
+            'revision_id,generation_id,chunk_id,source_sha256,text_sha256,start_byte,end_byte,dense_profile,sparse_profile,dense_input_sha256,sparse_input_sha256')
+        insert='INSERT INTO cragkit_qdrant.point_claims('+columns+') SELECT backend_namespace,physical_collection,collection_incarnation,%s::uuid,instance_id,tenant_id,collection,document_id,'\
+            'revision_id,generation_id,%s,source_sha256,text_sha256,start_byte,end_byte,dense_profile,sparse_profile,dense_input_sha256,sparse_input_sha256 FROM cragkit_qdrant.point_claims WHERE '+document_where+' LIMIT 1'
+        undo='DELETE FROM cragkit_qdrant.point_claims WHERE '+document_where+' AND point_id=%s::uuid'
+        async def inject_orphan(connection):await admin_query(insert,(orphan,'security-graph-extra-claim',*document_key),replica=True)
+        graph['after']=inject_orphan;graph['deny_commit']=True;graph_restore=(undo,(*document_key,orphan))
+        try:await expect(IntegrityViolation,guarded)
+        finally:
+            graph['after']=None;await admin_query(undo,(*document_key,orphan),replica=True);graph_restore=None;graph['deny_commit']=False
+        graph_checks.append(GRAPH_CHECKS[5])
+    async def late_graph_cases():
+        nonlocal contender_resource,contender
+        contender_resource=PoolResource(pool_config(value['writer_config']),factory=lambda cfg:GraphPool(cfg,'contender'))
+        contender=PostgresQdrantWriter(contender_resource,inputs['config'],inputs['instance_id'])
+        await contender_resource.open();await contender.initialize(deadline=deadline)
+        async def advance(old,epoch,new):
+            record=deepcopy(inputs['tombstone'])
+            record.update(intent_id='native-security-graph-'+new,expected_authorization_revision=old,
+                          expected_mutation_epoch=epoch)
+            record['authorization'].update(authorization_revision=new,tag='guarded-graph-'+new,tombstoned=True)
+            result=await contender.apply_security(record,dict(original_scope,authorization_revision=old),
+                owner_token=security['owner_token'],deadline=deadline)
+            if not result['authority_committed']:raise RuntimeError('security_graph_contender_not_committed')
+            return ctx(record['intent_id'],dict(original_scope,authorization_revision=new),security['owner_token'])
+        locked=owned_gate();release=owned_gate();observed={};authority_task=observer_task=None
+        async def contender_locked(connection):
+            observed['pid']=connection.actual.info.backend_pid;locked.set();await release.wait()
+        async def before_guard(connection):
+            nonlocal authority_task,observer_task
+            authority_task=owned_task(advance('auth-3',3,'auth-4'))
+            await asyncio.wait_for(locked.wait(),3)
+            async def watch():
+                await observe('SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=%s AND NOT granted '
+                    "AND locktype IN ('transactionid','tuple') AND %s=ANY(pg_blocking_pids(pid)))",
+                    (graph['sup_pid'],observed['pid']),pending=stale_task)
+                observed['wait']=True;release.set()
+            observer_task=owned_task(watch())
+        graph['before']=before_guard;graph['contender_reply']=contender_locked;graph['deny_commit']=True
+        before=graph['reads']
+        old_owner=ctx(owner['intent_id'],dict(original_scope,authorization_revision='auth-3'))
+        old_security=ctx(inputs['tombstone']['intent_id'],dict(original_scope,authorization_revision='auth-3'),security['owner_token'])
+        stale_task=owned_task(guarded(old_owner,old_security))
+        try:
+            await expect(UnauthorizedScope,lambda:stale_task)
+            await observer_task;next_security=await authority_task
+            if not observed.get('wait') or graph['reads']!=before:raise RuntimeError('security_graph_stale_guard_ran_graph')
+        finally:
+            release.set();graph['before']=None;graph['contender_reply']=None;graph['deny_commit']=False
+        graph_checks.append(GRAPH_CHECKS[6])
+        entered=owned_gate();gate=owned_gate();waiter=owned_task(gate.wait())
+        async def held_reply(connection):
+            entered.set()
+            while not gate.is_set():
+                try:await asyncio.shield(waiter)
+                except asyncio.CancelledError:pass
+        graph['reply']=held_reply;graph['deny_commit']=True
+        current_owner=ctx(owner['intent_id'],dict(original_scope,authorization_revision='auth-4'))
+        loss_task=owned_task(guarded(current_owner,next_security,limit=min(deadline,asyncio.get_running_loop().time()+7)))
+        try:
+            await asyncio.wait_for(entered.wait(),5)
+            actual_inner=recovery._active
+            if actual_inner is None:raise RuntimeError('security_graph_missing_owned_callback')
+            graph['tasks'].append(actual_inner)
+            closing=owned_task(supervisor_resource.close())
+            await observe('SELECT NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=%s)',(graph['sup_pid'],))
+            await advance('auth-4',4,'auth-5')
+            await asyncio.gather(closing,return_exceptions=True)
+            await expect((ProviderUnavailable,DeadlineExceeded,asyncio.CancelledError),
+                lambda:asyncio.wait_for(asyncio.shield(loss_task),10))
+            if gate.is_set() or recovery._active is not actual_inner or writer._active is not actual_inner:
+                raise RuntimeError('security_graph_callback_ownership_lost')
+            async def raw_control():
+                async with supervisor.control_session():pass
+            await expect(ProviderUnavailable,raw_control)
+            await expect(ProviderUnavailable,lambda:writer.inspect(next_security,deadline=deadline))
+            graph_checks.append(GRAPH_CHECKS[7])
+            gate.set()
+            done,pending=await asyncio.wait({actual_inner},timeout=5)
+            if pending:raise RuntimeError('security_graph_callback_drain_failed')
+            await asyncio.gather(*done,return_exceptions=True)
+            if recovery._active is not None or writer._active is not None or graph['denied_commits']:
+                raise RuntimeError('security_graph_late_commit_or_owner')
+            async with supervisor.control_session():pass
+            if (supervisor_resource._state!='closed' or not supervisor_resource._driver_closed
+                    or not supervisor_resource._driver_close_ok or supervisor_resource._users or supervisor_resource._leases):
+                raise RuntimeError('security_graph_fault_close_not_drained')
+            graph['sup_close_verified']=True
+            graph_checks.append(GRAPH_CHECKS[8])
+        finally:gate.set();graph['reply']=None;graph['deny_commit']=False
     try:
         await supervisor.initialize(deadline=deadline,provision=provision)
         endpoint=supervisor.identity()['endpoint'];await observed_listener(endpoint)
@@ -173,6 +399,11 @@ async def python_security_verification_cases(value):
                 advanced=await recovery.advance_owner(proof,owner,deadline=deadline)
                 if dict(advanced)!=dict(owner_token=token,backend_epoch=2):raise RuntimeError('security_guard_owner_advance')
                 guard_checks.append(GUARD_CHECKS[index])
+        if graph_mode:
+            if operator is None:raise RuntimeError('security_graph_requires_profile_four')
+            await operator.close();operator=None
+            admin=PoolResource(pool_config(value['guard_graph_config']['admin_config']))
+            await admin.open()
         async with supervisor.control_session() as control:
             await expect(IntegrityViolation,lambda:verify(proof,control))
             attempt=control.issue_recovery_attempt(proof,dict(intent_id=owner['intent_id'],owner_token=token,
@@ -212,6 +443,7 @@ async def python_security_verification_cases(value):
             escaped_control=control
         await expect(InvalidRequest,lambda:received(receipt,escaped_control))
         checks.append(CHECKS[4])
+        if graph_mode:await live_graph_cases()
         async with supervisor.control_session() as control:
             await expect((InvalidRequest,UnsupportedCapability),lambda:received(receipt,control))
             fresh=await verify(proof,control);fresh_data=received(fresh,control)
@@ -234,8 +466,13 @@ async def python_security_verification_cases(value):
             if not security_projection_data(final['projection'],writer)['tombstoned']:
                 raise RuntimeError('security_receipt_tombstone_projection')
             checks.append(CHECKS[7])
+        if graph_mode:await late_graph_cases()
         result=dict(runtime='python',checks=checks,proof_scope='native_security_receipt_only',semantic_witness_sha256=semantic_sha256)
         if guard_mode:result['guard_admission']=dict(checks=guard_checks,denied_backend_queries=guard_denied_queries)
+        if graph_mode:
+            if graph_checks!=list(GRAPH_CHECKS) or graph['denied_commits']:
+                raise RuntimeError('security_graph_case_scope')
+            result['guarded_graph']=dict(checks=graph_checks,denied_commits=graph['denied_commits'])
         return result
     except BaseException as error:
         primary=error
@@ -246,15 +483,35 @@ async def python_security_verification_cases(value):
     finally:
         failures=[]
         cleanup_deadline=asyncio.get_running_loop().time()+12
+        if graph_mode:
+            for gate in graph['gates']:gate.set()
+            for task in graph['tasks']:
+                if not task.done():task.cancel()
+            if graph['tasks']:
+                done,pending=await asyncio.wait(graph['tasks'],timeout=min(4,max(.001,cleanup_deadline-asyncio.get_running_loop().time())))
+                await asyncio.gather(*done,return_exceptions=True)
+                if pending:failures.append(dict(operation='guard_graph_drain',outcome='internal'))
+            if graph_restore is not None and admin is not None:
+                try:
+                    async with asyncio.timeout_at(cleanup_deadline):
+                        await admin_query(*graph_restore,replica=True)
+                except BaseException as error:
+                    failures.append(dict(operation='guard_graph_restore',outcome=type(error).__name__ if type(error).__name__ in ERRORS else 'internal'))
         if guard_restore is not None and operator is not None:
             try:
                 async with asyncio.timeout_at(cleanup_deadline):
                     async with operator.lease(deadline=cleanup_deadline) as connection:
                         async with connection.transaction():await connection.execute(guard_restore)
             except BaseException as error:failures.append(dict(operation='catalog_restore',outcome=type(error).__name__ if type(error).__name__ in ERRORS else 'internal'))
-        for operation,close in ([('operator_pool_close',operator.close)] if operator is not None else [])+[('verifier_close',verifier.close),('wrong_verifier_close',wrong_verifier.close),
+        for operation,close in ([('contender_writer_close',contender.close)] if contender is not None else [])+\
+            ([('contender_pool_close',contender_resource.close)] if contender_resource is not None else [])+\
+            ([('admin_pool_close',admin.close)] if admin is not None else [])+\
+            ([('operator_pool_close',operator.close)] if operator is not None else [])+[('verifier_close',verifier.close),('wrong_verifier_close',wrong_verifier.close),
             ('recovery_close',recovery.close),('writer_close',writer.close),
             ('resource_close',resource.close),('supervisor_resource_close',supervisor_resource.close),('controller_close',supervisor.close)]:
+            if operation=='supervisor_resource_close' and graph_mode and graph.get('sup_close_verified'):
+                if supervisor_resource._state=='closed' and supervisor_resource._driver_close_ok and not supervisor_resource._users and not supervisor_resource._leases:
+                    continue
             try:await asyncio.wait_for(close(),min(8,max(.001,cleanup_deadline-asyncio.get_running_loop().time())))
             except BaseException as error:failures.append(dict(operation=operation,outcome=type(error).__name__ if type(error).__name__ in ERRORS else 'internal'))
         if endpoint is not None:

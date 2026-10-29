@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from types import MappingProxyType
 from typing import Any, Protocol, TypeVar, cast
-from weakref import WeakKeyDictionary
+from weakref import WeakKeyDictionary, ref
 
 from ._postgres_pool import PoolResource
 from ._postgres_session import SessionConnection
@@ -26,7 +26,10 @@ from ._qdrant_reconciliation import (
 from ._qdrant_supervisor import ManagedQdrantSupervisor, _config
 from ._qdrant_transport import deadline_value
 from ._qdrant_writer import (PostgresQdrantWriter, writer_binding, _safe as writer_error,
-    recovery_dispatch_plan_data)
+    recovery_dispatch_plan_data, security_projection_data, validate_guarded_security_projection)
+from ._qdrant_security_verification import (QdrantSecurityVerifier, security_verifier_binding,
+                                           security_receipt_data)
+from ._qdrant_security_readback import SecurityReadbackBudget, security_readback_budget
 from ._qdrant_writer_contract import WriterContext, context
 from .contracts.models import Identity
 from ._qdrant_manifest import _parse, _Model
@@ -44,6 +47,82 @@ _DOC = 'tenant_id=%s AND collection=%s AND document_id=%s'
 _INTENT = _DOC + ' AND intent_id=%s'
 _BACKEND_FIELDS = ('backend_namespace', 'storage_identity', 'supervisor_id',
                    'epoch', 'state', 'recovery_id')
+_DOCUMENT_FIELDS = ('active_generation_id','authorization_revision','mutation_epoch','principal_ids',
+                    'grant_ids','language','kind','tag','tombstoned')
+_GUARD_DRIVERS: WeakKeyDictionary[object, Callable[..., Awaitable[None]]] = WeakKeyDictionary()
+_GUARDS: WeakKeyDictionary[object, dict[str, Any]] = WeakKeyDictionary()
+
+
+class _SecurityGuard:
+    __slots__ = ('__weakref__',)
+
+    def __reduce__(self) -> Any:
+        raise TypeError('Security guards cannot be serialized')
+
+
+def _guard_check(record: dict[str, Any], *, deadline: float) -> None:
+    requested = deadline_value(deadline)
+    deadline_value(record['deadline'])
+    if requested > record['deadline']:
+        raise InvalidRequest()
+    task = asyncio.current_task()
+    scope = record['scope']
+    if task is not scope['task']:
+        raise InvalidRequest()
+    if scope['cancelled'] or task is None or task.cancelling():
+        raise asyncio.CancelledError()
+    recovery = record['recovery']
+    resource,writer,supervisor,_,_ = _recovery_origin(recovery)
+    if (recovery._closed or writer._closed or scope['poisoned'] or record['poisoned'] or record['ending']
+            or recovery._active is not task or recovery._guard_scope is not scope
+            or recovery._guard_transaction is not record or recovery._scoped_control is not record['control']
+            or resource is not record['resource'] or writer is not record['writer']
+            or supervisor is not record['supervisor']):
+        raise ProviderUnavailable()
+    connection = record['connection']
+    status = connection.info.transaction_status
+    if isinstance(status,bool) or not isinstance(status,int) or status != 2:
+        raise ProviderUnavailable()
+    security_verifier_binding(record['verifier'],writer,supervisor)
+    receipt = security_receipt_data(record['receipt'],record['verifier'],record['control'],deadline=record['deadline'])
+    if receipt is not record['receipt_data'] or receipt['projection'] is not record['projection']:
+        raise InvalidRequest()
+    security_projection_data(record['projection'],writer)
+
+
+def _guard_boundary(record: dict[str, Any], *, deadline: float) -> None:
+    try:
+        _guard_check(record,deadline=deadline)
+    except BaseException:
+        # Invalid caller copies/options cannot poison someone else's operation.
+        # Actual custody loss is irreversible even if a continuation catches it.
+        if (asyncio.current_task() is record['scope']['task'] and type(deadline) in (int,float)
+                and deadline <= record['deadline']):
+            record['poisoned'] = True
+            record['valid'] = False
+        raise
+
+
+def security_guard_binding(guard: object, writer: object, projection: object, *, deadline: float) -> Mapping[str, Any]:
+    if type(guard) is not _SecurityGuard or guard not in _GUARDS:
+        raise InvalidRequest()
+    record = _GUARDS[guard]
+    if record['writer'] is not writer or record['projection'] is not projection:
+        raise InvalidRequest()
+    _guard_boundary(record,deadline=deadline)
+    if not record['valid']:
+        raise InvalidRequest()
+    return cast(Mapping[str, Any], record['metadata'])
+
+
+async def validate_security_guarded(recovery: object, security_verifier: object, proof: object,
+                                    owner_context: object, security_context: object, *,
+                                    deadline: float, budget: SecurityReadbackBudget | None = None) -> None:
+    _recovery_origin(recovery)
+    if recovery not in _GUARD_DRIVERS:
+        raise InvalidRequest()
+    await _GUARD_DRIVERS[recovery](security_verifier,proof,owner_context,security_context,
+                                 deadline=deadline,budget=budget)
 _SUPERVISOR_ROLE_SQL = """
 SELECT current_user=session_user
  AND EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolcanlogin)
@@ -268,7 +347,17 @@ class PostgresQdrantRecovery:
         self._closed = False
         self._active: asyncio.Task[Any] | None = None
         self._scoped_control: _ScopedControl | None = None
+        self._guard_scope: dict[str, Any] | None = None
+        self._guard_transaction: dict[str, Any] | None = None
         _RECOVERY_ORIGINS[self] = (resource, self._writer, supervisor, verifier, self.config)
+        fixed = PostgresQdrantRecovery._validate_security_guarded
+        original = ref(self)
+        async def guarded(*args: Any, **kwargs: Any) -> None:
+            recovery = original()
+            if recovery is None:
+                raise InvalidRequest()
+            await fixed(recovery,*args,**kwargs)
+        _GUARD_DRIVERS[self] = guarded
 
     def _control(self) -> _ScopedControl:
         if self._scoped_control is None:
@@ -280,6 +369,8 @@ class PostgresQdrantRecovery:
         _recovery_origin(self)
         deadline_value(deadline)
         if self._closed or self._active is not None:
+            raise ProviderUnavailable()
+        if self._guard_scope is not None and self._guard_scope['task'] is not asyncio.current_task():
             raise ProviderUnavailable()
         if not initialize and not self._ready:
             raise IndexNotReady()
@@ -307,8 +398,15 @@ class PostgresQdrantRecovery:
 
     async def _query(self, connection: SessionConnection, sql: str,
                      params: tuple[object, ...] = ()) -> list[tuple[Any, ...]]:
+        guard = self._guard_transaction
+        if guard is not None and guard['connection'] is connection:
+            _guard_boundary(guard,deadline=guard['deadline'])
         cursor = await connection.execute(sql, params)
+        if guard is not None and guard['connection'] is connection:
+            _guard_boundary(guard,deadline=guard['deadline'])
         rows = await cursor.fetchall()
+        if guard is not None and guard['connection'] is connection:
+            _guard_boundary(guard,deadline=guard['deadline'])
         if type(rows) is not list or any(type(row) is not tuple for row in rows):
             raise IntegrityViolation()
         return rows
@@ -347,7 +445,8 @@ class PostgresQdrantRecovery:
 
     async def _transaction(self, deadline: float,
                            action: Callable[[SessionConnection], Awaitable[_T]], *,
-                           initializing: bool = False) -> _T:
+                           initializing: bool = False,
+                           guarded: dict[str, Any] | None = None) -> _T:
         async with self.resource.lease(deadline=deadline) as leased:
             connection = cast(SessionConnection, leased)
             if connection.info.transaction_status != 0:
@@ -360,6 +459,11 @@ class PostgresQdrantRecovery:
             try:
                 await transaction.__aenter__()
                 entered = True
+                if guarded is not None:
+                    guarded['connection'] = connection
+                    guarded['transaction'] = transaction
+                    self._guard_transaction = guarded
+                    _guard_boundary(guarded,deadline=deadline)
                 await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
                 await connection.execute('SET LOCAL search_path=pg_catalog')
                 milliseconds = max(1, min(2147483647, int(
@@ -387,11 +491,20 @@ class PostgresQdrantRecovery:
                     # Keep lost-COMMIT confirmation bound to this exact profile.
                     self._schema_profile = profile
                 if self._identity is not None:
+                    if guarded is not None:
+                        _guard_boundary(guarded,deadline=deadline)
                     await connection.execute(
                         "SELECT set_config('cragkit_qdrant.backend_instance_id',%s,true)",
                         (self._identity['instance_id'],))
+                    if guarded is not None:
+                        _guard_boundary(guarded,deadline=deadline)
                 result = await action(connection)
                 _dispatch_check(deadline)
+                if guarded is not None:
+                    _guard_boundary(guarded,deadline=deadline)
+                    if not guarded['required'] or not guarded['validated'] or guarded['valid']:
+                        raise ProviderUnavailable()
+                    guarded['ending'] = True
                 committing = True
                 await transaction.__aexit__(None, None, None)
                 entered = False
@@ -413,6 +526,9 @@ class PostgresQdrantRecovery:
                         raise _CommitUnknown() from None
                 raise
             finally:
+                if guarded is not None:
+                    guarded['valid'] = False
+                    guarded['ending'] = True
                 if entered:
                     async def cleanup() -> None:
                         try:
@@ -435,6 +551,123 @@ class PostgresQdrantRecovery:
                     except asyncio.CancelledError:
                         await asyncio.shield(task)
                         raise
+                if guarded is not None and self._guard_transaction is guarded:
+                    self._guard_transaction = None
+
+    async def _validate_security_guarded(self, verifier: object, proof: object,
+                                         owner_value: object, security_value: object, *, deadline: float,
+                                         budget: SecurityReadbackBudget | None = None) -> None:
+        deadline = deadline_value(deadline)
+        owner,security = context(owner_value),context(security_value)
+        if (owner.scope != security.scope or (owner.collection,owner.document_id) != (security.collection,security.document_id)
+                or owner.intent_id == security.intent_id):
+            raise InvalidRequest()
+        security_verifier_binding(verifier,self._writer,self.supervisor)
+        assert isinstance(verifier,QdrantSecurityVerifier)
+        allowance = security_readback_budget(budget)
+        if self._closed or self._active is not None or self._guard_scope is not None:
+            raise ProviderUnavailable()
+        if not self._ready:
+            raise IndexNotReady()
+        if self._schema_profile != 4:
+            raise UnsupportedCapability()
+        if self._writer._schema_profile != 4:
+            raise UnsupportedCapability()
+        scope: dict[str, Any] = dict(task=None,cancelled=False,poisoned=False)
+        self._guard_scope = scope
+
+        async def work() -> None:
+            try:
+                async with self._operation(deadline):
+                    if scope['cancelled']:
+                        raise asyncio.CancelledError()
+                    control = self._control()
+                    receipt = await verifier.verify(proof,control,owner,security,deadline=deadline,budget=allowance)
+                    current_task = asyncio.current_task()
+                    if scope['cancelled'] or current_task is None or current_task.cancelling():
+                        raise asyncio.CancelledError()
+                    received = security_receipt_data(receipt,verifier,control,deadline=deadline)
+                    if received['owner_context'] != owner or received['security_context'] != security:
+                        raise InvalidRequest()
+                    projection = received['projection']
+                    data = security_projection_data(projection,self._writer)
+                    physical = received['physical_binding']
+                    if (self._identity is None or physical['instance_id'] != self._identity['instance_id']
+                            or data['context'] != security):
+                        raise InvalidRequest()
+                    document = MappingProxyType({field:data[field] for field in _DOCUMENT_FIELDS})
+                    record: dict[str, Any] = dict(recovery=self,writer=self._writer,supervisor=self.supervisor,
+                        resource=self.resource,verifier=verifier,receipt=receipt,receipt_data=received,projection=projection,
+                        control=control,scope=scope,deadline=deadline,connection=None,transaction=None,
+                        required=False,validated=False,valid=False,poisoned=False,ending=False,
+                        metadata=MappingProxyType(dict(context=security,owner_context=owner,document=document)))
+                    async def validate(connection: SessionConnection) -> None:
+                        record['required'] = True
+                        arguments = (physical['instance_id'],self.config.backend_namespace,physical['storage_identity'],
+                            physical['supervisor_id'],physical['recovery_id'],physical['new_epoch'],owner.scope.tenant_id,
+                            owner.collection,owner.document_id,owner.intent_id,owner.owner_token,security.intent_id,
+                            data['intent_sha256'],data['active_generation_id'],data['authorization_revision'],
+                            data['mutation_epoch'],list(data['principal_ids']),list(data['grant_ids']),data['language'],
+                            data['kind'],data['tag'],data['tombstoned'])
+                        try:
+                            try:
+                                rows = await self._query(connection,'SELECT true FROM '+_SECURITY_GUARD_SIGNATURE.split('(')[0]+
+                                    '('+','.join(['%s']*22)+')',arguments)
+                            except Exception as error:
+                                code = getattr(error,'sqlstate',None)
+                                if type(code) is str and code in ('42501','23514'):
+                                    raise UnauthorizedScope() from None
+                                if code == '22023':
+                                    raise UnsupportedCapability() from None
+                                raise
+                            if len(rows) != 1 or len(rows[0]) != 1 or rows[0][0] is not True:
+                                raise IntegrityViolation()
+                            _guard_boundary(record,deadline=deadline)
+                            guard = _SecurityGuard()
+                            _GUARDS[guard] = record
+                            record['valid'] = True
+                            try:
+                                await validate_guarded_security_projection(self._writer,guard,projection,deadline=deadline)
+                                _guard_boundary(record,deadline=deadline)
+                                record['validated'] = True
+                            finally:
+                                record['valid'] = False
+                        except BaseException:
+                            record['poisoned'] = True
+                            raise
+                    await self._transaction(deadline,validate,guarded=record)
+            finally:
+                if self._guard_scope is scope:
+                    self._guard_scope = None
+
+        task = asyncio.create_task(work())
+        scope['task'] = task
+        def finished(done: asyncio.Task[Any]) -> None:
+            if self._guard_scope is scope and self._active is not done:
+                self._guard_scope = None
+            if not done.cancelled():
+                done.exception()
+        task.add_done_callback(finished)
+        try:
+            done,_ = await asyncio.wait({task},timeout=max(0,deadline-asyncio.get_running_loop().time()))
+            if not done:
+                raise TimeoutError()
+            await task
+        except (asyncio.CancelledError,TimeoutError) as error:
+            scope['cancelled'] = True
+            task.cancel()
+            try:
+                await asyncio.wait({task},timeout=self.resource.config.release_timeout*2)
+            except BaseException:
+                pass
+            if not task.done():
+                scope['poisoned'] = True
+                self._closed = True
+                if self._writer._active is task:
+                    self._writer._closed = True
+            if isinstance(error,asyncio.CancelledError):
+                raise
+            raise DeadlineExceeded() from None
 
     async def _backend(self, connection: SessionConnection) -> Mapping[str, Any]:
         assert self._identity is not None
