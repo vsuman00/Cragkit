@@ -1,3 +1,4 @@
+import {AUTHORITY_PURGE_HISTORY,EXPECTED_PURGE_CATALOG_FINGERPRINT,EXPECTED_PURGE_CAPABILITY_FINGERPRINT,AUTHORITY_PURGE_CATALOG_SQL,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL} from '../dist/qdrant-authority.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -16,7 +17,7 @@ const nomination=validate_nomination(resolve(fixture.nomination),request,scope,c
 function setup(){const state={queries:[],clients:[],catalog:true,role:true,fingerprint:[[EXPECTED_AUTHORITY_FINGERPRINT]],history:AUTHORITY_HISTORY.map(r=>[...r]),rows:[SOURCE_ROW_FIELDS.map(k=>resolve(fixture.base_row)[k])],queryError:null,rollbackFail:false,dirtyRollback:false,startStatus:'I',wait:null};
   const pool={ends:0,async connect(){const client={status:state.startStatus,releases:[],getTransactionStatus(){return this.status;},release(destroy=false){this.releases.push(destroy);},async query(q){state.queries.push(q);
     if(q.text.startsWith('BEGIN')){this.status='T';return {rows:[]};}if(q.text==='ROLLBACK'){if(state.rollbackFail)throw Error('private rollback');this.status=state.dirtyRollback?'T':'I';return {rows:[]};}
-    if(q.text===AUTHORITY_CATALOG_SQL||q.text===AUTHORITY_PUBLICATION_CATALOG_SQL||q.text===AUTHORITY_ATTESTATION_CATALOG_SQL||q.text===AUTHORITY_SECURITY_GUARD_CATALOG_SQL)return {rows:[[state.catalog]]};if(q.text===SECURITY_GUARD_OWNER_SQL)return {rows:state.ownerRows??[[true]]};if(q.text===AUTHORITY_ROLE_SQL)return {rows:[[state.role]]};if(q.text===AUTHORITY_HISTORY_SQL){if(state.historyError)throw state.historyError;return {rows:state.history};}
+    if(q.text===AUTHORITY_CATALOG_SQL||q.text===AUTHORITY_PUBLICATION_CATALOG_SQL||q.text===AUTHORITY_ATTESTATION_CATALOG_SQL||q.text===AUTHORITY_SECURITY_GUARD_CATALOG_SQL||q.text===AUTHORITY_PURGE_CATALOG_SQL)return {rows:[[state.catalog]]};if(q.text===PURGE_CAPABILITY_FINGERPRINT_SQL)return {rows:state.capabilityRows??[[EXPECTED_PURGE_CAPABILITY_FINGERPRINT]]};if(q.text===SECURITY_GUARD_OWNER_SQL||q.text===PURGE_OWNER_SQL)return {rows:state.ownerRows??[[true]]};if(q.text===AUTHORITY_ROLE_SQL)return {rows:[[state.role]]};if(q.text===AUTHORITY_HISTORY_SQL){if(state.historyError)throw state.historyError;return {rows:state.history};}
     if(q.text===AUTHORITY_FINGERPRINT_SQL)return {rows:state.fingerprint};
     if(q.text.includes('FROM cragkit_qdrant.members m')){if(state.wait)await state.wait;if(state.queryError)throw state.queryError;return {rows:state.rows};}return {rows:[]};}};state.clients.push(client);return client;},async end(){this.ends++;}};
   const resource=new PoolResource(parse_pool_config({host:'host.invalid',dbname:'synthetic',user:'reader',sslrootcert:'/fake/ca',passfile:'/fake/pass',release_timeout:0.05,close_timeout:0.1}),{pool});return {state,pool,resource,authority:new PostgresQdrantAuthority(resource)};
@@ -74,7 +75,7 @@ test('exact source and publication profiles select their own structural check an
   const captured = JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_publication_catalog.json', import.meta.url), 'utf8'));
   assert.deepEqual(AUTHORITY_PUBLICATION_HISTORY, captured.history);
   assert.equal(EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT, captured.catalog_fingerprint);
-  assert.ok(AUTHORITY_HISTORY_SQL.endsWith('LIMIT 5'));
+  assert.ok(AUTHORITY_HISTORY_SQL.endsWith('LIMIT 6'));
   for (const publication of [false, true]) {
     const x = setup();
     if (publication) {
@@ -207,7 +208,7 @@ test('profile4 pins exact accepted metadata and keeps writer/recovery selection 
   const captured=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_security_guard_catalog.json',import.meta.url),'utf8'));
   assert.deepEqual(AUTHORITY_SECURITY_GUARD_HISTORY,captured.history);
   assert.equal(EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,captured.catalog_fingerprint);
-  assert.ok(AUTHORITY_HISTORY_SQL.endsWith('LIMIT 5'));
+  assert.ok(AUTHORITY_HISTORY_SQL.endsWith('LIMIT 6'));
   assert.throws(()=>publication_schema_profile(AUTHORITY_SECURITY_GUARD_HISTORY),UnsupportedCapability);
   assert.ok(AUTHORITY_PUBLICATION_CATALOG_SQL.includes("AND p.prosecdef)"));
   assert.ok(AUTHORITY_ATTESTATION_CATALOG_SQL.includes("AND p.prosecdef)"));
@@ -290,5 +291,44 @@ test('profile4 retained/current source filters and byte budgets remain parameter
     assert.equal(source.values[0],7);assert.ok(source.text.includes('g.ever_published AND TRUE'));
     assert.ok(source.text.includes('d.authorization_revision=$10'));assert.ok(source.text.includes('d.kind = $16'));
     assert.equal(x.pool.ends,0);
+  }finally{await x.resource.close();}
+});
+
+function purgeSetup(){const x=setup();x.state.history=AUTHORITY_PURGE_HISTORY.map(row=>[...row]);x.state.fingerprint=[[EXPECTED_PURGE_CATALOG_FINGERPRINT]];return x;}
+test('profile5 embeds exact capability SQL and pins accepted history/catalog',async()=>{
+  const fixture=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_purge_catalog.json',import.meta.url),'utf8'));
+  assert.deepEqual(AUTHORITY_PURGE_HISTORY,fixture.history);assert.equal(EXPECTED_PURGE_CATALOG_FINGERPRINT,fixture.catalog_fingerprint);
+  assert.equal(PURGE_CAPABILITY_FINGERPRINT_SQL,readFileSync(new URL('../../../contracts/sql/qdrant_purge_capabilities.sql',import.meta.url),'utf8'));
+  assert.throws(()=>publication_schema_profile(AUTHORITY_PURGE_HISTORY),UnsupportedCapability);
+  const x=purgeSetup();try{
+    await x.authority.initialize({deadline:deadline()});const start=x.state.queries.length;await read(x);
+    const queries=x.state.queries.slice(start),source=queries.find(q=>q.text.includes('FROM cragkit_qdrant.members m'));
+    for(const sql of [AUTHORITY_PURGE_CATALOG_SQL,AUTHORITY_FINGERPRINT_SQL,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL]){
+      const index=queries.findIndex(q=>q.text===sql);assert(index>=0&&index<queries.indexOf(source));
+    }
+    assert(source.text.includes('r.canonical_original_bytes'));assert(source.text.includes('m.excerpt_original_bytes'));
+    assert(source.text.includes('CASE WHEN NOT d.content_unavailable AND '));
+    assert(source.text.includes('(d.tombstoned OR d.content_unavailable)'));
+    assert(!source.text.includes('octet_length(r.canonical_utf8)'));
+  }finally{await x.resource.close();}
+});
+for(const drift of ['capability','owner','catalog','fingerprint','checksum','sixth','downgrade'])test(`profile5 reader ${drift} refuses before source`,async()=>{
+  const x=purgeSetup();try{
+    await x.authority.initialize({deadline:deadline()});const start=x.state.queries.length;
+    if(drift==='capability')x.state.capabilityRows=[['drift']];
+    if(drift==='owner')x.state.ownerRows=[[false]];
+    if(drift==='catalog')x.state.catalog=false;
+    if(drift==='fingerprint')x.state.fingerprint=[['changed']];
+    if(drift==='checksum')x.state.history[4][1]='0'.repeat(64);
+    if(drift==='sixth')x.state.history.push(['0006_unknown','0'.repeat(64)]);
+    if(drift==='downgrade'){x.state.history=AUTHORITY_SECURITY_GUARD_HISTORY.map(row=>[...row]);x.state.fingerprint=[[EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT]];}
+    await assert.rejects(read(x),UnsupportedCapability);
+    assert(!x.state.queries.slice(start).some(q=>q.text.includes('FROM cragkit_qdrant.members m')));
+  }finally{await x.resource.close();}
+});
+test('reader refuses a live profile4 to profile5 upgrade',async()=>{
+  const x=guardSetup();try{
+    await x.authority.initialize({deadline:deadline()});x.state.history=AUTHORITY_PURGE_HISTORY.map(row=>[...row]);x.state.fingerprint=[[EXPECTED_PURGE_CATALOG_FINGERPRINT]];
+    await assert.rejects(read(x),UnsupportedCapability);await assert.rejects(x.authority.initialize({deadline:deadline()}),UnsupportedCapability);
   }finally{await x.resource.close();}
 });

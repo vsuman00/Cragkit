@@ -20,6 +20,15 @@ export const AUTHORITY_SECURITY_GUARD_HISTORY=Object.freeze([
   ...AUTHORITY_ATTESTATION_HISTORY,
   Object.freeze(['0004_security_settlement_guard','44b666cb47f3bb51ac8c5f6eb05fe8aea9138a9c603ab2fa427bdd807255be0b']),
 ]);
+export const AUTHORITY_PURGE_HISTORY=Object.freeze([
+  ...AUTHORITY_SECURITY_GUARD_HISTORY,
+  Object.freeze(['0005_security_owners_and_erasure','ff368df59dc3e6bea2d5a032c915c625427cc74f103924bc8a4a31f5f2b26e68']),
+]);
+export const EXPECTED_PURGE_HISTORY=AUTHORITY_PURGE_HISTORY;
+export const EXPECTED_PURGE_CATALOG_FINGERPRINT='ca83de1388d892be58ccf6a49acf1a8afcdccd66c3f30b87d57bd457fe76f5d8';
+export const EXPECTED_PURGE_CAPABILITY_FINGERPRINT='80210922ed1130d45762383222affbf0147c679f5a23e9b2ed20ac079f33c817';
+export const PURGE_SIGNATURE='cragkit_qdrant.erase_purged_document(text,text,text,text,bigint,text,text,text,text,text,text,text,uuid,text,text,bigint,bytea,text,text,text)';
+export const PURGE_CAPABILITY_FINGERPRINT_SQL="-- QP-r1 capability inventory. Normalize only installation-specific operator\n-- and bootstrap names; preserve every effective privilege and membership edge.\nWITH operators AS (\n SELECT nspowner AS operator_id FROM pg_catalog.pg_namespace WHERE nspname='cragkit_qdrant'\n), names AS (\n SELECT r.oid, CASE WHEN r.oid=o.operator_id THEN pg_catalog.jsonb_build_array('operator')\n                   WHEN r.oid=10 THEN pg_catalog.jsonb_build_array('bootstrap')\n                   ELSE pg_catalog.jsonb_build_array('role',r.rolname) END AS name\n FROM pg_catalog.pg_roles r CROSS JOIN operators o\n UNION ALL SELECT 0::oid,pg_catalog.jsonb_build_array('public')\n), capabilities AS (\n SELECT * FROM pg_catalog.pg_roles\n WHERE rolname IN ('cragkit_qdrant_security_guard','cragkit_qdrant_purger')\n), inventory AS (\n SELECT pg_catalog.jsonb_build_object(\n  'roles',(SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(rolname,\n    rolcanlogin,rolsuper,rolbypassrls,rolcreatedb,rolcreaterole,rolreplication,rolinherit,\n    pg_catalog.has_schema_privilege(oid,'cragkit_qdrant','USAGE'),\n    pg_catalog.has_schema_privilege(oid,'cragkit_qdrant','CREATE')) ORDER BY rolname) FROM capabilities),\n  'memberships',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    a.name,b.name,g.name,m.admin_option,m.inherit_option,m.set_option)\n    ORDER BY a.name,b.name,g.name),'[]'::jsonb)\n    FROM pg_catalog.pg_auth_members m JOIN names a ON a.oid=m.roleid\n    JOIN names b ON b.oid=m.member JOIN names g ON g.oid=m.grantor\n    WHERE m.roleid IN (SELECT oid FROM capabilities) OR m.member IN (SELECT oid FROM capabilities)),\n  'table_privileges',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    r.rolname,c.relname,p.privilege,\n    pg_catalog.has_table_privilege(r.oid,c.oid,p.privilege||' WITH GRANT OPTION'))\n    ORDER BY r.rolname,c.relname,p.privilege),'[]'::jsonb)\n    FROM capabilities r CROSS JOIN pg_catalog.pg_class c\n    JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace\n    CROSS JOIN pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p(privilege)\n    WHERE n.nspname='cragkit_qdrant' AND c.relkind='r'\n    AND pg_catalog.has_table_privilege(r.oid,c.oid,p.privilege)),\n  'column_privileges',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    r.rolname,c.relname,a.attname,p.privilege,\n    pg_catalog.has_column_privilege(r.oid,c.oid,a.attnum,p.privilege||' WITH GRANT OPTION'))\n    ORDER BY r.rolname,c.relname,a.attname,p.privilege),'[]'::jsonb)\n    FROM capabilities r CROSS JOIN pg_catalog.pg_class c\n    JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace\n    JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid\n    CROSS JOIN pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) p(privilege)\n    WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped\n    AND pg_catalog.has_column_privilege(r.oid,c.oid,a.attnum,p.privilege)),\n  'function_privileges',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    r.rolname,f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid),\n    pg_catalog.has_function_privilege(r.oid,f.oid,'EXECUTE WITH GRANT OPTION'))\n    ORDER BY r.rolname,f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid)),'[]'::jsonb)\n    FROM capabilities r CROSS JOIN pg_catalog.pg_proc f\n    JOIN pg_catalog.pg_namespace n ON n.oid=f.pronamespace\n    WHERE n.nspname='cragkit_qdrant' AND pg_catalog.has_function_privilege(r.oid,f.oid,'EXECUTE')),\n  'function_owners',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    n.nspname,f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid),r.rolname)\n    ORDER BY n.nspname,f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid)),'[]'::jsonb)\n    FROM pg_catalog.pg_proc f JOIN capabilities r ON r.oid=f.proowner\n    JOIN pg_catalog.pg_namespace n ON n.oid=f.pronamespace),\n  'function_acls',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid),g.name,u.name,x.privilege_type,x.is_grantable)\n    ORDER BY f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid),g.name,u.name,x.privilege_type),'[]'::jsonb)\n    FROM pg_catalog.pg_proc f JOIN capabilities r ON r.oid=f.proowner\n    CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(f.proacl,pg_catalog.acldefault('f',f.proowner))) x\n    JOIN names g ON g.oid=x.grantor JOIN names u ON u.oid=x.grantee),\n  'owned_schemas',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(n.nspname,r.rolname)\n    ORDER BY n.nspname,r.rolname),'[]'::jsonb) FROM pg_catalog.pg_namespace n JOIN capabilities r ON r.oid=n.nspowner),\n  'owned_relations',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(n.nspname,c.relname,r.rolname)\n    ORDER BY n.nspname,c.relname,r.rolname),'[]'::jsonb) FROM pg_catalog.pg_class c JOIN capabilities r ON r.oid=c.relowner\n    JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace),\n  'owned_types',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(n.nspname,t.typname,r.rolname)\n    ORDER BY n.nspname,t.typname,r.rolname),'[]'::jsonb) FROM pg_catalog.pg_type t JOIN capabilities r ON r.oid=t.typowner\n    JOIN pg_catalog.pg_namespace n ON n.oid=t.typnamespace),\n  'owned_databases',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(d.datname,r.rolname)\n    ORDER BY d.datname,r.rolname),'[]'::jsonb) FROM pg_catalog.pg_database d JOIN capabilities r ON r.oid=d.datdba)\n ) AS payload\n)\nSELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(payload::text,'UTF8')),'hex') FROM inventory\n";
 export const EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT='352cf043dc8c19f700b8e2e9b4776dede7dd0402b2db79f7d79668cab115d8a3';
 export const EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT='7ffd3b585b1fe32bc3476a3dc4390b022f5dcfd6c5ed186c9964fec4ffd72848';
 export const EXPECTED_ATTESTATION_FINGERPRINT=EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT;
@@ -64,7 +73,7 @@ export const AUTHORITY_ATTESTATION_CATALOG_SQL = `SELECT current_setting('server
  AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='cragkit_qdrant' AND p.prosecdef)
  AND NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant' AND t.tgenabled<>'O')`;
 export const AUTHORITY_FINGERPRINT_SQL="-- QS-r1 PostgreSQL 17 catalog signature. Execute with search_path=pg_catalog.\n-- Runtime role/ownership/permissions are checked separately. This signature\n-- excludes physical OIDs, owners, timestamps and named runtime grants.\nWITH catalog AS (\nSELECT jsonb_build_object(\n 'namespace_public', (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n   FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) x\n   WHERE n.nspname='cragkit_qdrant' AND x.grantee=0),\n 'relations', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,c.relkind,c.relpersistence,c.relrowsecurity,c.relforcerowsecurity,c.reloptions,\n   (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n    FROM aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) x WHERE x.grantee=0)) ORDER BY c.relname),'[]'::jsonb)\n   FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant'),\n 'columns', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,a.attnum,a.attname,format_type(a.atttypid,a.atttypmod),\n   a.attnotnull,a.attidentity,a.attgenerated,a.attisdropped,cn.nspname,co.collname,pg_get_expr(d.adbin,d.adrelid),\n   (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n    FROM aclexplode(a.attacl) x WHERE x.grantee=0)) ORDER BY c.relname,a.attnum),'[]'::jsonb)\n   FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid\n   LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum LEFT JOIN pg_collation co ON co.oid=a.attcollation\n   LEFT JOIN pg_namespace cn ON cn.oid=co.collnamespace WHERE n.nspname='cragkit_qdrant' AND a.attnum>0 AND c.relkind IN ('r','p','v','m','f')),\n 'types', (SELECT COALESCE(jsonb_agg(jsonb_build_array(t.typname,t.typtype,t.typcategory,\n   CASE WHEN t.typbasetype=0 THEN NULL ELSE format_type(t.typbasetype,t.typtypmod) END,t.typnotnull,\n   cn.nspname,co.collname,t.typdefault,\n   (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n    FROM aclexplode(COALESCE(t.typacl,acldefault('T',t.typowner))) x WHERE x.grantee=0)) ORDER BY t.typname),'[]'::jsonb)\n   FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_collation co ON co.oid=t.typcollation\n   LEFT JOIN pg_namespace cn ON cn.oid=co.collnamespace WHERE n.nspname='cragkit_qdrant'),\n 'constraints', (SELECT COALESCE(jsonb_agg(jsonb_build_array(cl.relname,ty.typname,k.conname,k.contype,k.convalidated,k.condeferrable,k.condeferred,\n   pg_get_constraintdef(k.oid,true)) ORDER BY cl.relname NULLS FIRST,ty.typname NULLS FIRST,k.conname),'[]'::jsonb)\n   FROM pg_constraint k JOIN pg_namespace n ON n.oid=k.connamespace LEFT JOIN pg_class cl ON cl.oid=k.conrelid\n   LEFT JOIN pg_type ty ON ty.oid=k.contypid WHERE n.nspname='cragkit_qdrant'),\n 'indexes', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,i.indisvalid,i.indisready,pg_get_indexdef(i.indexrelid)) ORDER BY c.relname),'[]'::jsonb)\n   FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant'),\n 'triggers', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,t.tgname,t.tgenabled,pg_get_triggerdef(t.oid,true)) ORDER BY c.relname,t.tgname),'[]'::jsonb)\n   FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant' AND NOT t.tgisinternal),\n 'policies', (SELECT COALESCE(jsonb_agg(jsonb_build_array(c.relname,p.polname,p.polcmd,p.polpermissive,\n   (SELECT jsonb_agg(role_name ORDER BY role_name) FROM (SELECT CASE WHEN role_id=0 THEN 'PUBLIC' ELSE (SELECT rolname::text FROM pg_roles WHERE oid=role_id) END AS role_name FROM unnest(p.polroles) role_id) named_roles),pg_get_expr(p.polqual,p.polrelid),pg_get_expr(p.polwithcheck,p.polrelid)) ORDER BY c.relname,p.polname),'[]'::jsonb)\n   FROM pg_policy p JOIN pg_class c ON c.oid=p.polrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cragkit_qdrant'),\n 'functions', (SELECT COALESCE(jsonb_agg(jsonb_build_array(p.proname,pg_get_function_identity_arguments(p.oid),p.prokind,\n   p.prosecdef,p.proleakproof,p.provolatile,p.proparallel,p.proisstrict,p.proconfig,CASE WHEN p.prokind='a' THEN NULL ELSE pg_get_functiondef(p.oid) END,\n   (SELECT COALESCE(jsonb_agg(jsonb_build_array(x.privilege_type,x.is_grantable) ORDER BY x.privilege_type,x.is_grantable),'[]'::jsonb)\n    FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) x WHERE x.grantee=0)) ORDER BY p.proname,pg_get_function_identity_arguments(p.oid)),'[]'::jsonb)\n   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='cragkit_qdrant')\n) AS payload\n)\nSELECT encode(sha256(convert_to(payload::text,'UTF8')),'hex') AS schema_fingerprint FROM catalog;\n";
-export const AUTHORITY_HISTORY_SQL='SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version COLLATE pg_catalog."C" LIMIT 5';
+export const AUTHORITY_HISTORY_SQL='SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version COLLATE pg_catalog."C" LIMIT 6';
 /** Pinned SG-r2 owner/ACL metadata; this predicate never executes the guard. */
 export const SECURITY_GUARD_OWNER_SQL=`WITH guard_profile AS (
  SELECT (SELECT oid FROM pg_catalog.pg_roles WHERE rolname='cragkit_qdrant_security_guard') AS guard_id,
@@ -153,6 +162,21 @@ export const AUTHORITY_SECURITY_GUARD_CATALOG_SQL=AUTHORITY_ATTESTATION_CATALOG_
  OR p.prorettype<>'void'::regtype OR p.pronargs<>22 OR l.lanname<>'plpgsql' OR p.prokind<>'f'
  OR p.provolatile<>'v' OR p.proparallel<>'u' OR p.proisstrict OR p.proleakproof
  OR p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog','row_security=on']::text[]))`);
+export const PURGE_OWNER_SQL=SECURITY_GUARD_OWNER_SQL.replace(
+  "WHERE n.nspname='cragkit_qdrant' AND p.prosecdef AND p.oid<>function_id)",
+  "WHERE n.nspname='cragkit_qdrant' AND p.prosecdef AND p.oid NOT IN (function_id,pg_catalog.to_regprocedure('"+PURGE_SIGNATURE+"')))");
+export const AUTHORITY_PURGE_CATALOG_SQL=AUTHORITY_ATTESTATION_CATALOG_SQL.replaceAll('=14','=15').replaceAll('=13','=14').replace(
+  "'preparations','preparation_attestations'","'preparations','preparation_attestations','purge_erasures'").replace(
+  "AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='cragkit_qdrant' AND p.prosecdef)",
+  `AND (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='cragkit_qdrant' AND p.prosecdef)=2
+ AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang
+ WHERE n.nspname='cragkit_qdrant' AND p.prosecdef AND
+ ((p.oid IS DISTINCT FROM to_regprocedure('cragkit_qdrant.lock_current_security(text,text,text,text,text,bigint,text,text,text,text,uuid,text,text,text,text,bigint,text[],text[],text,text,text,boolean)')
+ AND p.oid IS DISTINCT FROM to_regprocedure('${PURGE_SIGNATURE}'))
+ OR (p.oid=to_regprocedure('${PURGE_SIGNATURE}') AND (p.prorettype<>'boolean'::regtype OR p.pronargs<>20))
+ OR (p.oid<>to_regprocedure('${PURGE_SIGNATURE}') AND (p.prorettype<>'void'::regtype OR p.pronargs<>22))
+ OR l.lanname<>'plpgsql' OR p.prokind<>'f' OR p.provolatile<>'v' OR p.proparallel<>'u'
+ OR p.proisstrict OR p.proleakproof OR p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog','row_security=on']::text[]))`);
 export const AUTHORITY_SCOPE_SQL=`SELECT set_config('cragkit_qdrant.tenant_id',$1,true),set_config('cragkit_qdrant.collection',$2,true),set_config('cragkit_qdrant.principal_id',$3,true),set_config('cragkit_qdrant.grant_ids',$4,true),set_config('cragkit_qdrant.authorization_revision',$5,true)`;
 const SELECT_SOURCE=`SELECT m.point_id::text,g.backend_namespace,g.physical_collection,g.collection_incarnation,m.tenant_id,m.collection,m.document_id,m.revision_id,m.generation_id,m.chunk_id,m.start_byte,m.end_byte,m.source_sha256,m.text_sha256,g.dense_profile_id,g.sparse_profile_id,g.dense_profile,g.sparse_profile,d.authorization_revision,d.mutation_epoch,d.principal_ids,d.grant_ids,d.language,d.kind,d.tag,r.source_locator,r.parser_id,g.chunker_profile,octet_length(r.canonical_utf8),CASE WHEN octet_length(r.canonical_utf8)<=$1 AND octet_length(r.canonical_utf8)<=16777216 AND octet_length(m.excerpt_utf8)<=32768 THEN r.canonical_utf8 ELSE NULL END,octet_length(m.excerpt_utf8),CASE WHEN octet_length(r.canonical_utf8)<=$1 AND octet_length(r.canonical_utf8)<=16777216 AND octet_length(m.excerpt_utf8)<=32768 THEN m.excerpt_utf8 ELSE NULL END,d.active_generation_id,g.published,g.ever_published,d.tombstoned
  FROM cragkit_qdrant.members m
@@ -164,6 +188,10 @@ const SELECT_SOURCE=`SELECT m.point_id::text,g.backend_namespace,g.physical_coll
  AND ($11=ANY(d.principal_ids) OR d.grant_ids && $12::text[])
  AND (g.backend_namespace,g.physical_collection,g.collection_incarnation)=($13,$14,$15)
  AND g.ever_published AND {publication} AND {filters} LIMIT 2`;
+const PURGE_SELECT_SOURCE=SELECT_SOURCE.replaceAll('octet_length(r.canonical_utf8)','r.canonical_original_bytes')
+  .replaceAll('octet_length(m.excerpt_utf8)','m.excerpt_original_bytes')
+  .replaceAll('CASE WHEN ','CASE WHEN NOT d.content_unavailable AND ')
+  .replace('g.ever_published,d.tombstoned','g.ever_published,(d.tombstoned OR d.content_unavailable)');
 function safe_error(error:unknown,deadline?:number):Error{
   if(error instanceof DeadlineExceeded)return new DeadlineExceeded();
   if(error instanceof InvalidRequest)return new InvalidRequest();
@@ -200,7 +228,7 @@ function validated_history(value: unknown): readonly (readonly string[])[] {
     }
     return result;
   }
-  return array(value, 1, 4).map(row => array(row, 2, 2).map(field => {
+  return array(value, 1, 5).map(row => array(row, 2, 2).map(field => {
     if (typeof field !== 'string') throw new UnsupportedCapability();
     return field;
   }));
@@ -234,6 +262,7 @@ export function publication_schema_profile(history:unknown):PublicationSchemaPro
 }
 export class PostgresQdrantAuthority{
   #securityGuardProfile=false;
+  #admittedHistory:readonly (readonly string[])[]|null=null;
   constructor(readonly resource:PoolResource){
     if(!(resource instanceof PoolResource))throw new InvalidRequest();
   }
@@ -250,7 +279,7 @@ export class PostgresQdrantAuthority{
         if (!rows || !('value' in rows)) throw new UnsupportedCapability();
         return validated_history(rows.value).map(row => [...row]);
       }
-      if(text===AUTHORITY_ROLE_SQL||text===SECURITY_GUARD_OWNER_SQL||text===AUTHORITY_SECURITY_GUARD_CATALOG_SQL||text===AUTHORITY_FINGERPRINT_SQL)return scalar_rows(result);
+      if(text===AUTHORITY_ROLE_SQL||text===SECURITY_GUARD_OWNER_SQL||text===PURGE_OWNER_SQL||text===AUTHORITY_SECURITY_GUARD_CATALOG_SQL||text===AUTHORITY_PURGE_CATALOG_SQL||text===PURGE_CAPABILITY_FINGERPRINT_SQL||text===AUTHORITY_FINGERPRINT_SQL)return scalar_rows(result);
       if(!result||!Array.isArray(result.rows)||result.rows.some(r=>!Array.isArray(r)))throw new IntegrityViolation();
       return result.rows;
     }catch(e){
@@ -329,7 +358,9 @@ export class PostgresQdrantAuthority{
     }
     const checkedHistory = validated_history(history);
     const guarded=history_matches(checkedHistory,AUTHORITY_SECURITY_GUARD_HISTORY);
-    if(this.#securityGuardProfile&&!guarded)throw new UnsupportedCapability();
+    const purged=history_matches(checkedHistory,AUTHORITY_PURGE_HISTORY);
+    if(this.#admittedHistory&&!history_matches(checkedHistory,this.#admittedHistory))throw new UnsupportedCapability();
+    if(this.#securityGuardProfile&&!guarded&&!purged)throw new UnsupportedCapability();
     let catalogSql: string;
     let expectedFingerprint: string;
     if (history_matches(checkedHistory, AUTHORITY_HISTORY)) {
@@ -341,6 +372,9 @@ export class PostgresQdrantAuthority{
     } else if (history_matches(checkedHistory, AUTHORITY_ATTESTATION_HISTORY)) {
       catalogSql=AUTHORITY_ATTESTATION_CATALOG_SQL;
       expectedFingerprint=EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT;
+    } else if (purged) {
+      catalogSql=AUTHORITY_PURGE_CATALOG_SQL;
+      expectedFingerprint=EXPECTED_PURGE_CATALOG_FINGERPRINT;
     } else if (guarded) {
       catalogSql=AUTHORITY_SECURITY_GUARD_CATALOG_SQL;
       expectedFingerprint=EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT;
@@ -353,27 +387,35 @@ export class PostgresQdrantAuthority{
     if(JSON.stringify(role)!=='[[true]]')throw new UnauthorizedScope();
     const fingerprint=await this.#query(client,AUTHORITY_FINGERPRINT_SQL,undefined,options);
     if(JSON.stringify(fingerprint)!==JSON.stringify([[expectedFingerprint]]))throw new UnsupportedCapability();
-    if(guarded){
-      const owner=await this.#query(client,SECURITY_GUARD_OWNER_SQL,undefined,options);
+    if(guarded||purged){
+      const owner=await this.#query(client,purged?PURGE_OWNER_SQL:SECURITY_GUARD_OWNER_SQL,undefined,options);
       if(JSON.stringify(owner)!=='[[true]]')throw new UnsupportedCapability();
     }
-    return guarded;
+    if(purged){
+      const capability=await this.#query(client,PURGE_CAPABILITY_FINGERPRINT_SQL,undefined,options);
+      if(JSON.stringify(capability)!==JSON.stringify([[EXPECTED_PURGE_CAPABILITY_FINGERPRINT]]))throw new UnsupportedCapability();
+    }
+    this.#admittedHistory=checkedHistory.map(row=>[...row]);
+    return guarded||purged;
   }
   async read(nom:QdrantNomination,request:RetrievalRequest,scope:TrustedScope,config:QdrantConfig,options:LeaseOptions&{retained:boolean;max_source_bytes:number}):Promise<Record<string,unknown>[]>{
     const [filters,parameters]=compile_source_filters(request.required_filters,16);
     const grants=JSON.stringify(scope.grant_ids);
     if(Buffer.byteLength(grants,'utf8')>131072)throw new InvalidRequest();
-    const text=SELECT_SOURCE.replace('{publication}',options.retained?'TRUE':'g.published AND d.active_generation_id=g.generation_id').replace('{filters}',filters);
     return this.#run(options,async(client,scoped)=>{
       const history=await this.#query(client,AUTHORITY_HISTORY_SQL,undefined,scoped),checked=validated_history(history);
       const guarded=history_matches(checked,AUTHORITY_SECURITY_GUARD_HISTORY);
-      if(this.#securityGuardProfile&&!guarded)throw new UnsupportedCapability();
-      if(guarded){await this.#validate(client,scoped,history);this.#securityGuardProfile=true;}
+      const purged=history_matches(checked,AUTHORITY_PURGE_HISTORY);
+      if(this.#admittedHistory&&!history_matches(checked,this.#admittedHistory))throw new UnsupportedCapability();
+      if(this.#securityGuardProfile&&!guarded&&!purged)throw new UnsupportedCapability();
+      if(guarded||purged){await this.#validate(client,scoped,history);this.#securityGuardProfile=true;}
       else{
         if(![AUTHORITY_HISTORY,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_ATTESTATION_HISTORY].some(expected=>history_matches(checked,expected)))throw new UnsupportedCapability();
         const role=await this.#query(client,AUTHORITY_ROLE_SQL,undefined,scoped);
         if(JSON.stringify(role)!=='[[true]]')throw new UnauthorizedScope();
       }
+      this.#admittedHistory=checked.map(row=>[...row]);
+      const text=(purged?PURGE_SELECT_SOURCE:SELECT_SOURCE).replace('{publication}',options.retained?'TRUE':'g.published AND d.active_generation_id=g.generation_id').replace('{filters}',filters);
       await this.#query(client,AUTHORITY_SCOPE_SQL,[scope.tenant_id,request.collection,scope.principal_id,grants,scope.authorization_revision],scoped);
       const p=nom.payload;
       const rows=await this.#query(client,text,[options.max_source_bytes,p.tenant_id,p.collection,p.document_id,p.revision_id,p.generation_id,p.chunk_id,scope.tenant_id,request.collection,scope.authorization_revision,scope.principal_id,[...scope.grant_ids],config.backend_namespace,config.physical_collection,config.collection_incarnation,...parameters],scoped);

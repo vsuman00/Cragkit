@@ -10,7 +10,7 @@ import {security_readback_budget,inspect_security_readback,security_storage_requ
 import { AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY, AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
   AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,
-  AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL } from './qdrant-authority.js';
+  AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL,AUTHORITY_PURGE_HISTORY,AUTHORITY_PURGE_CATALOG_SQL,EXPECTED_PURGE_CATALOG_FINGERPRINT,EXPECTED_PURGE_CAPABILITY_FINGERPRINT,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL } from './qdrant-authority.js';
 import { same, parse_response, type QdrantConfig } from './qdrant-contract.js';
 import { config as parse_config, context as parse_context, options as parse_options, fields, metadata,
   native_array, text, count, db_count, uuid, digest, hash, type Data, type WriterContext } from './qdrant-writer-contract.js';
@@ -180,15 +180,23 @@ export const RECOVERY_ROLE_SQL = `SELECT current_user=session_user
 export const RECOVERY_SECURITY_GUARD_ROLE_SQL=RECOVERY_ROLE_SQL.replace(
   "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR",
   "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.lock_current_security(text,text,text,text,text,bigint,text,text,text,text,uuid,text,text,text,text,bigint,text[],text[],text,text,text,boolean)') OR\n   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR");
-type RecoverySchemaProfile='publication'|'attestation'|'security_guard';
+export const RECOVERY_PURGE_ROLE_SQL=RECOVERY_SECURITY_GUARD_ROLE_SQL.replace(
+  "OR (c.relname='publication_intents' AND a.attname IN",
+  "OR (c.relname='documents' AND a.attname IN('tenant_id','collection','document_id','content_unavailable'))\n    OR (c.relname='publication_intents' AND a.attname IN").replace(
+  "WHEN privilege='UPDATE' THEN c.relname='backend_instances'\n    OR (c.relname='document_owners'",
+  "WHEN privilege='UPDATE' THEN c.relname='backend_instances'\n    OR (c.relname='documents' AND a.attname='content_unavailable')\n    OR (c.relname='document_owners'").replace(
+  "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR",
+  "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.scope_visible(text,text,text[],text[],text,boolean)') OR\n   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR");
+type RecoverySchemaProfile='publication'|'attestation'|'security_guard'|'purge';
 function recovery_profile(history:unknown):RecoverySchemaProfile{
   try{
-    const rows=native_array(history,1,4).map(row=>native_array(row,2,2).map(value=>{
+    const rows=native_array(history,1,5).map(row=>native_array(row,2,2).map(value=>{
       if(typeof value!=='string')throw new UnsupportedCapability();return value;
     }));
     if(same(rows,AUTHORITY_PUBLICATION_HISTORY))return 'publication';
     if(same(rows,AUTHORITY_ATTESTATION_HISTORY))return 'attestation';
     if(same(rows,AUTHORITY_SECURITY_GUARD_HISTORY))return 'security_guard';
+    if(same(rows,AUTHORITY_PURGE_HISTORY))return 'purge';
   }catch(error){if(!(error instanceof InvalidRequest))throw error;}
   throw new UnsupportedCapability();
 }
@@ -240,6 +248,7 @@ export class PostgresQdrantRecovery {
   #ready=false;
   #profile:RecoverySchemaProfile|null=null;
   #securityGuardAdmitted=false;
+  #admittedProfile:RecoverySchemaProfile|null=null;
   #closed=false;
   #active?:Readonly<{controller:AbortController;done:Promise<void>}>;
   #closing?:Promise<void>;
@@ -485,14 +494,14 @@ export class PostgresQdrantRecovery {
         guarded?.check();
         await bounded(client.query({text:'SET LOCAL search_path=pg_catalog',rowMode:'array'}),lease);
         let profile:RecoverySchemaProfile;
-        try{profile=recovery_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,5));}
+        try{profile=recovery_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,6));}
         catch(error){if(error instanceof IntegrityViolation)throw new UnsupportedCapability();throw error;}
-        if(this.#securityGuardAdmitted&&profile!=='security_guard'||!initializing&&profile!==this.#profile
+        if(this.#admittedProfile!==null&&profile!==this.#admittedProfile||this.#securityGuardAdmitted&&profile!=='security_guard'||!initializing&&profile!==this.#profile
           ||expectedProfile!==undefined&&profile!==expectedProfile)throw new UnsupportedCapability();
-        if(initializing||profile==='security_guard'){
-          const catalog=profile==='security_guard'?AUTHORITY_SECURITY_GUARD_CATALOG_SQL:profile==='attestation'?AUTHORITY_ATTESTATION_CATALOG_SQL:AUTHORITY_PUBLICATION_CATALOG_SQL;
-          const fingerprint=profile==='security_guard'?EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT:profile==='attestation'?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;
-          const checks:readonly (readonly [string,boolean|string])[]=[[catalog,true],[AUTHORITY_FINGERPRINT_SQL,fingerprint],...(profile==='security_guard'?[[SECURITY_GUARD_OWNER_SQL,true] as const]:[])];
+        if(initializing||profile==='security_guard'||profile==='purge'){
+          const catalog=profile==='purge'?AUTHORITY_PURGE_CATALOG_SQL:profile==='security_guard'?AUTHORITY_SECURITY_GUARD_CATALOG_SQL:profile==='attestation'?AUTHORITY_ATTESTATION_CATALOG_SQL:AUTHORITY_PUBLICATION_CATALOG_SQL;
+          const fingerprint=profile==='purge'?EXPECTED_PURGE_CATALOG_FINGERPRINT:profile==='security_guard'?EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT:profile==='attestation'?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;
+          const checks:readonly (readonly [string,boolean|string])[]=[[catalog,true],[AUTHORITY_FINGERPRINT_SQL,fingerprint],...(profile==='purge'?[[PURGE_OWNER_SQL,true] as const,[PURGE_CAPABILITY_FINGERPRINT_SQL,EXPECTED_PURGE_CAPABILITY_FINGERPRINT] as const]:profile==='security_guard'?[[SECURITY_GUARD_OWNER_SQL,true] as const]:[])];
           for(const [sql,expected] of checks){
             let rows:unknown[][];
             try{rows=await tx.query(sql,undefined,1);}catch(error){if(error instanceof IntegrityViolation)throw new UnsupportedCapability();throw error;}
@@ -500,7 +509,7 @@ export class PostgresQdrantRecovery {
           }
         }
         let role:unknown[][];
-        try{role=await tx.query(profile==='security_guard'?RECOVERY_SECURITY_GUARD_ROLE_SQL:RECOVERY_ROLE_SQL,undefined,1);}
+        try{role=await tx.query(profile==='purge'?RECOVERY_PURGE_ROLE_SQL:profile==='security_guard'?RECOVERY_SECURITY_GUARD_ROLE_SQL:RECOVERY_ROLE_SQL,undefined,1);}
         catch(error){if(error instanceof IntegrityViolation)throw new UnsupportedCapability();throw error;}
         if (role.length!==1||role[0].length!==1||role[0][0]!==true) throw new UnauthorizedScope();
         await tx.query("SELECT set_config('cragkit_qdrant.backend_instance_id',$1,true)",[instance_id],1);
@@ -626,7 +635,7 @@ export class PostgresQdrantRecovery {
       if (verified.state==='recovery_blocked') session.block_ordinary();
       this.#identity=local;
       if(selected===null)throw new UnsupportedCapability();
-      this.#profile=selected;this.#ready=true;
+      this.#profile=selected;if(selected==='security_guard'||selected==='purge')this.#admittedProfile=selected;this.#ready=true;
       if(selected==='security_guard')this.#securityGuardAdmitted=true;
     },true);
   }
@@ -914,7 +923,7 @@ export class PostgresQdrantRecovery {
     const context=parse_context(rawContext),options=parse_options(rawOptions),budget=verification_budget(inputBudget);
     if(typeof authorize!=='function'||types.isProxy(authorize))throw new InvalidRequest();
     return this.#work(options,async(lease,session)=>{
-      if(this.#profile!=='attestation'&&this.#profile!=='security_guard')throw new UnsupportedCapability();
+      if(this.#profile!=='attestation'&&this.#profile!=='security_guard'&&this.#profile!=='purge')throw new UnsupportedCapability();
       const lifetime={active:true};let inspection:ReturnType<SupervisorControlSession['recovery_transport_for']>|undefined;
       const authorizeCurrent=async()=>{
         parse_options(lease);const pending=authorize(context.scope,context.collection,context.document_id);

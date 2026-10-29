@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 from hashlib import sha256
 import json
+import os
+from pathlib import Path
 
 from qdrant_publication_native import bind_scope
 from qdrant_publication_schema import insert_sql, rejected_sql
@@ -135,3 +137,59 @@ async def guard_probes(database, guards):
                 wrong = list(args); wrong[12] = '0' * 64
                 await connection.execute(rejected_sql(guard_statement(wrong) + ';', '23514'), prepare=False)
     return ['stage_owner_guard', 'prior_committed_security_owner_guard', 'same_current_security_owner_guard']
+
+
+async def runtime_admission(database):
+    """Use actual restricted writer/reader logins against the committed catalog."""
+    from cragkit._postgres_pool import PoolConfig, PoolResource
+    from cragkit.qdrant_source import PostgresQdrantSourceStore
+
+    inputs, _ = guard_inputs('purge')
+    writer, writer_resource = await _writer(database, inputs)
+    try:
+        await writer.manager_snapshot(dict(scope={**inputs['scope'], 'authorization_revision':'auth-2'},
+            collection=inputs['stage']['manifest']['collection'],
+            document_id=inputs['stage']['manifest']['document_id'],
+            intent_id='qp-purge', owner_token=OWNER_TOKEN),
+            deadline=asyncio.get_running_loop().time()+15)
+    finally:
+        await writer.close()
+        await writer_resource.close()
+
+    raw = database.config('reader')
+    for key in ('sslrootcert', 'passfile'):
+        raw[key] = Path(raw[key])
+    resource = PoolResource(PoolConfig.model_validate(raw))
+    source = PostgresQdrantSourceStore(resource, inputs['config'])
+    try:
+        await resource.open()
+        await source.initialize(deadline=asyncio.get_running_loop().time()+15)
+    finally:
+        await source.close()
+        await resource.close()
+    return ['restricted_writer_profile5_initializes_and_reads_scoped_metadata',
+            'restricted_reader_profile5_initializes_exact_catalog']
+
+
+async def node_runtime_admission(database):
+    """Run the built Node adapters with the same disposable restricted logins."""
+    inputs, _ = guard_inputs('purge')
+    payload = dict(writer_config=database.config('writer'), reader_config=database.config('reader'),
+                   config=inputs['config'], instance_id=inputs['instance_id'])
+    environment = {key:value for key,value in os.environ.items() if not key.startswith(('PG','QDRANT__'))
+                   and key not in ('HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NODE_OPTIONS','NODE_USE_ENV_PROXY')}
+    path = Path(__file__).resolve().parents[1]/'tools/check_typescript_qdrant_profile5.mjs'
+    process = await asyncio.create_subprocess_exec('node', str(path), stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=environment, start_new_session=True)
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(json.dumps(payload).encode()), 30)
+        if len(stdout)>65536 or len(stderr)>65536 or process.returncode!=0:
+            raise RuntimeError('node_profile5_admission_failed')
+        result=json.loads(stdout)
+        if result!={'ok':True,'checks':['node_restricted_writer_profile5','node_restricted_reader_profile5']}:
+            raise RuntimeError('node_profile5_admission_shape')
+        return result['checks']
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await asyncio.wait_for(process.wait(), 5)

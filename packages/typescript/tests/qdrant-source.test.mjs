@@ -1,3 +1,4 @@
+import {AUTHORITY_PURGE_HISTORY,EXPECTED_PURGE_CATALOG_FINGERPRINT,EXPECTED_PURGE_CAPABILITY_FINGERPRINT,AUTHORITY_PURGE_CATALOG_SQL,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL} from '../dist/qdrant-authority.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -13,11 +14,11 @@ function resolve(v){if(typeof v==='string'&&v.startsWith('$ref:')){let out=fixtu
 const config={backend_namespace:'fixture-local',physical_collection:'cragkit_qc_r1',collection_incarnation:'inc-1',dense_profile:fixture.profiles.dense,sparse_profile:fixture.profiles.sparse};
 const base=()=>resolve(fixture.base_row),nom=()=>resolve(fixture.nomination);
 function setup(){
-  const state={rows:[base()],reads:0,clients:[],error:null,wait:null};
+  const state={rows:[base()],reads:0,clients:[],error:null,wait:null,history:AUTHORITY_HISTORY.map(row=>[...row]),fingerprint:EXPECTED_AUTHORITY_FINGERPRINT};
   const pool={ends:0,async connect(){const client={status:'I',releases:[],getTransactionStatus(){return this.status;},release(destroy=false){this.releases.push(destroy);},async query(q){
     if(q.text.startsWith('BEGIN')){this.status='T';return {rows:[]};}if(q.text==='ROLLBACK'){this.status='I';return {rows:[]};}
-    if(q.text===AUTHORITY_ROLE_SQL||q.text===AUTHORITY_CATALOG_SQL)return {rows:[[true]]};if(q.text===AUTHORITY_HISTORY_SQL)return {rows:AUTHORITY_HISTORY.map(r=>[...r])};
-    if(q.text===AUTHORITY_FINGERPRINT_SQL)return {rows:[[EXPECTED_AUTHORITY_FINGERPRINT]]};
+    if(q.text===PURGE_CAPABILITY_FINGERPRINT_SQL)return {rows:[[EXPECTED_PURGE_CAPABILITY_FINGERPRINT]]};if(q.text===PURGE_OWNER_SQL)return {rows:[[true]]};if(q.text===AUTHORITY_ROLE_SQL||q.text===AUTHORITY_CATALOG_SQL||q.text===AUTHORITY_PURGE_CATALOG_SQL)return {rows:[[true]]};if(q.text===AUTHORITY_HISTORY_SQL)return {rows:state.history};
+    if(q.text===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
     if(q.text.includes('FROM cragkit_qdrant.members m')){state.reads++;if(state.wait)await state.wait;if(state.error)throw state.error;return {rows:state.rows.map(r=>{const row={...r};if(Number(row.source_bytes)>q.values[0]||Number(row.source_bytes)>16777216||Number(row.excerpt_bytes)>32768){row.canonical_utf8=null;row.excerpt_utf8=null;}return SOURCE_ROW_FIELDS.map(k=>row[k]);})};}return {rows:[]};
   }};state.clients.push(client);return client;},async end(){this.ends++;}};
   const resource=new PoolResource(parse_pool_config({host:'host.invalid',dbname:'synthetic',user:'reader',sslrootcert:'/fake/ca',passfile:'/fake/pass'}),{pool});
@@ -92,4 +93,17 @@ test('denied rows reject empty or partial buffers while null CASE columns remain
   const row=base();row.grant_ids=[];row.principal_ids=[];row.canonical_utf8=null;row.excerpt_utf8=null;
   const result=verify_source(nom(),[row],fixture.request,fixture.scope,config,{max_source_bytes:13});
   assert.equal(result.state,'unavailable');assert.equal(result.source_bytes,0);assert.equal(result.evidence,null);assert.equal(result.private_source,null);
+});
+
+test('profile5 erased source with retained original lengths is unavailable before decoding',async()=>{
+  const x=setup();x.state.history=AUTHORITY_PURGE_HISTORY.map(row=>[...row]);x.state.fingerprint=EXPECTED_PURGE_CATALOG_FINGERPRINT;
+  let handle;
+  try{
+    await x.store.initialize({deadline:deadline()});handle=open(x.store);
+    const erased=base();erased.canonical_utf8=null;erased.excerpt_utf8=null;erased.tombstoned=true;x.state.rows=[erased];
+    assert(erased.source_bytes>0&&erased.excerpt_bytes>0);
+    const result=await handle.fetch_candidate(nom(),{max_source_bytes:13,include_source:true});
+    assert.equal(result.state,'unavailable');assert.equal(result.source_bytes,0);assert.equal(result.evidence,null);
+    assert.equal(result.private_source,null);assert.equal(result.binding,null);
+  }finally{await handle?.close();await x.store.close();await x.resource.close();}
 });

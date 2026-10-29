@@ -17,7 +17,9 @@ from ._qdrant_authority import (_HISTORY_SQL, _PUBLICATION_CATALOG_SQL, _CATALOG
     EXPECTED_PUBLICATION_HISTORY, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,
     _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_HISTORY, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT,
     EXPECTED_SECURITY_GUARD_HISTORY, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT,
-    _SECURITY_GUARD_CATALOG_SQL, _SECURITY_GUARD_OWNER_SQL)
+    _SECURITY_GUARD_CATALOG_SQL, _SECURITY_GUARD_OWNER_SQL, EXPECTED_PURGE_HISTORY,
+    EXPECTED_PURGE_CATALOG_FINGERPRINT, EXPECTED_PURGE_CAPABILITY_FINGERPRINT, _PURGE_CATALOG_SQL,
+    _PURGE_OWNER_SQL, _PURGE_CAPABILITY_FINGERPRINT_SQL, _PURGE_SIGNATURE)
 from ._qdrant_contract import (CandidatePayload, QdrantConfig, SPARSE_PROFILE, decode_response,
                                parse_model, point_id)
 from ._qdrant_manifest import (_Security, _Purge, _Manifest, _Stage, _ReplayResult, _parse,
@@ -203,6 +205,14 @@ _WRITER_ATTESTATION_ROLE_SQL = _WRITER_ROLE_SQL.replace(
 ).replace(" AND has_table_privilege(current_user,'cragkit_qdrant.vector_replays','SELECT,INSERT')",
     " AND has_table_privilege(current_user,'cragkit_qdrant.vector_replays','SELECT,INSERT')"
     "\n AND has_table_privilege(current_user,'cragkit_qdrant.preparation_attestations','SELECT,INSERT')")
+_WRITER_PURGE_ROLE_SQL = _WRITER_ATTESTATION_ROLE_SQL.replace(
+    "WHEN privilege='SELECT' THEN c.relname IN ('schema_migrations','documents','document_revisions','generations','members',"
+    "\n    'backend_instances','publication_intents','document_owners','point_claims','vector_replays','dispatch_journal','dispatch_points','preparations','preparation_attestations')",
+    "WHEN privilege='SELECT' THEN c.relname IN ('schema_migrations','documents','document_revisions','generations','members',"
+    "\n    'backend_instances','publication_intents','document_owners','point_claims','vector_replays','dispatch_journal','dispatch_points','preparations','preparation_attestations','purge_erasures')"
+).replace("p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR",
+    "p.oid IS NOT DISTINCT FROM to_regprocedure('" + _PURGE_SIGNATURE + "') OR\n"
+    "   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR")
 _ATTESTATION_FIELDS = ('tenant_id','collection','document_id','intent_id','instance_id','owner_token',
     'backend_epoch','authorization_revision','mutation_epoch','manifest_sha256',
     'expected_active_generation_id','credential_generation','verification_id','readback_sha256')
@@ -419,7 +429,7 @@ class PostgresQdrantWriter:
 
     @staticmethod
     def _history_profile(rows: list[tuple[Any, ...]]) -> int:
-        if (type(rows) is not list or len(rows) not in (2, 3, 4)
+        if (type(rows) is not list or len(rows) not in (2, 3, 4, 5)
                 or any(type(row) is not tuple or len(row) != 2
                        or any(type(value) is not str for value in row) for row in rows)):
             raise UnsupportedCapability()
@@ -429,6 +439,8 @@ class PostgresQdrantWriter:
             return 3
         if rows == list(EXPECTED_SECURITY_GUARD_HISTORY):
             return 4
+        if rows == list(EXPECTED_PURGE_HISTORY):
+            return 5
         raise UnsupportedCapability()
 
     async def _catalog_profile(self, connection: SessionConnection, profile: int) -> None:
@@ -436,10 +448,14 @@ class PostgresQdrantWriter:
             2: (_PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT),
             3: (_ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT),
             4: (_SECURITY_GUARD_CATALOG_SQL, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT),
+            5: (_PURGE_CATALOG_SQL, EXPECTED_PURGE_CATALOG_FINGERPRINT),
         }[profile]
         checks: list[tuple[str, object]] = [(catalog, True), (_CATALOG_FINGERPRINT_SQL, fingerprint)]
         if profile == 4:
             checks.append((_SECURITY_GUARD_OWNER_SQL, True))
+        elif profile == 5:
+            checks.extend(((_PURGE_OWNER_SQL, True),
+                           (_PURGE_CAPABILITY_FINGERPRINT_SQL, EXPECTED_PURGE_CAPABILITY_FINGERPRINT)))
         for sql, expected in checks:
             try:
                 rows = await self._query(connection, sql)
@@ -485,12 +501,13 @@ class PostgresQdrantWriter:
                             profile = self._history_profile(await self._query(connection, _HISTORY_SQL))
                         except IntegrityViolation:
                             raise UnsupportedCapability() from None
-                        if ((self._security_guard_admitted and profile != 4)
+                        if ((self._security_guard_admitted and profile != self._schema_profile)
                                 or (not initializing and profile != self._schema_profile)):
                             raise UnsupportedCapability()
-                        if initializing or profile == 4:
+                        if initializing or profile in (4, 5):
                             await self._catalog_profile(connection, profile)
-                        role_sql = _WRITER_ATTESTATION_ROLE_SQL if profile in (3, 4) else _WRITER_ROLE_SQL
+                        role_sql = (_WRITER_PURGE_ROLE_SQL if profile == 5 else
+                                    _WRITER_ATTESTATION_ROLE_SQL if profile in (3, 4) else _WRITER_ROLE_SQL)
                         try:
                             role = await self._query(connection, role_sql)
                         except IntegrityViolation:
@@ -532,7 +549,7 @@ class PostgresQdrantWriter:
                             guarded_check()
                         if initializing:
                             self._schema_profile = profile
-                            self._security_guard_admitted = self._security_guard_admitted or profile == 4
+                            self._security_guard_admitted = self._security_guard_admitted or profile in (4, 5)
                         return result
                     finally:
                         if entered:
@@ -1953,7 +1970,7 @@ class PostgresQdrantWriter:
             raise ProviderUnavailable()
         if not self._ready:
             raise IndexNotReady()
-        if self._schema_profile not in (3, 4):
+        if self._schema_profile not in (3, 4, 5):
             raise UnsupportedCapability()
 
     @staticmethod
@@ -2164,7 +2181,7 @@ class PostgresQdrantWriter:
             await self._require_settled(connection,ctx)
             plan = await self._load_stage(connection,ctx)
             self._attestation_intent(plan, intent, existing)
-            if self._schema_profile in (3, 4):
+            if self._schema_profile in (3, 4, 5):
                 preparation, attestation = await self._attestation_material(connection,ctx,epoch,document,intent)
                 current = (preparation['owner_token'] == ctx.owner_token and preparation['backend_epoch'] == epoch)
                 if not current and attestation is None:

@@ -1649,3 +1649,18 @@ regression was reproduced and fixed; [evidence](../evaluation/reports/V5/V5-06-i
 Python child-process stdio and installed-artifact verification remain open;
 V5-06 final acceptance still depends on V5-04, V5-05 and C2. No live model or
 provider calls were used.
+
+Profile-5 runtime admission handoff: both Sol peers transferred their Python
+and Node authority/writer/recovery/source tests and implementations to root;
+root integrated the native checker and Node child probe. Focused Python 533,
+Node 331, strict Python typecheck 49 files and Node build passed. The disposable
+PostgreSQL 17 run admitted actual restricted Python and Node writer/reader
+logins, passed 18 checks and verified cleanup. [Evidence](../evaluation/reports/V5/V5-04-profile5-runtime.md).
+The first Node focused run exposed an old explicit profile-upgrade regression;
+its owner fixed the profile pin and the focused suite passed. G2 public
+convergence, native erased-source retrieval, actual Qdrant absence and H fault
+acceptance remain open. User audits and protected migration bytes were not
+edited. One local PostgreSQL fixture and one test process ran at a time; no
+model/provider/hosted run occurred. Learning practice remains unassessed. Next
+smallest action: native profile-5 recovery admission, then repeated security
+convergence with the current committed owner.

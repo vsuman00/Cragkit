@@ -1304,6 +1304,13 @@ The [schema report](../evaluation/reports/V5/V5-04-profile5-schema.md) records
 44 focused tests and 14 native SQL checks. The SQL fixture's absence digest is
 synthetic; actual Qdrant deletion and absence require their separate gate.
 
+After building the Node package, the same disposable checker also verifies
+restricted Python and Node profile-5 writer/reader initialization. The
+[runtime report](../evaluation/reports/V5/V5-04-profile5-runtime.md) records 18
+checks with cleanup, 533 Python and 331 Node focused tests, and strict builds.
+Use a fresh artifact directory for each native run. The runtime admission check
+does not establish physical Qdrant purge.
+
 The MCP hosts live in separate optional Python and Node packages. These
 commands use their pinned locks and exercise official SDK clients with fake
 native retrieval results:

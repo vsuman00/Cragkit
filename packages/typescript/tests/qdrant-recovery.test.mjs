@@ -1,3 +1,5 @@
+import {AUTHORITY_PURGE_HISTORY,EXPECTED_PURGE_CATALOG_FINGERPRINT,EXPECTED_PURGE_CAPABILITY_FINGERPRINT,AUTHORITY_PURGE_CATALOG_SQL,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL} from '../dist/qdrant-authority.js';
+import {RECOVERY_PURGE_ROLE_SQL} from '../dist/qdrant-recovery.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -32,11 +34,12 @@ function setup(){
         if(sql.startsWith('BEGIN')){this.status='T';this.before=structuredClone({backend:state.backend,owner:state.owner});return {rows:[]};}
         if(sql==='ROLLBACK'){Object.assign(state,this.before);this.status='I';return {rows:[]};}
         if(sql==='COMMIT'){this.status='I';if(state.lost){state.lost=false;state.afterLost?.();throw Object.assign(Error('private'),{code:'08006'});}return {rows:[]};}
-        if(sql===RECOVERY_ROLE_SQL||sql===RECOVERY_SECURITY_GUARD_ROLE_SQL)return {rows:state.roleRows??[[state.role]]};
+        if(sql===RECOVERY_ROLE_SQL||sql===RECOVERY_SECURITY_GUARD_ROLE_SQL||sql===RECOVERY_PURGE_ROLE_SQL)return {rows:state.roleRows??[[state.role]]};
         if(sql===AUTHORITY_HISTORY_SQL)return {rows:state.history};
-        if([AUTHORITY_PUBLICATION_CATALOG_SQL,AUTHORITY_ATTESTATION_CATALOG_SQL,AUTHORITY_SECURITY_GUARD_CATALOG_SQL].includes(sql))return {rows:state.catalogRows??[[state.catalog]]};
+        if([AUTHORITY_PUBLICATION_CATALOG_SQL,AUTHORITY_ATTESTATION_CATALOG_SQL,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,AUTHORITY_PURGE_CATALOG_SQL].includes(sql))return {rows:state.catalogRows??[[state.catalog]]};
         if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
-        if(sql===SECURITY_GUARD_OWNER_SQL){if(state.ownerWait)await state.ownerWait;return {rows:state.ownerRows??[[true]]};}
+        if(sql===PURGE_CAPABILITY_FINGERPRINT_SQL)return {rows:state.capabilityRows??[[EXPECTED_PURGE_CAPABILITY_FINGERPRINT]]};
+        if(sql===SECURITY_GUARD_OWNER_SQL||sql===PURGE_OWNER_SQL){if(state.ownerWait)await state.ownerWait;return {rows:state.ownerRows??[[true]]};}
         if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config'))return {rows:[]};
         if(sql.startsWith('INSERT INTO cragkit_qdrant.backend_instances')){
           state.backend=[p[0],p[1],p[2],p[3],1,'open',null];return {rows:[]};
@@ -471,5 +474,34 @@ test('initialization session cleanup failure closes readiness while malformed op
   await assert.rejects(f.coordinator.initialize({deadline:NaN}),InvalidRequest);
   assert.equal(f.state.queries.length,before);
   await f.coordinator.recover('recovery-1',options());assert.equal(f.state.physical,1);
+ }finally{await closeFixture(f);}
+});
+
+function purgeRecoveryProfile(f){f.state.history=AUTHORITY_PURGE_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_PURGE_CATALOG_FINGERPRINT;}
+test('recovery5 admits exact supervisor metadata additions before binding',async()=>{
+ const f=setup();purgeRecoveryProfile(f);
+ try{
+  await f.coordinator.initialize(options());const roleAt=f.state.queries.indexOf(RECOVERY_PURGE_ROLE_SQL);
+  for(const sql of [AUTHORITY_PURGE_CATALOG_SQL,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL]){
+   const index=f.state.queries.indexOf(sql);assert(index>=0&&index<roleAt);
+  }
+  assert(roleAt<f.state.queries.findIndex(sql=>sql.startsWith(backendBinding)));
+  assert(RECOVERY_PURGE_ROLE_SQL.includes("c.relname='documents' AND a.attname='content_unavailable'"));
+  assert(!RECOVERY_PURGE_ROLE_SQL.includes('canonical_utf8'));
+  const start=f.state.queries.length;
+  await assert.rejects(dispatch_security_recovery(f.coordinator,{},context,{...context,intent_id:'security-5'},async()=>{},options()),UnsupportedCapability);
+  assert.equal(f.state.queries.length,start);
+ }finally{await closeFixture(f);}
+});
+for(const drift of ['capability','role','sixth','downgrade'])test(`recovery5 ${drift} rejects before instance binding`,async()=>{
+ const f=setup();purgeRecoveryProfile(f);
+ try{
+  await f.coordinator.initialize(options());const start=f.state.queries.length;
+  if(drift==='capability')f.state.capabilityRows=[['changed']];
+  if(drift==='role')f.state.role=false;
+  if(drift==='sixth')f.state.history.push(['0006_unknown','0'.repeat(64)]);
+  if(drift==='downgrade')guardProfile(f);
+  await assert.rejects(f.coordinator.recover('recovery-5',options()),drift==='role'?UnauthorizedScope:UnsupportedCapability);
+  assert(!f.state.queries.slice(start).some(sql=>sql.startsWith(backendBinding)));
  }finally{await closeFixture(f);}
 });

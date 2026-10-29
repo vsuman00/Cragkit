@@ -60,6 +60,8 @@ class Connection:
         self.hash=implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
         self.failure=None; self.commit_failure=False; self.block=None
         self.guard_catalog=[(True,)];self.guard_owner=[(True,)]
+        self.purge_catalog=[(True,)];self.purge_owner=[(True,)]
+        self.capability=[(implementation.EXPECTED_PURGE_CAPABILITY_FINGERPRINT,)]
     def transaction(self):
         owner=self
         class Transaction:
@@ -77,10 +79,13 @@ class Connection:
         if sql.startswith('UPDATE cragkit_qdrant.publication_intents SET state=%s'): return Cursor([])
         if self.block is not None: await self.block.wait()
         if self.failure is not None: raise self.failure
-        if sql in (implementation._WRITER_ROLE_SQL,implementation._WRITER_ATTESTATION_ROLE_SQL):return Cursor([(self.role,)])
+        if sql in (implementation._WRITER_ROLE_SQL,implementation._WRITER_ATTESTATION_ROLE_SQL,implementation._WRITER_PURGE_ROLE_SQL):return Cursor([(self.role,)])
         if sql==implementation._HISTORY_SQL:return Cursor(self.history)
         if sql==implementation._SECURITY_GUARD_CATALOG_SQL:return Cursor(self.guard_catalog)
         if sql==implementation._SECURITY_GUARD_OWNER_SQL:return Cursor(self.guard_owner)
+        if sql==implementation._PURGE_CATALOG_SQL:return Cursor(self.purge_catalog)
+        if sql==implementation._PURGE_OWNER_SQL:return Cursor(self.purge_owner)
+        if sql==implementation._PURGE_CAPABILITY_FINGERPRINT_SQL:return Cursor(self.capability)
         if sql in (implementation._PUBLICATION_CATALOG_SQL,implementation._ATTESTATION_CATALOG_SQL):return Cursor([(True,)])
         if sql==implementation._CATALOG_FINGERPRINT_SQL:return Cursor([(self.hash,)])
         if 'SELECT action,state,payload_sha256' in sql:return Cursor([])
@@ -1438,8 +1443,10 @@ class AttestationConnection(ManagerConnection):
         profile=state.get('schema_profile',3)
         self.history=list({2:implementation.EXPECTED_PUBLICATION_HISTORY,
                            3:implementation.EXPECTED_ATTESTATION_HISTORY,
-                           4:implementation.EXPECTED_SECURITY_GUARD_HISTORY}[profile])
+                           4:implementation.EXPECTED_SECURITY_GUARD_HISTORY,
+                           5:implementation.EXPECTED_PURGE_HISTORY}[profile])
         if profile==4:self.hash=implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT
+        elif profile==5:self.hash=implementation.EXPECTED_PURGE_CATALOG_FINGERPRINT
     def transaction(self):
         transaction=super().transaction()
         owner=self
@@ -2073,3 +2080,83 @@ async def test_security_completion_refuses_drift_before_flag_update(monkeypatch,
     expected=ProviderUnavailable if fault=='pending' else InvalidRequest if fault=='finalization' else IntegrityViolation if fault=='inventory' else UnauthorizedScope
     with pytest.raises(expected):await implementation.complete_security_replica(writer,object(),object(),deadline=limit)
     assert facts['intent']['state']=='writing' and facts['intent']['replica_complete'] is False
+
+
+
+def writer_purge_profile(connection):
+    connection.history=list(implementation.EXPECTED_PURGE_HISTORY)
+    connection.hash=implementation.EXPECTED_PURGE_CATALOG_FINGERPRINT
+
+
+@run_async
+async def test_profile5_writer_rechecks_exact_capabilities_and_role_before_each_business_lease(monkeypatch):
+    connection=Connection();writer_purge_profile(connection)
+    writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    deadline=asyncio.get_running_loop().time()+5
+    await writer.initialize(deadline=deadline)
+    assert writer._schema_profile==5 and writer._ready
+    writer._attestation_profile()
+    connection.calls.clear()
+    assert await writer.inspect(ctx(),deadline=deadline) is None
+    queries=[sql for sql,_ in connection.calls];scope=queries.index(implementation._SCOPE_SQL)
+    for sql in (implementation._HISTORY_SQL,implementation._PURGE_CATALOG_SQL,
+                implementation._CATALOG_FINGERPRINT_SQL,implementation._PURGE_OWNER_SQL,
+                implementation._PURGE_CAPABILITY_FINGERPRINT_SQL,implementation._WRITER_PURGE_ROLE_SQL):
+        assert queries.index(sql)<scope
+    assert implementation._WRITER_ATTESTATION_ROLE_SQL not in queries
+    assert not any('SELECT cragkit_qdrant.erase_purged_document(' in sql for sql in queries)
+
+
+@pytest.mark.parametrize('drift',['sixth','history','downgrade','body','owner','capability','catalog','role'])
+@run_async
+async def test_profile5_writer_drift_refuses_before_scope_and_retains_exact_admitted_profile(monkeypatch,drift):
+    connection=Connection();writer_purge_profile(connection)
+    writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    deadline=asyncio.get_running_loop().time()+5;await writer.initialize(deadline=deadline)
+    if drift=='sixth':connection.history.append(('0006_unknown','a'*64))
+    elif drift=='history':connection.history[-1]=(connection.history[-1][0],'b'*64)
+    elif drift=='downgrade':writer_guard_profile(connection)
+    elif drift=='body':connection.hash='c'*64
+    elif drift=='owner':connection.purge_owner=[(False,)]
+    elif drift=='capability':connection.capability=[('d'*64,)]
+    elif drift=='catalog':connection.purge_catalog=[(False,)]
+    else:connection.role=False
+    connection.calls.clear()
+    with pytest.raises(UnauthorizedScope if drift=='role' else UnsupportedCapability):
+        await writer.inspect(ctx(),deadline=deadline)
+    assert all(sql!=implementation._SCOPE_SQL and not sql.startswith('SELECT action,state,payload_sha256')
+               for sql,_ in connection.calls)
+    writer_purge_profile(connection);connection.purge_owner=connection.purge_catalog=[(True,)]
+    connection.capability=[(implementation.EXPECTED_PURGE_CAPABILITY_FINGERPRINT,)];connection.role=True
+    assert await writer.inspect(ctx(),deadline=deadline) is None
+    assert writer._schema_profile==5 and writer._ready
+
+
+@run_async
+async def test_profile4_writer_cannot_reinitialize_into_profile5(monkeypatch):
+    connection=Connection();writer_guard_profile(connection)
+    writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    deadline=asyncio.get_running_loop().time()+5;await writer.initialize(deadline=deadline)
+    writer_purge_profile(connection);connection.calls.clear()
+    with pytest.raises(UnsupportedCapability):await writer.initialize(deadline=deadline)
+    assert writer._schema_profile==4 and not writer._ready
+    assert implementation._WRITER_PURGE_ROLE_SQL not in [sql for sql,_ in connection.calls]
+
+
+@pytest.mark.parametrize('rows',[[],[(True,)],[(implementation.EXPECTED_PURGE_CAPABILITY_FINGERPRINT,)]*2])
+@run_async
+async def test_profile5_writer_capability_digest_requires_one_text_scalar(monkeypatch,rows):
+    connection=Connection();writer_purge_profile(connection);connection.capability=rows
+    writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    with pytest.raises(UnsupportedCapability):await writer.initialize(deadline=asyncio.get_running_loop().time()+5)
+    assert not writer._ready and connection.commits==0
+    assert implementation._WRITER_PURGE_ROLE_SQL not in [sql for sql,_ in connection.calls]
+
+
+@run_async
+async def test_profile5_keeps_ordinary_attestation_publication_failure_closed(monkeypatch):
+    writer,state,connections,_,_,_,_=attestation_writer(monkeypatch)
+    writer._schema_profile=5;state['schema_profile']=5
+    with pytest.raises(ProviderUnavailable):await writer.publish(ctx(),deadline=asyncio.get_running_loop().time()+5)
+    assert connections and not state.get('publication_updates')
+    assert state['intent']['state']=='prepared'

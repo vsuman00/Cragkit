@@ -28,6 +28,8 @@ class Connection:
         self.failure=None;self.rollback_failure=False;self.rows=[]
         self.fingerprint=[(implementation.EXPECTED_CATALOG_FINGERPRINT,)]
         self.guard_catalog=[(True,)];self.guard_owner=[(True,)]
+        self.purge_catalog=[(True,)];self.purge_owner=[(True,)]
+        self.capability=[(implementation.EXPECTED_PURGE_CAPABILITY_FINGERPRINT,)]
     def transaction(self, *, force_rollback):
         assert force_rollback
         owner=self
@@ -45,11 +47,14 @@ class Connection:
         if sql==implementation._CATALOG_SQL:return Cursor(self.catalog)
         if sql==implementation._SECURITY_GUARD_CATALOG_SQL:return Cursor(self.guard_catalog)
         if sql==implementation._SECURITY_GUARD_OWNER_SQL:return Cursor(self.guard_owner)
+        if sql==implementation._PURGE_CATALOG_SQL:return Cursor(self.purge_catalog)
+        if sql==implementation._PURGE_OWNER_SQL:return Cursor(self.purge_owner)
+        if sql==implementation._PURGE_CAPABILITY_FINGERPRINT_SQL:return Cursor(self.capability)
         if sql in (implementation._PUBLICATION_CATALOG_SQL, implementation._ATTESTATION_CATALOG_SQL):return Cursor(self.publication_catalog)
         if sql==implementation._HISTORY_SQL:return Cursor(self.history)
         if sql==implementation._CATALOG_FINGERPRINT_SQL:return Cursor(self.fingerprint)
         if sql==implementation._SCOPE_SQL:return Cursor([(None,)*5])
-        if sql.startswith('SELECT '+implementation._SELECTION):return Cursor(self.rows)
+        if sql.startswith('SELECT '+implementation._SELECTION) or sql.startswith('SELECT '+implementation._PURGE_SELECTION):return Cursor(self.rows)
         raise AssertionError('unknown query')
     async def close(self):self.closed=True;self.info.transaction_status=4
 
@@ -198,7 +203,7 @@ def test_exact_profile_selected_from_history_before_structural_or_role_checks(pu
             implementation._CATALOG_FINGERPRINT_SQL)]
         assert queries == [implementation._HISTORY_SQL, expected_catalog,
                            implementation._ROLE_SQL, implementation._CATALOG_FINGERPRINT_SQL]
-        assert 'LIMIT 5' in implementation._HISTORY_SQL
+        assert 'LIMIT 6' in implementation._HISTORY_SQL
         assert conn.rollbacks == 1 and pool.borrowed == pool.returned == 1
     asyncio.run(scenario())
 
@@ -306,7 +311,7 @@ def test_source_accepts_exact_three_explicit_profiles_and_reads_overflow(history
         connection.history = list(history)
         connection.fingerprint = [(fingerprint,)]
         await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
-        assert 'LIMIT 5' in implementation._HISTORY_SQL
+        assert 'LIMIT 6' in implementation._HISTORY_SQL
         assert any(sql == catalog for sql,_ in connection.calls)
         assert implementation.EXPECTED_PUBLICATION_HISTORY != implementation.EXPECTED_ATTESTATION_HISTORY
     asyncio.run(scenario())
@@ -473,4 +478,87 @@ def test_profile4_reader_role_requires_native_true(value):
         with pytest.raises(UnauthorizedScope):
             await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
         assert pool.borrowed == pool.returned == 1
+    asyncio.run(scenario())
+
+
+
+def purge_profile(connection):
+    connection.history = list(implementation.EXPECTED_PURGE_HISTORY)
+    connection.fingerprint = [(implementation.EXPECTED_PURGE_CATALOG_FINGERPRINT,)]
+
+
+def test_purge_profile_pins_actual_history_catalog_and_exact_capability_query_bytes():
+    from hashlib import sha256
+    root = Path(__file__).resolve().parents[3]
+    fixture = json.loads((root/'contracts/fixtures/qdrant_purge_catalog.json').read_text())
+    assert implementation.EXPECTED_PURGE_HISTORY == tuple(tuple(row) for row in fixture['history'])
+    assert implementation.EXPECTED_PURGE_HISTORY[:4] == implementation.EXPECTED_SECURITY_GUARD_HISTORY
+    assert implementation.EXPECTED_PURGE_CATALOG_FINGERPRINT == fixture['catalog_fingerprint']
+    assert implementation.EXPECTED_PURGE_CAPABILITY_FINGERPRINT == fixture['capability_fingerprint']
+    sql = (root/'contracts/sql/qdrant_purge_capabilities.sql').read_bytes()
+    assert implementation._PURGE_CAPABILITY_FINGERPRINT_SQL.encode() == sql
+    assert sha256(sql).hexdigest() == fixture['capability_query_sha256']
+    assert 'count(*)=15 FROM pg_class' in implementation._PURGE_CATALOG_SQL
+    assert 'count(*)=14 FROM pg_class' in implementation._PURGE_CATALOG_SQL
+    assert 'count(*)=2 FROM pg_proc' in implementation._PURGE_CATALOG_SQL
+    assert implementation._PURGE_SIGNATURE in implementation._PURGE_CATALOG_SQL
+    assert implementation._SECURITY_GUARD_SIGNATURE in implementation._PURGE_CATALOG_SQL
+    assert implementation._PURGE_OWNER_SQL == implementation._SECURITY_GUARD_OWNER_SQL.replace(
+        "WHERE n.nspname='cragkit_qdrant' AND p.prosecdef AND p.oid<>function_id)",
+        "WHERE n.nspname='cragkit_qdrant' AND p.prosecdef AND p.oid NOT IN (function_id,pg_catalog.to_regprocedure('"+
+        implementation._PURGE_SIGNATURE+"')))")
+
+
+@pytest.mark.parametrize('initialize', [False, True])
+def test_profile5_fresh_source_read_checks_capabilities_before_scope_and_uses_original_counts(initialize):
+    async def scenario():
+        reader, connection, pool = authority();purge_profile(connection)
+        if initialize:await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
+        connection.calls.clear()
+        assert await read_fixture(reader) == []
+        queries = [sql for sql,_ in connection.calls if 'statement_timeout' not in sql and not sql.startswith('SET ')]
+        assert queries[:6] == [implementation._HISTORY_SQL,implementation._PURGE_CATALOG_SQL,
+            implementation._ROLE_SQL,implementation._CATALOG_FINGERPRINT_SQL,
+            implementation._PURGE_OWNER_SQL,implementation._PURGE_CAPABILITY_FINGERPRINT_SQL]
+        assert queries[6] == implementation._SCOPE_SQL
+        assert queries[7].startswith('SELECT '+implementation._PURGE_SELECTION)
+        assert 'r.canonical_original_bytes' in queries[7] and 'm.excerpt_original_bytes' in queries[7]
+        assert 'CASE WHEN NOT d.content_unavailable AND' in queries[7]
+        assert '(d.tombstoned OR d.content_unavailable)' in queries[7]
+        assert pool.borrowed == pool.returned == (2 if initialize else 1)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('drift',['sixth','checksum','downgrade','catalog','owner','capability','malformed_capability','role'])
+def test_profile5_metadata_drift_blocks_all_source_queries_then_exact_restoration_works(drift):
+    async def scenario():
+        reader,connection,pool=authority();purge_profile(connection)
+        await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
+        if drift=='sixth':connection.history.append(('0006_unknown','a'*64))
+        elif drift=='checksum':connection.history[-1]=(connection.history[-1][0],'a'*64)
+        elif drift=='downgrade':security_guard_profile(connection)
+        elif drift=='catalog':connection.purge_catalog=[(False,)]
+        elif drift=='owner':connection.purge_owner=[(False,)]
+        elif drift=='capability':connection.capability=[('b'*64,)]
+        elif drift=='malformed_capability':connection.capability=[(True,)]
+        else:connection.role=[(False,)]
+        connection.calls.clear()
+        with pytest.raises(UnauthorizedScope if drift=='role' else UnsupportedCapability):await read_fixture(reader)
+        assert all(sql!=implementation._SCOPE_SQL and not sql.startswith('SELECT '+implementation._PURGE_SELECTION)
+                   for sql,_ in connection.calls)
+        purge_profile(connection);connection.purge_catalog=connection.purge_owner=[(True,)]
+        connection.capability=[(implementation.EXPECTED_PURGE_CAPABILITY_FINGERPRINT,)];connection.role=[(True,)]
+        assert await read_fixture(reader)==[]
+        assert pool.borrowed==pool.returned==3
+    asyncio.run(scenario())
+
+
+def test_initialized_profile4_reader_rejects_profile5_live_upgrade_before_catalog_or_source():
+    async def scenario():
+        reader,connection,_=authority();security_guard_profile(connection)
+        await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
+        purge_profile(connection);connection.calls.clear()
+        with pytest.raises(UnsupportedCapability):await read_fixture(reader)
+        assert implementation._PURGE_CATALOG_SQL not in [sql for sql,_ in connection.calls]
+        with pytest.raises(UnsupportedCapability):await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
     asyncio.run(scenario())

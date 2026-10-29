@@ -212,7 +212,29 @@ SELECT guard_id IS NOT NULL AND supervisor_role_id IS NOT NULL AND operator_id I
        OR NOT EXISTS(SELECT 1 FROM pg_catalog.pg_proc p CROSS JOIN LATERAL pg_catalog.aclexplode(p.proacl) a
           WHERE p.oid=function_id AND a.grantee=supervisor_role_id AND a.privilege_type='EXECUTE' AND NOT a.is_grantable))
 FROM guard_profile"""
-_HISTORY_SQL = 'SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version LIMIT 5'
+
+EXPECTED_PURGE_HISTORY = (*EXPECTED_SECURITY_GUARD_HISTORY,
+    ('0005_security_owners_and_erasure', 'ff368df59dc3e6bea2d5a032c915c625427cc74f103924bc8a4a31f5f2b26e68'))
+EXPECTED_PURGE_CATALOG_FINGERPRINT = 'ca83de1388d892be58ccf6a49acf1a8afcdccd66c3f30b87d57bd457fe76f5d8'
+EXPECTED_PURGE_CAPABILITY_FINGERPRINT = '80210922ed1130d45762383222affbf0147c679f5a23e9b2ed20ac079f33c817'
+_PURGE_SIGNATURE = 'cragkit_qdrant.erase_purged_document(text,text,text,text,bigint,text,text,text,text,text,text,text,uuid,text,text,bigint,bytea,text,text,text)'
+_PURGE_CATALOG_SQL = _SECURITY_GUARD_CATALOG_SQL.replace('count(*)=14 FROM pg_class', 'count(*)=15 FROM pg_class').replace(
+    'count(*)=13 FROM pg_class', 'count(*)=14 FROM pg_class').replace(
+    "p.prosecdef AND p.oid IS DISTINCT FROM to_regprocedure('" + _SECURITY_GUARD_SIGNATURE + "'))",
+    "p.prosecdef AND p.oid NOT IN (to_regprocedure('" + _SECURITY_GUARD_SIGNATURE + "'),to_regprocedure('" + _PURGE_SIGNATURE + "')))").replace(
+    'count(*)=1 FROM pg_proc', 'count(*)=2 FROM pg_proc') + """
+ AND EXISTS(SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+      WHERE p.oid=to_regprocedure('""" + _PURGE_SIGNATURE + """')
+      AND p.prokind='f' AND p.prorettype='boolean'::regtype AND l.lanname='plpgsql'
+      AND p.prosecdef AND NOT p.proleakproof AND NOT p.proisstrict
+      AND p.provolatile='v' AND p.proparallel='u'
+      AND p.proconfig=ARRAY['search_path=pg_catalog','row_security=on'])
+"""
+_PURGE_OWNER_SQL = _SECURITY_GUARD_OWNER_SQL.replace(
+    "WHERE n.nspname='cragkit_qdrant' AND p.prosecdef AND p.oid<>function_id)",
+    "WHERE n.nspname='cragkit_qdrant' AND p.prosecdef AND p.oid NOT IN (function_id,pg_catalog.to_regprocedure('" + _PURGE_SIGNATURE + "')))")
+_PURGE_CAPABILITY_FINGERPRINT_SQL = "-- QP-r1 capability inventory. Normalize only installation-specific operator\n-- and bootstrap names; preserve every effective privilege and membership edge.\nWITH operators AS (\n SELECT nspowner AS operator_id FROM pg_catalog.pg_namespace WHERE nspname='cragkit_qdrant'\n), names AS (\n SELECT r.oid, CASE WHEN r.oid=o.operator_id THEN pg_catalog.jsonb_build_array('operator')\n                   WHEN r.oid=10 THEN pg_catalog.jsonb_build_array('bootstrap')\n                   ELSE pg_catalog.jsonb_build_array('role',r.rolname) END AS name\n FROM pg_catalog.pg_roles r CROSS JOIN operators o\n UNION ALL SELECT 0::oid,pg_catalog.jsonb_build_array('public')\n), capabilities AS (\n SELECT * FROM pg_catalog.pg_roles\n WHERE rolname IN ('cragkit_qdrant_security_guard','cragkit_qdrant_purger')\n), inventory AS (\n SELECT pg_catalog.jsonb_build_object(\n  'roles',(SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(rolname,\n    rolcanlogin,rolsuper,rolbypassrls,rolcreatedb,rolcreaterole,rolreplication,rolinherit,\n    pg_catalog.has_schema_privilege(oid,'cragkit_qdrant','USAGE'),\n    pg_catalog.has_schema_privilege(oid,'cragkit_qdrant','CREATE')) ORDER BY rolname) FROM capabilities),\n  'memberships',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    a.name,b.name,g.name,m.admin_option,m.inherit_option,m.set_option)\n    ORDER BY a.name,b.name,g.name),'[]'::jsonb)\n    FROM pg_catalog.pg_auth_members m JOIN names a ON a.oid=m.roleid\n    JOIN names b ON b.oid=m.member JOIN names g ON g.oid=m.grantor\n    WHERE m.roleid IN (SELECT oid FROM capabilities) OR m.member IN (SELECT oid FROM capabilities)),\n  'table_privileges',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    r.rolname,c.relname,p.privilege,\n    pg_catalog.has_table_privilege(r.oid,c.oid,p.privilege||' WITH GRANT OPTION'))\n    ORDER BY r.rolname,c.relname,p.privilege),'[]'::jsonb)\n    FROM capabilities r CROSS JOIN pg_catalog.pg_class c\n    JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace\n    CROSS JOIN pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p(privilege)\n    WHERE n.nspname='cragkit_qdrant' AND c.relkind='r'\n    AND pg_catalog.has_table_privilege(r.oid,c.oid,p.privilege)),\n  'column_privileges',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    r.rolname,c.relname,a.attname,p.privilege,\n    pg_catalog.has_column_privilege(r.oid,c.oid,a.attnum,p.privilege||' WITH GRANT OPTION'))\n    ORDER BY r.rolname,c.relname,a.attname,p.privilege),'[]'::jsonb)\n    FROM capabilities r CROSS JOIN pg_catalog.pg_class c\n    JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace\n    JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid\n    CROSS JOIN pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) p(privilege)\n    WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped\n    AND pg_catalog.has_column_privilege(r.oid,c.oid,a.attnum,p.privilege)),\n  'function_privileges',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    r.rolname,f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid),\n    pg_catalog.has_function_privilege(r.oid,f.oid,'EXECUTE WITH GRANT OPTION'))\n    ORDER BY r.rolname,f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid)),'[]'::jsonb)\n    FROM capabilities r CROSS JOIN pg_catalog.pg_proc f\n    JOIN pg_catalog.pg_namespace n ON n.oid=f.pronamespace\n    WHERE n.nspname='cragkit_qdrant' AND pg_catalog.has_function_privilege(r.oid,f.oid,'EXECUTE')),\n  'function_owners',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    n.nspname,f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid),r.rolname)\n    ORDER BY n.nspname,f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid)),'[]'::jsonb)\n    FROM pg_catalog.pg_proc f JOIN capabilities r ON r.oid=f.proowner\n    JOIN pg_catalog.pg_namespace n ON n.oid=f.pronamespace),\n  'function_acls',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(\n    f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid),g.name,u.name,x.privilege_type,x.is_grantable)\n    ORDER BY f.proname,pg_catalog.pg_get_function_identity_arguments(f.oid),g.name,u.name,x.privilege_type),'[]'::jsonb)\n    FROM pg_catalog.pg_proc f JOIN capabilities r ON r.oid=f.proowner\n    CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(f.proacl,pg_catalog.acldefault('f',f.proowner))) x\n    JOIN names g ON g.oid=x.grantor JOIN names u ON u.oid=x.grantee),\n  'owned_schemas',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(n.nspname,r.rolname)\n    ORDER BY n.nspname,r.rolname),'[]'::jsonb) FROM pg_catalog.pg_namespace n JOIN capabilities r ON r.oid=n.nspowner),\n  'owned_relations',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(n.nspname,c.relname,r.rolname)\n    ORDER BY n.nspname,c.relname,r.rolname),'[]'::jsonb) FROM pg_catalog.pg_class c JOIN capabilities r ON r.oid=c.relowner\n    JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace),\n  'owned_types',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(n.nspname,t.typname,r.rolname)\n    ORDER BY n.nspname,t.typname,r.rolname),'[]'::jsonb) FROM pg_catalog.pg_type t JOIN capabilities r ON r.oid=t.typowner\n    JOIN pg_catalog.pg_namespace n ON n.oid=t.typnamespace),\n  'owned_databases',(SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(d.datname,r.rolname)\n    ORDER BY d.datname,r.rolname),'[]'::jsonb) FROM pg_catalog.pg_database d JOIN capabilities r ON r.oid=d.datdba)\n ) AS payload\n)\nSELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(payload::text,'UTF8')),'hex') FROM inventory\n"
+_HISTORY_SQL = 'SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version LIMIT 6'
 _SCOPE_SQL = """SELECT set_config('cragkit_qdrant.tenant_id',%s,true),
  set_config('cragkit_qdrant.collection',%s,true),set_config('cragkit_qdrant.principal_id',%s,true),
  set_config('cragkit_qdrant.grant_ids',%s,true),set_config('cragkit_qdrant.authorization_revision',%s,true)"""
@@ -263,6 +285,13 @@ WHERE m.tenant_id=%s AND m.collection=%s AND m.document_id=%s AND m.revision_id=
 """
 
 
+_PURGE_SELECTION = _SELECTION.replace('octet_length(r.canonical_utf8)', 'r.canonical_original_bytes').replace(
+    'octet_length(m.excerpt_utf8)', 'm.excerpt_original_bytes').replace(
+    'CASE WHEN ', 'CASE WHEN NOT d.content_unavailable AND ').replace(
+    'g.ever_published,d.tombstoned', 'g.ever_published,(d.tombstoned OR d.content_unavailable)')
+_PURGE_SOURCE_SQL = _SOURCE_SQL.replace(_SELECTION, _PURGE_SELECTION)
+
+
 async def query(connection: SessionConnection, sql: str, params: tuple[object, ...] | None,
                 deadline: float) -> list[tuple[object, ...]]:
     remaining = deadline_value(deadline) - asyncio.get_running_loop().time()
@@ -296,6 +325,7 @@ class PostgresQdrantAuthority:
     def __init__(self, resource: PoolResource) -> None:
         self.resource = resource
         self._requires_security_guard = False
+        self._admitted_history: tuple[tuple[str, str], ...] | None = None
 
     @asynccontextmanager
     async def transaction(self, deadline: float) -> AsyncIterator[SessionConnection]:
@@ -356,14 +386,14 @@ class PostgresQdrantAuthority:
             rows = await query(connection, _HISTORY_SQL, None, deadline)
         except IntegrityViolation:
             raise UnsupportedCapability() from None
-        if len(rows) not in (1, 2, 3, 4) or any(
+        if len(rows) not in (1, 2, 3, 4, 5) or any(
                 len(row) != 2 or any(type(value) is not str for value in row) for row in rows):
             raise UnsupportedCapability()
         history = tuple(rows)
         if history not in (EXPECTED_HISTORY, EXPECTED_PUBLICATION_HISTORY,
-                           EXPECTED_ATTESTATION_HISTORY, EXPECTED_SECURITY_GUARD_HISTORY):
+                           EXPECTED_ATTESTATION_HISTORY, EXPECTED_SECURITY_GUARD_HISTORY, EXPECTED_PURGE_HISTORY):
             raise UnsupportedCapability()
-        if self._requires_security_guard and history != EXPECTED_SECURITY_GUARD_HISTORY:
+        if self._admitted_history is not None and history != self._admitted_history:
             raise UnsupportedCapability()
         return history
 
@@ -375,8 +405,10 @@ class PostgresQdrantAuthority:
             catalog_sql, fingerprint = _PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
         elif history == EXPECTED_ATTESTATION_HISTORY:
             catalog_sql, fingerprint = _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
-        else:
+        elif history == EXPECTED_SECURITY_GUARD_HISTORY:
             catalog_sql, fingerprint = _SECURITY_GUARD_CATALOG_SQL, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT
+        else:
+            catalog_sql, fingerprint = _PURGE_CATALOG_SQL, EXPECTED_PURGE_CATALOG_FINGERPRINT
         catalog = await query(connection, catalog_sql, None, deadline)
         if len(catalog) != 1 or len(catalog[0]) != 1 or catalog[0][0] is not True:
             raise UnsupportedCapability()
@@ -387,16 +419,23 @@ class PostgresQdrantAuthority:
         if (len(observed) != 1 or len(observed[0]) != 1 or type(observed[0][0]) is not str
                 or observed[0][0] != fingerprint):
             raise UnsupportedCapability()
-        if history == EXPECTED_SECURITY_GUARD_HISTORY:
-            owner = await query(connection, _SECURITY_GUARD_OWNER_SQL, None, deadline)
+        if history in (EXPECTED_SECURITY_GUARD_HISTORY, EXPECTED_PURGE_HISTORY):
+            owner_sql = _PURGE_OWNER_SQL if history == EXPECTED_PURGE_HISTORY else _SECURITY_GUARD_OWNER_SQL
+            owner = await query(connection, owner_sql, None, deadline)
             if len(owner) != 1 or len(owner[0]) != 1 or owner[0][0] is not True:
+                raise UnsupportedCapability()
+        if history == EXPECTED_PURGE_HISTORY:
+            capability = await query(connection, _PURGE_CAPABILITY_FINGERPRINT_SQL, None, deadline)
+            if (len(capability) != 1 or len(capability[0]) != 1 or type(capability[0][0]) is not str
+                    or capability[0][0] != EXPECTED_PURGE_CAPABILITY_FINGERPRINT):
                 raise UnsupportedCapability()
 
     async def initialize(self, *, deadline: float) -> None:
         async with self.transaction(deadline) as connection:
             history = await self._history(connection, deadline)
             await self._validate_profile(connection, history, deadline)
-        self._requires_security_guard = history == EXPECTED_SECURITY_GUARD_HISTORY
+        self._requires_security_guard = history in (EXPECTED_SECURITY_GUARD_HISTORY, EXPECTED_PURGE_HISTORY)
+        self._admitted_history = history
 
     async def read(self, nomination: Any, request: RetrievalRequest, scope: TrustedScope, config: QdrantConfig, *,
                    retained: bool, max_source_bytes: int, deadline: float) -> list[dict[str, Any]]:
@@ -410,13 +449,15 @@ class PostgresQdrantAuthority:
             raise InvalidRequest()
         async with self.transaction(deadline) as connection:
             history = await self._history(connection, deadline)
-            if history == EXPECTED_SECURITY_GUARD_HISTORY:
+            if history in (EXPECTED_SECURITY_GUARD_HISTORY, EXPECTED_PURGE_HISTORY):
                 await self._validate_profile(connection, history, deadline)
                 self._requires_security_guard = True
             elif await query(connection, _ROLE_SQL, None, deadline) != [(True,)]:
                 raise UnauthorizedScope()
             await query(connection, _SCOPE_SQL, (scope.tenant_id,request.collection,scope.principal_id,grants,scope.authorization_revision), deadline)
-            rows = await query(connection, _SOURCE_SQL.format(publication='TRUE' if retained else 'g.published AND d.active_generation_id=g.generation_id', predicate=predicate), args, deadline)
+            source_sql = _PURGE_SOURCE_SQL if history == EXPECTED_PURGE_HISTORY else _SOURCE_SQL
+            rows = await query(connection, source_sql.format(publication='TRUE' if retained else 'g.published AND d.active_generation_id=g.generation_id', predicate=predicate), args, deadline)
             if len(rows) > 1 or any(len(row) != len(SOURCE_ROW_FIELDS) for row in rows):
                 raise IntegrityViolation()
+            self._admitted_history = history
             return [dict(zip(SOURCE_ROW_FIELDS, row)) for row in rows]

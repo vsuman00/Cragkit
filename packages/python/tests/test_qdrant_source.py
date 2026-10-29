@@ -248,3 +248,23 @@ def test_denied_null_case_row_retains_zero_loaded_bytes():
     row['canonical_utf8']=row['excerpt_utf8']=None
     result=verify_source(expand(FIXTURE['nomination']),[row],FIXTURE['request'],FIXTURE['scope'],CONFIG,max_source_bytes=12)
     assert result.state=='unavailable' and result.source_bytes==0
+
+
+
+@pytest.mark.parametrize('allowance',[0,12,13,MAX_SOURCE_BYTES])
+def test_erased_source_with_original_counts_is_known_unavailable_before_nullable_body_decode(allowance):
+    row=expand(FIXTURE['base_row'])
+    row.update(tombstoned=True,canonical_utf8=None,excerpt_utf8=None)
+    original=(row['source_bytes'],row['excerpt_bytes'])
+    result=verify_source(expand(FIXTURE['nomination']),[row],FIXTURE['request'],FIXTURE['scope'],CONFIG,
+                         retained=True,max_source_bytes=allowance,include_source=True)
+    assert result.state=='unavailable' and result.source_bytes==0
+    assert result.evidence is None and result.binding is None and result.private_source is None
+    assert (row['source_bytes'],row['excerpt_bytes'])==original
+
+
+def test_unmarked_missing_source_still_fails_integrity_within_declared_budget():
+    row=expand(FIXTURE['base_row']);row.update(canonical_utf8=None,excerpt_utf8=None)
+    with pytest.raises(IntegrityViolation):
+        verify_source(expand(FIXTURE['nomination']),[row],FIXTURE['request'],FIXTURE['scope'],CONFIG,
+                      retained=True,max_source_bytes=MAX_SOURCE_BYTES)

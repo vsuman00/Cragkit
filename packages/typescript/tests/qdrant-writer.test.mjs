@@ -1,3 +1,5 @@
+import {AUTHORITY_PURGE_HISTORY,EXPECTED_PURGE_CATALOG_FINGERPRINT,EXPECTED_PURGE_CAPABILITY_FINGERPRINT,AUTHORITY_PURGE_CATALOG_SQL,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL} from '../dist/qdrant-authority.js';
+import {WRITER_PURGE_ROLE_SQL} from '../dist/qdrant-writer.js';
 import test,{mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -185,7 +187,7 @@ function setup(){
           if(state.commitLost){state.commitLost=false;state.onLostCommit?.();throw Error('private lost acknowledgment');}
           return {rows:[]};
         }
-        if(sql===WRITER_ATTESTATION_ROLE_SQL)return {rows:[[state.role&&state.attestationRole!==false]]};
+        if(sql===WRITER_ATTESTATION_ROLE_SQL||sql===WRITER_PURGE_ROLE_SQL)return {rows:[[state.role&&state.attestationRole!==false]]};
         if(sql===RECOVERY_ROLE_SQL||sql===RECOVERY_SECURITY_GUARD_ROLE_SQL)return {rows:[[state.recoveryRole!==false]]};
         if(sql===SECURITY_GUARD_SQL){
           state.guardArguments=clone(params);state.guardSeen?.();
@@ -195,8 +197,9 @@ function setup(){
         }
         if(sql===WRITER_ROLE_SQL){if(state.wait)await state.wait;return {rows:[[state.role]]};}
         if(sql===AUTHORITY_HISTORY_SQL)return {rows:state.history};
-        if(sql===SECURITY_GUARD_OWNER_SQL){if(state.guardWait)await state.guardWait;return {rows:state.guardOwnerRows??[[true]]};}
-        if(sql===AUTHORITY_SECURITY_GUARD_CATALOG_SQL)return {rows:state.guardCatalogRows??[[state.catalog]]};
+        if(sql===PURGE_CAPABILITY_FINGERPRINT_SQL)return {rows:state.capabilityRows??[[EXPECTED_PURGE_CAPABILITY_FINGERPRINT]]};
+        if(sql===SECURITY_GUARD_OWNER_SQL||sql===PURGE_OWNER_SQL){if(state.guardWait)await state.guardWait;return {rows:state.guardOwnerRows??[[true]]};}
+        if(sql===AUTHORITY_SECURITY_GUARD_CATALOG_SQL||sql===AUTHORITY_PURGE_CATALOG_SQL)return {rows:state.guardCatalogRows??[[state.catalog]]};
         if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL||sql===AUTHORITY_ATTESTATION_CATALOG_SQL)return {rows:[[state.catalog]]};
         if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
         if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config')){
@@ -2266,4 +2269,36 @@ test('strict lease options can be parsed again without inventing an owner field'
   assert.deepEqual(parse(parsed),parsed);
   assert.equal(parse({...input,owner_token:token},true).owner_token,token);
   assert.throws(()=>parse({...input,owner_token:undefined}),InvalidRequest);
+});
+
+function purgeWriterProfile(f){f.state.history=AUTHORITY_PURGE_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_PURGE_CATALOG_FINGERPRINT;}
+test('writer5 admits exact privileges before business scope and retains security gate',async()=>{
+ const f=setup();purgeWriterProfile(f);
+ try{
+  await f.writer.initialize(opts());const start=f.state.queries.length;await f.writer.inspect(context,opts());
+  const queries=f.state.queries.slice(start),scopeAt=queries.findIndex(q=>q.text.includes("set_config('cragkit_qdrant.writer_document_id'"));
+  for(const sql of [WRITER_PURGE_ROLE_SQL,AUTHORITY_PURGE_CATALOG_SQL,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL]){
+   const index=queries.findIndex(q=>q.text===sql);assert(index>=0&&index<scopeAt);
+  }
+  const boundary=f.state.queries.length;await assert.rejects(admit_security_owner(f.writer,context,opts()),UnsupportedCapability);
+  assert.equal(f.state.queries.length,boundary);
+ }finally{await f.writer.close();await f.resource.close();}
+});
+for(const drift of ['capability','role','checksum','sixth','downgrade'])test(`writer5 ${drift} rejects before business scope`,async()=>{
+ const f=setup();purgeWriterProfile(f);
+ try{
+  await f.writer.initialize(opts());const start=f.state.queries.length;
+  if(drift==='capability')f.state.capabilityRows=[['changed']];
+  if(drift==='role')f.state.role=false;
+  if(drift==='checksum')f.state.history[4][1]='0'.repeat(64);
+  if(drift==='sixth')f.state.history.push(['0006_unknown','0'.repeat(64)]);
+  if(drift==='downgrade'){f.state.history=AUTHORITY_SECURITY_GUARD_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT;}
+  await assert.rejects(f.writer.inspect(context,opts()),drift==='role'?UnauthorizedScope:UnsupportedCapability);
+  assert(!f.state.queries.slice(start).some(q=>q.text.includes("set_config('cragkit_qdrant.writer_document_id'")));
+ }finally{await f.writer.close();await f.resource.close();}
+});
+test('writer profile4 reinitialization cannot adopt profile5',async()=>{
+ const f=setup();f.state.history=AUTHORITY_SECURITY_GUARD_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT;
+ try{await f.writer.initialize(opts());purgeWriterProfile(f);await assert.rejects(f.writer.initialize(opts()),UnsupportedCapability);}
+ finally{await f.writer.close();await f.resource.close();}
 });

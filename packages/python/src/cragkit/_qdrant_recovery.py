@@ -19,7 +19,9 @@ from ._qdrant_authority import (
     EXPECTED_PUBLICATION_CATALOG_FINGERPRINT, EXPECTED_PUBLICATION_HISTORY,
     EXPECTED_ATTESTATION_CATALOG_FINGERPRINT, EXPECTED_ATTESTATION_HISTORY, _ATTESTATION_CATALOG_SQL,
     EXPECTED_SECURITY_GUARD_HISTORY, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT,
-    _SECURITY_GUARD_CATALOG_SQL, _SECURITY_GUARD_OWNER_SQL,
+    _SECURITY_GUARD_CATALOG_SQL, _SECURITY_GUARD_OWNER_SQL, EXPECTED_PURGE_HISTORY,
+    EXPECTED_PURGE_CATALOG_FINGERPRINT, EXPECTED_PURGE_CAPABILITY_FINGERPRINT, _PURGE_CATALOG_SQL,
+    _PURGE_OWNER_SQL, _PURGE_CAPABILITY_FINGERPRINT_SQL,
 )
 from ._qdrant_reconciliation import (
     QdrantReconciliationVerifier, physical_binding, receipt_data, verifier_authority,
@@ -221,6 +223,19 @@ _SECURITY_GUARD_SIGNATURE = 'cragkit_qdrant.lock_current_security(text,text,text
 _SUPERVISOR_SECURITY_GUARD_ROLE_SQL = _SUPERVISOR_ROLE_SQL.replace(
     "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR",
     "p.oid IS NOT DISTINCT FROM to_regprocedure('" + _SECURITY_GUARD_SIGNATURE + "') OR\n"
+    "   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR")
+
+_SUPERVISOR_PURGE_ROLE_SQL = _SUPERVISOR_SECURITY_GUARD_ROLE_SQL.replace(
+    "OR (c.relname='publication_intents' AND a.attname IN",
+    "OR (c.relname='documents' AND a.attname IN ('tenant_id','collection','document_id','content_unavailable'))\n"
+    "    OR (c.relname='publication_intents' AND a.attname IN"
+).replace("WHEN privilege='UPDATE' THEN c.relname='backend_instances'\n"
+    "    OR (c.relname='document_owners'",
+    "WHEN privilege='UPDATE' THEN c.relname='backend_instances'\n"
+    "    OR (c.relname='documents' AND a.attname='content_unavailable')\n"
+    "    OR (c.relname='document_owners'"
+).replace("p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR",
+    "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.scope_visible(text,text,text[],text[],text,boolean)') OR\n"
     "   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR")
 
 
@@ -514,13 +529,14 @@ class PostgresQdrantRecovery:
 
     @staticmethod
     def _history_profile(rows: list[tuple[Any, ...]]) -> int:
-        if (type(rows) is not list or len(rows) not in (2, 3, 4)
+        if (type(rows) is not list or len(rows) not in (2, 3, 4, 5)
                 or any(type(row) is not tuple or len(row) != 2
                        or any(type(value) is not str for value in row) for row in rows)):
             raise UnsupportedCapability()
         for profile, history in ((2, EXPECTED_PUBLICATION_HISTORY),
                                  (3, EXPECTED_ATTESTATION_HISTORY),
-                                 (4, EXPECTED_SECURITY_GUARD_HISTORY)):
+                                 (4, EXPECTED_SECURITY_GUARD_HISTORY),
+                                 (5, EXPECTED_PURGE_HISTORY)):
             if rows == list(history):
                 return profile
         raise UnsupportedCapability()
@@ -530,10 +546,14 @@ class PostgresQdrantRecovery:
             2: (_PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT),
             3: (_ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT),
             4: (_SECURITY_GUARD_CATALOG_SQL, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT),
+            5: (_PURGE_CATALOG_SQL, EXPECTED_PURGE_CATALOG_FINGERPRINT),
         }[profile]
         checks: list[tuple[str, object]] = [(catalog, True), (_CATALOG_FINGERPRINT_SQL, fingerprint)]
         if profile == 4:
             checks.append((_SECURITY_GUARD_OWNER_SQL, True))
+        elif profile == 5:
+            checks.extend(((_PURGE_OWNER_SQL, True),
+                           (_PURGE_CAPABILITY_FINGERPRINT_SQL, EXPECTED_PURGE_CAPABILITY_FINGERPRINT)))
         for sql, expected in checks:
             try:
                 rows = await self._query(connection, sql)
@@ -587,12 +607,13 @@ class PostgresQdrantRecovery:
                     profile = self._history_profile(await self._query(connection, _HISTORY_SQL))
                 except IntegrityViolation:
                     raise UnsupportedCapability() from None
-                if ((self._security_guard_admitted and profile != 4)
+                if ((self._security_guard_admitted and profile != self._schema_profile)
                         or (not initializing and profile != self._schema_profile)):
                     raise UnsupportedCapability()
-                if initializing or profile == 4:
+                if initializing or profile in (4, 5):
                     await self._catalog_profile(connection, profile)
-                role_sql = _SUPERVISOR_SECURITY_GUARD_ROLE_SQL if profile == 4 else _SUPERVISOR_ROLE_SQL
+                role_sql = (_SUPERVISOR_PURGE_ROLE_SQL if profile == 5 else
+                            _SUPERVISOR_SECURITY_GUARD_ROLE_SQL if profile == 4 else _SUPERVISOR_ROLE_SQL)
                 try:
                     role = await self._query(connection, role_sql)
                 except IntegrityViolation:
@@ -1019,7 +1040,7 @@ class PostgresQdrantRecovery:
                 blocked = await self._transaction(deadline, confirm)
             if blocked:
                 self._control().block_ordinary()
-            self._security_guard_admitted = self._security_guard_admitted or self._schema_profile == 4
+            self._security_guard_admitted = self._security_guard_admitted or self._schema_profile in (4, 5)
             self._ready = True
 
     async def recover(self, recovery_id: object, *, deadline: float) -> object:

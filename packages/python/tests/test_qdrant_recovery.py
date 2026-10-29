@@ -322,6 +322,8 @@ class Database:
         self.fingerprint = implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
         self.catalog = [(True,)]
         self.guard_owner = [(True,)]
+        self.purge_owner = [(True,)]
+        self.capability = [(implementation.EXPECTED_PURGE_CAPABILITY_FINGERPRINT,)]
         self.metadata = {}
         self.guard_hook = None
         self.guard_error = None
@@ -386,14 +388,16 @@ class Connection:
         if db.block_query is not None:
             await db.block_query.wait()
         if sql in db.metadata:return Cursor(db.metadata[sql])
-        if sql in (implementation._SUPERVISOR_ROLE_SQL,implementation._SUPERVISOR_SECURITY_GUARD_ROLE_SQL):
+        if sql in (implementation._SUPERVISOR_ROLE_SQL,implementation._SUPERVISOR_SECURITY_GUARD_ROLE_SQL,implementation._SUPERVISOR_PURGE_ROLE_SQL):
             return Cursor([(db.role,)])
         if sql == implementation._HISTORY_SQL:
             return Cursor(db.history)
         if sql in (implementation._PUBLICATION_CATALOG_SQL,implementation._ATTESTATION_CATALOG_SQL,
-                   implementation._SECURITY_GUARD_CATALOG_SQL):
+                   implementation._SECURITY_GUARD_CATALOG_SQL,implementation._PURGE_CATALOG_SQL):
             return Cursor(db.catalog)
         if sql == implementation._SECURITY_GUARD_OWNER_SQL:return Cursor(db.guard_owner)
+        if sql == implementation._PURGE_OWNER_SQL:return Cursor(db.purge_owner)
+        if sql == implementation._PURGE_CAPABILITY_FINGERPRINT_SQL:return Cursor(db.capability)
         if sql == implementation._CATALOG_FINGERPRINT_SQL:
             return Cursor([(db.fingerprint,)])
         if sql.startswith('SELECT true FROM cragkit_qdrant.lock_current_security('):
@@ -657,10 +661,12 @@ async def test_durable_block_physical_fence_retired_settlement_and_private_open(
 def schema_profile(db, profile):
     db.history=list({2:implementation.EXPECTED_PUBLICATION_HISTORY,
                      3:implementation.EXPECTED_ATTESTATION_HISTORY,
-                     4:implementation.EXPECTED_SECURITY_GUARD_HISTORY}[profile])
+                     4:implementation.EXPECTED_SECURITY_GUARD_HISTORY,
+                     5:implementation.EXPECTED_PURGE_HISTORY}[profile])
     db.fingerprint={2:implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,
                     3:implementation.EXPECTED_ATTESTATION_CATALOG_FINGERPRINT,
-                    4:implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT}[profile]
+                    4:implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT,
+                    5:implementation.EXPECTED_PURGE_CATALOG_FINGERPRINT}[profile]
 
 
 def test_profile4_supervisor_role_is_exactly_the_legacy_map_plus_one_guard_execute():
@@ -670,7 +676,7 @@ def test_profile4_supervisor_role_is_exactly_the_legacy_map_plus_one_guard_execu
     assert 'lock_current_security' not in implementation._SUPERVISOR_ROLE_SQL
 
 
-@pytest.mark.parametrize('profile',[2,3,4])
+@pytest.mark.parametrize('profile',[2,3,4,5])
 @run_async
 async def test_exact_recovery_profiles_preserve_retired_settlement_and_resource_lifetime(monkeypatch,tmp_path,profile):
     control, supervisor, db, receipt = setup(monkeypatch,tmp_path)
@@ -684,11 +690,16 @@ async def test_exact_recovery_profiles_preserve_retired_settlement_and_resource_
     calls=[sql for sql,_ in db.calls]
     binding=next(index for index,sql in enumerate(calls) if "set_config('cragkit_qdrant.backend_instance_id'" in sql)
     assert calls.index(implementation._HISTORY_SQL)<binding
-    role=implementation._SUPERVISOR_SECURITY_GUARD_ROLE_SQL if profile==4 else implementation._SUPERVISOR_ROLE_SQL
+    role=(implementation._SUPERVISOR_PURGE_ROLE_SQL if profile==5 else
+          implementation._SUPERVISOR_SECURITY_GUARD_ROLE_SQL if profile==4 else implementation._SUPERVISOR_ROLE_SQL)
     assert calls.index(role)<binding
     if profile==4:
         for metadata in (implementation._SECURITY_GUARD_CATALOG_SQL,
                          implementation._CATALOG_FINGERPRINT_SQL,implementation._SECURITY_GUARD_OWNER_SQL):
+            assert calls.index(metadata)<calls.index(role)
+    if profile==5:
+        for metadata in (implementation._PURGE_CATALOG_SQL,implementation._CATALOG_FINGERPRINT_SQL,
+                         implementation._PURGE_OWNER_SQL,implementation._PURGE_CAPABILITY_FINGERPRINT_SQL):
             assert calls.index(metadata)<calls.index(role)
     assert not any(sql.startswith('SELECT cragkit_qdrant.lock_current_security(') for sql in calls)
     assert await control.settle_retired(proof,receipt(proof),deadline=deadline)=={'settled_count':1}
@@ -1636,3 +1647,58 @@ async def test_security_dispatch_rereads_sequence_before_reserving_a_batch(monke
     with pytest.raises(ProviderUnavailable):
         await implementation.dispatch_security_recovery(recovery,proof,owner,target,raced,deadline=asyncio.get_running_loop().time()+5)
     assert not events['puts'] and len(db.journals)==1 and db.journals[0]['dispatch_id']=='late-retired'
+
+
+
+@pytest.mark.parametrize('drift',['owner','capability','sixth','body','catalog','downgrade','role'])
+@run_async
+async def test_profile5_recovery_drift_blocks_owner_advance_before_scope_or_writes(monkeypatch,tmp_path,drift):
+    control,supervisor,db,_=setup(monkeypatch,tmp_path);schema_profile(db,5)
+    deadline=asyncio.get_running_loop().time()+5;await control.initialize(deadline=deadline)
+    proof=await control.recover('recovery-1',deadline=deadline);before=deepcopy(db.owner)
+    if drift=='owner':db.purge_owner=[(False,)]
+    elif drift=='capability':db.capability=[('a'*64,)]
+    elif drift=='sixth':db.history.append(('0006_unknown','a'*64))
+    elif drift=='body':db.fingerprint='b'*64
+    elif drift=='catalog':db.catalog=[(False,)]
+    elif drift=='downgrade':schema_profile(db,4)
+    else:db.role=False
+    db.calls.clear()
+    with pytest.raises(UnauthorizedScope if drift=='role' else UnsupportedCapability):
+        await control.advance_owner(proof,ctx(),deadline=deadline)
+    assert db.owner==before
+    assert all("set_config('cragkit_qdrant.backend_instance_id'" not in sql and not sql.startswith('UPDATE ')
+               for sql,_ in db.calls)
+    schema_profile(db,5);db.purge_owner=db.catalog=[(True,)];db.role=True
+    db.capability=[(implementation.EXPECTED_PURGE_CAPABILITY_FINGERPRINT,)]
+    assert (await control.advance_owner(proof,ctx(),deadline=deadline))['backend_epoch']==2
+    assert control._schema_profile==5 and db.active_leases==0
+
+
+@pytest.mark.parametrize('rows',[[],[(True,)],[(implementation.EXPECTED_PURGE_CAPABILITY_FINGERPRINT,)]*2])
+@run_async
+async def test_profile5_recovery_capability_digest_is_closed_and_checked_before_registration(monkeypatch,tmp_path,rows):
+    control,supervisor,db,_=setup(monkeypatch,tmp_path);schema_profile(db,5);db.capability=rows
+    with pytest.raises(UnsupportedCapability):await control.initialize(deadline=asyncio.get_running_loop().time()+5)
+    assert not control._ready and db.backend is None
+    assert all("set_config('cragkit_qdrant.backend_instance_id'" not in sql for sql,_ in db.calls)
+
+
+@run_async
+async def test_profile4_recovery_cannot_reinitialize_into_profile5(monkeypatch,tmp_path):
+    control,supervisor,db,_=setup(monkeypatch,tmp_path);schema_profile(db,4)
+    deadline=asyncio.get_running_loop().time()+5;await control.initialize(deadline=deadline)
+    schema_profile(db,5);db.calls.clear()
+    with pytest.raises(UnsupportedCapability):await control.initialize(deadline=deadline)
+    assert control._schema_profile==4 and not control._ready
+    assert implementation._SUPERVISOR_PURGE_ROLE_SQL not in [sql for sql,_ in db.calls]
+
+
+def test_profile5_supervisor_marker_update_privilege_does_not_leak_into_table_map():
+    sql=implementation._SUPERVISOR_PURGE_ROLE_SQL
+    table_map=sql.split('CROSS JOIN unnest(',1)[1].split(' AND NOT EXISTS(SELECT 1 FROM pg_attribute',1)[0]
+    assert 'a.attname' not in table_map
+    assert "OR (c.relname='documents' AND a.attname='content_unavailable')" in sql
+    assert "OR (c.relname='documents' AND a.attname IN ('tenant_id','collection','document_id','content_unavailable'))" in sql
+    assert 'scope_visible(text,text,text[],text[],text,boolean)' in sql
+    assert 'canonical_utf8' not in sql and 'excerpt_utf8' not in sql and 'erase_purged_document' not in sql

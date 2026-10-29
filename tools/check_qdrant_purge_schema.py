@@ -11,7 +11,7 @@ import tempfile
 import traceback
 
 from qdrant_authority_schema import catalog_queries
-from qdrant_purge_native import seed_documents, install, guard_probes
+from qdrant_purge_native import seed_documents, install, guard_probes, runtime_admission, node_runtime_admission
 from qdrant_purge_schema import CHECKS, run_sql_probes, run_historical_confirmation
 from qdrant_security_guard_native import SecurityGuardDatabase, rows
 from qdrant_source_native import PostgresSourceFixture
@@ -33,8 +33,12 @@ async def check(fixture, progress, *, seed_only=False):
         progress['stage'] = 'capability_inventory'
         capability_query = (Path(__file__).resolve().parents[1]/'contracts/sql/qdrant_purge_capabilities.sql').read_text()
         capability_fingerprint = (await rows(database.admin, capability_query))[0][0]
+        progress['stage'] = 'restricted_runtime_admission'
+        checks = await runtime_admission(database)
+        progress['stage'] = 'node_restricted_runtime_admission'
+        checks += await node_runtime_admission(database)
         progress['stage'] = 'security_owner_guard_branches'
-        checks = await guard_probes(database, guards)
+        checks += await guard_probes(database, guards)
         progress['stage'] = 'restricted_purge_sql_probes'
         observed = await run_sql_probes(database, purge)
         if observed != list(CHECKS):

@@ -6,7 +6,7 @@ import { DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady, IntegrityVio
 import { AUTHORITY_FINGERPRINT_SQL, AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY,
   AUTHORITY_PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
   AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,
-  AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL } from './qdrant-authority.js';
+  AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL,AUTHORITY_PURGE_HISTORY,AUTHORITY_PURGE_CATALOG_SQL,EXPECTED_PURGE_CATALOG_FINGERPRINT,EXPECTED_PURGE_CAPABILITY_FINGERPRINT,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL,PURGE_SIGNATURE } from './qdrant-authority.js';
 import {attestation_receipt_data,publication_verifier_controller,type QdrantPublicationVerifier} from './qdrant-publication-verification.js';
 import {require_publication_finalization} from './qdrant-publication-worker.js';
 import {ordinary_security_receipt_data,security_verifier_supervisor,type QdrantSecurityVerifier} from './qdrant-security-verification.js';
@@ -276,16 +276,21 @@ function safe(error: unknown, deadline: number): Error {
   return new ProviderUnavailable();
 }
 class CommitUnknown extends Error {}
-type WriterSchemaProfile='publication'|'attestation'|'security_guard';
+export const WRITER_PURGE_ROLE_SQL=WRITER_ATTESTATION_ROLE_SQL.replaceAll(
+  "WHEN privilege='SELECT' THEN c.relname IN (","WHEN privilege='SELECT' THEN c.relname='purge_erasures' OR c.relname IN (").replace(
+  "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR",
+  "p.oid IS NOT DISTINCT FROM to_regprocedure('"+PURGE_SIGNATURE+"') OR\n   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR");
+type WriterSchemaProfile='publication'|'attestation'|'security_guard'|'purge';
 /** Writer-local admission never changes the recovery selector's supported set. */
 function writer_profile(history:unknown):WriterSchemaProfile{
   try{
-    const rows=native_array(history,1,4).map(row=>native_array(row,2,2).map(value=>{
+    const rows=native_array(history,1,5).map(row=>native_array(row,2,2).map(value=>{
       if(typeof value!=='string')throw new UnsupportedCapability();return value;
     }));
     if(same(rows,AUTHORITY_PUBLICATION_HISTORY))return 'publication';
     if(same(rows,AUTHORITY_ATTESTATION_HISTORY))return 'attestation';
     if(same(rows,AUTHORITY_SECURITY_GUARD_HISTORY))return 'security_guard';
+    if(same(rows,AUTHORITY_PURGE_HISTORY))return 'purge';
   }catch(error){if(!(error instanceof InvalidRequest))throw error;}
   throw new UnsupportedCapability();
 }
@@ -317,6 +322,7 @@ export class PostgresQdrantWriter {
   #initialized=false;
   #profile:WriterSchemaProfile|null=null;
   #securityGuardAdmitted=false;
+  #admittedProfile:WriterSchemaProfile|null=null;
   #closed=false;
   #active?: {controller:AbortController;done:Promise<void>};
   #closing?: Promise<void>;
@@ -379,19 +385,22 @@ export class PostgresQdrantWriter {
         if(guarded?.readOnly){await bounded(client.query({text:'SET TRANSACTION READ ONLY',rowMode:'array'}),lease);check();}
         await bounded(client.query({text:'SET LOCAL search_path=pg_catalog',rowMode:'array'}),lease);
         let profile:WriterSchemaProfile;
-        try{profile=writer_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,5));}
+        try{profile=writer_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,6));}
         catch(error){if(error instanceof IntegrityViolation)throw new UnsupportedCapability();throw error;}
-        if(this.#securityGuardAdmitted&&profile!=='security_guard'||!initializing&&profile!==this.#profile)throw new UnsupportedCapability();
-        if(profile==='security_guard'){
-          for(const [sql,expected] of [[AUTHORITY_SECURITY_GUARD_CATALOG_SQL,true],
-            [AUTHORITY_FINGERPRINT_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT],[SECURITY_GUARD_OWNER_SQL,true]] as const){
+        if(this.#admittedProfile!==null&&profile!==this.#admittedProfile||this.#securityGuardAdmitted&&profile!=='security_guard'||!initializing&&profile!==this.#profile)throw new UnsupportedCapability();
+        if(profile==='security_guard'||profile==='purge'){
+          const checks:readonly (readonly [string,boolean|string])[]=profile==='purge'
+            ?[[AUTHORITY_PURGE_CATALOG_SQL,true],[AUTHORITY_FINGERPRINT_SQL,EXPECTED_PURGE_CATALOG_FINGERPRINT],
+              [PURGE_OWNER_SQL,true],[PURGE_CAPABILITY_FINGERPRINT_SQL,EXPECTED_PURGE_CAPABILITY_FINGERPRINT]]
+            :[[AUTHORITY_SECURITY_GUARD_CATALOG_SQL,true],[AUTHORITY_FINGERPRINT_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT],[SECURITY_GUARD_OWNER_SQL,true]];
+          for(const [sql,expected] of checks){
             let rows:unknown[][];
             try{rows=await tx.query(sql,undefined,1);}catch(error){if(error instanceof IntegrityViolation)throw new UnsupportedCapability();throw error;}
             if(rows.length!==1||rows[0].length!==1||rows[0][0]!==expected)throw new UnsupportedCapability();
           }
         }
         let role:unknown[][];
-        try{role=await tx.query(profile==='publication'?WRITER_ROLE_SQL:WRITER_ATTESTATION_ROLE_SQL,undefined,1);}
+        try{role=await tx.query(profile==='purge'?WRITER_PURGE_ROLE_SQL:profile==='publication'?WRITER_ROLE_SQL:WRITER_ATTESTATION_ROLE_SQL,undefined,1);}
         catch(error){if(error instanceof IntegrityViolation)throw new UnsupportedCapability();throw error;}
         if(role.length!==1||role[0].length!==1||role[0][0]!==true) throw new UnauthorizedScope();
         if(context){
@@ -544,7 +553,7 @@ export class PostgresQdrantWriter {
     await this.#work(options,async lease=>{
       this.#initialized=false;this.#profile=null;
       const selected=await this.#tx(null,lease,async(tx,profile)=>{
-        if(profile==='security_guard')return profile;
+        if(profile==='security_guard'||profile==='purge')return profile;
         const catalog=profile==='attestation'?AUTHORITY_ATTESTATION_CATALOG_SQL:AUTHORITY_PUBLICATION_CATALOG_SQL;
         const fingerprint=profile==='attestation'?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;
         for(const [sql,expected] of [[catalog,true],[AUTHORITY_FINGERPRINT_SQL,fingerprint]] as const){
@@ -552,7 +561,7 @@ export class PostgresQdrantWriter {
         }
         return profile;
       },false,true);
-      this.#profile=selected;this.#initialized=true;
+      this.#profile=selected;if(selected==='security_guard'||selected==='purge')this.#admittedProfile=selected;this.#initialized=true;
       if(selected==='security_guard')this.#securityGuardAdmitted=true;
     },true);
   }
@@ -1509,7 +1518,7 @@ export class PostgresQdrantWriter {
   #requireAttestationProfile():void{
     if(this.#closed||this.#active)throw new ProviderUnavailable();
     if(!this.#initialized)throw new IndexNotReady();
-    if(this.#profile!=='attestation'&&this.#profile!=='security_guard')throw new UnsupportedCapability();
+    if(this.#profile!=='attestation'&&this.#profile!=='security_guard'&&this.#profile!=='purge')throw new UnsupportedCapability();
   }
   async #originalPreparation(tx:Tx,context:WriterContext,intent:Data):Promise<PreparationMetadata>{
     const rows=await this.#select(tx,'preparations',['instance_id','owner_token','backend_epoch','authorization_revision','mutation_epoch','manifest_sha256','readback_sha256'],context,' AND intent_id=$4',[context.intent_id],2);
@@ -1806,7 +1815,7 @@ export class PostgresQdrantWriter {
       const preparation=await this.#originalPreparation(tx,context,intent);
       const originalCurrent=preparation.owner_token===context.owner_token&&preparation.backend_epoch===locked.epoch;
       if(!originalCurrent){
-        if(this.#profile!=='attestation'&&this.#profile!=='security_guard')throw new ProviderUnavailable();
+        if(this.#profile!=='attestation'&&this.#profile!=='security_guard'&&this.#profile!=='purge')throw new ProviderUnavailable();
         const attestation=await this.#currentAttestation(tx,context,intent,locked.epoch);
         if(!attestation)throw new ProviderUnavailable();
         if(locked.epoch<=preparation.backend_epoch)throw new IntegrityViolation();
