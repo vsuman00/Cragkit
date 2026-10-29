@@ -15,7 +15,7 @@ from ._qdrant_security_readback import (SecurityReadbackBudget, security_readbac
                                        verify_security_readback)
 from ._qdrant_supervisor import ManagedQdrantSupervisor, _ControlSession, control_session_binding
 from ._qdrant_transport import deadline_value
-from ._qdrant_writer import PostgresQdrantWriter, security_projection_data, writer_binding
+from ._qdrant_writer import PostgresQdrantWriter, security_projection_data, writer_binding, security_recovery_projection
 from ._qdrant_writer_contract import WriterContext, context
 from .errors import (DeadlineExceeded, IndexNotReady, IntegrityViolation, InvalidRequest,
                      ProviderUnavailable, UnauthorizedScope, UnsupportedCapability)
@@ -35,6 +35,49 @@ class SecurityReceipt:
 
 _VERIFIERS: WeakKeyDictionary[QdrantSecurityVerifier, tuple[PostgresQdrantWriter, ManagedQdrantSupervisor]] = WeakKeyDictionary()
 _RECEIPTS: WeakKeyDictionary[SecurityReceipt, tuple[QdrantSecurityVerifier, dict[str, Any], Mapping[str, Any]]] = WeakKeyDictionary()
+_ORDINARY_VERIFIERS: WeakKeyDictionary[object, Any] = WeakKeyDictionary()
+_ORDINARY_RECEIPTS: WeakKeyDictionary[object, tuple[Any, dict[str,Any], Mapping[str,Any]]] = WeakKeyDictionary()
+
+
+class OrdinarySecurityReceipt:
+    __slots__=('__weakref__',)
+    def __reduce__(self) -> Any:
+        raise TypeError('Security receipts cannot be serialized')
+
+
+def security_verifier_supervisor(verifier: object, writer: object) -> ManagedQdrantSupervisor:
+    original,supervisor=_origin(verifier)
+    if original is not writer or cast(QdrantSecurityVerifier,verifier)._closed:raise InvalidRequest()
+    return supervisor
+
+
+async def verify_security_ordinary(verifier: object, attempt: object, value: object, *, deadline: float,
+                                   budget: SecurityReadbackBudget | None=None) -> OrdinarySecurityReceipt:
+    _origin(verifier)
+    if verifier not in _ORDINARY_VERIFIERS:raise InvalidRequest()
+    return cast(OrdinarySecurityReceipt,await _ORDINARY_VERIFIERS[verifier](attempt,value,deadline=deadline,budget=budget))
+
+
+def _ordinary_check(verifier: QdrantSecurityVerifier, record: dict[str,Any], deadline: float) -> None:
+    writer,supervisor=_origin(verifier)
+    if verifier._closed:raise InvalidRequest()
+    _check(record,deadline)
+    binding=supervisor.attempt_binding(record['attempt'])
+    if dict(binding)!=dict(record['attempt_binding']) or 'recovery_id' in binding:raise UnsupportedCapability()
+    profile=supervisor.profile_binding(writer.config)
+    if any(profile[key]!=binding[key] for key in ('instance_id','storage_identity','supervisor_id','epoch','credential_generation')):
+        raise UnsupportedCapability()
+
+
+def ordinary_security_receipt_data(receipt: object, verifier: object, *, deadline: float) -> Mapping[str,Any]:
+    from ._qdrant_publication_worker import require_publication_finalization
+    _,supervisor=_origin(verifier)
+    if type(receipt) is not OrdinarySecurityReceipt or receipt not in _ORDINARY_RECEIPTS:raise InvalidRequest()
+    issuer,record,data=_ORDINARY_RECEIPTS[receipt]
+    if issuer is not verifier:raise InvalidRequest()
+    _ordinary_check(cast(QdrantSecurityVerifier,verifier),record,deadline)
+    require_publication_finalization(supervisor,deadline=deadline)
+    return data
 
 
 def _origin(value: object) -> tuple[PostgresQdrantWriter, ManagedQdrantSupervisor]:
@@ -140,6 +183,78 @@ class QdrantSecurityVerifier:
         self._active: asyncio.Task[Any] | None = None
         self._operation: dict[str, Any] | None = None
         _VERIFIERS[self] = (writer,supervisor)
+        original=ref(self)
+        fixed=QdrantSecurityVerifier._verify_ordinary
+        async def ordinary(attempt: object,value: object,*,deadline: float,budget: SecurityReadbackBudget | None=None) -> OrdinarySecurityReceipt:
+            verifier=original()
+            if verifier is None:raise InvalidRequest()
+            return await fixed(verifier,attempt,value,deadline=deadline,budget=budget)
+        _ORDINARY_VERIFIERS[self]=ordinary
+
+    async def _verify_ordinary(self, attempt: object, value: object, *, deadline: float,
+                               budget: SecurityReadbackBudget | None=None) -> OrdinarySecurityReceipt:
+        writer,supervisor=_origin(self)
+        security=context(value);deadline=deadline_value(deadline);allowance=security_readback_budget(budget)
+        if self._closed or self._active is not None:raise ProviderUnavailable()
+        if writer._schema_profile!=4:raise UnsupportedCapability()
+        binding=MappingProxyType(dict(supervisor.attempt_binding(attempt)))
+        if ('recovery_id' in binding or binding['intent_id']!=security.intent_id or binding['owner_token']!=security.owner_token
+                or binding['instance_id']!=writer_binding(writer)['instance_id']):raise InvalidRequest()
+        caller=asyncio.current_task()
+        assert caller is not None
+        record=dict(caller=ref(caller),deadline=deadline,cancelled=False,attempt=attempt,attempt_binding=binding)
+        async def work() -> OrdinarySecurityReceipt:
+            handle=None
+            try:
+                _ordinary_check(self,record,deadline)
+                projection=await security_recovery_projection(writer,security,deadline=deadline)
+                _ordinary_check(self,record,deadline)
+                data=security_projection_data(projection,writer)
+                if data['tombstoned']:raise UnauthorizedScope()
+                handle=supervisor.transport_for(attempt)
+                await verify_security_readback(handle,writer.config,data,deadline=deadline,budget=allowance)
+                _ordinary_check(self,record,deadline)
+                await handle.close();handle=None
+                _ordinary_check(self,record,deadline)
+                await security_recovery_projection(writer,security,deadline=deadline,previous=projection)
+                _ordinary_check(self,record,deadline)
+                witness=(
+                    'cragkit.qdrant.security-ordinary-readback.v1',
+                    (binding['instance_id'],binding['storage_identity'],binding['supervisor_id'],str(binding['epoch']),
+                     binding['credential_generation'],binding['intent_id'],binding['owner_token'],binding['dispatch_id']),
+                    (security.scope.tenant_id,security.collection,security.document_id,security.scope.principal_id,
+                     _identities(security.scope.grant_ids),security.scope.authorization_revision),
+                    (data['intent_sha256'],data['inventory_sha256'],data['active_generation_id'],data['authorization_revision'],
+                     str(data['mutation_epoch']),_identities(data['principal_ids']),_identities(data['grant_ids']),
+                     data['language'],data['kind'],data['tag'],False),
+                    tuple((g['revision_id'],g['generation_id'],g['manifest_sha256'],g['point_ids']) for g in data['generations']),
+                    tuple((p.point_id,p.dense.input_sha256,p.sparse.input_sha256 if p.sparse else None) for p in data['points']))
+                encoded=json.dumps(witness,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode('utf-8')
+                digest=hashlib.sha256(encoded).hexdigest()
+                result=MappingProxyType(dict(context=security,projection=projection,attempt_binding=binding,
+                    intent_sha256=data['intent_sha256'],inventory_sha256=data['inventory_sha256'],readback_sha256=digest,
+                    witness=witness,encoded_bytes=encoded,sha256=digest))
+                receipt=OrdinarySecurityReceipt();_ORDINARY_RECEIPTS[receipt]=(self,record,result)
+                return receipt
+            finally:
+                if handle is not None:
+                    async with asyncio.timeout(_CLEANUP_SECONDS):await handle.close()
+        task=asyncio.create_task(work());self._active=task;self._operation=record
+        def finished(done: asyncio.Task[Any]) -> None:
+            if self._active is done:self._active=None;self._operation=None
+            if not done.cancelled():done.exception()
+        task.add_done_callback(finished)
+        try:
+            done,_=await asyncio.wait({task},timeout=max(0,deadline-asyncio.get_running_loop().time()))
+            if not done:raise TimeoutError()
+            return task.result()
+        except (asyncio.CancelledError,TimeoutError) as error:
+            record['cancelled']=True;task.cancel()
+            done,_=await asyncio.wait({task},timeout=_CLEANUP_SECONDS)
+            if not done:self._closed=True
+            if isinstance(error,asyncio.CancelledError):raise
+            raise DeadlineExceeded() from None
+        except Exception as error:raise _safe(error) from None
 
     async def verify(self, proof: object, control: object, owner_context: object, security_context: object, *,
                      deadline: float, budget: SecurityReadbackBudget | None = None) -> SecurityReceipt:

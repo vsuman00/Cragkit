@@ -1936,3 +1936,140 @@ async def test_security_dispatch_plans_do_not_adopt_unissued_or_stage_authorizat
             await writer.project_security_dispatch(authorization,[FIXTURE['members'][0]['point_id']],
                 deadline=asyncio.get_running_loop().time()+1)
     assert len(connections)==before
+
+
+def security_owner_fixture(monkeypatch):
+    writer,state,connections,target=security_projection_writer(monkeypatch)
+    original_init=Connection.__init__;original_execute=Connection.execute
+    facts=dict(backend=dict(instance_id='instance-1',backend_namespace=config()['backend_namespace'],
+        storage_identity='storage-1',supervisor_id='supervisor-1',epoch=2,state='open',recovery_id=None),
+        owner=dict(instance_id='instance-1',intent_id='original-stage-0',owner_token=target['owner_token'],backend_epoch=2),
+        intent=dict(action='update_authorization',state='authority_committed',payload_sha256=state['raw'][3],
+            manifest_sha256=None,revision_id=None,generation_id=None,authority_committed=True,replica_complete=False,purge_complete=False),
+        pending=False,events=[])
+    def initialize(connection):
+        original_init(connection);connection.history=list(implementation.EXPECTED_SECURITY_GUARD_HISTORY)
+        connection.hash=implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT
+    async def execute(connection,sql,params=None):
+        if sql.startswith("UPDATE cragkit_qdrant.publication_intents SET state='writing'"):
+            connection.calls.append((sql,params));facts['intent']['state']='writing';return Cursor([])
+        if sql.startswith('INSERT INTO cragkit_qdrant.document_owners'):
+            connection.calls.append((sql,params));facts['owner']=dict(instance_id=params[3],intent_id=params[4],owner_token=params[5],backend_epoch=params[6]);return Cursor([])
+        if sql.startswith("UPDATE cragkit_qdrant.publication_intents SET state='complete'"):
+            connection.calls.append((sql,params));facts['intent'].update(state='complete',replica_complete=True);return Cursor([])
+        return await original_execute(connection,sql,params)
+    monkeypatch.setattr(Connection,'__init__',initialize);monkeypatch.setattr(Connection,'execute',execute)
+    async def backend(connection,**options):facts['events'].append(('backend',options));return dict(facts['backend'])
+    async def owner(connection,context,**options):facts['events'].append(('owner',options));return dict(facts['owner'])
+    async def intent(connection,context):return dict(facts['intent'])
+    async def settled(connection,context):
+        if facts['pending']:raise ProviderUnavailable()
+    monkeypatch.setattr(writer,'_manager_backend',backend);monkeypatch.setattr(writer,'_manager_owner',owner)
+    monkeypatch.setattr(writer,'_manager_intent',intent);monkeypatch.setattr(writer,'_require_settled',settled)
+    writer._schema_profile=4
+    return writer,state,connections,target,facts
+
+
+@run_async
+async def test_security_owner_handoff_uses_full_graph_and_preserves_old_facts(monkeypatch):
+    writer,state,connections,target,facts=security_owner_fixture(monkeypatch)
+    before=copy.deepcopy((state['claims'],state['replays'],state['raw']))
+    limit=asyncio.get_running_loop().time()+5
+    result=await implementation.admit_security_owner(writer,target,deadline=limit)
+    assert dict(result)==dict(owner_token=target['owner_token'],backend_epoch=2)
+    assert facts['events'][:2]==[('backend',{'lock':True}),('owner',{'lock':True})]
+    assert facts['intent']['state']=='writing' and facts['owner']['intent_id']==target['intent_id']
+    assert (state['claims'],state['replays'],state['raw'])==before
+    assert state['loads'] and all(state['document_locks'])
+    with pytest.raises(TypeError):result['backend_epoch']=3
+    assert await implementation.admit_security_owner(writer,target,deadline=limit)==result
+
+
+@pytest.mark.parametrize('fault',['blocked','pending','tombstone','corrupt','profile'])
+@run_async
+async def test_security_owner_refuses_unsafe_handoff_before_mutation(monkeypatch,fault):
+    writer,state,connections,target,facts=security_owner_fixture(monkeypatch)
+    if fault=='blocked':facts['backend'].update(state='recovery_blocked',recovery_id='recovery')
+    if fault=='pending':facts['pending']=True
+    if fault=='tombstone':state['document']['tombstoned']=True
+    if fault=='corrupt':state['graph_error']=True
+    if fault=='profile':writer._schema_profile=3
+    expected=ProviderUnavailable if fault in ('blocked','pending') else UnsupportedCapability if fault=='profile' else IntegrityViolation if fault=='corrupt' else UnauthorizedScope
+    with pytest.raises(expected):await implementation.admit_security_owner(writer,target,deadline=asyncio.get_running_loop().time()+5)
+    assert facts['intent']['state']=='authority_committed'
+    assert not any(sql.startswith(('INSERT INTO cragkit_qdrant.document_owners',"UPDATE cragkit_qdrant.publication_intents SET state='writing'")) for connection in connections for sql,_ in connection.calls)
+
+
+@pytest.mark.parametrize('lost',[False,True])
+@run_async
+async def test_security_completion_same_transaction_graph_and_historical_confirmation(monkeypatch,lost):
+    import cragkit._qdrant_security_verification as verification
+    import cragkit._qdrant_publication_worker as worker
+    writer,state,connections,target,facts=security_owner_fixture(monkeypatch)
+    limit=asyncio.get_running_loop().time()+5
+    await implementation.admit_security_owner(writer,target,deadline=limit)
+    projection=await writer.project_security(target,deadline=limit)
+    source=implementation.security_projection_data(projection,writer)
+    # Explicit receipt wiring double: genuine verifier/attempt provenance is tested in its own suite.
+    receipt=object();verifier=object();controller=object()
+    data=dict(context=implementation.context(target),projection=projection,intent_sha256=source['intent_sha256'],
+        attempt_binding={key:facts['backend'][key] for key in ('instance_id','storage_identity','supervisor_id','epoch')})
+    monkeypatch.setattr(verification,'security_verifier_supervisor',lambda v,w:controller)
+    monkeypatch.setattr(verification,'ordinary_security_receipt_data',lambda r,v,**options:data)
+    checks=[]
+    monkeypatch.setattr(worker,'require_publication_finalization',lambda c,**options:checks.append(c))
+    original_transaction=Connection.transaction
+    if lost:
+        def transaction(connection):
+            actual=original_transaction(connection)
+            class Transaction:
+                async def __aenter__(self):return await actual.__aenter__()
+                async def __aexit__(self,*args):
+                    result=await actual.__aexit__(*args)
+                    if args[0] is None and facts.pop('drop',False):
+                        state['document']['authorization_revision']='newer-authority'
+                        raise ConnectionError('PRIVATE_LOST_COMMIT_REPLY')
+                    return result
+            return Transaction()
+        monkeypatch.setattr(Connection,'transaction',transaction);facts['drop']=True
+    before=len(connections)
+    result=await implementation.complete_security_replica(writer,verifier,receipt,deadline=limit)
+    assert result['state']=='complete' and result['replica_complete'] is True and result['purge_complete'] is False
+    assert checks and all(item is controller for item in checks)
+    updates=[sql for connection in connections[before:] for sql,_ in connection.calls if sql.startswith("UPDATE cragkit_qdrant.publication_intents SET state='complete'")]
+    assert len(updates)==1
+    if lost:
+        confirmation=connections[-1]
+        assert confirmation.calls[0][0]=='SET TRANSACTION READ ONLY'
+        assert not any(sql.startswith(('UPDATE ','INSERT ')) for sql,_ in confirmation.calls)
+        assert not any('FROM cragkit_qdrant.documents' in sql for sql,_ in confirmation.calls)
+    # A completed historical record never restores the document pointer or old authority.
+    repeat=await implementation.complete_security_replica(writer,verifier,receipt,deadline=limit)
+    assert repeat==result
+    if lost:assert state['document']['authorization_revision']=='newer-authority'
+
+
+@pytest.mark.parametrize('fault',['pending','owner','authority','inventory','finalization'])
+@run_async
+async def test_security_completion_refuses_drift_before_flag_update(monkeypatch,fault):
+    import cragkit._qdrant_security_verification as verification
+    import cragkit._qdrant_publication_worker as worker
+    writer,state,connections,target,facts=security_owner_fixture(monkeypatch)
+    limit=asyncio.get_running_loop().time()+5
+    await implementation.admit_security_owner(writer,target,deadline=limit)
+    projection=await writer.project_security(target,deadline=limit)
+    source=implementation.security_projection_data(projection,writer)
+    data=dict(context=implementation.context(target),projection=projection,intent_sha256=source['intent_sha256'],
+        attempt_binding={key:facts['backend'][key] for key in ('instance_id','storage_identity','supervisor_id','epoch')})
+    monkeypatch.setattr(verification,'security_verifier_supervisor',lambda v,w:object())
+    monkeypatch.setattr(verification,'ordinary_security_receipt_data',lambda r,v,**options:data)
+    def finalization(*args,**options):
+        if fault=='finalization':raise InvalidRequest()
+    monkeypatch.setattr(worker,'require_publication_finalization',finalization)
+    if fault=='pending':facts['pending']=True
+    if fault=='owner':facts['owner']['intent_id']='foreign-owner'
+    if fault=='authority':state['document']['authorization_revision']='newer'
+    if fault=='inventory':state['claims'].pop()
+    expected=ProviderUnavailable if fault=='pending' else InvalidRequest if fault=='finalization' else IntegrityViolation if fault=='inventory' else UnauthorizedScope
+    with pytest.raises(expected):await implementation.complete_security_replica(writer,object(),object(),deadline=limit)
+    assert facts['intent']['state']=='writing' and facts['intent']['replica_complete'] is False

@@ -106,3 +106,17 @@ def test_security_dispatch_evidence_requires_its_own_exclusive_native_scope():
         with pytest.raises(RuntimeError):validate_result(value,'python',**flags)
     for change in (dict(value,checks=list(CHECKS)),dict(value,proof_scope='native_security_receipt_only'),dict(value,checks=[])):
         with pytest.raises(RuntimeError):validate_result(change,'python',security_guard=True,security_dispatch=True)
+
+
+def test_security_completion_protocol_is_exclusive_and_has_a_separate_proof_scope():
+    from qdrant_security_verification_cases import GUARD_CHECKS, COMPLETION_CHECKS
+    value=dict(runtime='python',checks=list(COMPLETION_CHECKS),proof_scope='native_security_completion_only',semantic_witness_sha256='a'*64,
+        guard_admission=dict(checks=list(GUARD_CHECKS),denied_backend_queries=0))
+    assert validate_result(value,'python',security_guard=True,security_completion=True)==value
+    for flags in ({},{'security_completion':True},{'security_guard':True},
+            {'security_guard':True,'security_completion':True,'security_dispatch':True},
+            {'security_guard':True,'security_completion':True,'guarded_graph':True},
+            {'security_guard':True,'security_completion':True,'security_settlement':True}):
+        with pytest.raises(RuntimeError):validate_result(value,'python',**flags)
+    with pytest.raises(RuntimeError):
+        validate_result(dict(value,proof_scope='native_security_dispatch_only'),'python',security_guard=True,security_completion=True)

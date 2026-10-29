@@ -7,7 +7,8 @@ import http from 'node:http';
 import net from 'node:net';
 import crypto,{createHash} from 'node:crypto';
 import {EventEmitter} from 'node:events';
-import {QdrantSecurityVerifier,security_receipt_data,security_verifier_binding} from '../dist/qdrant-security-verification.js';
+import {QdrantSecurityVerifier,security_receipt_data,security_verifier_binding,verify_security_ordinary,ordinary_security_receipt_data} from '../dist/qdrant-security-verification.js';
+import {publication_finalization} from '../dist/qdrant-publication-worker.js';
 import {ManagedQdrantSupervisor,control_session_binding} from '../dist/qdrant-supervisor.js';
 import {PostgresQdrantWriter,prepare_stage,security_projection_data,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {RECOVERY_ROLE_SQL} from '../dist/qdrant-recovery.js';
@@ -15,6 +16,7 @@ import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
 import {SecurityReadbackBudget} from '../dist/qdrant-security-readback.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,AUTHORITY_FINGERPRINT_SQL,
  EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
+import {AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL} from '../dist/qdrant-authority.js';
 import {InvalidRequest,IntegrityViolation,UnauthorizedScope,UnsupportedCapability,ProviderUnavailable,IndexNotReady,DeadlineExceeded} from '../dist/errors.js';
 const fixture=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_publication.json',import.meta.url),'utf8'));
 const config={...fixture.physical,dense_profile:fixture.profiles.dense,sparse_profile:fixture.profiles.sparse};
@@ -68,7 +70,8 @@ function setup(){
         if(sql===RECOVERY_ROLE_SQL)return {rows:[[state.recoveryRole!==false]]};
         if(sql===WRITER_ROLE_SQL){if(state.wait)await state.wait;return {rows:[[state.role]]};}
         if(sql===AUTHORITY_HISTORY_SQL)return {rows:state.history};
-        if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL||sql===AUTHORITY_ATTESTATION_CATALOG_SQL)return {rows:[[state.catalog]]};
+        if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL||sql===AUTHORITY_ATTESTATION_CATALOG_SQL||sql===AUTHORITY_SECURITY_GUARD_CATALOG_SQL)return {rows:[[state.catalog]]};
+        if(sql===SECURITY_GUARD_OWNER_SQL)return {rows:[[true]]};
         if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
         if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config'))return {rows:[]};
         const insert=/^INSERT INTO cragkit_qdrant\.(\w+) \(([^)]+)\)/.exec(sql);
@@ -219,6 +222,60 @@ async function provision(admin,probe){
 }
 
 const nativeDouble={skip:process.platform!=='darwin'||process.arch!=='arm64'};
+async function ordinaryScenario(tombstoned=false){
+ const f=setup(),fake=runtime(),supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-fixture',config);let verifier;
+ try{
+  f.state.history=AUTHORITY_SECURITY_GUARD_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT;
+  await f.writer.initialize(options());await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+  await f.writer.apply_security({action:tombstoned?'tombstone':'update_authorization',intent_id:'security-ordinary',tenant_id:'tenant-a',collection:'docs',document_id:'doc-1',
+   expected_authorization_revision:'auth-1',expected_mutation_epoch:1,authorization:{authorization_revision:'auth-2',principal_ids:['reader-b'],grant_ids:['grant-b'],language:null,kind:null,tag:null,tombstoned}},scope,stageOpts());
+  const context={scope:{...scope,authorization_revision:'auth-2'},collection:'docs',document_id:'doc-1',intent_id:'security-ordinary',owner_token:token};
+  const data=security_projection_data(await f.writer.project_security(context,options()),f.writer);
+  await supervisor.initialize({...options(),provision});
+  for(const point of data.points)fake.state.collections.get(config.physical_collection).points.set(point.point_id,{id:point.point_id,payload:clone(point.payload),vector:{dense:[...point.dense.values],sparse:{indices:[...point.sparse.indices],values:[...point.sparse.values]}}});
+  const attempt=supervisor.issue_attempt({intent_id:context.intent_id,owner_token:context.owner_token,epoch:1,dispatch_id:'ordinary-readback'},options());
+  verifier=new QdrantSecurityVerifier(f.writer,supervisor);
+  return {...f,fake,supervisor,verifier,attempt,context,data,async close(){await verifier.close();await f.writer.close();await f.resource.close();await supervisor.close();fake.restore();}};
+ }catch(error){await verifier?.close();await f.writer.close();await f.resource.close();await supervisor.close();fake.restore();throw error;}
+}
+test('ordinary security receipt has exact nine fields, canonical witness and original finalization provenance',nativeDouble,async()=>{
+ const f=await ordinaryScenario(),lease=options();try{
+  const receipt=await verify_security_ordinary(f.verifier,f.attempt,f.context,lease);
+  assert.throws(()=>ordinary_security_receipt_data(receipt,f.verifier,lease),InvalidRequest);
+  await publication_finalization(f.supervisor,f.attempt,async()=>{
+   const data=ordinary_security_receipt_data(receipt,f.verifier,lease),attempt=f.supervisor.attempt_binding(f.attempt),source=f.data;
+   assert.deepEqual(Object.keys(data).sort(),['context','projection','attempt_binding','intent_sha256','inventory_sha256','readback_sha256','witness','encoded_bytes','sha256'].sort());
+   const expected=['cragkit.qdrant.security-ordinary-readback.v1',
+    [attempt.instance_id,attempt.storage_identity,attempt.supervisor_id,String(attempt.epoch),attempt.credential_generation,attempt.intent_id,attempt.owner_token,attempt.dispatch_id],
+    [f.context.scope.tenant_id,f.context.collection,f.context.document_id,f.context.scope.principal_id,[...f.context.scope.grant_ids].sort(),f.context.scope.authorization_revision],
+    [source.intent_sha256,source.inventory_sha256,source.active_generation_id,source.authorization_revision,String(source.mutation_epoch),[...source.principal_ids].sort(),[...source.grant_ids].sort(),source.language,source.kind,source.tag,false],
+    source.generations.map(group=>[group.revision_id,group.generation_id,group.manifest_sha256,group.point_ids]),source.points.map(point=>[point.point_id,point.dense.input_sha256,point.sparse?.input_sha256??null])];
+   assert.deepEqual(data.witness,expected);assert.equal(Buffer.from(data.encoded_bytes).toString('utf8'),JSON.stringify(expected));
+   assert.equal(data.sha256,createHash('sha256').update(Buffer.from(data.encoded_bytes)).digest('hex'));assert.equal(data.readback_sha256,data.sha256);
+   assert.ok(Object.isFrozen(data)&&Object.isFrozen(data.witness)&&Object.isFrozen(data.encoded_bytes));
+  },lease);
+  assert.throws(()=>ordinary_security_receipt_data(receipt,f.verifier,lease),InvalidRequest);
+ }finally{await f.close();}
+});
+test('ordinary receipts reject copies, recovery adoption, wrong issuer and substituted invocation options',nativeDouble,async()=>{
+ const f=await ordinaryScenario(),lease=options(),foreign=new QdrantSecurityVerifier(f.writer,f.supervisor);try{
+  const receipt=await verify_security_ordinary(f.verifier,f.attempt,f.context,lease);
+  await publication_finalization(f.supervisor,f.attempt,async()=>{
+   for(const copy of [{...receipt},new Proxy(receipt,{})])assert.throws(()=>ordinary_security_receipt_data(copy,f.verifier,lease),InvalidRequest);
+   assert.throws(()=>ordinary_security_receipt_data(receipt,foreign,lease),InvalidRequest);
+   assert.throws(()=>ordinary_security_receipt_data(receipt,f.verifier,{...lease,deadline:lease.deadline+1}),InvalidRequest);
+   assert.throws(()=>ordinary_security_receipt_data(receipt,f.verifier,{...lease,signal:new AbortController().signal}),InvalidRequest);
+   assert.throws(()=>security_receipt_data(receipt,f.verifier,{},lease),InvalidRequest);
+  },lease);
+ }finally{await foreign.close();await f.close();}
+});
+for(const kind of ['tombstone','missing','corrupt'])test(`ordinary verifier refuses ${kind} instead of minting completion receipt`,nativeDouble,async()=>{
+ const f=await ordinaryScenario(kind==='tombstone');try{
+  const points=f.fake.state.collections.get(config.physical_collection).points;
+  if(kind==='missing')points.clear();if(kind==='corrupt')points.values().next().value.vector.dense[0]=.5;
+  await assert.rejects(verify_security_ordinary(f.verifier,f.attempt,f.context,options()),kind==='tombstone'?UnsupportedCapability:IntegrityViolation);
+ }finally{await f.close();}
+});
 async function scenario(tombstoned=false){
  const f=setup(),fake=runtime();
  const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-fixture',config);

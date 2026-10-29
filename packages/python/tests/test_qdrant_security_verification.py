@@ -51,6 +51,91 @@ async def setup(monkeypatch,tmp_path,*,tombstoned=False,empty=False):
     return QdrantSecurityVerifier(writer,supervisor),writer,supervisor,proof,owner,security,state,connections,handle
 
 
+async def ordinary_setup(monkeypatch,tmp_path,**options):
+    values=await setup(monkeypatch,tmp_path,**options)
+    verifier,writer,supervisor,proof,owner,security,state,connections,handle=values
+    from test_qdrant_writer import Connection
+    import cragkit._qdrant_writer as writer_module
+    original=Connection.__init__
+    def initialize(connection):
+        original(connection)
+        connection.history=list(writer_module.EXPECTED_SECURITY_GUARD_HISTORY)
+        connection.hash=writer_module.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT
+    monkeypatch.setattr(Connection,'__init__',initialize)
+    writer._schema_profile=4
+    supervisor._gate=True;supervisor._recovery=None;supervisor._proofs.clear()
+    attempt=supervisor.issue_attempt(dict(intent_id=security['intent_id'],owner_token=security['owner_token'],
+        epoch=2,dispatch_id='ordinary-security-fixture'),deadline=deadline())
+    return values,attempt
+
+
+@run_async
+async def test_ordinary_security_receipt_exact_witness_and_finalization(monkeypatch,tmp_path):
+    from cragkit._qdrant_publication_worker import controller_finalization
+    values,attempt=await ordinary_setup(monkeypatch,tmp_path)
+    verifier,writer,supervisor,proof,owner,security,state,connections,handle=values
+    limit=deadline();budget=SecurityReadbackBudget()
+    receipt=await implementation.verify_security_ordinary(verifier,attempt,security,deadline=limit,budget=budget)
+    with pytest.raises(InvalidRequest):implementation.ordinary_security_receipt_data(receipt,verifier,deadline=limit)
+    async with controller_finalization(supervisor,attempt,deadline=limit):
+        data=implementation.ordinary_security_receipt_data(receipt,verifier,deadline=limit)
+        assert set(data)=={'context','projection','attempt_binding','intent_sha256','inventory_sha256',
+            'readback_sha256','witness','encoded_bytes','sha256'}
+        witness=json.loads(data['encoded_bytes'])
+        assert witness[0]=='cragkit.qdrant.security-ordinary-readback.v1'
+        assert witness[1]==['instance-1','storage-1','supervisor-1','2','credential-2',security['intent_id'],security['owner_token'],'ordinary-security-fixture']
+        assert witness[3][-1] is False and len(witness[4])==3
+        assert data['sha256']==data['readback_sha256']==sha256(data['encoded_bytes']).hexdigest()
+        assert budget.remaining_calls==513-len(handle.calls)
+        for fake in (implementation.OrdinarySecurityReceipt(),SecurityReceipt(),dict(data)):
+            with pytest.raises(InvalidRequest):implementation.ordinary_security_receipt_data(fake,verifier,deadline=limit)
+        with pytest.raises(InvalidRequest):implementation.ordinary_security_receipt_data(receipt,verifier,deadline=limit+1)
+        with pytest.raises(TypeError):pickle.dumps(receipt)
+        with pytest.raises(TypeError):data['sha256']='bad'
+    with pytest.raises(InvalidRequest):implementation.ordinary_security_receipt_data(receipt,verifier,deadline=limit)
+    await verifier.close()
+    assert not writer._closed and not supervisor._closed
+
+
+@pytest.mark.parametrize('fault',['tombstone','missing','stale','wrong_owner','recovery','closed'])
+@run_async
+async def test_ordinary_receipt_refuses_cross_mode_and_noncurrent_replicas(monkeypatch,tmp_path,fault):
+    values,attempt=await ordinary_setup(monkeypatch,tmp_path,tombstoned=fault=='tombstone')
+    verifier,writer,supervisor,proof,owner,security,state,connections,handle=values
+    if fault=='missing':handle.points.pop()
+    if fault=='stale':handle.points[0]['payload']['tag']='stale'
+    if fault=='wrong_owner':security['owner_token']=owner['owner_token']
+    if fault=='recovery':attempt=object()
+    if fault=='closed':await verifier.close()
+    expected=UnauthorizedScope if fault=='tombstone' else IntegrityViolation if fault in ('missing','stale') else ProviderUnavailable if fault=='closed' else InvalidRequest
+    with pytest.raises(expected):await implementation.verify_security_ordinary(verifier,attempt,security,deadline=deadline())
+    assert not supervisor._transports
+
+
+@run_async
+async def test_ordinary_cancel_retains_actual_writer_callback_and_verifier_admission(monkeypatch,tmp_path):
+    values,attempt=await ordinary_setup(monkeypatch,tmp_path)
+    verifier,writer,supervisor,proof,owner,security,state,connections,handle=values
+    monkeypatch.setattr(implementation,'_CLEANUP_SECONDS',0.01)
+    entered=asyncio.Event();release=asyncio.Event();original=writer._document
+    async def delayed(*args,**options):
+        entered.set()
+        while not release.is_set():
+            try:await asyncio.shield(release.wait())
+            except asyncio.CancelledError:continue
+        return await original(*args,**options)
+    monkeypatch.setattr(writer,'_document',delayed)
+    task=asyncio.create_task(implementation.verify_security_ordinary(verifier,attempt,security,deadline=deadline()))
+    await entered.wait();task.cancel()
+    with pytest.raises(asyncio.CancelledError):await task
+    assert verifier._closed and verifier._active is not None and writer._active is not None
+    with pytest.raises(ProviderUnavailable):await writer.project_security(security,deadline=deadline())
+    assert handle.calls==[]
+    inner=verifier._active;release.set()
+    await asyncio.gather(inner,return_exceptions=True)
+    assert writer._active is None and not any(connection.commits for connection in connections[1:])
+
+
 @pytest.mark.parametrize('tombstoned,empty',[(False,False),(True,False),(False,True),(True,True)])
 @run_async
 async def test_same_session_receipt_has_exact_witness_and_borrowed_lifetime(monkeypatch,tmp_path,tombstoned,empty):

@@ -4,11 +4,12 @@ import http from 'node:http';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual as same} from 'node:util';
 import {PoolResource,parse_pool_config,bounded,now} from '../packages/typescript/dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,security_projection_data} from '../packages/typescript/dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,security_projection_data,admit_security_owner,complete_security_replica} from '../packages/typescript/dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../packages/typescript/dist/qdrant-supervisor.js';
 import {PostgresQdrantRecovery,validate_security_guarded,settle_security_guarded,dispatch_security_recovery,SECURITY_GUARD_SQL} from '../packages/typescript/dist/qdrant-recovery.js';
 import {QdrantReconciliationVerifier} from '../packages/typescript/dist/qdrant-reconciliation.js';
-import {QdrantSecurityVerifier,security_receipt_data} from '../packages/typescript/dist/qdrant-security-verification.js';
+import {QdrantSecurityVerifier,security_receipt_data,verify_security_ordinary,ordinary_security_receipt_data} from '../packages/typescript/dist/qdrant-security-verification.js';
+import {publication_finalization} from '../packages/typescript/dist/qdrant-publication-worker.js';
 import {InvalidRequest,IntegrityViolation,UnsupportedCapability,UnauthorizedScope,ProviderUnavailable} from '../packages/typescript/dist/errors.js';
 
 const CHECKS=Object.freeze([
@@ -38,6 +39,9 @@ const SETTLEMENT_CHECKS=Object.freeze(['retired_unknown_settled_with_genuine_cur
 const DISPATCH_CHECKS=Object.freeze(['stale_missing_cross_generation_replayed_with_genuine_ack',
   'fresh_security_receipt_settles_only_retired_journal','already_current_is_noop_and_immutable_corruption_refused',
   'lost_http_ack_preserves_current_uncertainty_without_resend']);
+const COMPLETION_CHECKS=Object.freeze(['retired_settlement_and_actual_reopen_precede_handoff',
+  'ordinary_owner_and_genuine_receipt_bind_current_graph','same_writer_transaction_completes_only_security_intent',
+  'lost_completion_commit_confirms_history_after_authority_advance']);
 const ERRORS=new Set(['IntegrityViolation','InvalidRequest','ProviderUnavailable','UnauthorizedScope','UnsupportedCapability','DeadlineExceeded','IndexNotReady','AbortError']);
 const OWNER='00000000-0000-4000-8000-000000000001',SECURITY='00000000-0000-4000-8000-000000000002';
 const cancellation=new AbortController();let readingInput=true,step=0;
@@ -57,7 +61,8 @@ async function input(){
         ...(Object.hasOwn(value,'guard_operator_config')?['guard_operator_config']:[]),
         ...(Object.hasOwn(value,'guard_graph_config')?['guard_graph_config']:[]),
         ...(Object.hasOwn(value,'settlement_config')?['settlement_config']:[]),
-        ...(Object.hasOwn(value,'dispatch_config')?['dispatch_config']:[])].sort())
+        ...(Object.hasOwn(value,'dispatch_config')?['dispatch_config']:[]),
+        ...(Object.hasOwn(value,'completion_config')?['completion_config']:[])].sort())
     ||typeof value.binary!=='string'||typeof value.work_dir!=='string'||!value.inputs?.second_stage||!value.inputs?.security||!value.inputs?.tombstone)throw new Error('input_shape');
   if(Object.hasOwn(value,'guard_graph_config')&&(!Object.hasOwn(value,'guard_operator_config')
     ||!value.guard_graph_config||!same(Object.keys(value.guard_graph_config),['admin_config'])))throw new Error('graph_input_shape');
@@ -65,6 +70,9 @@ async function input(){
     ||!value.settlement_config||!same(Object.keys(value.settlement_config),['admin_config'])))throw new Error('settlement_input_shape');
   if(Object.hasOwn(value,'dispatch_config')&&(!Object.hasOwn(value,'guard_operator_config')||Object.hasOwn(value,'guard_graph_config')
     ||Object.hasOwn(value,'settlement_config')||!value.dispatch_config||!same(Object.keys(value.dispatch_config),['admin_config'])))throw new Error('dispatch_input_shape');
+  if(Object.hasOwn(value,'completion_config')&&(!Object.hasOwn(value,'guard_operator_config')||Object.hasOwn(value,'guard_graph_config')
+    ||Object.hasOwn(value,'settlement_config')||Object.hasOwn(value,'dispatch_config')||!value.completion_config
+    ||!same(Object.keys(value.completion_config),['admin_config'])))throw new Error('completion_input_shape');
   return value;
 }
 async function listener(address,absent=false){
@@ -87,6 +95,9 @@ async function cases(value){
   const graphMode=Object.hasOwn(value,'guard_graph_config');
   const settlementMode=Object.hasOwn(value,'settlement_config');
   const dispatchMode=Object.hasOwn(value,'dispatch_config');
+  const completionMode=Object.hasOwn(value,'completion_config');
+  let completionDropArmed=false,completionAfterCommit,completionDrops=0,completionUpdates=0,
+    completionConfirming=false,completionConfirmations=0,completionReadOnly=false,completionWrites=0,completionHttpStart=0;
   let dispatchDropArmed=false,dispatchDrops=0,dispatchUpserts=0,dispatchDml=0;
   let settlementDropArmed=false,settlementAfterCommit,commitDrops=0,confirmationActive=false,confirmationTransactions=0,
     confirmationWrites=0,confirmationWriterQueries=0,httpQueries=0,confirmationHttpStart=0,guardQueries=0,confirmationGuardStart=0;
@@ -99,13 +110,31 @@ async function cases(value){
   const factoryResource=guarded?new PoolResource(supervisorConfig):undefined;
   const defaultFactory=factoryResource?.factory;
   if(guarded&&typeof defaultFactory!=='function')throw new Error('native_factory_unavailable');
-  const resource=new PoolResource(writerConfig,graphMode||settlementMode?{factory:async config=>{
+  const resource=new PoolResource(writerConfig,graphMode||settlementMode||completionMode?{factory:async config=>{
     const actual=await defaultFactory(config);
-    return {async connect(){const client=await actual.connect();
+    return {async connect(){const client=await actual.connect();let completionWritten=false;
       return {async query(query){
+        if(completionMode){
+          if(query.text.startsWith('BEGIN')){completionWritten=false;if(completionConfirming)completionConfirmations++;}
+          if(completionConfirming){
+            if(query.text==='SET TRANSACTION READ ONLY')completionReadOnly=true;
+            if(/^\s*(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE)\b/i.test(query.text))completionWrites++;
+          }
+          if(query.text.startsWith('UPDATE cragkit_qdrant.publication_intents SET state=$4,authority_committed=true,replica_complete=true ')
+            &&query.values?.[3]==='complete'&&query.values?.[4]===inputs.security.intent_id){
+            completionUpdates++;completionWritten=true;
+          }
+        }
         if(confirmationActive)confirmationWriterQueries++;
         if(documentQuery(query)&&!query.text.endsWith('FOR UPDATE'))nonlockingReads++;
-        const result=await client.query(query);if(writerAfter)await writerAfter(query,result);return result;
+        const result=await client.query(query);if(writerAfter)await writerAfter(query,result);
+        if(completionMode&&query.text==='COMMIT'&&completionWritten&&completionDropArmed){
+          completionDropArmed=false;completionDrops++;await completionAfterCommit();
+          completionHttpStart=httpQueries;completionConfirming=true;
+          throw Object.assign(new Error('completion_commit_reply_withheld'),{code:'08006'});
+        }
+        if(completionConfirming&&query.text==='COMMIT')completionConfirming=false;
+        return result;
       },
         getTransactionStatus(){return client.getTransactionStatus();},release(destroy){client.release(destroy);}};
     },end(){return actual.end();}};
@@ -142,11 +171,11 @@ async function cases(value){
   const operatorConfig=guarded?parse_pool_config(value.guard_operator_config):undefined;
   if(operatorConfig&&operatorConfig.max_size!==1)throw new Error('operator_client_ceiling');
   const operator=operatorConfig?new PoolResource(operatorConfig):undefined;
-  const adminConfig=graphMode||settlementMode||dispatchMode?parse_pool_config(
-    (graphMode?value.guard_graph_config:dispatchMode?value.dispatch_config:value.settlement_config).admin_config):undefined;
+  const adminConfig=graphMode||settlementMode||dispatchMode||completionMode?parse_pool_config(
+    (graphMode?value.guard_graph_config:completionMode?value.completion_config:dispatchMode?value.dispatch_config:value.settlement_config).admin_config):undefined;
   if(adminConfig&&adminConfig.max_size!==1)throw new Error('admin_client_ceiling');
   const admin=adminConfig?new PoolResource(adminConfig):undefined;
-  const contenderResource=graphMode?new PoolResource(writerConfig,{factory:async config=>{
+  const contenderResource=graphMode||completionMode?new PoolResource(writerConfig,{factory:async config=>{
     const actual=await defaultFactory(config);
     return {async connect(){const client=await actual.connect();contenderPid=(await client.query({text:'SELECT pg_backend_pid()',rowMode:'array'})).rows[0][0];
       return {async query(query){const result=await client.query(query);if(contenderAfter)await contenderAfter(query,result);return result;},
@@ -212,7 +241,8 @@ async function cases(value){
     oldProjection=data.projection;semanticWitnessSha256=createHash('sha256').update(Buffer.from(JSON.stringify([data.witness[0],...data.witness.slice(4)]))).digest('hex');return data;
   }
   if(settlementMode)http.request=function(...args){httpQueries++;return nativeHttpRequest.apply(this,args);};
-  if(dispatchMode)http.request=function(requestOptions,callback){
+  if(dispatchMode||completionMode)http.request=function(requestOptions,callback){
+    if(completionMode)httpQueries++;
     const upsert=requestOptions?.method==='PUT'&&requestOptions.path===target+'/points?wait=true&ordering=strong';
     if(upsert)dispatchUpserts++;
     const drop=upsert&&dispatchDropArmed;if(drop)dispatchDropArmed=false;
@@ -251,7 +281,7 @@ async function cases(value){
     const historical=context(inputs.scope,inputs.stage.intent.intent_id,OWNER);
     const admitted=await writer.admit_publication(historical,options);
     if(admitted.owner?.owner_token!==OWNER)throw new Error('historical_owner_missing');
-    if(settlementMode||dispatchMode){
+    if(settlementMode||dispatchMode||completionMode){
       const dispatch='native-security-retired-unknown';
       const attempt=supervisor.issue_attempt({intent_id:historical.intent_id,owner_token:OWNER,epoch:1,dispatch_id:dispatch},options);
       const binding=supervisor.attempt_binding(attempt);
@@ -260,12 +290,12 @@ async function cases(value){
       await writer.mark_dispatched(historical,dispatch,options);await writer.mark_unknown(historical,dispatch,options);
     }
     await writer.apply_security(inputs.security,inputs.scope,{...options,owner_token:SECURITY});
-    if((settlementMode||dispatchMode)&&(await writer.admit_publication(owner,options)).intent.state!=='denied')throw new Error('old_stage_not_denied');
+    if((settlementMode||dispatchMode||completionMode)&&(await writer.admit_publication(owner,options)).intent.state!=='denied')throw new Error('old_stage_not_denied');
     const projected=await writer.project_security(security,options),source=security_projection_data(projected,writer);
     const state=await writer.manager_snapshot(owner,options);
     if(source.point_ids.length!==4||source.generations.length!==2||source.authorization_revision!=='auth-2'
       ||source.points.some(point=>point.payload.authorization_revision!=='auth-2')||state.owner?.owner_token!==OWNER||state.owner?.intent_id!==owner.intent_id)throw new Error('current_projection');
-    if(!dispatchMode)mark();
+    if(!dispatchMode&&!completionMode)mark();
     const proof=await recovery.recover('security-receipt-native',options);
     if(guarded){
       await operator.open();
@@ -296,11 +326,11 @@ async function cases(value){
         ['9999_native_guard_recovery_probe','0'.repeat(64)],['9999_native_guard_recovery_probe','0'.repeat(64)]);
       await mutation("CREATE FUNCTION cragkit_qdrant.native_guard_recovery_probe() RETURNS boolean LANGUAGE SQL SECURITY DEFINER AS 'SELECT true'",
         'DROP FUNCTION cragkit_qdrant.native_guard_recovery_probe()');
-      if(graphMode||settlementMode||dispatchMode)await operator.close();
+      if(graphMode||settlementMode||dispatchMode||completionMode)await operator.close();
     }
-    if(dispatchMode){
+    if(dispatchMode||completionMode){
       await admin.open();
-      const dispatchMark=()=>{checks.push(DISPATCH_CHECKS[checks.length]);step=checks.length;};
+      const dispatchMark=()=>{if(!completionMode){checks.push(DISPATCH_CHECKS[checks.length]);step=checks.length;}};
       const authorize=async(scope,collection,document)=>same(scope,owner.scope)&&collection===owner.collection&&document===owner.document_id;
       const dispatch=()=>dispatch_security_recovery(recovery,proof,owner,security,authorize,options);
       async function fixture(selected,remove){
@@ -329,6 +359,66 @@ async function cases(value){
       const settled=await journals();
       if(settled[0][4]!=='settled'||!same(settled[1],after[1]))throw new Error('security_dispatch_settled_wrong_row');
       dispatchMark();
+      if(completionMode){
+        const completionMark=()=>{checks.push(COMPLETION_CHECKS[checks.length]);step=checks.length;};
+        const immutable=async()=>{
+          const tables=['document_revisions','generations','members','point_claims','vector_replays','preparations',
+            'preparation_attestations','dispatch_journal','dispatch_points','publication_intents'];
+          const parts=tables.map(table=>"(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),'[]'::jsonb) FROM cragkit_qdrant."+
+            table+' r WHERE '+docWhere+(table==='publication_intents'?" AND action='stage'":'')+')');
+          return (await sql(admin,"SELECT encode(sha256(convert_to(jsonb_build_array("+parts.join(',')+")::text,'UTF8')),'hex')",docKeys)).rows;
+        };
+        const baseline=await immutable();
+        if(!same(await recovery.reopen(proof,options),{state:'open',epoch:2}))throw new Error('security_completion_reopen');
+        await recovery.close();await supervisorResource.close();
+        await contenderResource.open();await contender.initialize(options);
+        completionMark();
+        const admitted=await admit_security_owner(writer,security,options);
+        if(!same(admitted,{owner_token:SECURITY,backend_epoch:2}))throw new Error('security_owner_handoff');
+        const ownerRows=(await sql(admin,'SELECT intent_id,owner_token::text,backend_epoch::text FROM cragkit_qdrant.document_owners WHERE '+docWhere,docKeys)).rows;
+        if(!same(ownerRows,[[security.intent_id,SECURITY,'2']]))throw new Error('security_owner_not_durable');
+        const attempt=supervisor.issue_attempt({intent_id:security.intent_id,owner_token:SECURITY,epoch:2,
+          dispatch_id:'native-security-ordinary-completion'},options);
+        const ordinary=await verify_security_ordinary(verifier,attempt,security,options);
+        const next={...inputs.security,intent_id:'native-security-completion-auth-3',expected_authorization_revision:'auth-2',
+          expected_mutation_epoch:2,authorization:{...inputs.security.authorization,authorization_revision:'auth-3'}};
+        completionAfterCommit=async()=>{
+          const advanced=await contender.apply_security(next,currentScope,{...options,owner_token:SECURITY});
+          if(!advanced.authority_committed)throw new Error('completion_authority_advance');
+        };
+        const result=await publication_finalization(supervisor,attempt,async()=>{
+          const observed=ordinary_security_receipt_data(ordinary,verifier,options);
+          const projected=security_projection_data(observed.projection,writer);
+          if(!same(Object.keys(observed).sort(),['context','projection','attempt_binding','intent_sha256','inventory_sha256',
+            'readback_sha256','witness','encoded_bytes','sha256'].sort())||!same(observed.context,security)
+            ||observed.intent_sha256!==source.intent_sha256||observed.inventory_sha256!==source.inventory_sha256
+            ||!same(projected.point_ids,source.point_ids)||observed.attempt_binding.intent_id!==security.intent_id
+            ||observed.attempt_binding.owner_token!==SECURITY||observed.attempt_binding.epoch!==2
+            ||observed.attempt_binding.instance_id!==inputs.instance_id||observed.witness[0]!=='cragkit.qdrant.security-ordinary-readback.v1'
+            ||!same(bytes(observed.witness),observed.encoded_bytes)||observed.sha256!==hash(Buffer.from(observed.encoded_bytes))
+            ||observed.readback_sha256!==observed.sha256)throw new Error('ordinary_security_receipt');
+          semanticWitnessSha256=hash(Buffer.from(JSON.stringify([observed.witness[0],...observed.witness.slice(2)])));
+          completionMark();completionDropArmed=true;
+          return complete_security_replica(writer,verifier,ordinary,options);
+        },options);
+        if(!Object.isFrozen(result)||result.state!=='complete'||result.action!=='update_authorization'||!result.authority_committed
+          ||!result.replica_complete||result.purge_complete||result.payload_sha256!==source.intent_sha256
+          ||result.manifest_sha256!==null||result.revision_id!==null||result.generation_id!==null||completionUpdates!==1||completionDrops!==1
+          ||!same(await immutable(),baseline))throw new Error('security_intent_completion_flags');
+        const flags=(await sql(admin,'SELECT state,authority_committed,replica_complete,purge_complete FROM cragkit_qdrant.publication_intents '+
+          'WHERE '+docWhere+' AND intent_id=$4',[...docKeys,security.intent_id])).rows;
+        if(!same(flags,[['complete',true,true,false]]))throw new Error('security_completion_not_durable');
+        completionMark();
+        if(completionConfirmations!==1||!completionReadOnly||completionConfirming||completionWrites!==0||httpQueries!==completionHttpStart)
+          throw new Error('security_completion_confirmation_replayed');
+        const repeated=await publication_finalization(supervisor,attempt,()=>complete_security_replica(writer,verifier,ordinary,options),options);
+        const authority=(await sql(admin,'SELECT authorization_revision,mutation_epoch::text FROM cragkit_qdrant.documents WHERE '+docWhere,docKeys)).rows;
+        if(!same(repeated,result)||completionUpdates!==1||!same(authority,[['auth-3','3']])||!same(await immutable(),baseline)
+          ||httpQueries!==completionHttpStart)throw new Error('historical_security_completion_restored_authority');
+        completionMark();
+        return {runtime:'typescript',checks,proof_scope:'native_security_completion_only',semantic_witness_sha256:semanticWitnessSha256,
+          guard_admission:{checks:guardChecks,denied_backend_queries:deniedBackendQueries}};
+      }
       let puts=dispatchUpserts,dml=dispatchDml;
       if(!same(await dispatch(),{batches:0,points:0})||!same(await journals(),settled)||dispatchUpserts!==puts||dispatchDml!==dml)throw new Error('security_dispatch_not_noop');
       const corrupt=clone(current.slice(0,1));corrupt[0].vector.dense=corrupt[0].vector.dense.map(value=>-value);
@@ -600,7 +690,7 @@ async function cases(value){
       ...(settlementMode?{security_settlement:{checks:settlementChecks,confirmation_writes:confirmationWrites}}:{})};
   }catch(error){primary=error;throw error;}
   finally{
-    if(settlementMode||dispatchMode)http.request=nativeHttpRequest;
+    if(settlementMode||dispatchMode||completionMode)http.request=nativeHttpRequest;
     const failures=[],deadline=now()+12;
     for(const release of gates)release();
     supBefore=supAfter=writerAfter=contenderAfter=undefined;

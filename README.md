@@ -44,11 +44,11 @@ The **npm** package runs natively in Node.js — no Python server required. The 
 | **V2** | Dense/identifier retrieval, rank fusion, hybrid orchestration, synthetic comparison | ✅ Complete | [V2 exit evidence](evaluation/reports/V2/V2-07-08-exit.md) · [HY-r1 config](contracts/HYBRID_V2.md) |
 | **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
 | **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [V4 exit evidence](evaluation/reports/V4/V4-08-exit.md) |
-| **V5** | Qdrant publication and repair, existing indexes and optional MCP | 🚧 In progress | [V5 plan](tasks/versions/V5-integrations.md) · [Latest accepted recovery-dispatch checkpoint](evaluation/reports/V5/V5-04G2b2d5a.md) |
+| **V5** | Qdrant publication and repair, existing indexes and optional MCP | 🚧 In progress | [V5 plan](tasks/versions/V5-integrations.md) · [Latest accepted security-handoff checkpoint](evaluation/reports/V5/V5-04G2b2d5b.md) |
 | **V6** | Evaluation and release | 🔲 Planned | [V6 plan](tasks/versions/V6-release.md) |
 
 > [!NOTE]
-> V3 calibration is curated in-sample evidence, not general semantic quality. The V3 exit checkpoint passed local, installed and native acceptance. V4 is complete for its internal native/synthetic milestone. V5 source authorization, profile-4 source/writer/recovery admission, private guarded graph validation, retired security settlement and current-payload recovery dispatch are verified for their recorded native profiles; ownership handoff and the remaining V5 gates are still in progress. Production acceptance is unvalidated.
+> V3 calibration is curated in-sample evidence, not general semantic quality. The V3 exit checkpoint passed local, installed and native acceptance. V4 is complete for its internal native/synthetic milestone. V5 source authorization, profile-4 source/writer/recovery admission, private guarded graph validation, retired security settlement, current-payload recovery dispatch and initial security-owner handoff are verified for their recorded native profiles; repeated-update convergence and the remaining V5 gates are still in progress. Production acceptance is unvalidated.
 
 Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
 

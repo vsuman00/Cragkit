@@ -16,7 +16,7 @@ from qdrant_authority_schema import ROOT
 from qdrant_native import REFERENCE_BINARY_SHA256
 from qdrant_publication_native import PublicationDatabase
 from qdrant_security_guard_native import SecurityGuardDatabase,install_guard
-from qdrant_security_verification_cases import (CHECKS, GUARD_CHECKS, SETTLEMENT_CHECKS, DISPATCH_CHECKS, ERRORS, NativeSecurityVerificationFailure,
+from qdrant_security_verification_cases import (CHECKS, GUARD_CHECKS, SETTLEMENT_CHECKS, DISPATCH_CHECKS, COMPLETION_CHECKS, ERRORS, NativeSecurityVerificationFailure,
     python_security_verification_cases, security_verification_input)
 from qdrant_source_native import PostgresSourceFixture
 from runtime_diagnostics import CleanupFailure, describe_error
@@ -36,18 +36,20 @@ GRAPH_CHECKS=(
 )
 
 
-def validate_result(value, runtime, *, security_guard=False, guarded_graph=False, security_settlement=False, security_dispatch=False):
+def validate_result(value, runtime, *, security_guard=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False):
     fields={'runtime','checks','proof_scope','semantic_witness_sha256'}
     if security_guard:fields.add('guard_admission')
     if guarded_graph:fields.add('guarded_graph')
     if security_settlement:fields.add('security_settlement')
+    if security_completion and (not security_guard or guarded_graph or security_settlement or security_dispatch):
+        raise RuntimeError('security_completion_requires_exclusive_guard_profile')
     if security_dispatch and (not security_guard or guarded_graph or security_settlement):
         raise RuntimeError('security_dispatch_requires_exclusive_guard_profile')
     if security_settlement and (not security_guard or guarded_graph):
         raise RuntimeError('security_settlement_requires_exclusive_guard_profile')
     if (type(value) is not dict or set(value) != fields
-            or value['runtime'] != runtime or value['checks'] != list(DISPATCH_CHECKS if security_dispatch else CHECKS)
-            or value['proof_scope'] != ('native_security_dispatch_only' if security_dispatch else 'native_security_receipt_only')
+            or value['runtime'] != runtime or value['checks'] != list(COMPLETION_CHECKS if security_completion else DISPATCH_CHECKS if security_dispatch else CHECKS)
+            or value['proof_scope'] != ('native_security_completion_only' if security_completion else 'native_security_dispatch_only' if security_dispatch else 'native_security_receipt_only')
             or type(value['semantic_witness_sha256']) is not str or len(value['semantic_witness_sha256'])!=64
             or any(char not in '0123456789abcdef' for char in value['semantic_witness_sha256'])):
         raise RuntimeError('security_verification_native_result_shape')
@@ -127,7 +129,7 @@ async def node_security_verification_cases(value):
             raise failure
         if code != 0 or stderr:
             raise RuntimeError('security_verification_native_child_failed')
-        result = validate_result(json.loads(stdout), 'typescript',security_guard='guard_operator_config' in value,guarded_graph='guard_graph_config' in value,security_settlement='settlement_config' in value,security_dispatch='dispatch_config' in value)
+        result = validate_result(json.loads(stdout), 'typescript',security_guard='guard_operator_config' in value,guarded_graph='guard_graph_config' in value,security_settlement='settlement_config' in value,security_dispatch='dispatch_config' in value,security_completion='completion_config' in value)
         success = True
         return result
     except BaseException as error:
@@ -161,7 +163,7 @@ async def node_security_verification_cases(value):
             raise CleanupFailure(failures, primary=primary, stage='recovery') from None
 
 
-async def check(fixture, runtime, binary, work_dir, *, security_guard=False, guarded_graph=False, security_settlement=False, security_dispatch=False):
+async def check(fixture, runtime, binary, work_dir, *, security_guard=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False):
     database_type=SecurityGuardDatabase if security_guard else PublicationDatabase
     async with database_type(fixture, with_attestations=True) as database:
         if security_guard:await install_guard(database)
@@ -183,9 +185,10 @@ async def check(fixture, runtime, binary, work_dir, *, security_guard=False, gua
         if guarded_graph:value['guard_graph_config']=dict(admin_config=fixture.config)
         if security_settlement:value['settlement_config']=dict(admin_config=fixture.config)
         if security_dispatch:value['dispatch_config']=dict(admin_config=fixture.config)
+        if security_completion:value['completion_config']=dict(admin_config=fixture.config)
         await database.release_admin()
         runner = python_security_verification_cases if runtime == 'python' else node_security_verification_cases
-        return validate_result(await runner(value), runtime,security_guard=security_guard,guarded_graph=guarded_graph,security_settlement=security_settlement,security_dispatch=security_dispatch)
+        return validate_result(await runner(value), runtime,security_guard=security_guard,guarded_graph=guarded_graph,security_settlement=security_settlement,security_dispatch=security_dispatch,security_completion=security_completion)
 
 
 def main(argv=None):
@@ -198,6 +201,7 @@ def main(argv=None):
     parser.add_argument('--guarded-graph',action='store_true')
     parser.add_argument('--security-settlement',action='store_true')
     parser.add_argument('--security-dispatch',action='store_true')
+    parser.add_argument('--security-completion',action='store_true')
     parser.add_argument('--runtime', choices=('python', 'typescript', 'all'), default='all')
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
@@ -208,6 +212,8 @@ def main(argv=None):
             raise RuntimeError('security_settlement_requires_exclusive_guard_profile')
         if args.security_dispatch and (not args.with_security_guard or args.guarded_graph or args.security_settlement):
             raise RuntimeError('security_dispatch_requires_exclusive_guard_profile')
+        if args.security_completion and (not args.with_security_guard or args.guarded_graph or args.security_settlement or args.security_dispatch):
+            raise RuntimeError('security_completion_requires_exclusive_guard_profile')
         binary = args.server_binary.resolve(strict=True)
         if (args.binary_sha256 != REFERENCE_BINARY_SHA256 or not binary.is_file()
                 or not os.access(binary, os.X_OK) or sha256(binary.read_bytes()).hexdigest() != REFERENCE_BINARY_SHA256):
@@ -220,7 +226,7 @@ def main(argv=None):
             private = Path(tempfile.mkdtemp(prefix=runtime + '-', dir=args.artifacts_dir)).resolve()
             # Two runtime clients and the default three reserved slots.
             with PostgresSourceFixture(args.postgres_bin, private / 'postgres', max_connections=7 if args.guarded_graph else 6 if args.with_security_guard else 5) as fixture:
-                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed',security_guard=args.with_security_guard,guarded_graph=args.guarded_graph,security_settlement=args.security_settlement,security_dispatch=args.security_dispatch), 210))
+                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed',security_guard=args.with_security_guard,guarded_graph=args.guarded_graph,security_settlement=args.security_settlement,security_dispatch=args.security_dispatch,security_completion=args.security_completion), 210))
             shutil.rmtree(private)
             results.append(result)
         if len({result['semantic_witness_sha256'] for result in results})!=1:

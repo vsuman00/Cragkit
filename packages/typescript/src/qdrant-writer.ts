@@ -9,6 +9,7 @@ import { AUTHORITY_FINGERPRINT_SQL, AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION
   AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL } from './qdrant-authority.js';
 import {attestation_receipt_data,publication_verifier_controller,type QdrantPublicationVerifier} from './qdrant-publication-verification.js';
 import {require_publication_finalization} from './qdrant-publication-worker.js';
+import {ordinary_security_receipt_data,security_verifier_supervisor,type QdrantSecurityVerifier} from './qdrant-security-verification.js';
 import {recovery_dispatch_authorization,security_guard_binding,security_dispatch_authorization} from './qdrant-recovery.js';
 import { encode_manifest, encode_stage_intent, restore_dense_replay, restore_sparse_replay } from './qdrant-manifest.js';
 import { same, point_id, parse_response, type QdrantConfig } from './qdrant-contract.js';
@@ -53,6 +54,17 @@ const writerRegistrations=new WeakMap<object,WriterRegistration>();
 const guardedReaders=new WeakMap<object,(guard:unknown,projection:unknown,options:LeaseOptions)=>Promise<void>>();
 const guardedAdmission=new WeakMap<object,()=>void>();
 const securityRecoveryReaders=new WeakMap<object,(context:WriterContext,options:LeaseOptions,projection?:unknown)=>Promise<SecurityProjection>>();
+type SecurityOwner=Readonly<{owner_token:string;backend_epoch:number}>;
+const securityOwnerAdmissions=new WeakMap<object,(context:WriterContext,options:LeaseOptions)=>Promise<SecurityOwner>>();
+const securityReplicaCompletions=new WeakMap<object,(verifier:QdrantSecurityVerifier,receipt:unknown,options:LeaseOptions)=>Promise<IntentView>>();
+export async function admit_security_owner(writer:PostgresQdrantWriter,rawContext:unknown,rawOptions:unknown):Promise<SecurityOwner>{
+  writer_binding(writer);const context=parseContext(rawContext),options=parseOptions(rawOptions),admit=securityOwnerAdmissions.get(writer);
+  if(!admit)throw new InvalidRequest();return admit(context,options);
+}
+export async function complete_security_replica(writer:PostgresQdrantWriter,verifier:QdrantSecurityVerifier,receipt:unknown,rawOptions:unknown):Promise<IntentView>{
+  writer_binding(writer);const options=parseOptions(rawOptions),complete=securityReplicaCompletions.get(writer);
+  if(!complete)throw new InvalidRequest();return complete(verifier,receipt,options);
+}
 /** D5-only owned reader; ordinary projection lifetimes remain unchanged. */
 export async function security_recovery_projection(writer:PostgresQdrantWriter,context:unknown,rawOptions:unknown,previous?:unknown):Promise<SecurityProjection>{
   writer_binding(writer);const parsed=parseContext(context),options=parseOptions(rawOptions),read=securityRecoveryReaders.get(writer);
@@ -69,7 +81,7 @@ export async function validate_guarded_security_projection(writer:PostgresQdrant
   const read=guardedReaders.get(writer);if(!read)throw new InvalidRequest();
   await read(guard,projection,options);
 }
-type GuardedRead=Readonly<{check:()=>void;invalidate:()=>void}>;
+type GuardedRead=Readonly<{check:()=>void;invalidate:()=>void;readOnly?:true}>;
 
 /** Constructor identity only: this metadata grants no readiness or write authority. */
 export function writer_binding(input:unknown):Readonly<{config:QdrantConfig;instance_id:string}> {
@@ -319,6 +331,8 @@ export class PostgresQdrantWriter {
       if(this.#profile!=='security_guard')throw new UnsupportedCapability();
     });
     securityRecoveryReaders.set(this,(context,options,previous)=>this.#securityRecoveryProjection(context,options,previous));
+    securityOwnerAdmissions.set(this,(context,options)=>this.#admitSecurityOwner(context,options));
+    securityReplicaCompletions.set(this,(verifier,receipt,options)=>this.#completeSecurityReplica(verifier,receipt,options));
   }
   async #work<T>(options: LeaseOptions, task:(options:LeaseOptions)=>Promise<T>, initialize=false):Promise<T> {
     if(this.#closed||this.#active) throw new ProviderUnavailable();
@@ -362,6 +376,7 @@ export class PostgresQdrantWriter {
       try {
         await bounded(client.query({text:'BEGIN ISOLATION LEVEL READ COMMITTED',rowMode:'array'}),lease); begun=true;
         check();
+        if(guarded?.readOnly){await bounded(client.query({text:'SET TRANSACTION READ ONLY',rowMode:'array'}),lease);check();}
         await bounded(client.query({text:'SET LOCAL search_path=pg_catalog',rowMode:'array'}),lease);
         let profile:WriterSchemaProfile;
         try{profile=writer_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,5));}
@@ -1108,6 +1123,94 @@ export class PostgresQdrantWriter {
         const projection=Object.freeze({});securityProjections.set(projection,Object.freeze({issuer:this,data}));return projection;
       },false,false,{check,invalidate:()=>{valid=false;}});}
       finally{valid=false;writerOptions.signal?.removeEventListener('abort',abort);}
+    });
+  }
+  #securityIntentFacts(intent:Data):Readonly<Data>{
+    return Object.freeze(Object.fromEntries(INTENT_PRIVATE.filter(key=>!['state','authority_committed','replica_complete','purge_complete'].includes(key)).map(key=>
+      [key,key==='payload_bytes'||key==='manifest_bytes'?intent[key]===null?null:Buffer.from(db_bytes(intent[key],1048576)):key==='expected_mutation_epoch'?db_count(intent[key]):intent[key]])));
+  }
+  #sameSecurityIntent(intent:Data,facts:Readonly<Data>):boolean{return Object.keys(facts).every(key=>exact(intent[key],facts[key]));}
+  async #admitSecurityOwner(context:WriterContext,options:LeaseOptions):Promise<SecurityOwner>{
+    require_security_guard_writer(this);
+    return this.#work(options,async writerOptions=>{
+      let valid=true;const check=()=>{parseOptions(options);if(!valid||this.#closed)throw new ProviderUnavailable();};
+      const abort=()=>{valid=false;const active=this.#active;if(active)void bounded(active.done,{deadline:now()+this.#resource.config.release_timeout}).catch(()=>{if(this.#active===active)this.#closed=true;});};
+      writerOptions.signal?.addEventListener('abort',abort,{once:true});let facts:Readonly<Data>|undefined,expected:SecurityOwner|undefined;
+      try{
+        try{return await this.#tx(context,writerOptions,async tx=>{
+          const backend=await this.#managerBackend(tx,true);if(backend.state!=='open')throw new ProviderUnavailable();
+          const owner=await this.#managerOwner(tx,context,true),document=await this.#document(tx,context,true);
+          if(!document)throw new UnauthorizedScope();
+          if(owner&&owner.instance_id!==this.#instance)throw new IntegrityViolation();
+          if(!owner&&await this.#managerOwner(tx,context))throw new ProviderUnavailable();
+          const intent=await this.#intent(tx,context);
+          if(!intent||intent.action!=='update_authorization'||!intent.authority_committed||intent.purge_complete)throw new UnsupportedCapability();
+          if(!['authority_committed','writing','complete'].includes(String(intent.state)))throw new InvalidRequest();
+          if(intent.replica_complete!==(intent.state==='complete'))throw new IntegrityViolation();
+          const source=await this.#projectSecurity(tx,context);if(source.tombstoned)throw new UnsupportedCapability();
+          if(await this.#managerPending(tx,context))throw new ProviderUnavailable();check();
+          facts=this.#securityIntentFacts(intent);expected=Object.freeze({owner_token:context.owner_token,backend_epoch:backend.epoch});
+          const sameOwner=owner?.instance_id===this.#instance&&owner.intent_id===context.intent_id&&owner.owner_token===context.owner_token&&owner.backend_epoch===backend.epoch;
+          if(intent.state==='complete'){if(!sameOwner)throw new ProviderUnavailable();return expected;}
+          if(intent.state==='authority_committed')await this.#updateIntent(tx,context,'writing');
+          if(owner&&!sameOwner)await tx.query('UPDATE cragkit_qdrant.document_owners SET instance_id=$4,intent_id=$5,owner_token=$6::uuid,backend_epoch=$7 WHERE (tenant_id,collection,document_id)=($1,$2,$3)',
+            [...this.#key(context),this.#instance,context.intent_id,context.owner_token,backend.epoch],0);
+          else if(!owner)await this.#insert(tx,'document_owners',{...Object.fromEntries(TARGET.map((key,index)=>[key,this.#key(context)[index]])),instance_id:this.#instance,intent_id:context.intent_id,owner_token:context.owner_token,backend_epoch:backend.epoch});
+          const current=await this.#managerOwner(tx,context);
+          if(!current||current.instance_id!==this.#instance||current.intent_id!==context.intent_id||current.owner_token!==context.owner_token||current.backend_epoch!==backend.epoch)throw new ProviderUnavailable();
+          check();return expected;
+        },true,false,{check,invalidate:()=>{valid=false;}});}
+        catch(error){
+          if(!(error instanceof CommitUnknown)||!facts||!expected)throw error;
+          valid=true;check();const immutable=facts,bound=expected;
+          return await this.#tx(context,writerOptions,async tx=>{
+            const intent=await this.#intent(tx,context),owner=await this.#managerOwner(tx,context);
+            if(!intent||!this.#sameSecurityIntent(intent,immutable)||!intent.authority_committed||intent.purge_complete
+              ||!['writing','complete'].includes(String(intent.state))||!owner||owner.instance_id!==this.#instance||owner.intent_id!==context.intent_id
+              ||owner.owner_token!==bound.owner_token||owner.backend_epoch!==bound.backend_epoch)throw new ProviderUnavailable();
+            check();return bound;
+          },true,false,{readOnly:true,check,invalidate:()=>{valid=false;}});
+        }
+      }finally{valid=false;writerOptions.signal?.removeEventListener('abort',abort);}
+    });
+  }
+  async #completeSecurityReplica(verifier:QdrantSecurityVerifier,receipt:unknown,options:LeaseOptions):Promise<IntentView>{
+    require_security_guard_writer(this);const supervisor=security_verifier_supervisor(verifier,this);
+    const proof=ordinary_security_receipt_data(receipt,verifier,options),original=security_projection_data(proof.projection,this),context=proof.context;
+    if(original.tombstoned)throw new UnsupportedCapability();
+    return this.#work(options,async writerOptions=>{
+      let valid=true;
+      const check=()=>{parseOptions(options);if(!valid||this.#closed)throw new ProviderUnavailable();
+        require_publication_finalization(supervisor,options);if(ordinary_security_receipt_data(receipt,verifier,options)!==proof)throw new InvalidRequest();};
+      const abort=()=>{valid=false;const active=this.#active;if(active)void bounded(active.done,{deadline:now()+this.#resource.config.release_timeout}).catch(()=>{if(this.#active===active)this.#closed=true;});};
+      writerOptions.signal?.addEventListener('abort',abort,{once:true});let facts:Readonly<Data>|undefined;
+      const completed=(intent:Data)=>intent.action==='update_authorization'&&intent.payload_sha256===proof.intent_sha256
+        &&intent.state==='complete'&&intent.authority_committed===true&&intent.replica_complete===true&&intent.purge_complete===false;
+      try{
+        try{return await this.#tx(context,writerOptions,async tx=>{
+          check();let intent=await this.#intent(tx,context);if(!intent||intent.payload_sha256!==proof.intent_sha256)throw new IntegrityViolation();
+          if(intent.state==='complete'){if(!completed(intent))throw new IntegrityViolation();return intent_view(intent);}
+          const backend=await this.#managerBackend(tx,true);if(backend.state!=='open')throw new ProviderUnavailable();
+          if(['instance_id','storage_identity','supervisor_id'].some(key=>backend[key as keyof ManagerBackend]!==proof.attempt_binding[key])||backend.epoch!==proof.attempt_binding.epoch)throw new UnsupportedCapability();
+          const owner=await this.#managerOwner(tx,context,true);await this.#document(tx,context,true);
+          if(!owner||owner.instance_id!==this.#instance||owner.intent_id!==context.intent_id||owner.owner_token!==context.owner_token||owner.backend_epoch!==backend.epoch)throw new ProviderUnavailable();
+          intent=await this.#intent(tx,context);
+          if(!intent||intent.action!=='update_authorization'||intent.state!=='writing'||!intent.authority_committed||intent.replica_complete||intent.purge_complete)throw new InvalidRequest();
+          const source=await this.#projectSecurity(tx,context);check();if(source.tombstoned)throw new UnsupportedCapability();
+          if(!same(source,original))throw new UnauthorizedScope();if(await this.#managerPending(tx,context))throw new ProviderUnavailable();
+          facts=this.#securityIntentFacts(intent);check();
+          const result=await this.#updateIntent(tx,context,'complete',true);check();
+          if(!result.authority_committed||!result.replica_complete||result.purge_complete)throw new IntegrityViolation();return result;
+        },true,false,{check,invalidate:()=>{valid=false;}});}
+        catch(error){
+          if(!(error instanceof CommitUnknown)||!facts)throw error;
+          valid=true;check();const immutable=facts;
+          return await this.#tx(context,writerOptions,async tx=>{
+            const intent=await this.#intent(tx,context);
+            if(!intent||!this.#sameSecurityIntent(intent,immutable)||!completed(intent))throw new ProviderUnavailable();check();return intent_view(intent);
+          },true,false,{readOnly:true,check,invalidate:()=>{valid=false;}});
+        }
+      }finally{valid=false;writerOptions.signal?.removeEventListener('abort',abort);}
     });
   }
   async #securityDispatchSource(tx:Tx,binding:ReturnType<typeof security_dispatch_authorization>):Promise<Readonly<{source:SecurityProjectionData;stage:Data}>>{

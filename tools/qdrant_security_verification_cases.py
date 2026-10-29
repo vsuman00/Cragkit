@@ -56,6 +56,14 @@ DISPATCH_CHECKS=(
 )
 
 
+COMPLETION_CHECKS=(
+ 'retired_settlement_and_actual_reopen_precede_handoff',
+ 'ordinary_owner_and_genuine_receipt_bind_current_graph',
+ 'same_writer_transaction_completes_only_security_intent',
+ 'lost_completion_commit_confirms_history_after_authority_advance',
+)
+
+
 class NativeSecurityVerificationFailure(RuntimeError):
     def __init__(self, observation):
         super().__init__('security_verification_native_case_failed')
@@ -86,12 +94,12 @@ async def python_security_verification_cases(value):
     import struct
     from pathlib import Path
     from cragkit._postgres_pool import PoolConfig,PoolResource,_owned_pool
-    from cragkit._qdrant_writer import PostgresQdrantWriter,security_projection_data
-    from cragkit._qdrant_writer_contract import prepare_stage
+    from cragkit._qdrant_writer import PostgresQdrantWriter,security_projection_data,admit_security_owner,complete_security_replica
+    from cragkit._qdrant_writer_contract import prepare_stage, context as parse_context
     from cragkit._qdrant_reconciliation import QdrantReconciliationVerifier
     from cragkit._qdrant_recovery import PostgresQdrantRecovery,validate_security_guarded,settle_security_guarded,dispatch_security_recovery
     from cragkit._qdrant_supervisor import ManagedQdrantSupervisor
-    from cragkit._qdrant_security_verification import QdrantSecurityVerifier,security_receipt_data
+    from cragkit._qdrant_security_verification import QdrantSecurityVerifier,security_receipt_data,verify_security_ordinary,ordinary_security_receipt_data
     from cragkit.errors import (InvalidRequest,IntegrityViolation,UnsupportedCapability,UnauthorizedScope,
                                ProviderUnavailable,DeadlineExceeded)
     from qdrant_supervisor_cases import plain,request_bytes,observed_listener
@@ -106,9 +114,10 @@ async def python_security_verification_cases(value):
     graph_mode='guard_graph_config' in value
     settlement_mode='settlement_config' in value
     dispatch_mode='dispatch_config' in value
+    completion_mode='completion_config' in value
     dispatch_fault=dict(armed=False,drops=0,upserts=0)
     settlement=dict(armed=False,fired=False,monitor=False,confirmations=0,confirmation_writes=0,
-        confirmation_http=0,confirmation_guards=0,confirmation_writer_queries=0,confirmation_reads=0,
+        confirmation_http=0,confirmation_guards=0,confirmation_writer_queries=0,confirmation_source_queries=0,confirmation_reads=0,
         attempted=[],updates=0,completion=None,advance=None)
     class SettlementConnection:
         def __init__(self,actual,role):self.actual,self.role,self.readonly,self.updated=actual,role,False,False
@@ -122,7 +131,7 @@ async def python_security_verification_cases(value):
                 async def __aexit__(self,kind,error,traceback):
                     try:
                         result=await transaction.__aexit__(kind,error,traceback)
-                        if kind is None and connection.role=='supervisor' and connection.updated and settlement['armed']:
+                        if kind is None and (connection.role=='supervisor' and settlement_mode or connection.role=='writer' and completion_mode) and connection.updated and settlement['armed']:
                             settlement['armed']=False;settlement['fired']=True
                             await settlement['advance']()
                             settlement['monitor']=True
@@ -138,9 +147,11 @@ async def python_security_verification_cases(value):
             if self.role=='supervisor' and "set_config('cragkit_qdrant.backend_instance_id'" in sql:guard_count+=1
             if settlement['monitor']:
                 if self.role=='writer':settlement['confirmation_writer_queries']+=1
+                if any('FROM cragkit_qdrant.'+table in sql for table in ('documents','document_revisions','generations','members','vector_replays')):
+                    settlement['confirmation_source_queries']+=1
                 if sql.startswith(('INSERT ','UPDATE ','DELETE ')):settlement['confirmation_writes']+=1
                 if sql.startswith('SELECT true FROM cragkit_qdrant.lock_current_security('):settlement['confirmation_guards']+=1
-            if self.role=='supervisor' and sql.endswith('READ COMMITTED READ ONLY'):
+            if (self.role=='supervisor' or completion_mode and self.role=='writer') and (sql.endswith('READ COMMITTED READ ONLY') or sql=='SET TRANSACTION READ ONLY'):
                 self.readonly=True;settlement['confirmations']+=1
             if self.readonly and sql.startswith('SELECT dispatch_id,') and ' FROM cragkit_qdrant.dispatch_' in sql:
                 if ('dispatch_id=ANY' not in sql or 'FOR UPDATE' in sql or 'FOR SHARE' in sql
@@ -149,6 +160,8 @@ async def python_security_verification_cases(value):
                 settlement['confirmation_reads']+=1
             if self.role=='supervisor' and sql.startswith('UPDATE cragkit_qdrant.dispatch_journal SET state=\'settled\''):
                 self.updated=True;settlement['updates']+=1;settlement['completion']=params[0]
+            if self.role=='writer' and completion_mode and sql.startswith("UPDATE cragkit_qdrant.publication_intents SET state='complete',replica_complete=true"):
+                self.updated=True;settlement['updates']+=1
             return await self.actual.execute(statement,params,**options)
     class SettlementPool:
         def __init__(self,configuration,role):self.actual,self.role=_owned_pool(configuration),role
@@ -199,7 +212,7 @@ async def python_security_verification_cases(value):
         async def getconn(self,**options):return GraphConnection(await self.actual.getconn(**options),self.role)
         async def putconn(self,connection):await self.actual.putconn(connection.actual)
     resource=PoolResource(pool_config(value['writer_config']),**({'factory':lambda cfg:GraphPool(cfg,'writer')} if graph_mode else
-        {'factory':lambda cfg:SettlementPool(cfg,'writer')} if settlement_mode else {}))
+        {'factory':lambda cfg:SettlementPool(cfg,'writer')} if settlement_mode or completion_mode else {}))
     guard_mode='guard_operator_config' in value
     guard_count=0
     class GuardConnection:
@@ -228,11 +241,11 @@ async def python_security_verification_cases(value):
     verifier=QdrantSecurityVerifier(writer,supervisor)
     wrong_verifier=QdrantSecurityVerifier(writer,supervisor)
     original_http=supervisor._http
-    if settlement_mode or dispatch_mode:
+    if settlement_mode or dispatch_mode or completion_mode:
         async def observed_http(*args,**kwargs):
             if settlement['monitor']:settlement['confirmation_http']+=1
             result=await original_http(*args,**kwargs)
-            if dispatch_mode and len(args)>2 and args[1]=='PUT' and args[2]==target+'/points?wait=true&ordering=strong':
+            if (dispatch_mode or completion_mode) and len(args)>2 and args[1]=='PUT' and args[2]==target+'/points?wait=true&ordering=strong':
                 dispatch_fault['upserts']+=1
                 if dispatch_fault['armed']:
                     status,raw=result
@@ -443,6 +456,62 @@ async def python_security_verification_cases(value):
             graph['sup_close_verified']=True
             graph_checks.append(GRAPH_CHECKS[8])
         finally:gate.set();graph['reply']=None;graph['deny_commit']=False
+    async def completion_cases():
+        nonlocal contender_resource,contender
+        from cragkit._qdrant_publication_worker import controller_finalization
+        async def immutable():
+            tables=('document_revisions','generations','members','point_claims','vector_replays','preparations',
+                    'preparation_attestations','dispatch_journal','dispatch_points','publication_intents')
+            parts=["(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),'[]'::jsonb) FROM cragkit_qdrant."+
+                table+' r WHERE '+document_where+(" AND action='stage'" if table=='publication_intents' else '')+')' for table in tables]
+            return await admin_query("SELECT encode(sha256(convert_to(jsonb_build_array("+','.join(parts)+")::text,'UTF8')),'hex')",document_key*len(tables))
+        baseline=await immutable()
+        if dict(await recovery.reopen(proof,deadline=deadline))!=dict(state='open',epoch=2):raise RuntimeError('security_completion_reopen')
+        await recovery.close();await supervisor_resource.close()
+        contender_resource=PoolResource(pool_config(value['writer_config']));contender=PostgresQdrantWriter(contender_resource,inputs['config'],inputs['instance_id'])
+        await contender_resource.open();await contender.initialize(deadline=deadline)
+        checks.append(COMPLETION_CHECKS[0])
+        handed=await admit_security_owner(writer,security,deadline=deadline)
+        if dict(handed)!=dict(owner_token=security['owner_token'],backend_epoch=2):raise RuntimeError('security_completion_handoff')
+        owned=await admin_query('SELECT intent_id,owner_token::text,backend_epoch FROM cragkit_qdrant.document_owners WHERE '+document_where,document_key)
+        if owned!=[(security['intent_id'],security['owner_token'],2)]:raise RuntimeError('security_completion_owner_not_durable')
+        attempt=supervisor.issue_attempt(dict(intent_id=security['intent_id'],owner_token=security['owner_token'],epoch=2,
+            dispatch_id='native-security-ordinary-completion'),deadline=deadline)
+        receipt=await verify_security_ordinary(verifier,attempt,security,deadline=deadline)
+        async def advance():
+            record=deepcopy(inputs['security']);record.update(intent_id='native-security-completion-auth-3',
+                expected_authorization_revision='auth-2',expected_mutation_epoch=2)
+            record['authorization']['authorization_revision']='auth-3'
+            result=await contender.apply_security(record,current_scope,owner_token=security['owner_token'],deadline=deadline)
+            if not result['authority_committed']:raise RuntimeError('security_completion_authority_advance')
+        settlement['advance']=advance
+        async with controller_finalization(supervisor,attempt,deadline=deadline):
+            observed=ordinary_security_receipt_data(receipt,verifier,deadline=deadline)
+            required={'context','projection','attempt_binding','intent_sha256','inventory_sha256','readback_sha256','witness','encoded_bytes','sha256'}
+            if (set(observed)!=required or observed['context']!=parse_context(security)
+                    or observed['inventory_sha256']!=data['inventory_sha256'] or observed['intent_sha256']!=data['intent_sha256']
+                    or observed['sha256']!=hashlib.sha256(observed['encoded_bytes']).hexdigest()
+                    or observed['readback_sha256']!=observed['sha256']
+                    or observed['witness'][0]!='cragkit.qdrant.security-ordinary-readback.v1'):
+                raise RuntimeError('security_completion_receipt_binding')
+            semantic=hashlib.sha256(json.dumps([observed['witness'][0],*observed['witness'][2:]],ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+            checks.append(COMPLETION_CHECKS[1]);settlement['armed']=True
+            result=await complete_security_replica(writer,verifier,receipt,deadline=deadline)
+        if (result['state']!='complete' or result['action']!='update_authorization' or not result['authority_committed']
+                or not result['replica_complete'] or result['purge_complete'] or result['payload_sha256']!=data['intent_sha256']
+                or await immutable()!=baseline or settlement['updates']!=1):raise RuntimeError('security_completion_flags')
+        checks.append(COMPLETION_CHECKS[2])
+        if (not settlement['fired'] or settlement['confirmations']!=1 or settlement['confirmation_writes']
+                or settlement['confirmation_http'] or settlement['confirmation_source_queries'] or settlement['monitor']):
+            raise RuntimeError('security_completion_confirmation')
+        async with controller_finalization(supervisor,attempt,deadline=deadline):
+            repeated=await complete_security_replica(writer,verifier,receipt,deadline=deadline)
+        if (dict(repeated)!=dict(result) or settlement['updates']!=1 or await immutable()!=baseline
+                or await admin_query('SELECT authorization_revision,mutation_epoch FROM cragkit_qdrant.documents WHERE '+document_where,document_key)!=[('auth-3',3)]):
+            raise RuntimeError('security_completion_history_restored_authority')
+        checks.append(COMPLETION_CHECKS[3])
+        return dict(runtime='python',checks=checks,proof_scope='native_security_completion_only',semantic_witness_sha256=semantic,
+            guard_admission=dict(checks=guard_checks,denied_backend_queries=guard_denied_queries))
     async def dispatch_cases():
         async def allowed(scope,collection,document):
             return scope.tenant_id==owner['scope']['tenant_id'] and collection==owner['collection'] and document==owner['document_id']
@@ -470,7 +539,7 @@ async def python_security_verification_cases(value):
         if (len(before)!=1 or len(after)!=2 or after[0]!=before[0] or after[1][4]!='settled'
                 or type(after[1][5]) is not str or dispatch_fault['upserts']!=count+1):
             raise RuntimeError('security_dispatch_ack_journal')
-        checks.append(DISPATCH_CHECKS[0])
+        if not completion_mode:checks.append(DISPATCH_CHECKS[0])
         async with supervisor.control_session() as control:
             observed=received(await verify(proof,control),control)
             semantic=hashlib.sha256(json.dumps([observed['witness'][0],*observed['witness'][4:]],
@@ -479,6 +548,7 @@ async def python_security_verification_cases(value):
             raise RuntimeError('security_dispatch_retired_settlement')
         settled=await journals()
         if settled[0][4]!='settled' or settled[1]!=after[1]:raise RuntimeError('security_dispatch_settled_wrong_row')
+        if completion_mode:return await completion_cases()
         checks.append(DISPATCH_CHECKS[1])
         count=dispatch_fault['upserts']
         if dict(await dispatch())!=dict(batches=0,points=0) or await journals()!=settled or dispatch_fault['upserts']!=count:
@@ -583,7 +653,7 @@ async def python_security_verification_cases(value):
             await writer.stage(prepare_stage(stage),original_scope,owner_token=token,deadline=deadline)
         await writer.admit_publication(ctx(inputs['stage']['intent']['intent_id'],original_scope),deadline=deadline)
         old_owner=dict((await writer.manager_snapshot(ctx(owner['intent_id'],original_scope),deadline=deadline))['owner'])
-        if settlement_mode or dispatch_mode:
+        if settlement_mode or dispatch_mode or completion_mode:
             old_dispatch='native-security-retired-unknown'
             settlement['attempted']=[old_dispatch]
             attempt=supervisor.issue_attempt(dict(intent_id=owner['intent_id'],owner_token=token,epoch=1,dispatch_id=old_dispatch),deadline=deadline)
@@ -595,7 +665,7 @@ async def python_security_verification_cases(value):
             await writer.mark_unknown(ctx(owner['intent_id'],original_scope),old_dispatch,deadline=deadline)
         result=await writer.apply_security(inputs['security'],original_scope,owner_token=security['owner_token'],deadline=deadline)
         if not result['authority_committed']:raise RuntimeError('security_receipt_authority_not_committed')
-        if settlement_mode or dispatch_mode:
+        if settlement_mode or dispatch_mode or completion_mode:
             denied=await writer.admit_publication(owner,deadline=deadline)
             if denied['intent']['state']!='denied':raise RuntimeError('security_settlement_original_stage_not_denied')
         projection=await writer.project_security(security,deadline=deadline)
@@ -604,7 +674,7 @@ async def python_security_verification_cases(value):
         if (len(data['point_ids'])!=4 or len(data['generations'])!=2 or snapshot['owner']!=old_owner
                 or any(point.payload.authorization_revision!='auth-2' for point in data['points'])):
             raise RuntimeError('security_receipt_current_projection')
-        if not dispatch_mode:checks.append(CHECKS[0])
+        if not dispatch_mode and not completion_mode:checks.append(CHECKS[0])
         proof=await recovery.recover('security-receipt-native',deadline=deadline)
         if operator is not None:
             await operator.open()
@@ -629,13 +699,13 @@ async def python_security_verification_cases(value):
                 advanced=await recovery.advance_owner(proof,owner,deadline=deadline)
                 if dict(advanced)!=dict(owner_token=token,backend_epoch=2):raise RuntimeError('security_guard_owner_advance')
                 guard_checks.append(GUARD_CHECKS[index])
-        if graph_mode or settlement_mode or dispatch_mode:
+        if graph_mode or settlement_mode or dispatch_mode or completion_mode:
             if operator is None:raise RuntimeError('security_graph_requires_profile_four')
             await operator.close();operator=None
-            selected=value['guard_graph_config'] if graph_mode else value['dispatch_config'] if dispatch_mode else value['settlement_config']
+            selected=value['guard_graph_config'] if graph_mode else value['completion_config'] if completion_mode else value['dispatch_config'] if dispatch_mode else value['settlement_config']
             admin=PoolResource(pool_config(selected['admin_config']))
             await admin.open()
-        if dispatch_mode:return await dispatch_cases()
+        if dispatch_mode or completion_mode:return await dispatch_cases()
         async with supervisor.control_session() as control:
             await expect(IntegrityViolation,lambda:verify(proof,control))
             attempt=control.issue_recovery_attempt(proof,dict(intent_id=owner['intent_id'],owner_token=token,
@@ -717,7 +787,7 @@ async def python_security_verification_cases(value):
         failure.primary=error
         raise failure from None
     finally:
-        if settlement_mode or dispatch_mode:supervisor._http=original_http
+        if settlement_mode or dispatch_mode or completion_mode:supervisor._http=original_http
         failures=[]
         cleanup_deadline=asyncio.get_running_loop().time()+12
         if graph_mode:

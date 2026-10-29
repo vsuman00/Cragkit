@@ -1278,3 +1278,14 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory and current TypeScript build. Dispatch mode requires the guard profile and excludes the graph and settlement modes. It runs its own four dispatch checks plus four admission checks per runtime, with three SQL clients and six PostgreSQL slots. Python and Node run serially. It checks actual cross-generation stale/missing replay, genuine receipt and retired settlement, no-op and corrupt-vector refusal, then controlled loss of a completed HTTP acknowledgment. The last case must preserve current-key uncertainty and closed admission without resend. The checker restores instrumentation and closes owned servers/listeners. No provider or hosted target is used.
+
+
+## V5-04G2b2d5b ordinary security handoff and completion
+
+[Handoff evidence](../evaluation/reports/V5/V5-04G2b2d5b.md) covers the initial stage-owner transition and genuine ordinary-security completion. Public and repeated-owner convergence remain separate.
+
+```bash
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_security_verification.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --with-security-guard --security-completion --runtime all --artifacts-dir artifacts/V5/V5-04G2b2d5b/a-new-completion-run
+```
+
+Use a fresh directory and current TypeScript build. Completion mode requires the guard profile and excludes other optional modes. It runs four completion checks plus four admission checks per runtime. It closes the idle recovery SQL resource before opening a contender, retaining three clients and six PostgreSQL slots. The real writer completion COMMIT succeeds before its reply is withheld; a second writer advances authority before read-only confirmation. Immutable history, historical flags, witness parity and cleanup are checked. No provider or hosted target is used.

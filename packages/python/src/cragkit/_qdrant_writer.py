@@ -57,6 +57,20 @@ class SecurityProjection:
 _SECURITY_PROJECTIONS: WeakKeyDictionary[SecurityProjection, tuple[object, Mapping[str, Any]]] = WeakKeyDictionary()
 _GUARDED_WRITERS: WeakKeyDictionary[object, Callable[..., Awaitable[None]]] = WeakKeyDictionary()
 _SECURITY_RECOVERY_SOURCES: WeakKeyDictionary[object, Callable[..., Awaitable[SecurityProjection]]] = WeakKeyDictionary()
+_SECURITY_OWNERS: WeakKeyDictionary[object, Callable[..., Awaitable[Mapping[str, Any]]]] = WeakKeyDictionary()
+_SECURITY_COMPLETERS: WeakKeyDictionary[object, Callable[..., Awaitable[Mapping[str, Any]]]] = WeakKeyDictionary()
+
+
+async def admit_security_owner(writer: object, value: object, *, deadline: float) -> Mapping[str, Any]:
+    writer_binding(writer)
+    if writer not in _SECURITY_OWNERS:raise InvalidRequest()
+    return await _SECURITY_OWNERS[writer](value,deadline=deadline)
+
+
+async def complete_security_replica(writer: object, verifier: object, receipt: object, *, deadline: float) -> Mapping[str, Any]:
+    writer_binding(writer)
+    if writer not in _SECURITY_COMPLETERS:raise InvalidRequest()
+    return await _SECURITY_COMPLETERS[writer](verifier,receipt,deadline=deadline)
 
 
 async def security_recovery_projection(writer: object, value: object, *, deadline: float,
@@ -382,6 +396,18 @@ class PostgresQdrantWriter:
             if writer is None:raise InvalidRequest()
             return await source_fixed(writer,value,deadline=deadline,previous=previous)
         _SECURITY_RECOVERY_SOURCES[self]=source
+        owner_fixed=PostgresQdrantWriter._admit_security_owner
+        complete_fixed=PostgresQdrantWriter._complete_security_replica
+        async def owner(value: object,*,deadline: float) -> Mapping[str,Any]:
+            writer=original()
+            if writer is None:raise InvalidRequest()
+            return await owner_fixed(writer,value,deadline=deadline)
+        async def complete(verifier: object,receipt: object,*,deadline: float) -> Mapping[str,Any]:
+            writer=original()
+            if writer is None:raise InvalidRequest()
+            return await complete_fixed(writer,verifier,receipt,deadline=deadline)
+        _SECURITY_OWNERS[self]=owner
+        _SECURITY_COMPLETERS[self]=complete
 
     async def _query(self, connection: SessionConnection, sql: str,
                      params: tuple[object, ...] = ()) -> list[tuple[Any, ...]]:
@@ -426,7 +452,7 @@ class PostgresQdrantWriter:
     async def _run(self, ctx: WriterContext | None, deadline: float,
                    operation: Callable[[SessionConnection], Awaitable[_T]], *, initializing: bool = False,
                    detect_commit_unknown: bool = False,
-                   guarded_check: Callable[[], object] | None = None) -> _T:
+                   guarded_check: Callable[[], object] | None = None, read_only: bool = False) -> _T:
         deadline = deadline_value(deadline)
         if self._closed or self._active is not None:
             raise ProviderUnavailable()
@@ -449,6 +475,8 @@ class PostgresQdrantWriter:
                         entered = True
                         if guarded_check is not None:
                             connection = cast(SessionConnection,_GuardedWriterConnection(connection,guarded_check))
+                        if read_only:
+                            await connection.execute('SET TRANSACTION READ ONLY')
                         await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
                         await connection.execute('SET LOCAL search_path=pg_catalog')
                         milliseconds = max(1, min(2147483647, int((deadline-asyncio.get_running_loop().time())*1000)))
@@ -2167,6 +2195,107 @@ class PostgresQdrantWriter:
             assert result is not None
             return result
         return await self._run(ctx,deadline,publish)
+
+    async def _admit_security_owner(self, value: object, *, deadline: float) -> Mapping[str, Any]:
+        ctx=context(value)
+        if self._schema_profile != 4:raise UnsupportedCapability()
+        task=asyncio.current_task()
+        def check() -> None:
+            writer_binding(self);deadline_value(deadline)
+            if self._closed or asyncio.current_task() is not task:raise InvalidRequest()
+            if task is not None and task.cancelling():raise asyncio.CancelledError()
+        intended: dict[str,Any]={}
+        async def admit(connection: SessionConnection) -> Mapping[str,Any]:
+            backend=await self._manager_backend(connection,lock=True)
+            prior_owner=await self._manager_owner(connection,ctx,lock=True)
+            if prior_owner is not None and prior_owner['instance_id']!=self.instance_id:raise IntegrityViolation()
+            document=await self._document(connection,ctx)
+            if prior_owner is None and await self._manager_owner(connection,ctx) is not None:raise ProviderUnavailable()
+            graph=await self._security_graph(connection,ctx,document)
+            intent=await self._manager_intent(connection,ctx)
+            if intent is None or intent['action']!='update_authorization' or graph['tombstoned']:
+                raise UnauthorizedScope()
+            if intent['purge_complete']:raise IntegrityViolation()
+            if backend['state']!='open':raise ProviderUnavailable()
+            await self._require_settled(connection,ctx)
+            if intent['state'] not in ('authority_committed','writing','complete'):raise UnauthorizedScope()
+            intended.update(payload_sha256=intent['payload_sha256'],epoch=backend['epoch'],
+                immutable={key:value for key,value in intent.items() if key not in ('state','authority_committed','replica_complete','purge_complete')})
+            if intent['state']=='complete':
+                owner=await self._manager_owner(connection,ctx)
+                if owner is None or (owner['intent_id'],owner['owner_token'],owner['backend_epoch'])!=(ctx.intent_id,ctx.owner_token,backend['epoch']):
+                    raise UnauthorizedScope()
+            else:
+                await connection.execute("UPDATE cragkit_qdrant.publication_intents SET state='writing' WHERE "+_INTENT+" AND state='authority_committed'",_key(ctx))
+                await connection.execute('INSERT INTO cragkit_qdrant.document_owners '
+                    '(tenant_id,collection,document_id,instance_id,intent_id,owner_token,backend_epoch) '
+                    'VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (tenant_id,collection,document_id) '
+                    'DO UPDATE SET intent_id=EXCLUDED.intent_id,owner_token=EXCLUDED.owner_token,backend_epoch=EXCLUDED.backend_epoch',
+                    (*_doc(ctx),self.instance_id,ctx.intent_id,ctx.owner_token,backend['epoch']))
+            return MappingProxyType(dict(owner_token=ctx.owner_token,backend_epoch=backend['epoch']))
+        try:
+            return await self._run(ctx,deadline,admit,guarded_check=check,detect_commit_unknown=True)
+        except _CommitUnknown:
+            async def confirm(connection: SessionConnection) -> Mapping[str,Any]:
+                intent=await self._manager_intent(connection,ctx)
+                owner=await self._manager_owner(connection,ctx)
+                if (intent is None or intent['action']!='update_authorization' or intent['payload_sha256']!=intended.get('payload_sha256')
+                        or {key:value for key,value in intent.items() if key not in ('state','authority_committed','replica_complete','purge_complete')}!=intended.get('immutable')
+                        or not intent['authority_committed'] or intent['state'] not in ('writing','complete')
+                        or owner is None or (owner['instance_id'],owner['intent_id'],owner['owner_token'],owner['backend_epoch'])
+                        !=(self.instance_id,ctx.intent_id,ctx.owner_token,intended.get('epoch'))):raise ProviderUnavailable()
+                return MappingProxyType(dict(owner_token=ctx.owner_token,backend_epoch=intended['epoch']))
+            return await self._run(ctx,deadline,confirm,guarded_check=check,read_only=True)
+
+    async def _complete_security_replica(self, verifier: object, receipt: object, *, deadline: float) -> Mapping[str,Any]:
+        from ._qdrant_security_verification import ordinary_security_receipt_data,security_verifier_supervisor
+        from ._qdrant_publication_worker import require_publication_finalization
+        supervisor=security_verifier_supervisor(verifier,self)
+        data=ordinary_security_receipt_data(receipt,verifier,deadline=deadline)
+        ctx=data['context'];original=security_projection_data(data['projection'],self)
+        if self._schema_profile!=4:raise UnsupportedCapability()
+        intended: dict[str,Any]={}
+        def check() -> None:
+            require_publication_finalization(supervisor,deadline=deadline)
+            ordinary_security_receipt_data(receipt,verifier,deadline=deadline)
+        async def complete(connection: SessionConnection) -> Mapping[str,Any]:
+            # Exact historical completion can be confirmed without restoring old authority.
+            intent=await self._manager_intent(connection,ctx)
+            if intent is None or intent['action']!='update_authorization' or intent['payload_sha256']!=data['intent_sha256']:
+                raise IntegrityViolation()
+            if intent['purge_complete']:raise IntegrityViolation()
+            intended.update({key:value for key,value in intent.items() if key not in ('state','authority_committed','replica_complete','purge_complete')})
+            if intent['state']=='complete' and intent['authority_committed'] and intent['replica_complete'] and not intent['purge_complete']:
+                return MappingProxyType(dict(intent))
+            backend=await self._manager_backend(connection,lock=True)
+            owner=await self._manager_owner(connection,ctx,lock=True)
+            if backend['state']!='open':raise ProviderUnavailable()
+            if any(backend[key]!=data['attempt_binding'][key] for key in ('instance_id','storage_identity','supervisor_id','epoch')):
+                raise UnsupportedCapability()
+            if (backend['epoch']!=data['attempt_binding']['epoch']
+                    or owner is None or (owner['instance_id'],owner['intent_id'],owner['owner_token'],owner['backend_epoch'])
+                    !=(self.instance_id,ctx.intent_id,ctx.owner_token,backend['epoch'])):raise UnauthorizedScope()
+            document=await self._document(connection,ctx)
+            fresh=await self._security_graph(connection,ctx,document)
+            if fresh['tombstoned'] or {k:v for k,v in fresh.items() if k!='points'}!={k:v for k,v in original.items() if k!='points'}:
+                raise UnauthorizedScope()
+            await self._require_settled(connection,ctx)
+            if intent['state']!='writing':raise UnauthorizedScope()
+            await connection.execute("UPDATE cragkit_qdrant.publication_intents SET state='complete',replica_complete=true WHERE "+_INTENT+" AND state='writing' AND authority_committed=true",_key(ctx))
+            result=await self._manager_intent(connection,ctx)
+            if result is None:raise IntegrityViolation()
+            return MappingProxyType(dict(result))
+        try:
+            return await self._run(ctx,deadline,complete,guarded_check=check,detect_commit_unknown=True)
+        except _CommitUnknown:
+            async def confirm(connection: SessionConnection) -> Mapping[str,Any]:
+                result=await self._manager_intent(connection,ctx)
+                if (result is None or result['action']!='update_authorization' or result['payload_sha256']!=data['intent_sha256']
+                        or {key:value for key,value in result.items() if key not in ('state','authority_committed','replica_complete','purge_complete')}!=intended
+                        or result['state']!='complete' or not result['authority_committed'] or not result['replica_complete']
+                        or result['purge_complete']):raise ProviderUnavailable()
+                return MappingProxyType(dict(result))
+            return await self._run(ctx,deadline,confirm,guarded_check=check,read_only=True)
 
     async def apply_security(self, record: object, scope: object, *, owner_token: object, deadline: float) -> Mapping[str, Any]:
         encoded = encode_security_intent(record)

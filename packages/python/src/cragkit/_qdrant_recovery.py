@@ -1573,6 +1573,13 @@ class PostgresQdrantRecovery:
                 security_rows=await self._query(connection,'SELECT action,payload_sha256,authority_committed,instance_id FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_intent(current))
                 if security_rows!=[('update_authorization',source['intent_sha256'],True,physical['instance_id'])]:
                     raise UnauthorizedScope()
+                if plan is not None:
+                    foreign=await self._query(connection,'SELECT 1 FROM cragkit_qdrant.dispatch_journal WHERE '+_DOC+
+                        " AND intent_id<>%s AND state<>'settled' LIMIT 1",_intent(target))
+                    pending=await self._query(connection,'SELECT dispatch_id FROM cragkit_qdrant.dispatch_journal WHERE '+_INTENT+
+                        " AND credential_generation=%s AND dispatch_id<>%s AND state<>'settled' LIMIT 1",
+                        (*_intent(target),physical['credential_generation'],plan['attempt_binding']['dispatch_id']))
+                    if foreign or pending:raise ProviderUnavailable()
                 return row
 
             async def preflight(connection: SessionConnection) -> tuple[int,str]:
@@ -1674,6 +1681,8 @@ class PostgresQdrantRecovery:
                 finally:
                     await handle.close()
                 _dispatch_check(deadline)
+                maximum,state=await transaction(preflight)
+                _dispatch_check(deadline)
                 if not missing:
                     await security_recovery_projection(self._writer,current,deadline=deadline,previous=projection)
                     _dispatch_check(deadline)
@@ -1715,6 +1724,8 @@ class PostgresQdrantRecovery:
                             raise IntegrityViolation()
                         return cast(str,rows[0][7])
                     async def reserve(connection: SessionConnection) -> str:
+                        latest,_=await preflight(connection)
+                        if latest+1!=number:raise ProviderUnavailable()
                         await fences(connection,data)
                         if await exact(connection) is not None:
                             raise IntegrityViolation()

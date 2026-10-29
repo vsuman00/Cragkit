@@ -455,6 +455,9 @@ class Connection:
             db.security_members.append((params[4],params[5],params[6],params[7],params[8]));return Cursor([])
         if sql.startswith('SELECT completion_sha256 FROM cragkit_qdrant.dispatch_journal'):
             return Cursor([(row['completion_sha256'],) for row in db.journals if row['dispatch_id']==params[-1]])
+        if sql.startswith('SELECT dispatch_id FROM cragkit_qdrant.dispatch_journal') and 'credential_generation=%s' in sql:
+            return Cursor([(row['dispatch_id'],) for row in db.journals if not row['foreign']
+                and row['credential_generation']==params[4] and row['dispatch_id']!=params[5] and row['state']!='settled'][:1])
         if sql.startswith('SELECT 1 FROM cragkit_qdrant.dispatch_journal'):
             return Cursor([(1,)] if any(row['foreign'] and row['state']!='settled' for row in db.journals) else [])
         if sql.startswith('SELECT '+implementation._SECURITY_JOURNAL_COLUMNS):
@@ -1594,3 +1597,42 @@ async def test_invalid_reinitialization_deadline_preserves_admitted_profile_with
     before=len(db.calls)
     with pytest.raises(InvalidRequest):await control.initialize(deadline=float('nan'))
     assert control._ready and control._schema_profile==2 and len(db.calls)==before
+
+
+@pytest.mark.parametrize('foreign',[True,False])
+@run_async
+async def test_security_dispatch_late_other_uncertainty_blocks_ack_settlement(monkeypatch,tmp_path,foreign):
+    values,source,handle,events,authorize=await security_dispatch_fixture(monkeypatch,tmp_path)
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=values
+    handle.points=[];original=supervisor._http
+    async def injected(*args,**kwargs):
+        result=await original(*args,**kwargs)
+        if args[1]=='PUT':
+            row=deepcopy(db.journals[0]);row.update(dispatch_id='late-other',sequence=2,foreign=foreign,state='unknown',completion_sha256=None)
+            db.journals.append(row)
+        return result
+    monkeypatch.setattr(supervisor,'_http',injected)
+    with pytest.raises(ProviderUnavailable):
+        await implementation.dispatch_security_recovery(recovery,proof,owner,target,authorize,deadline=asyncio.get_running_loop().time()+5)
+    assert len(events['puts'])==1 and db.journals[0]['state']=='dispatched'
+    assert all(row['completion_sha256'] is None for row in db.journals)
+
+
+@run_async
+async def test_security_dispatch_rereads_sequence_before_reserving_a_batch(monkeypatch,tmp_path):
+    values,source,handle,events,authorize=await security_dispatch_fixture(monkeypatch,tmp_path)
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=values
+    handle.points=[];calls=0
+    async def raced(*args):
+        nonlocal calls
+        calls+=1
+        if calls==2:
+            db.journals.append(dict(dispatch_id='late-retired',instance_id='instance-1',sequence=1,
+                owner_token=owner['owner_token'],backend_epoch=1,credential_generation='credential-1',operation='complete_point_upsert',
+                recovery=True,state='settled',completion_sha256='b'*64,request_sha256='a'*64,foreign=False))
+            db.security_members.append(('late-retired',writer.config.backend_namespace,writer.config.physical_collection,
+                writer.config.collection_incarnation,source['point_ids'][0]))
+        return True
+    with pytest.raises(ProviderUnavailable):
+        await implementation.dispatch_security_recovery(recovery,proof,owner,target,raced,deadline=asyncio.get_running_loop().time()+5)
+    assert not events['puts'] and len(db.journals)==1 and db.journals[0]['dispatch_id']=='late-retired'
