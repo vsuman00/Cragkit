@@ -20,6 +20,14 @@ CHECKS = (
 )
 
 
+GUARD_CHECKS=(
+ 'guard_source_grant_refused_before_backend_binding',
+ 'guard_login_refused_before_backend_binding',
+ 'fifth_history_refused_before_backend_binding',
+ 'extra_definer_refused_before_backend_binding',
+)
+
+
 class NativeSecurityVerificationFailure(RuntimeError):
     def __init__(self, observation):
         super().__init__('security_verification_native_case_failed')
@@ -48,7 +56,7 @@ async def python_security_verification_cases(value):
     import inspect
     import json
     from pathlib import Path
-    from cragkit._postgres_pool import PoolConfig,PoolResource
+    from cragkit._postgres_pool import PoolConfig,PoolResource,_owned_pool
     from cragkit._qdrant_writer import PostgresQdrantWriter,security_projection_data
     from cragkit._qdrant_writer_contract import prepare_stage
     from cragkit._qdrant_reconciliation import QdrantReconciliationVerifier
@@ -66,7 +74,23 @@ async def python_security_verification_cases(value):
         if result.max_size!=1:raise RuntimeError('security_receipt_pool_bound')
         return result
     resource=PoolResource(pool_config(value['writer_config']))
-    supervisor_resource=PoolResource(pool_config(value['supervisor_config']))
+    guard_mode='guard_operator_config' in value
+    guard_count=0
+    class GuardConnection:
+        def __init__(self,actual):self.actual=actual
+        def __getattr__(self,name):return getattr(self.actual,name)
+        async def execute(self,statement,params=None,**options):
+            nonlocal guard_count
+            if type(statement) is str and "set_config('cragkit_qdrant.backend_instance_id'" in statement:guard_count+=1
+            return await self.actual.execute(statement,params,**options)
+    class GuardPool:
+        def __init__(self,configuration):self.actual=_owned_pool(configuration)
+        def __getattr__(self,name):return getattr(self.actual,name)
+        async def getconn(self,**options):return GuardConnection(await self.actual.getconn(**options))
+        async def putconn(self,connection):await self.actual.putconn(connection.actual)
+    supervisor_resource=PoolResource(pool_config(value['supervisor_config']),**({'factory':GuardPool} if guard_mode else {}))
+    operator=PoolResource(pool_config(value['guard_operator_config'])) if guard_mode else None
+    guard_checks=[];guard_denied_queries=0;guard_restore=None
     supervisor=ManagedQdrantSupervisor(Path(value['binary']),Path(value['work_dir']),inputs['instance_id'],inputs['config'])
     writer=PostgresQdrantWriter(resource,inputs['config'],inputs['instance_id'])
     stage_verifier=QdrantReconciliationVerifier(writer,supervisor)
@@ -126,6 +150,29 @@ async def python_security_verification_cases(value):
             raise RuntimeError('security_receipt_current_projection')
         checks.append(CHECKS[0])
         proof=await recovery.recover('security-receipt-native',deadline=deadline)
+        if operator is not None:
+            await operator.open()
+            async def execute_guard(statement):
+                async with operator.lease(deadline=deadline) as connection:
+                    async with connection.transaction():await connection.execute(statement)
+            mutations=(
+                ('GRANT SELECT(canonical_utf8) ON cragkit_qdrant.document_revisions TO cragkit_qdrant_security_guard',
+                 'REVOKE SELECT(canonical_utf8) ON cragkit_qdrant.document_revisions FROM cragkit_qdrant_security_guard'),
+                ('ALTER ROLE cragkit_qdrant_security_guard LOGIN','ALTER ROLE cragkit_qdrant_security_guard NOLOGIN'),
+                ("INSERT INTO cragkit_qdrant.schema_migrations(version,checksum_sha256) VALUES('9999_native_recovery_guard_probe',repeat('0',64))",
+                 "DELETE FROM cragkit_qdrant.schema_migrations WHERE version='9999_native_recovery_guard_probe'"),
+                ("CREATE FUNCTION cragkit_qdrant.native_recovery_guard_probe() RETURNS boolean LANGUAGE sql SECURITY DEFINER AS 'SELECT true'",
+                 'DROP FUNCTION cragkit_qdrant.native_recovery_guard_probe()'),
+            )
+            for index,(apply,undo) in enumerate(mutations):
+                await execute_guard(apply);guard_restore=undo;before=guard_count
+                await expect(UnsupportedCapability,lambda:recovery.advance_owner(proof,owner,deadline=deadline))
+                guard_denied_queries+=guard_count-before
+                if guard_count!=before:raise RuntimeError('security_guard_drift_reached_backend_binding')
+                await execute_guard(undo);guard_restore=None
+                advanced=await recovery.advance_owner(proof,owner,deadline=deadline)
+                if dict(advanced)!=dict(owner_token=token,backend_epoch=2):raise RuntimeError('security_guard_owner_advance')
+                guard_checks.append(GUARD_CHECKS[index])
         async with supervisor.control_session() as control:
             await expect(IntegrityViolation,lambda:verify(proof,control))
             attempt=control.issue_recovery_attempt(proof,dict(intent_id=owner['intent_id'],owner_token=token,
@@ -187,15 +234,25 @@ async def python_security_verification_cases(value):
             if not security_projection_data(final['projection'],writer)['tombstoned']:
                 raise RuntimeError('security_receipt_tombstone_projection')
             checks.append(CHECKS[7])
-        return dict(runtime='python',checks=checks,proof_scope='native_security_receipt_only',semantic_witness_sha256=semantic_sha256)
+        result=dict(runtime='python',checks=checks,proof_scope='native_security_receipt_only',semantic_witness_sha256=semantic_sha256)
+        if guard_mode:result['guard_admission']=dict(checks=guard_checks,denied_backend_queries=guard_denied_queries)
+        return result
     except BaseException as error:
         primary=error
         name=type(error).__name__
-        raise NativeSecurityVerificationFailure(dict(ok=False,step=len(checks),error=name if name in ERRORS else 'internal')) from None
+        failure=NativeSecurityVerificationFailure(dict(ok=False,step=len(checks),error=name if name in ERRORS else 'internal'))
+        failure.primary=error
+        raise failure from None
     finally:
         failures=[]
         cleanup_deadline=asyncio.get_running_loop().time()+12
-        for operation,close in [('verifier_close',verifier.close),('wrong_verifier_close',wrong_verifier.close),
+        if guard_restore is not None and operator is not None:
+            try:
+                async with asyncio.timeout_at(cleanup_deadline):
+                    async with operator.lease(deadline=cleanup_deadline) as connection:
+                        async with connection.transaction():await connection.execute(guard_restore)
+            except BaseException as error:failures.append(dict(operation='catalog_restore',outcome=type(error).__name__ if type(error).__name__ in ERRORS else 'internal'))
+        for operation,close in ([('operator_pool_close',operator.close)] if operator is not None else [])+[('verifier_close',verifier.close),('wrong_verifier_close',wrong_verifier.close),
             ('recovery_close',recovery.close),('writer_close',writer.close),
             ('resource_close',resource.close),('supervisor_resource_close',supervisor_resource.close),('controller_close',supervisor.close)]:
             try:await asyncio.wait_for(close(),min(8,max(.001,cleanup_deadline-asyncio.get_running_loop().time())))

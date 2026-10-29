@@ -46,3 +46,17 @@ def test_native_receipt_failure_details_are_closed_and_copied():
             dict(ok=False,step=0,error='private'),dict(ok=False,step=0,error='internal',message='private'),
             dict(copied,cleanup=[dict(operation='unknown',outcome='internal')])):
         with pytest.raises(RuntimeError):failure_observation(deepcopy(change))
+
+
+def test_guard_mode_evidence_requires_its_closed_checks_without_claiming_settlement():
+    from qdrant_security_verification_cases import GUARD_CHECKS
+    baseline=dict(runtime='python',checks=list(CHECKS),proof_scope='native_security_receipt_only',semantic_witness_sha256='a'*64)
+    guarded=dict(baseline,guard_admission=dict(checks=list(GUARD_CHECKS),denied_backend_queries=0))
+    accepted=validate_result(guarded,'python',security_guard=True)
+    with pytest.raises(RuntimeError):validate_result(guarded,'python')
+    with pytest.raises(RuntimeError):validate_result(baseline,'python',security_guard=True)
+    for change in (dict(checks=[],denied_backend_queries=0),dict(checks=list(GUARD_CHECKS),denied_backend_queries=True),
+            dict(checks=list(GUARD_CHECKS),denied_backend_queries=1),dict(checks=list(GUARD_CHECKS),denied_backend_queries=0,private='source')):
+        with pytest.raises(RuntimeError):validate_result(dict(baseline,guard_admission=change),'python',security_guard=True)
+    guarded['guard_admission']['checks'].clear()
+    assert accepted['guard_admission']['checks']==list(GUARD_CHECKS)

@@ -5,10 +5,12 @@ import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
 import {PostgresQdrantWriter} from '../dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,settlement_data,recovery_components} from '../dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,settlement_data,recovery_components} from '../dist/qdrant-recovery.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
-import {InvalidRequest,UnsupportedCapability,ProviderUnavailable,UnauthorizedScope,IndexNotReady} from '../dist/errors.js';
+import {AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,
+  AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL,publication_schema_profile} from '../dist/qdrant-authority.js';
+import {InvalidRequest,UnsupportedCapability,ProviderUnavailable,UnauthorizedScope,IndexNotReady,DeadlineExceeded} from '../dist/errors.js';
 
 const fixture=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_publication.json',import.meta.url),'utf8'));
 const config={...fixture.physical,dense_profile:fixture.profiles.dense,sparse_profile:fixture.profiles.sparse};
@@ -19,7 +21,8 @@ const context={scope:{tenant_id:'tenant-a',principal_id:'reader-a',grant_ids:[],
 /** These doubles exercise coordinator ordering; actual PostgreSQL/process proof is separate. */
 function setup(){
   const state={backend:null,owner:['instance-1',context.intent_id,context.owner_token,1],role:true,
-    pending:false,lost:false,queries:[],clients:[],physical:0,sealed:false,gate:true,ended:0};
+    pending:false,lost:false,queries:[],clients:[],physical:0,sealed:false,gate:true,ended:0,
+    history:AUTHORITY_PUBLICATION_HISTORY.map(row=>[...row]),catalog:true,fingerprint:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT};
   const pool={async end(){state.ended++;},async connect(){
     const client={status:'I',release(discard){this.discard=discard;},getTransactionStatus(){return this.status;},
       async query(query){
@@ -27,11 +30,12 @@ function setup(){
         state.queries.push(sql);
         if(sql.startsWith('BEGIN')){this.status='T';this.before=structuredClone({backend:state.backend,owner:state.owner});return {rows:[]};}
         if(sql==='ROLLBACK'){Object.assign(state,this.before);this.status='I';return {rows:[]};}
-        if(sql==='COMMIT'){this.status='I';if(state.lost){state.lost=false;throw Object.assign(Error('private'),{code:'08006'});}return {rows:[]};}
-        if(sql===RECOVERY_ROLE_SQL)return {rows:[[state.role]]};
-        if(sql===AUTHORITY_HISTORY_SQL)return {rows:AUTHORITY_PUBLICATION_HISTORY.map(row=>[...row])};
-        if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL)return {rows:[[true]]};
-        if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT]]};
+        if(sql==='COMMIT'){this.status='I';if(state.lost){state.lost=false;state.afterLost?.();throw Object.assign(Error('private'),{code:'08006'});}return {rows:[]};}
+        if(sql===RECOVERY_ROLE_SQL||sql===RECOVERY_SECURITY_GUARD_ROLE_SQL)return {rows:state.roleRows??[[state.role]]};
+        if(sql===AUTHORITY_HISTORY_SQL)return {rows:state.history};
+        if([AUTHORITY_PUBLICATION_CATALOG_SQL,AUTHORITY_ATTESTATION_CATALOG_SQL,AUTHORITY_SECURITY_GUARD_CATALOG_SQL].includes(sql))return {rows:state.catalogRows??[[state.catalog]]};
+        if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
+        if(sql===SECURITY_GUARD_OWNER_SQL){if(state.ownerWait)await state.ownerWait;return {rows:state.ownerRows??[[true]]};}
         if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config'))return {rows:[]};
         if(sql.startsWith('INSERT INTO cragkit_qdrant.backend_instances')){
           state.backend=[p[0],p[1],p[2],p[3],1,'open',null];return {rows:[]};
@@ -309,4 +313,118 @@ test('ordinary authority cannot enter recovery dispatcher or invoke its authoriz
     await assert.rejects(f.coordinator.dispatch_stage_recovery({},context,async()=>{calls++;return true;},options()),UnsupportedCapability);
     assert.equal(calls,0);assert.equal(f.state.queries.length,start);
   }finally{await f.coordinator.close();await f.verifier.close();await f.writer.close();await f.resource.close();}
+});
+
+function guardProfile(f){f.state.history=AUTHORITY_SECURITY_GUARD_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT;}
+function attestProfile(f){f.state.history=AUTHORITY_ATTESTATION_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT;}
+async function closeFixture(f){await f.coordinator.close();await f.verifier.close();await f.writer.close();await f.resource.close();}
+const backendBinding="SELECT set_config('cragkit_qdrant.backend_instance_id'";
+
+test('recovery4 role map adds exactly private guard EXECUTE and no data privileges',()=>{
+ const addition="p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.lock_current_security(text,text,text,text,text,bigint,text,text,text,text,uuid,text,text,text,text,bigint,text[],text[],text,text,text,boolean)') OR\n   ";
+ assert.equal(RECOVERY_SECURITY_GUARD_ROLE_SQL.replace(addition,''),RECOVERY_ROLE_SQL);
+ assert.throws(()=>publication_schema_profile(AUTHORITY_SECURITY_GUARD_HISTORY),UnsupportedCapability);
+});
+
+test('recovery4 admits exact metadata before role and instance binding and preserves proof flow',async()=>{
+ const f=setup();guardProfile(f);
+ try{
+  await f.coordinator.initialize(options());
+  const bindingAt=f.state.queries.findIndex(sql=>sql.startsWith(backendBinding));
+  const roleAt=f.state.queries.indexOf(RECOVERY_SECURITY_GUARD_ROLE_SQL);
+  for(const sql of [AUTHORITY_HISTORY_SQL,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,AUTHORITY_FINGERPRINT_SQL,SECURITY_GUARD_OWNER_SQL])assert.ok(f.state.queries.indexOf(sql)>=0&&f.state.queries.indexOf(sql)<roleAt);
+  assert.ok(roleAt<bindingAt);assert.equal(f.state.queries.includes(RECOVERY_ROLE_SQL),false);
+  const proof=await f.coordinator.recover('recovery-1',options());
+  const result=await f.coordinator.advance_owner(proof,context,options());assert.deepEqual(result,{owner_token:context.owner_token,backend_epoch:2});
+  assert.equal(f.state.physical,1);assert.equal(f.state.ended,0);
+  assert.equal(f.state.queries.some(sql=>/^SELECT cragkit_qdrant\.lock_current_security\(/.test(sql)),false);
+ }finally{await closeFixture(f);}
+});
+
+for(const fault of ['owner_grant','owner_login','catalog','fingerprint','suffix','checksum','downgrade','extra_function','role'])test(`recovery4 ${fault} drift refuses before instance binding`,async()=>{
+ const f=setup();guardProfile(f);
+ try{
+  await f.coordinator.initialize(options());const proof=await f.coordinator.recover('recovery-1',options());
+  if(fault==='owner_grant'||fault==='owner_login')f.state.ownerRows=[[false]];
+  if(fault==='catalog'||fault==='extra_function')f.state.catalog=false;
+  if(fault==='extra_function')f.state.role=false;
+  if(fault==='fingerprint')f.state.fingerprint='wrong';
+  if(fault==='suffix')f.state.history.push(['0005_unknown','f'.repeat(64)]);
+  if(fault==='checksum')f.state.history[3][1]='f'.repeat(64);
+  if(fault==='downgrade')attestProfile(f);
+  if(fault==='role')f.state.role=false;
+  const start=f.state.queries.length;
+  await assert.rejects(f.coordinator.advance_owner(proof,context,options()),fault==='role'?UnauthorizedScope:UnsupportedCapability);
+  assert.equal(f.state.queries.slice(start).some(sql=>sql.startsWith(backendBinding)),false);
+  assert.equal(f.state.owner[3],1);
+  guardProfile(f);f.state.ownerRows=[[true]];f.state.catalog=true;f.state.role=true;
+  assert.equal((await f.coordinator.advance_owner(proof,context,options())).backend_epoch,2);
+ }finally{await closeFixture(f);}
+});
+
+test('recovery profile changes require explicit initialization and sticky4 survives failed reinitialization',async()=>{
+ const f=setup();attestProfile(f);
+ try{
+  await f.coordinator.initialize(options());guardProfile(f);
+  await assert.rejects(f.coordinator.recover('recovery-1',options()),UnsupportedCapability);
+  await f.coordinator.initialize(options());attestProfile(f);
+  await assert.rejects(f.coordinator.initialize(options()),UnsupportedCapability);
+  await assert.rejects(f.coordinator.recover('recovery-1',options()),IndexNotReady);
+  guardProfile(f);f.state.ownerRows=[[false]];await assert.rejects(f.coordinator.initialize(options()),UnsupportedCapability);
+  attestProfile(f);await assert.rejects(f.coordinator.initialize(options()),UnsupportedCapability);
+  guardProfile(f);f.state.ownerRows=[[true]];await f.coordinator.initialize(options());
+ }finally{await closeFixture(f);}
+});
+
+for(const changed of [false,true])test(`recovery4 lost initialization COMMIT ${changed?'changed-history refusal':'read-only exact confirmation'}`,async()=>{
+ const f=setup();guardProfile(f);f.state.lost=true;
+ if(changed)f.state.afterLost=()=>attestProfile(f);
+ try{
+  if(changed)await assert.rejects(f.coordinator.initialize(options()),UnsupportedCapability);else await f.coordinator.initialize(options());
+  const firstCommit=f.state.queries.indexOf('COMMIT'),confirmation=f.state.queries.slice(firstCommit+1);
+  assert.equal(f.state.queries.filter(sql=>sql.startsWith('INSERT INTO cragkit_qdrant.backend_instances')).length,1);
+  assert.equal(confirmation.some(sql=>/^(INSERT|UPDATE|DELETE) /.test(sql)),false);
+  assert.ok(confirmation.includes(AUTHORITY_HISTORY_SQL));
+  if(changed){assert.equal(confirmation.some(sql=>sql.startsWith(backendBinding)),false);await assert.rejects(f.coordinator.recover('recovery-1',options()),IndexNotReady);}
+  else assert.ok(confirmation.includes(SECURITY_GUARD_OWNER_SQL));
+ }finally{await closeFixture(f);}
+});
+
+test('recovery4 rejects malformed native metadata without serialization hooks',async()=>{
+ let hooks=0;const cell={toJSON(){hooks++;return true;}},accessor=[];
+ Object.defineProperty(accessor,'0',{get(){hooks++;return true;},enumerable:true});
+ for(const rows of [[],[[1]],[[cell]],[accessor],new Proxy([[true]],{get(){hooks++;return [];}})]){
+  const f=setup();guardProfile(f);f.state.ownerRows=rows;
+  try{await assert.rejects(f.coordinator.initialize(options()),UnsupportedCapability);assert.equal(f.state.queries.some(sql=>sql.startsWith(backendBinding)),false);}
+  finally{await closeFixture(f);}
+ }
+ assert.equal(hooks,0);
+});
+
+for(const mode of ['cancel','deadline'])test(`recovery4 ${mode} during metadata never binds backend`,async()=>{
+ const f=setup();guardProfile(f);let finish;f.state.ownerWait=new Promise(resolve=>{finish=resolve;});const controller=new AbortController();
+ try{
+  const work=f.coordinator.initialize({deadline:mode==='deadline'?now()+.02:now()+5,signal:controller.signal});
+  const refused=assert.rejects(work,mode==='deadline'?DeadlineExceeded:error=>error.name==='AbortError');
+  await new Promise(resolve=>setImmediate(resolve));if(mode==='cancel')controller.abort();await refused;
+  assert.equal(f.state.queries.some(sql=>sql.startsWith(backendBinding)),false);assert.equal(f.state.ended,0);finish();
+ }finally{finish();await closeFixture(f);}
+});
+
+
+test('initialization session cleanup failure closes readiness while malformed options preserve healthy admission',async()=>{
+ const f=setup();guardProfile(f);const original=f.supervisor.control_session.bind(f.supervisor);let fail=true;
+ f.supervisor.control_session=async body=>{
+  const result=await original(body);
+  if(fail){fail=false;throw new ProviderUnavailable();}
+  return result;
+ };
+ try{
+  await assert.rejects(f.coordinator.initialize(options()),ProviderUnavailable);
+  await assert.rejects(f.coordinator.recover('recovery-1',options()),IndexNotReady);
+  await f.coordinator.initialize(options());const before=f.state.queries.length;
+  await assert.rejects(f.coordinator.initialize({deadline:NaN}),InvalidRequest);
+  assert.equal(f.state.queries.length,before);
+  await f.coordinator.recover('recovery-1',options());assert.equal(f.state.physical,1);
+ }finally{await closeFixture(f);}
 });

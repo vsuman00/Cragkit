@@ -16,6 +16,8 @@ from ._qdrant_authority import (
     _CATALOG_FINGERPRINT_SQL, _HISTORY_SQL, _PUBLICATION_CATALOG_SQL,
     EXPECTED_PUBLICATION_CATALOG_FINGERPRINT, EXPECTED_PUBLICATION_HISTORY,
     EXPECTED_ATTESTATION_CATALOG_FINGERPRINT, EXPECTED_ATTESTATION_HISTORY, _ATTESTATION_CATALOG_SQL,
+    EXPECTED_SECURITY_GUARD_HISTORY, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT,
+    _SECURITY_GUARD_CATALOG_SQL, _SECURITY_GUARD_OWNER_SQL,
 )
 from ._qdrant_reconciliation import (
     QdrantReconciliationVerifier, physical_binding, receipt_data, verifier_authority,
@@ -95,6 +97,11 @@ SELECT current_user=session_user
    p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.supervisor_instance(text)') OR
    p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.lock_publication_owner(text,text,text,text,uuid,bigint,boolean)')))
 """
+_SECURITY_GUARD_SIGNATURE = 'cragkit_qdrant.lock_current_security(text,text,text,text,text,bigint,text,text,text,text,uuid,text,text,text,text,bigint,text[],text[],text,text,text,boolean)'
+_SUPERVISOR_SECURITY_GUARD_ROLE_SQL = _SUPERVISOR_ROLE_SQL.replace(
+    "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR",
+    "p.oid IS NOT DISTINCT FROM to_regprocedure('" + _SECURITY_GUARD_SIGNATURE + "') OR\n"
+    "   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR")
 
 
 class _RecoveryId(_Model):
@@ -256,6 +263,8 @@ class PostgresQdrantRecovery:
         self.verifier = verifier
         self._identity: Mapping[str, Any] | None = None
         self._ready = False
+        self._schema_profile = 2
+        self._security_guard_admitted = False
         self._closed = False
         self._active: asyncio.Task[Any] | None = None
         self._scoped_control: _ScopedControl | None = None
@@ -275,6 +284,7 @@ class PostgresQdrantRecovery:
         if not initialize and not self._ready:
             raise IndexNotReady()
         self._active = asyncio.current_task()
+        completed = False
         try:
             async with asyncio.timeout_at(deadline):
                 async with self.supervisor.control_session() as scoped:
@@ -283,6 +293,7 @@ class PostgresQdrantRecovery:
                         yield
                     finally:
                         self._scoped_control = None
+            completed = True
         except asyncio.CancelledError:
             raise
         except TimeoutError:
@@ -290,6 +301,8 @@ class PostgresQdrantRecovery:
         except Exception as error:
             raise _error(error, deadline) from None
         finally:
+            if initialize and not completed:
+                self._ready = False
             self._active = None
 
     async def _query(self, connection: SessionConnection, sql: str,
@@ -300,8 +313,41 @@ class PostgresQdrantRecovery:
             raise IntegrityViolation()
         return rows
 
+    @staticmethod
+    def _history_profile(rows: list[tuple[Any, ...]]) -> int:
+        if (type(rows) is not list or len(rows) not in (2, 3, 4)
+                or any(type(row) is not tuple or len(row) != 2
+                       or any(type(value) is not str for value in row) for row in rows)):
+            raise UnsupportedCapability()
+        for profile, history in ((2, EXPECTED_PUBLICATION_HISTORY),
+                                 (3, EXPECTED_ATTESTATION_HISTORY),
+                                 (4, EXPECTED_SECURITY_GUARD_HISTORY)):
+            if rows == list(history):
+                return profile
+        raise UnsupportedCapability()
+
+    async def _catalog_profile(self, connection: SessionConnection, profile: int) -> None:
+        catalog, fingerprint = {
+            2: (_PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT),
+            3: (_ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT),
+            4: (_SECURITY_GUARD_CATALOG_SQL, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT),
+        }[profile]
+        checks: list[tuple[str, object]] = [(catalog, True), (_CATALOG_FINGERPRINT_SQL, fingerprint)]
+        if profile == 4:
+            checks.append((_SECURITY_GUARD_OWNER_SQL, True))
+        for sql, expected in checks:
+            try:
+                rows = await self._query(connection, sql)
+            except IntegrityViolation:
+                raise UnsupportedCapability() from None
+            if (type(rows) is not list or len(rows) != 1 or type(rows[0]) is not tuple
+                    or len(rows[0]) != 1 or type(rows[0][0]) is not type(expected)
+                    or rows[0][0] != expected):
+                raise UnsupportedCapability()
+
     async def _transaction(self, deadline: float,
-                           action: Callable[[SessionConnection], Awaitable[_T]]) -> _T:
+                           action: Callable[[SessionConnection], Awaitable[_T]], *,
+                           initializing: bool = False) -> _T:
         async with self.resource.lease(deadline=deadline) as leased:
             connection = cast(SessionConnection, leased)
             if connection.info.transaction_status != 0:
@@ -320,8 +366,26 @@ class PostgresQdrantRecovery:
                     (deadline - asyncio.get_running_loop().time()) * 1000)))
                 await connection.execute("SELECT set_config('statement_timeout',%s,true)",
                                          (str(milliseconds),))
-                if await self._query(connection, _SUPERVISOR_ROLE_SQL) != [(True,)]:
+                try:
+                    profile = self._history_profile(await self._query(connection, _HISTORY_SQL))
+                except IntegrityViolation:
+                    raise UnsupportedCapability() from None
+                if ((self._security_guard_admitted and profile != 4)
+                        or (not initializing and profile != self._schema_profile)):
+                    raise UnsupportedCapability()
+                if initializing or profile == 4:
+                    await self._catalog_profile(connection, profile)
+                role_sql = _SUPERVISOR_SECURITY_GUARD_ROLE_SQL if profile == 4 else _SUPERVISOR_ROLE_SQL
+                try:
+                    role = await self._query(connection, role_sql)
+                except IntegrityViolation:
+                    raise UnsupportedCapability() from None
+                if (type(role) is not list or len(role) != 1 or type(role[0]) is not tuple
+                        or len(role[0]) != 1 or role[0][0] is not True):
                     raise UnauthorizedScope()
+                if initializing:
+                    # Keep lost-COMMIT confirmation bound to this exact profile.
+                    self._schema_profile = profile
                 if self._identity is not None:
                     await connection.execute(
                         "SELECT set_config('cragkit_qdrant.backend_instance_id',%s,true)",
@@ -431,6 +495,10 @@ class PostgresQdrantRecovery:
             raise ProviderUnavailable()
 
     async def initialize(self, *, deadline: float) -> None:
+        if self._closed or self._active is not None:
+            raise ProviderUnavailable()
+        deadline_value(deadline)
+        self._ready = False
         async with self._operation(deadline, initialize=True):
             local = dict(self.supervisor.control_binding())
             if local['backend_namespace'] != self.config.backend_namespace:
@@ -438,17 +506,6 @@ class PostgresQdrantRecovery:
             self._identity = MappingProxyType({key: local[key] for key in
                 ('instance_id', 'storage_identity', 'supervisor_id')})
             async def install(connection: SessionConnection) -> bool:
-                history = await self._query(connection, _HISTORY_SQL)
-                if history == list(EXPECTED_PUBLICATION_HISTORY):
-                    catalog, fingerprint = _PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
-                elif history == list(EXPECTED_ATTESTATION_HISTORY):
-                    catalog, fingerprint = _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
-                else:
-                    raise UnsupportedCapability()
-                if await self._query(connection, catalog) != [(True,)]:
-                    raise UnsupportedCapability()
-                if await self._query(connection, _CATALOG_FINGERPRINT_SQL) != [(fingerprint,)]:
-                    raise UnsupportedCapability()
                 rows = await self._query(connection,
                     'SELECT instance_id FROM cragkit_qdrant.backend_instances WHERE instance_id=%s',
                     (local['instance_id'],))
@@ -466,7 +523,7 @@ class PostgresQdrantRecovery:
                 self._compatible_local(backend, local)
                 return bool(backend['state'] == 'recovery_blocked')
             try:
-                blocked = await self._transaction(deadline, install)
+                blocked = await self._transaction(deadline, install, initializing=True)
             except _CommitUnknown:
                 # The same exact registration is safe to inspect; no second INSERT.
                 async def confirm(connection: SessionConnection) -> bool:
@@ -476,6 +533,7 @@ class PostgresQdrantRecovery:
                 blocked = await self._transaction(deadline, confirm)
             if blocked:
                 self._control().block_ordinary()
+            self._security_guard_admitted = self._security_guard_admitted or self._schema_profile == 4
             self._ready = True
 
     async def recover(self, recovery_id: object, *, deadline: float) -> object:

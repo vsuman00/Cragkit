@@ -20,6 +20,12 @@ const CHECKS=Object.freeze([
   'superseding_source_authority_invalidates_receipt_projection',
   'tombstone_receipt_requires_exact_scoped_absence',
 ]);
+const GUARD_CHECKS=Object.freeze([
+  'guard_source_grant_refused_before_backend_binding',
+  'guard_login_refused_before_backend_binding',
+  'fifth_history_refused_before_backend_binding',
+  'extra_definer_refused_before_backend_binding',
+]);
 const ERRORS=new Set(['IntegrityViolation','InvalidRequest','ProviderUnavailable','UnauthorizedScope','UnsupportedCapability','DeadlineExceeded','IndexNotReady','AbortError']);
 const OWNER='00000000-0000-4000-8000-000000000001',SECURITY='00000000-0000-4000-8000-000000000002';
 const cancellation=new AbortController();let readingInput=true,step=0;
@@ -33,7 +39,9 @@ async function input(){
   const chunks=[];let size=0;
   for await(const chunk of process.stdin){size+=chunk.length;if(size>1048576)throw new Error('bounded_input');chunks.push(chunk);}
   const value=decode(Buffer.concat(chunks));
-  if(!value||typeof value!=='object'||Array.isArray(value)||!same(Object.keys(value).sort(),['binary','inputs','supervisor_config','work_dir','writer_config'])
+  if(!value||typeof value!=='object'||Array.isArray(value)||!same(Object.keys(value).sort(),
+      (Object.hasOwn(value,'guard_operator_config')?['binary','guard_operator_config','inputs','supervisor_config','work_dir','writer_config']:
+        ['binary','inputs','supervisor_config','work_dir','writer_config']))
     ||typeof value.binary!=='string'||typeof value.work_dir!=='string'||!value.inputs?.second_stage||!value.inputs?.security||!value.inputs?.tombstone)throw new Error('input_shape');
   return value;
 }
@@ -53,13 +61,30 @@ async function cases(value){
   const {inputs}=value,writerConfig=parse_pool_config(value.writer_config),supervisorConfig=parse_pool_config(value.supervisor_config);
   if(writerConfig.max_size!==1||supervisorConfig.max_size!==1)throw new Error('two_client_ceiling');
   const options={deadline:now()+120,signal:cancellation.signal};
-  const resource=new PoolResource(writerConfig),supervisorResource=new PoolResource(supervisorConfig);
+  const guarded=Object.hasOwn(value,'guard_operator_config');
+  let backendQueries=0,deniedBackendQueries=0,activeRestore;
+  const factoryResource=guarded?new PoolResource(supervisorConfig):undefined;
+  const defaultFactory=factoryResource?.factory;
+  if(guarded&&typeof defaultFactory!=='function')throw new Error('native_factory_unavailable');
+  const resource=new PoolResource(writerConfig),supervisorResource=new PoolResource(supervisorConfig,guarded?{factory:async config=>{
+    const actual=await defaultFactory(config);
+    return {async connect(){
+      const client=await actual.connect();
+      return {query(query){
+        if(typeof query?.text==='string'&&query.text.includes("set_config('cragkit_qdrant.backend_instance_id'"))backendQueries++;
+        return client.query(query);
+      },getTransactionStatus(){return client.getTransactionStatus();},release(destroy){client.release(destroy);}};
+    },end(){return actual.end();}};
+  }}:{});
+  const operatorConfig=guarded?parse_pool_config(value.guard_operator_config):undefined;
+  if(operatorConfig&&operatorConfig.max_size!==1)throw new Error('operator_client_ceiling');
+  const operator=operatorConfig?new PoolResource(operatorConfig):undefined;
   const writer=new PostgresQdrantWriter(resource,inputs.config,inputs.instance_id);
   const supervisor=new ManagedQdrantSupervisor(value.binary,value.work_dir,inputs.instance_id,inputs.config);
   const reconciliation=new QdrantReconciliationVerifier(writer,supervisor);
   const recovery=new PostgresQdrantRecovery(supervisorResource,inputs.config,supervisor,reconciliation);
   const verifier=new QdrantSecurityVerifier(writer,supervisor),other=new QdrantSecurityVerifier(writer,supervisor);
-  const target='/collections/'+inputs.config.physical_collection,checks=[];
+  const target='/collections/'+inputs.config.physical_collection,checks=[],guardChecks=[];
   const mark=()=>{checks.push(CHECKS[checks.length]);step=checks.length;};
   const base={collection:inputs.stage.manifest.collection,document_id:inputs.stage.manifest.document_id};
   const context=(scope,intent,owner)=>({...base,scope,intent_id:intent,owner_token:owner});
@@ -99,6 +124,36 @@ async function cases(value){
       ||source.points.some(point=>point.payload.authorization_revision!=='auth-2')||state.owner?.owner_token!==OWNER||state.owner?.intent_id!==owner.intent_id)throw new Error('current_projection');
     mark();
     const proof=await recovery.recover('security-receipt-native',options);
+    if(guarded){
+      await operator.open();
+      const execute=(text,values=[],selected=options)=>operator.withLease(selected,client=>client.query({text,values,rowMode:'array'}));
+      async function mutation(apply,restore,applyValues=[],restoreValues=[]){
+        await execute(apply,applyValues);
+        activeRestore=()=>execute(restore,restoreValues,{deadline:now()+5});
+        let failure;
+        try{
+          const before=backendQueries;
+          await refuses(()=>recovery.advance_owner(proof,owner,options),UnsupportedCapability);
+          deniedBackendQueries+=backendQueries-before;
+          if(backendQueries!==before)throw new Error('guard_fault_reached_backend_binding');
+        }catch(error){failure=error;}
+        try{await activeRestore();}
+        catch(error){throw new RuntimeCleanupFailure(failure,[{operation:'catalog_restore',outcome:outcome(error)}]);}
+        activeRestore=undefined;
+        if(failure)throw failure;
+        const before=backendQueries,advanced=await recovery.advance_owner(proof,owner,options);
+        if(!same(advanced,{owner_token:OWNER,backend_epoch:2})||backendQueries!==before+1)throw new Error('guard_owner_restoration');
+        guardChecks.push(GUARD_CHECKS[guardChecks.length]);
+      }
+      await mutation('GRANT SELECT(canonical_utf8) ON cragkit_qdrant.document_revisions TO cragkit_qdrant_security_guard',
+        'REVOKE SELECT(canonical_utf8) ON cragkit_qdrant.document_revisions FROM cragkit_qdrant_security_guard');
+      await mutation('ALTER ROLE cragkit_qdrant_security_guard LOGIN','ALTER ROLE cragkit_qdrant_security_guard NOLOGIN');
+      await mutation('INSERT INTO cragkit_qdrant.schema_migrations(version,checksum_sha256) VALUES($1,$2)',
+        'DELETE FROM cragkit_qdrant.schema_migrations WHERE version=$1 AND checksum_sha256=$2',
+        ['9999_native_guard_recovery_probe','0'.repeat(64)],['9999_native_guard_recovery_probe','0'.repeat(64)]);
+      await mutation("CREATE FUNCTION cragkit_qdrant.native_guard_recovery_probe() RETURNS boolean LANGUAGE SQL SECURITY DEFINER AS 'SELECT true'",
+        'DROP FUNCTION cragkit_qdrant.native_guard_recovery_probe()');
+    }
     await supervisor.control_session(async control=>{
       oldControl=control;
       const attempt=control.issue_recovery_attempt(proof,{intent_id:owner.intent_id,owner_token:OWNER,epoch:2,
@@ -140,12 +195,18 @@ async function cases(value){
       const tombData=security_receipt_data(tombReceipt,verifier,control,options);
       if(!security_projection_data(tombData.projection,writer).tombstoned||tombData.point_ids.length!==4)throw new Error('tombstone_receipt');mark();
     });
-    return {runtime:'typescript',checks,proof_scope:'native_security_receipt_only',semantic_witness_sha256:semanticWitnessSha256};
+    return {runtime:'typescript',checks,proof_scope:'native_security_receipt_only',semantic_witness_sha256:semanticWitnessSha256,
+      ...(guarded?{guard_admission:{checks:guardChecks,denied_backend_queries:deniedBackendQueries}}:{})};
   }catch(error){primary=error;throw error;}
   finally{
     const failures=[],deadline=now()+12;
+    if(activeRestore){
+      try{await bounded(Promise.resolve().then(activeRestore),{deadline:Math.max(now()+.001,Math.min(now()+5,deadline))});}
+      catch(error){failures.push({operation:'catalog_restore',outcome:outcome(error)});}
+    }
     for(const [operation,owned]of [['verifier_close',verifier],['wrong_verifier_close',other],['reconciliation_close',reconciliation],
-      ['recovery_close',recovery],['writer_close',writer],['resource_close',resource],['supervisor_resource_close',supervisorResource],['controller_close',supervisor]]){
+      ['recovery_close',recovery],['writer_close',writer],['resource_close',resource],['supervisor_resource_close',supervisorResource],
+      ...(operator?[['operator_pool_close',operator]]:[]),...(factoryResource?[['factory_pool_close',factoryResource]]:[]),['controller_close',supervisor]]){
       try{await bounded(Promise.resolve().then(()=>owned.close()),{deadline:Math.max(now()+.001,Math.min(now()+8,deadline))});}catch(error){failures.push({operation,outcome:outcome(error)});}
     }
     if(address){try{await listener(address,true);}catch(error){failures.push({operation:'listener_close',outcome:outcome(error)});}}

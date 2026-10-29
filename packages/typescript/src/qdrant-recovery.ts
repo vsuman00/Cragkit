@@ -7,7 +7,8 @@ import { QdrantReconciliationVerifier, receipt_data, verifier_authority, inspect
 import { projection_data, writer_binding, recovery_dispatch_plan_data, type RecoveryDispatchPlanData, type PostgresQdrantWriter } from './qdrant-writer.js';
 import { AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY, AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL, EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
-  AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,publication_schema_profile,type PublicationSchemaProfile } from './qdrant-authority.js';
+  AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT,
+  AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL } from './qdrant-authority.js';
 import { same, parse_response, type QdrantConfig } from './qdrant-contract.js';
 import { config as parse_config, context as parse_context, options as parse_options, fields, metadata,
   native_array, text, count, db_count, uuid, digest, hash, type Data, type WriterContext } from './qdrant-writer-contract.js';
@@ -118,6 +119,22 @@ export const RECOVERY_ROLE_SQL = `SELECT current_user=session_user
    p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.supervisor_instance(text)') OR
    p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.lock_publication_owner(text,text,text,text,uuid,bigint,boolean)')))`;
 
+/** Exact legacy role map with only SG-r2's private guard execution added. */
+export const RECOVERY_SECURITY_GUARD_ROLE_SQL=RECOVERY_ROLE_SQL.replace(
+  "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR",
+  "p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.lock_current_security(text,text,text,text,text,bigint,text,text,text,text,uuid,text,text,text,text,bigint,text[],text[],text,text,text,boolean)') OR\n   p.oid IS NOT DISTINCT FROM to_regprocedure('cragkit_qdrant.valid_identity_array(text[])') OR");
+type RecoverySchemaProfile='publication'|'attestation'|'security_guard';
+function recovery_profile(history:unknown):RecoverySchemaProfile{
+  try{
+    const rows=native_array(history,1,4).map(row=>native_array(row,2,2).map(value=>{
+      if(typeof value!=='string')throw new UnsupportedCapability();return value;
+    }));
+    if(same(rows,AUTHORITY_PUBLICATION_HISTORY))return 'publication';
+    if(same(rows,AUTHORITY_ATTESTATION_HISTORY))return 'attestation';
+    if(same(rows,AUTHORITY_SECURITY_GUARD_HISTORY))return 'security_guard';
+  }catch(error){if(!(error instanceof InvalidRequest))throw error;}
+  throw new UnsupportedCapability();
+}
 class CommitUnknown extends Error {}
 function safe(error:unknown,deadline:number):Error {
   if (error instanceof DeadlineExceeded) return new DeadlineExceeded();
@@ -164,7 +181,8 @@ export class PostgresQdrantRecovery {
   readonly #writer:PostgresQdrantWriter;
   #identity?:Data;
   #ready=false;
-  #profile:PublicationSchemaProfile|null=null;
+  #profile:RecoverySchemaProfile|null=null;
+  #securityGuardAdmitted=false;
   #closed=false;
   #active?:Readonly<{controller:AbortController;done:Promise<void>}>;
   #closing?:Promise<void>;
@@ -196,14 +214,14 @@ export class PostgresQdrantRecovery {
     try {
       return await this.#supervisor.control_session(control=>body({deadline:options.deadline,signal:controller.signal},control));
     }
-    catch (error) { throw safe(error,options.deadline); }
+    catch (error) { if(initializing)this.#ready=false;throw safe(error,options.deadline); }
     finally {
       options.signal?.removeEventListener('abort',relay);
       this.#active=undefined;
       finish();
     }
   }
-  async #tx<T>(instance_id:string,options:LeaseOptions,body:(tx:Tx)=>Promise<T>):Promise<T> {
+  async #tx<T>(instance_id:string,options:LeaseOptions,body:(tx:Tx,profile:RecoverySchemaProfile)=>Promise<T>,initializing=false,expectedProfile?:RecoverySchemaProfile):Promise<T> {
     return this.#resource.withLease(options,async(client,signal)=>{
       const lease={deadline:options.deadline,signal};
       let status:string|null;
@@ -225,10 +243,27 @@ export class PostgresQdrantRecovery {
         await bounded(client.query({text:'BEGIN ISOLATION LEVEL READ COMMITTED',rowMode:'array'}),lease);
         begun=true;
         await bounded(client.query({text:'SET LOCAL search_path=pg_catalog',rowMode:'array'}),lease);
-        const role=await tx.query(RECOVERY_ROLE_SQL,undefined,1);
+        let profile:RecoverySchemaProfile;
+        try{profile=recovery_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,5));}
+        catch(error){if(error instanceof IntegrityViolation)throw new UnsupportedCapability();throw error;}
+        if(this.#securityGuardAdmitted&&profile!=='security_guard'||!initializing&&profile!==this.#profile
+          ||expectedProfile!==undefined&&profile!==expectedProfile)throw new UnsupportedCapability();
+        if(initializing||profile==='security_guard'){
+          const catalog=profile==='security_guard'?AUTHORITY_SECURITY_GUARD_CATALOG_SQL:profile==='attestation'?AUTHORITY_ATTESTATION_CATALOG_SQL:AUTHORITY_PUBLICATION_CATALOG_SQL;
+          const fingerprint=profile==='security_guard'?EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT:profile==='attestation'?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;
+          const checks:readonly (readonly [string,boolean|string])[]=[[catalog,true],[AUTHORITY_FINGERPRINT_SQL,fingerprint],...(profile==='security_guard'?[[SECURITY_GUARD_OWNER_SQL,true] as const]:[])];
+          for(const [sql,expected] of checks){
+            let rows:unknown[][];
+            try{rows=await tx.query(sql,undefined,1);}catch(error){if(error instanceof IntegrityViolation)throw new UnsupportedCapability();throw error;}
+            if(rows.length!==1||rows[0].length!==1||rows[0][0]!==expected)throw new UnsupportedCapability();
+          }
+        }
+        let role:unknown[][];
+        try{role=await tx.query(profile==='security_guard'?RECOVERY_SECURITY_GUARD_ROLE_SQL:RECOVERY_ROLE_SQL,undefined,1);}
+        catch(error){if(error instanceof IntegrityViolation)throw new UnsupportedCapability();throw error;}
         if (role.length!==1||role[0].length!==1||role[0][0]!==true) throw new UnauthorizedScope();
         await tx.query("SELECT set_config('cragkit_qdrant.backend_instance_id',$1,true)",[instance_id],1);
-        const value=await body(tx);
+        const value=await body(tx,profile);
         parse_options(options);
         committing=true;
         await bounded(client.query({text:'COMMIT',rowMode:'array'}),lease);
@@ -256,11 +291,13 @@ export class PostgresQdrantRecovery {
       }
     });
   }
-  async #commit<T>(instance:string,options:LeaseOptions,body:(tx:Tx)=>Promise<T>,readback:(tx:Tx)=>Promise<T>):Promise<T> {
-    try { return await this.#tx(instance,options,body); }
+  async #commit<T>(instance:string,options:LeaseOptions,body:(tx:Tx,profile:RecoverySchemaProfile)=>Promise<T>,readback:(tx:Tx,profile:RecoverySchemaProfile)=>Promise<T>,initializing=false):Promise<T> {
+    let attempted:RecoverySchemaProfile|undefined;
+    try { return await this.#tx(instance,options,(tx,profile)=>{attempted=profile;return body(tx,profile);},initializing); }
     catch (error) {
       if (!(error instanceof CommitUnknown)) throw error;
-      return this.#tx(instance,options,readback);
+      if(attempted===undefined)throw new ProviderUnavailable();
+      return this.#tx(instance,options,readback,initializing,attempted);
     }
   }
   async #backend(tx:Tx,instance:string,lock?:'SHARE'|'UPDATE',absent=false):Promise<Backend|null> {
@@ -306,10 +343,11 @@ export class PostgresQdrantRecovery {
     const options=parse_options(rawOptions);
     await this.#work(options,async (lease,session)=>{
       this.#ready=false;this.#profile=null;
-      let selected:PublicationSchemaProfile|null=null;
+      let selected:RecoverySchemaProfile|null=null;
       const local=control(this.#supervisor);
       if (local.backend_namespace!==this.#config.backend_namespace) throw new UnsupportedCapability();
-      const verify=async(tx:Tx)=>{
+      const verify=async(tx:Tx,profile:RecoverySchemaProfile)=>{
+        if(selected!==null&&profile!==selected)throw new UnsupportedCapability();
         const backend=await this.#backend(tx,String(local.instance_id));
         this.#identityMatches(backend!,local);
         if (local.recovery===null) {
@@ -327,26 +365,21 @@ export class PostgresQdrantRecovery {
         }
         return backend!;
       };
-      const verified=await this.#commit(String(local.instance_id),lease,async tx=>{
-        selected=publication_schema_profile(await tx.query(AUTHORITY_HISTORY_SQL,undefined,4));
-        const catalog=selected==='attestation'?AUTHORITY_ATTESTATION_CATALOG_SQL:AUTHORITY_PUBLICATION_CATALOG_SQL;
-        const fingerprint=selected==='attestation'?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;
-        for (const [sql,expected] of [[catalog,true],[AUTHORITY_FINGERPRINT_SQL,fingerprint]] as const) {
-          const rows=await tx.query(sql,undefined,1);
-          if (rows.length!==1||rows[0].length!==1||rows[0][0]!==expected) throw new UnsupportedCapability();
-        }
+      const verified=await this.#commit(String(local.instance_id),lease,async(tx,profile)=>{
+        selected=profile;
         const existing=await this.#backend(tx,String(local.instance_id),undefined,true);
         if (!existing) {
           if (local.epoch!==1||local.recovery!==null||local.sealed||!local.alive) throw new ProviderUnavailable();
           await tx.query('INSERT INTO cragkit_qdrant.backend_instances(instance_id,backend_namespace,storage_identity,supervisor_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',
             [local.instance_id,local.backend_namespace,local.storage_identity,local.supervisor_id],0);
         }
-        return verify(tx);
-      },verify);
+        return verify(tx,profile);
+      },verify,true);
       if (verified.state==='recovery_blocked') session.block_ordinary();
       this.#identity=local;
       if(selected===null)throw new UnsupportedCapability();
       this.#profile=selected;this.#ready=true;
+      if(selected==='security_guard')this.#securityGuardAdmitted=true;
     },true);
   }
   async recover(rawRecovery:unknown,rawOptions:unknown):Promise<unknown> {
@@ -515,7 +548,7 @@ export class PostgresQdrantRecovery {
     const context=parse_context(rawContext),options=parse_options(rawOptions),budget=verification_budget(inputBudget);
     if(typeof authorize!=='function'||types.isProxy(authorize))throw new InvalidRequest();
     return this.#work(options,async(lease,session)=>{
-      if(this.#profile!=='attestation')throw new UnsupportedCapability();
+      if(this.#profile!=='attestation'&&this.#profile!=='security_guard')throw new UnsupportedCapability();
       const lifetime={active:true};let inspection:ReturnType<SupervisorControlSession['recovery_transport_for']>|undefined;
       const authorizeCurrent=async()=>{
         parse_options(lease);const pending=authorize(context.scope,context.collection,context.document_id);

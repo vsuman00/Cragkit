@@ -1232,3 +1232,16 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory and the current TypeScript build. Python and Node run serially on separate disposable PostgreSQL 17 fixtures, with one writer and one operator client plus the parent admin. The explicit development profile uses a 120-second business deadline, twelve-second cleanup allowance and 175-second outer runtime limit. It reconstructs a synthetic complete security projection, rejects committed metadata faults before writer scope binding, restores owned changes and verifies resource cleanup. No Qdrant service, provider, hosted write or migration on import is involved.
+
+
+## V5-04G2b2d2b2 native profile-4 recovery admission
+
+[Recovery admission evidence](../evaluation/reports/V5/V5-04G2b2d2b2.md) completes the source/writer/recovery admission foundation. Guarded graph validation and security settlement remain separate.
+
+Add `--with-security-guard` to the existing native receipt checker to explicitly install 0004 under the disposable fixture operator. Omit it to retain the original three-migration mode.
+
+```bash
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_security_verification.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --with-security-guard --runtime all --artifacts-dir artifacts/V5/V5-04G2b2d2b2/a-new-recovery-run
+```
+
+Use a fresh directory and the current TypeScript build. Guard mode uses three runtime clients (writer/supervisor/operator), releases the parent admin and provides six PostgreSQL slots. It preserves the existing 120-second business and twelve-second cleanup profile and serial runtime execution. The optional result reports four metadata fault checks and zero denied-path backend bindings separately from the eight receipt checks. Restored faults allow idempotent owner advance; the guard function itself is not invoked. Actual listener/process cleanup and stable witness parity are checked. No provider or hosted target is used.

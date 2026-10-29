@@ -18,7 +18,7 @@ from cragkit._qdrant_supervisor import ManagedQdrantSupervisor, _Proof
 from cragkit._qdrant_writer import PostgresQdrantWriter
 from cragkit._qdrant_writer_contract import context
 from cragkit.errors import (
-    IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope,
+    IndexNotReady, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope,
     UnsupportedCapability,
 )
 from test_qdrant_writer import FIXTURE, config, ctx
@@ -319,7 +319,12 @@ class Database:
         self.active_leases = 0
         self.role = True
         self.history = list(implementation.EXPECTED_PUBLICATION_HISTORY)
+        self.fingerprint = implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
+        self.catalog = [(True,)]
+        self.guard_owner = [(True,)]
+        self.metadata = {}
         self.drop_next_commit = False
+        self.after_lost_commit = None
         self.block_query = None
         self.block_updates = 0
         self.open_updates = 0
@@ -358,6 +363,8 @@ class Connection:
                     connection.db.events.append('commit')
                     if connection.db.drop_next_commit:
                         connection.db.drop_next_commit = False
+                        if connection.db.after_lost_commit is not None:
+                            connection.db.after_lost_commit()
                         raise RuntimeError('PRIVATE_LOST_COMMIT_ACK')
                 connection.info.transaction_status = 0
         return Transaction()
@@ -369,14 +376,17 @@ class Connection:
             return Cursor([])
         if db.block_query is not None:
             await db.block_query.wait()
-        if sql == implementation._SUPERVISOR_ROLE_SQL:
+        if sql in db.metadata:return Cursor(db.metadata[sql])
+        if sql in (implementation._SUPERVISOR_ROLE_SQL,implementation._SUPERVISOR_SECURITY_GUARD_ROLE_SQL):
             return Cursor([(db.role,)])
         if sql == implementation._HISTORY_SQL:
             return Cursor(db.history)
-        if sql == implementation._PUBLICATION_CATALOG_SQL:
-            return Cursor([(True,)])
+        if sql in (implementation._PUBLICATION_CATALOG_SQL,implementation._ATTESTATION_CATALOG_SQL,
+                   implementation._SECURITY_GUARD_CATALOG_SQL):
+            return Cursor(db.catalog)
+        if sql == implementation._SECURITY_GUARD_OWNER_SQL:return Cursor(db.guard_owner)
         if sql == implementation._CATALOG_FINGERPRINT_SQL:
-            return Cursor([(implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,)])
+            return Cursor([(db.fingerprint,)])
         if sql.startswith('SELECT instance_id FROM cragkit_qdrant.backend_instances'):
             return Cursor([] if db.backend is None else [('instance-1',)])
         if sql.startswith('INSERT INTO cragkit_qdrant.backend_instances'):
@@ -585,6 +595,135 @@ async def test_durable_block_physical_fence_retired_settlement_and_private_open(
     assert await control.reopen(proof, deadline=deadline) == {'state': 'open', 'epoch': 2}
     assert db.backend['state'] == 'open' and supervisor._gate and not supervisor._sealed
     assert db.active_leases == 0
+
+
+def schema_profile(db, profile):
+    db.history=list({2:implementation.EXPECTED_PUBLICATION_HISTORY,
+                     3:implementation.EXPECTED_ATTESTATION_HISTORY,
+                     4:implementation.EXPECTED_SECURITY_GUARD_HISTORY}[profile])
+    db.fingerprint={2:implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,
+                    3:implementation.EXPECTED_ATTESTATION_CATALOG_FINGERPRINT,
+                    4:implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT}[profile]
+
+
+def test_profile4_supervisor_role_is_exactly_the_legacy_map_plus_one_guard_execute():
+    addition="p.oid IS NOT DISTINCT FROM to_regprocedure('"+implementation._SECURITY_GUARD_SIGNATURE+"') OR\n   "
+    assert implementation._SUPERVISOR_SECURITY_GUARD_ROLE_SQL.count(addition)==1
+    assert implementation._SUPERVISOR_SECURITY_GUARD_ROLE_SQL.replace(addition,'')==implementation._SUPERVISOR_ROLE_SQL
+    assert 'lock_current_security' not in implementation._SUPERVISOR_ROLE_SQL
+
+
+@pytest.mark.parametrize('profile',[2,3,4])
+@run_async
+async def test_exact_recovery_profiles_preserve_retired_settlement_and_resource_lifetime(monkeypatch,tmp_path,profile):
+    control, supervisor, db, receipt = setup(monkeypatch,tmp_path)
+    schema_profile(db,profile)
+    deadline=asyncio.get_running_loop().time()+5
+    await control.initialize(deadline=deadline)
+    assert control._schema_profile==profile and control._ready
+    proof=await control.recover('recovery-1',deadline=deadline)
+    db.calls.clear()
+    await control.advance_owner(proof,ctx(),deadline=deadline)
+    calls=[sql for sql,_ in db.calls]
+    binding=next(index for index,sql in enumerate(calls) if "set_config('cragkit_qdrant.backend_instance_id'" in sql)
+    assert calls.index(implementation._HISTORY_SQL)<binding
+    role=implementation._SUPERVISOR_SECURITY_GUARD_ROLE_SQL if profile==4 else implementation._SUPERVISOR_ROLE_SQL
+    assert calls.index(role)<binding
+    if profile==4:
+        for metadata in (implementation._SECURITY_GUARD_CATALOG_SQL,
+                         implementation._CATALOG_FINGERPRINT_SQL,implementation._SECURITY_GUARD_OWNER_SQL):
+            assert calls.index(metadata)<calls.index(role)
+    assert not any(sql.startswith('SELECT cragkit_qdrant.lock_current_security(') for sql in calls)
+    assert await control.settle_retired(proof,receipt(proof),deadline=deadline)=={'settled_count':1}
+    assert db.active_leases==0 and control._scoped_control is None
+
+
+@pytest.mark.parametrize('drift',['owner','login','fifth','body','definer','downgrade','role'])
+@run_async
+async def test_profile4_metadata_drift_blocks_owner_advance_before_backend_binding_then_restores(monkeypatch,tmp_path,drift):
+    control, supervisor, db, _ = setup(monkeypatch,tmp_path)
+    schema_profile(db,4);deadline=asyncio.get_running_loop().time()+5
+    await control.initialize(deadline=deadline)
+    proof=await control.recover('recovery-1',deadline=deadline)
+    before=deepcopy(db.owner)
+    if drift=='owner':db.guard_owner=[(False,)]
+    elif drift in ('login','definer'):db.catalog=[(False,)]
+    elif drift=='fifth':db.history.append(('0005_unknown','a'*64))
+    elif drift=='body':db.fingerprint='b'*64
+    elif drift=='downgrade':schema_profile(db,3)
+    else:db.role=False
+    db.calls.clear()
+    with pytest.raises(UnauthorizedScope if drift=='role' else UnsupportedCapability):
+        await control.advance_owner(proof,ctx(),deadline=deadline)
+    assert db.owner==before
+    assert all("set_config('cragkit_qdrant.backend_instance_id'" not in sql
+               and not sql.startswith('UPDATE ') for sql,_ in db.calls)
+    if drift=='definer':
+        assert implementation._SUPERVISOR_SECURITY_GUARD_ROLE_SQL not in [sql for sql,_ in db.calls]
+    schema_profile(db,4);db.catalog=db.guard_owner=[(True,)];db.role=True
+    assert (await control.advance_owner(proof,ctx(),deadline=deadline))['backend_epoch']==2
+    assert db.active_leases==0
+
+
+@pytest.mark.parametrize('initial',[2,3])
+@run_async
+async def test_live_upgrade_is_explicit_and_failed_reinitialization_never_downgrades_four(monkeypatch,tmp_path,initial):
+    control, supervisor, db, _ = setup(monkeypatch,tmp_path)
+    schema_profile(db,initial);deadline=asyncio.get_running_loop().time()+5
+    await control.initialize(deadline=deadline)
+    schema_profile(db,4)
+    with pytest.raises(UnsupportedCapability):await control.recover('recovery-1',deadline=deadline)
+    assert db.block_updates==0 and 'physical_fence' not in db.events
+    await control.initialize(deadline=deadline)
+    assert control._schema_profile==4
+    schema_profile(db,3)
+    with pytest.raises(UnsupportedCapability):await control.initialize(deadline=deadline)
+    assert not control._ready
+    with pytest.raises(IndexNotReady):await control.recover('recovery-1',deadline=deadline)
+    schema_profile(db,4)
+    await control.initialize(deadline=deadline)
+    assert control._ready and control._schema_profile==4
+
+
+@pytest.mark.parametrize('query,rows',[
+    ('_SECURITY_GUARD_OWNER_SQL',[(1,)]), ('_SECURITY_GUARD_OWNER_SQL',[]),
+    ('_SECURITY_GUARD_OWNER_SQL',[[True]]), ('_SECURITY_GUARD_CATALOG_SQL',[(True,),(True,)]),
+    ('_SECURITY_GUARD_CATALOG_SQL',[(1,)]),
+    ('_CATALOG_FINGERPRINT_SQL',[(implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT.encode(),)]),
+    ('_HISTORY_SQL',list(implementation.EXPECTED_SECURITY_GUARD_HISTORY)+[('0005_extra','a'*64)]),
+])
+@run_async
+async def test_profile4_malformed_metadata_fails_before_binding_or_registration(monkeypatch,tmp_path,query,rows):
+    control,supervisor,db,_=setup(monkeypatch,tmp_path)
+    schema_profile(db,4);db.metadata[getattr(implementation,query)]=rows
+    with pytest.raises(UnsupportedCapability):
+        await control.initialize(deadline=asyncio.get_running_loop().time()+5)
+    assert not control._ready and db.backend is None
+    assert all("set_config('cragkit_qdrant.backend_instance_id'" not in sql for sql,_ in db.calls)
+
+
+@run_async
+async def test_profile4_initialization_lost_commit_confirms_once_without_second_insert(monkeypatch,tmp_path):
+    control,supervisor,db,_=setup(monkeypatch,tmp_path)
+    schema_profile(db,4);db.drop_next_commit=True
+    await control.initialize(deadline=asyncio.get_running_loop().time()+5)
+    assert control._ready and control._schema_profile==4
+    assert sum(sql.startswith('INSERT INTO cragkit_qdrant.backend_instances') for sql,_ in db.calls)==1
+    assert sum(sql==implementation._SECURITY_GUARD_OWNER_SQL for sql,_ in db.calls)==2
+    assert all(connection.closed or connection.info.transaction_status==0 for connection in db.connections)
+
+
+@run_async
+async def test_lost_initialization_commit_cannot_change_profile_before_confirmation_binding(monkeypatch,tmp_path):
+    control,supervisor,db,_=setup(monkeypatch,tmp_path)
+    schema_profile(db,3);db.drop_next_commit=True
+    db.after_lost_commit=lambda:schema_profile(db,4)
+    with pytest.raises(UnsupportedCapability):
+        await control.initialize(deadline=asyncio.get_running_loop().time()+5)
+    assert not control._ready
+    assert sum(sql.startswith('INSERT INTO cragkit_qdrant.backend_instances') for sql,_ in db.calls)==1
+    assert sum("set_config('cragkit_qdrant.backend_instance_id'" in sql for sql,_ in db.calls)==1
+    assert sum(sql==implementation._HISTORY_SQL for sql,_ in db.calls)==2
 
 
 @run_async
@@ -922,3 +1061,12 @@ async def test_cancellation_keeps_shared_scope_until_sql_cleanup_unwinds(monkeyp
     with pytest.raises(ProviderUnavailable):facade.block_ordinary()
     await competitor.initialize(deadline=deadline)
     assert competitor._ready and not supervisor._gate
+
+
+@run_async
+async def test_invalid_reinitialization_deadline_preserves_admitted_profile_without_sql(monkeypatch,tmp_path):
+    control,supervisor,db,_=setup(monkeypatch,tmp_path)
+    await control.initialize(deadline=asyncio.get_running_loop().time()+5)
+    before=len(db.calls)
+    with pytest.raises(InvalidRequest):await control.initialize(deadline=float('nan'))
+    assert control._ready and control._schema_profile==2 and len(db.calls)==before
