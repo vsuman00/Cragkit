@@ -1,36 +1,145 @@
+<div align="center">
+
 # Cragkit
 
-Cragkit is a native Python and TypeScript retrieval library in development. The consuming application owns identity, data, providers and final answers. The library returns source-linked evidence, limitations and execution diagnostics; coverage remains unknown unless the application configures a suitable assessment policy.
+**Native Python & TypeScript retrieval library**
 
-V0 is complete locally and V1 is complete for the scoped native lexical library milestone, including final source authorization, cancellation and installed-artifact acceptance. See the [V1 evidence and limitations](evaluation/reports/V1/V1-10-12.md) and [current tracker](tasks/todo.md). V2 is complete for native dense/identifier retrieval, rank fusion, public hybrid orchestration and the declared synthetic development comparison. See [V2 exit evidence](evaluation/reports/V2/V2-07-08-exit.md) and [HY-r1 configuration](contracts/HYBRID_V2.md). V3 adds optional bounded reranking, exact context accounting, extractive packing and conservative reviewed-span coverage with one configured rebalance. Its frozen small development comparison is recorded in [V3 calibration](evaluation/reports/V3/V3-07.md); this is curated in-sample evidence, not general semantic quality. The [V3 exit checkpoint](evaluation/reports/V3/V3-08-exit.md) passed local, installed and native acceptance. Corrective retrieval remains V4 work; production acceptance is unvalidated. Package version `0.0.0` and the `cragkit` package names are provisional; registry publication, license selection and hosted CI evidence remain separate.
+Source-linked evidence · Coverage estimates · Limitations · Execution diagnostics
 
-## Run local checks
+[![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](packages/python)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Node_26-3178C6?logo=typescript&logoColor=white)](packages/typescript)
+[![Status](https://img.shields.io/badge/Status-V3_Complete-brightgreen)](#current-status)
+[![License](https://img.shields.io/badge/License-TBD-lightgrey)](#)
 
-The verified development setup uses Python 3.14, Node.js 26.5 or later within Node 26, npm and uv. From the project root:
+</div>
+
+---
+
+Cragkit is a retrieval library with native Python and TypeScript packages. It returns source-linked evidence, coverage estimates, explicit limitations and execution diagnostics. The consuming application owns identity, data, providers and final answers — Cragkit never generates answers on its own.
+
+Coverage remains unknown unless the application configures a suitable assessment policy.
+
+> [!IMPORTANT]
+> Package version `0.0.0` and the `cragkit` package names are provisional. Registry publication, license selection and hosted CI evidence remain separate.
+
+## What Cragkit Does
+
+| Your application owns | Cragkit handles |
+|---|---|
+| Authentication & trusted identity | Source-linked evidence retrieval |
+| Data, crawling & enterprise connectors | Hybrid search (lexical + dense + fusion) |
+| Final-answer generation & actions | Bounded reranking & corrective retrieval |
+| Hosting, credentials & provider accounts | Extractive packing within token budgets |
+| Truth & completeness of source documents | Coverage estimates & explicit limitations |
+| | Typed results, cancellation & diagnostics |
+
+The **npm** package runs natively in Node.js — no Python server required. The **Python** package runs in its own Python application. Optional MCP is a separate process wrapper around a library instance.
+
+## Current Status
+
+| Version | Scope | Status | Evidence |
+|---------|-------|--------|----------|
+| **V0** | Baseline | ✅ Complete | — |
+| **V1** | Native lexical library, source authorization, cancellation, installed-artifact acceptance | ✅ Complete | [V1 evidence & limitations](evaluation/reports/V1/V1-10-12.md) |
+| **V2** | Dense/identifier retrieval, rank fusion, hybrid orchestration, synthetic comparison | ✅ Complete | [V2 exit evidence](evaluation/reports/V2/V2-07-08-exit.md) · [HY-r1 config](contracts/HYBRID_V2.md) |
+| **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
+| **V4** | Corrective retrieval | 🔲 Planned | — |
+
+> [!NOTE]
+> V3 calibration is curated in-sample evidence, not general semantic quality. The V3 exit checkpoint passed local, installed and native acceptance. Production acceptance is unvalidated.
+
+Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
+
+## Quick Start
+
+### Prerequisites
+
+| Tool | Version |
+|------|---------|
+| Python | 3.14 |
+| Node.js | 26.5+ (Node 26) |
+| npm | latest |
+| uv | latest |
+
+### Run Local Checks
 
 ```sh
 python3 tools/check_v0.py
 ```
 
-The runner installs frozen dependencies, checks both native packages and shared contracts, verifies approved development labels and sealed inputs, then builds and checks clean Python/npm artifacts. Dependency setup may access package registries. No database, model download or live provider is required. Temporary installation environments are removed; generated artifacts are written under `artifacts/V0/` and ignored by Git. See [development commands](docs/development.md) and the [local CI profile](docs/ci.md) for verified scope and limitations.
+This runner:
+1. Installs frozen dependencies
+2. Checks both native packages and shared contracts
+3. Verifies approved development labels and sealed inputs
+4. Builds and checks clean Python/npm artifacts
 
-## Project guide
+No database, model download or live provider is required. Temporary install environments are cleaned up; generated artifacts go to `artifacts/V0/` (git-ignored).
 
-- [Neon migration plan](docs/neon-migration-plan.md) and [secure setup runbook](docs/neon.md): selected development PostgreSQL host, security requirements and acceptance gates. Historical Supabase results do not establish Neon acceptance; see the tracker before hosted use.
-- [Business requirements](docs/product/BRD.md): developer problem, intended users, product requirements, success measures and unvalidated assumptions.
-- [Architecture](docs/architecture/ARCHITECTURE.md): governing boundaries and planned retrieval behavior.
-- [Master plan](tasks/plan.md) and [task tracker](tasks/todo.md): dependency order, acceptance evidence and current state.
-- [Wire contracts](contracts/README.md) and [evidence/result contracts](contracts/RESULTS.md): current validation behavior.
-- [Evaluation protocol](evaluation/protocol.md): human review, source spans and held-out handling.
-- [Agent instructions](AGENTS.md) and [coordination protocol](docs/agents/WORKFLOW.md): bounded ownership and resource policy.
-- [Version control](docs/version-control.md): scoped commits, immediate pushes and synchronization checks.
+📖 [Development commands](docs/development.md) · [Local CI profile](docs/ci.md)
 
-Earlier proposals, reviews, analysis artifacts and saved papers remain as project history. The consolidated architecture and later user decisions govern where those historical materials disagree.
+## Evidence Examples
 
-GitHub repository: [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit), private, with the HTTPS remote configured as `origin`. The initial V0 baseline was committed and pushed to `main` as `feb2bdd`; matching local and remote commits were verified. Hosted CI remains unconfigured; the local pipeline passing does not establish a hosted run.
+The [Python example](examples/evidence.py) and [Node example](examples/evidence.mjs) demonstrate:
 
-## Evidence examples
+1. A supported **retry** facet with a missing **delay** facet → `partial` status
+2. A strict **one-token budget** → emits only `[]` with `insufficient` status
 
-The [Python example](examples/evidence.py) and [Node example](examples/evidence.mjs) demonstrate a supported retry facet with a missing delay facet, then a strict one-token budget that emits only `[]`. They use public synthetic source text and a caller-supplied local tokenizer asset; no model is installed or contacted. The [installed-package verifier](docs/development.md#v3-installed-evidence-release-checkpoint) copies these examples into fresh package environments and compares their complete outputs.
+Both use public synthetic source text and a caller-supplied local tokenizer asset — no model is installed or contacted. The [installed-package verifier](docs/development.md#v3-installed-evidence-release-checkpoint) copies these examples into fresh package environments and compares their complete outputs.
 
-Strict counting applies to the declared cl100k renderer and wrapper allowance. Reviewed-span support is a curated estimate; exact source bytes do not establish truth. [TK-r1](contracts/TOKEN_CONTEXT_V3.md), [PK-r1](contracts/PACKING_V3.md), [AS-r1](contracts/ASSESSMENT_V3.md) and [EP-r1](contracts/EVIDENCE_PIPELINE_V3.md) define the public boundaries.
+> [!NOTE]
+> Strict counting applies to the declared cl100k renderer and wrapper allowance. Reviewed-span support is a curated estimate; exact source bytes do not establish truth. See [TK-r1](contracts/TOKEN_CONTEXT_V3.md), [PK-r1](contracts/PACKING_V3.md), [AS-r1](contracts/ASSESSMENT_V3.md) and [EP-r1](contracts/EVIDENCE_PIPELINE_V3.md) for the public contract boundaries.
+
+## Project Guide
+
+<details>
+<summary><strong>📐 Architecture & Design</strong></summary>
+
+- [Architecture](docs/architecture/ARCHITECTURE.md) — Governing boundaries and planned retrieval behavior
+- [Business requirements](docs/product/BRD.md) — Developer problem, intended users, product requirements, success measures and unvalidated assumptions
+
+</details>
+
+<details>
+<summary><strong>📋 Planning & Tracking</strong></summary>
+
+- [Master plan](tasks/plan.md) — Dependency order, acceptance evidence and current state
+- [Task tracker](tasks/todo.md) — Current progress and status
+- [Evaluation protocol](evaluation/protocol.md) — Human review, source spans and held-out handling
+
+</details>
+
+<details>
+<summary><strong>📦 Contracts</strong></summary>
+
+- [Wire contracts](contracts/README.md) — Current validation behavior
+- [Evidence/result contracts](contracts/RESULTS.md) — Result structure and guarantees
+
+</details>
+
+<details>
+<summary><strong>🗄️ Infrastructure</strong></summary>
+
+- [Neon migration plan](docs/neon-migration-plan.md) — Selected development PostgreSQL host
+- [Secure setup runbook](docs/neon.md) — Security requirements and acceptance gates
+
+> Historical Supabase results do not establish Neon acceptance; see the tracker before hosted use.
+
+</details>
+
+<details>
+<summary><strong>🤖 Agent & Development Workflow</strong></summary>
+
+- [Agent instructions](AGENTS.md) — Bounded ownership and resource policy
+- [Coordination protocol](docs/agents/WORKFLOW.md) — Multi-agent coordination
+- [Version control](docs/version-control.md) — Scoped commits, immediate pushes and synchronization checks
+
+</details>
+
+> [!NOTE]
+> Earlier proposals, reviews, analysis artifacts and saved papers remain as project history. The consolidated architecture and later user decisions govern where those historical materials disagree.
+
+## Repository
+
+GitHub: [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) (private) · Remote: `origin` (HTTPS)
+
+Initial V0 baseline committed and pushed to `main` as [`feb2bdd`](https://github.com/vsuman00/Cragkit/commit/feb2bdd); local and remote verified in sync. Hosted CI remains unconfigured — local pipeline results do not establish a hosted run.
