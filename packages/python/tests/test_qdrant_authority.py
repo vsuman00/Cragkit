@@ -27,6 +27,7 @@ class Connection:
         self.history=list(implementation.EXPECTED_HISTORY)
         self.failure=None;self.rollback_failure=False;self.rows=[]
         self.fingerprint=[(implementation.EXPECTED_CATALOG_FINGERPRINT,)]
+        self.guard_catalog=[(True,)];self.guard_owner=[(True,)]
     def transaction(self, *, force_rollback):
         assert force_rollback
         owner=self
@@ -42,6 +43,8 @@ class Connection:
         if self.failure is not None: raise self.failure
         if sql==implementation._ROLE_SQL:return Cursor(self.role)
         if sql==implementation._CATALOG_SQL:return Cursor(self.catalog)
+        if sql==implementation._SECURITY_GUARD_CATALOG_SQL:return Cursor(self.guard_catalog)
+        if sql==implementation._SECURITY_GUARD_OWNER_SQL:return Cursor(self.guard_owner)
         if sql in (implementation._PUBLICATION_CATALOG_SQL, implementation._ATTESTATION_CATALOG_SQL):return Cursor(self.publication_catalog)
         if sql==implementation._HISTORY_SQL:return Cursor(self.history)
         if sql==implementation._CATALOG_FINGERPRINT_SQL:return Cursor(self.fingerprint)
@@ -195,7 +198,7 @@ def test_exact_profile_selected_from_history_before_structural_or_role_checks(pu
             implementation._CATALOG_FINGERPRINT_SQL)]
         assert queries == [implementation._HISTORY_SQL, expected_catalog,
                            implementation._ROLE_SQL, implementation._CATALOG_FINGERPRINT_SQL]
-        assert 'LIMIT 4' in implementation._HISTORY_SQL
+        assert 'LIMIT 5' in implementation._HISTORY_SQL
         assert conn.rollbacks == 1 and pool.borrowed == pool.returned == 1
     asyncio.run(scenario())
 
@@ -303,7 +306,7 @@ def test_source_accepts_exact_three_explicit_profiles_and_reads_overflow(history
         connection.history = list(history)
         connection.fingerprint = [(fingerprint,)]
         await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
-        assert 'LIMIT 4' in implementation._HISTORY_SQL
+        assert 'LIMIT 5' in implementation._HISTORY_SQL
         assert any(sql == catalog for sql,_ in connection.calls)
         assert implementation.EXPECTED_PUBLICATION_HISTORY != implementation.EXPECTED_ATTESTATION_HISTORY
     asyncio.run(scenario())
@@ -335,3 +338,139 @@ def test_attestation_catalog_structural_profile_keeps_old_literals_and_new_count
     assert 'count(*)=13 FROM pg_class' in implementation._ATTESTATION_CATALOG_SQL
     assert "t.tgenabled<>'O'" in implementation._ATTESTATION_CATALOG_SQL
     assert 'p.prosecdef' in implementation._ATTESTATION_CATALOG_SQL
+
+
+def security_guard_profile(connection):
+    connection.history = list(implementation.EXPECTED_SECURITY_GUARD_HISTORY)
+    connection.fingerprint = [(implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT,)]
+
+
+async def read_fixture(reader):
+    request = parse_model(RetrievalRequest, FIXTURE['request'])
+    scope = parse_model(TrustedScope, FIXTURE['scope'])
+    config = parse_model(QdrantConfig, CONFIG)
+    nomination = validate_nomination(expand(FIXTURE['nomination']), request, scope, config)
+    return await reader.read(nomination, request, scope, config, retained=False,
+                             max_source_bytes=13, deadline=asyncio.get_running_loop().time()+2)
+
+
+def test_security_guard_profile_is_pinned_to_actual_catalog_and_immutable_history():
+    root = Path(__file__).resolve().parents[3]
+    fixture = json.loads((root/'contracts/fixtures/qdrant_security_guard_catalog.json').read_text())
+    assert implementation.EXPECTED_SECURITY_GUARD_HISTORY == tuple(tuple(row) for row in fixture['history'])
+    assert implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT == fixture['catalog_fingerprint']
+    assert implementation.EXPECTED_SECURITY_GUARD_HISTORY[:3] == implementation.EXPECTED_ATTESTATION_HISTORY
+    sql = implementation._SECURITY_GUARD_CATALOG_SQL
+    assert 'count(*)=14' in sql and 'count(*)=13' in sql
+    assert 'count(*)=1 FROM pg_proc' in sql
+    assert implementation._SECURITY_GUARD_SIGNATURE in sql
+    assert "p.prokind='f'" in sql and "p.prorettype='void'::regtype" in sql
+    assert "p.provolatile='v' AND p.proparallel='u'" in sql
+    assert "p.proconfig=ARRAY['search_path=pg_catalog','row_security=on']" in sql
+    assert 'NOT p.proleakproof AND NOT p.proisstrict' in sql
+    for legacy in (implementation._CATALOG_SQL, implementation._PUBLICATION_CATALOG_SQL,
+                   implementation._ATTESTATION_CATALOG_SQL):
+        assert "WHERE n.nspname='cragkit_qdrant' AND p.prosecdef)" in legacy
+        assert 'lock_current_security' not in legacy
+
+
+def test_security_guard_owner_predicate_is_complete_readonly_and_matches_native_peer():
+    root = Path(__file__).resolve().parents[3]
+    node = (root/'packages/typescript/src/qdrant-authority.ts').read_text()
+    peer_sql = node.split('export const SECURITY_GUARD_OWNER_SQL=`', 1)[1].split('`;', 1)[0]
+    sql = implementation._SECURITY_GUARD_OWNER_SQL
+    assert sql == peer_sql
+    for metadata in ('pg_roles', 'pg_auth_members', 'pg_namespace', 'pg_class',
+                     'pg_proc', 'pg_type', 'pg_database', 'pg_policy', 'pg_attribute'):
+        assert 'pg_catalog.'+metadata in sql
+    assert 'm.grantor=10 AND m.admin_option AND NOT m.set_option' in sql
+    assert 'm.grantor=operator_id AND NOT m.admin_option AND m.set_option' in sql
+    assert "roleid=guard_id)<>2" in sql
+    assert 'member IN (guard_id,supervisor_role_id)' in sql
+    assert 'WHERE NOT r.rolsuper' in sql  # Exclude superuser virtual membership.
+    assert 'WHERE proowner=guard_id)<>1' in sql
+    assert 'a.grantor<>guard_id' in sql and 'a.is_grantable' in sql
+    assert "has_table_privilege(guard_id,c.oid,privilege)" in sql
+    assert "has_column_privilege(guard_id,c.oid,a.attnum,privilege) IS DISTINCT FROM CASE" in sql
+    assert "has_function_privilege(guard_id,p.oid,'EXECUTE') IS DISTINCT FROM" in sql
+    assert 'scope_visible(text,text,text[],text[],text,boolean)' in sql
+    assert 'scope_grants()' in sql and 'valid_identity_array(text[])' in sql
+    assert 'guard_id=ANY(polroles))<>7' in sql
+    assert "pg_get_expr(polwithcheck,polrelid) IS DISTINCT FROM 'false'" in sql
+    assert 'FROM cragkit_qdrant.' not in sql and 'FOR UPDATE' not in sql
+    assert 'set_config' not in sql and 'EXECUTE ' not in sql
+
+
+@pytest.mark.parametrize('initialize', [False, True])
+def test_security_guard_fresh_read_checks_full_profile_before_scope_and_source(initialize):
+    async def scenario():
+        reader, connection, pool = authority()
+        security_guard_profile(connection)
+        if initialize:
+            await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
+        connection.calls.clear()
+        assert await read_fixture(reader) == []
+        queries = [sql for sql, _ in connection.calls if 'statement_timeout' not in sql and not sql.startswith('SET ')]
+        assert queries[:5] == [implementation._HISTORY_SQL, implementation._SECURITY_GUARD_CATALOG_SQL,
+                               implementation._ROLE_SQL, implementation._CATALOG_FINGERPRINT_SQL,
+                               implementation._SECURITY_GUARD_OWNER_SQL]
+        assert queries[5] == implementation._SCOPE_SQL
+        assert queries[6].startswith('SELECT '+implementation._SELECTION)
+        assert pool.borrowed == pool.returned == (2 if initialize else 1)
+        assert not pool.closed and not connection.closed
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('drift', ['fifth', 'checksum', 'downgrade', 'body', 'definer', 'owner', 'acl', 'membership'])
+def test_security_guard_drift_after_initialization_blocks_source_and_restoration_works(drift):
+    async def scenario():
+        reader, connection, pool = authority()
+        security_guard_profile(connection)
+        await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
+        if drift == 'fifth': connection.history.append(('0005_unknown', 'a'*64))
+        elif drift == 'checksum': connection.history[-1] = (connection.history[-1][0], 'b'*64)
+        elif drift == 'downgrade': connection.history = list(implementation.EXPECTED_ATTESTATION_HISTORY)
+        elif drift == 'body': connection.fingerprint = [('c'*64,)]
+        elif drift == 'definer': connection.guard_catalog = [(False,)]
+        else: connection.guard_owner = [(False,)]
+        connection.calls.clear()
+        with pytest.raises(UnsupportedCapability): await read_fixture(reader)
+        assert all(sql != implementation._SCOPE_SQL and not sql.startswith('SELECT '+implementation._SELECTION)
+                   for sql, _ in connection.calls)
+        security_guard_profile(connection)
+        connection.guard_catalog = connection.guard_owner = [(True,)]
+        assert await read_fixture(reader) == []
+        assert connection.rollbacks == 3 and pool.borrowed == pool.returned == 3
+        assert not pool.closed
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('field,value', [
+    ('guard_owner', []), ('guard_owner', [(1,)]), ('guard_owner', [(True,), (True,)]),
+    ('guard_catalog', [(False,)]), ('guard_catalog', [(1,)]), ('fingerprint', [(implementation.EXPECTED_ATTESTATION_CATALOG_FINGERPRINT,)]),
+    ('history', list(implementation.EXPECTED_SECURITY_GUARD_HISTORY)+[('0005_extra', '0'*64)]),
+    ('history', [*implementation.EXPECTED_SECURITY_GUARD_HISTORY[:3],
+                 ('0004_security_settlement_guard', b'not text')]),
+])
+def test_security_guard_missing_malformed_or_cross_profile_metadata_never_admits(field, value):
+    async def scenario():
+        reader, connection, pool = authority()
+        security_guard_profile(connection)
+        setattr(connection, field, value)
+        with pytest.raises(UnsupportedCapability):
+            await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
+        assert connection.rollbacks == 1 and pool.returned == 1
+        assert all(not sql.startswith('SELECT '+implementation._SELECTION) for sql, _ in connection.calls)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('value', [1, 'true'])
+def test_profile4_reader_role_requires_native_true(value):
+    async def scenario():
+        reader, connection, pool = authority()
+        security_guard_profile(connection)
+        connection.role = [(value,)]
+        with pytest.raises(UnauthorizedScope):
+            await reader.initialize(deadline=asyncio.get_running_loop().time()+2)
+        assert pool.borrowed == pool.returned == 1
+    asyncio.run(scenario())

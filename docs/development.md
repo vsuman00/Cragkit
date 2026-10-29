@@ -1210,3 +1210,14 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory. The parent explicitly bootstraps a trusted non-superuser schema-owner operator on a new PostgreSQL fixture, seeds five small documents through accepted three-profile writer APIs, then applies 0004 as that operator. It checks rollback, preexisting-role refusal, twelve restricted SQL groups and six atomic-lock races. At most two restricted runtime clients plus one admin observer run at once; the server has six slots. Actual barriers stay in an owned separate schema. The test enables `client_connection_check_interval=100ms` and observes server-side termination; client close alone is not treated as that proof. Its outer 180-second deadline bounds the combined development profile, with separate twelve-second race cleanup. Final history, catalog and owned process/storage cleanup are checked. No Qdrant service, provider, hosted target or genuine recovery receipt is involved.
+
+
+## V5-04G2b2d2a native profile-4 source admission
+
+[Source admission evidence](../evaluation/reports/V5/V5-04G2b2d2a.md) covers the exact four-migration source-reader profile. Writer and recovery admission remain separate.
+
+```bash
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_guard_authority.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04G2b2d2a/a-new-reader-run
+```
+
+Use a fresh directory. The parent runs Python and Node serially on disposable PostgreSQL 17 fixtures, seeds through the accepted older writer profile, then explicitly applies 0004 with the restricted operator. Each runtime uses one reader and one operator client plus the parent admin observer. The development profile has a 120-second business deadline, separate twelve-second cleanup allowance and 175-second outer runtime limit. It checks unsafe permission, role and catalog changes before source SQL, restores owned changes and closes owned processes before removing storage. It releases no source bytes and runs no Qdrant service, provider or hosted mutation. Node requires the current package build.

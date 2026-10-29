@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {PoolResource,parse_pool_config} from '../dist/postgres-pool.js';
 import {PostgresQdrantAuthority,AUTHORITY_HISTORY,AUTHORITY_CATALOG_SQL,AUTHORITY_ROLE_SQL,AUTHORITY_HISTORY_SQL,AUTHORITY_SCOPE_SQL,AUTHORITY_FINGERPRINT_SQL,EXPECTED_AUTHORITY_FINGERPRINT,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {SOURCE_ROW_FIELDS,validate_nomination} from '../dist/qdrant-source-contract.js';
+import {AUTHORITY_SECURITY_GUARD_HISTORY,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,SECURITY_GUARD_OWNER_SQL,publication_schema_profile} from '../dist/qdrant-authority.js';
 import {parse_request,parse_scope} from '../dist/requests.js';
 import {parse_config} from '../dist/qdrant-contract.js';
 import {DeadlineExceeded,IntegrityViolation,InvalidRequest,ProviderUnavailable,UnauthorizedScope,UnsupportedCapability} from '../dist/errors.js';
@@ -15,7 +16,7 @@ const nomination=validate_nomination(resolve(fixture.nomination),request,scope,c
 function setup(){const state={queries:[],clients:[],catalog:true,role:true,fingerprint:[[EXPECTED_AUTHORITY_FINGERPRINT]],history:AUTHORITY_HISTORY.map(r=>[...r]),rows:[SOURCE_ROW_FIELDS.map(k=>resolve(fixture.base_row)[k])],queryError:null,rollbackFail:false,dirtyRollback:false,startStatus:'I',wait:null};
   const pool={ends:0,async connect(){const client={status:state.startStatus,releases:[],getTransactionStatus(){return this.status;},release(destroy=false){this.releases.push(destroy);},async query(q){state.queries.push(q);
     if(q.text.startsWith('BEGIN')){this.status='T';return {rows:[]};}if(q.text==='ROLLBACK'){if(state.rollbackFail)throw Error('private rollback');this.status=state.dirtyRollback?'T':'I';return {rows:[]};}
-    if(q.text===AUTHORITY_CATALOG_SQL||q.text===AUTHORITY_PUBLICATION_CATALOG_SQL||q.text===AUTHORITY_ATTESTATION_CATALOG_SQL)return {rows:[[state.catalog]]};if(q.text===AUTHORITY_ROLE_SQL)return {rows:[[state.role]]};if(q.text===AUTHORITY_HISTORY_SQL){if(state.historyError)throw state.historyError;return {rows:state.history};}
+    if(q.text===AUTHORITY_CATALOG_SQL||q.text===AUTHORITY_PUBLICATION_CATALOG_SQL||q.text===AUTHORITY_ATTESTATION_CATALOG_SQL||q.text===AUTHORITY_SECURITY_GUARD_CATALOG_SQL)return {rows:[[state.catalog]]};if(q.text===SECURITY_GUARD_OWNER_SQL)return {rows:state.ownerRows??[[true]]};if(q.text===AUTHORITY_ROLE_SQL)return {rows:[[state.role]]};if(q.text===AUTHORITY_HISTORY_SQL){if(state.historyError)throw state.historyError;return {rows:state.history};}
     if(q.text===AUTHORITY_FINGERPRINT_SQL)return {rows:state.fingerprint};
     if(q.text.includes('FROM cragkit_qdrant.members m')){if(state.wait)await state.wait;if(state.queryError)throw state.queryError;return {rows:state.rows};}return {rows:[]};}};state.clients.push(client);return client;},async end(){this.ends++;}};
   const resource=new PoolResource(parse_pool_config({host:'host.invalid',dbname:'synthetic',user:'reader',sslrootcert:'/fake/ca',passfile:'/fake/pass',release_timeout:0.05,close_timeout:0.1}),{pool});return {state,pool,resource,authority:new PostgresQdrantAuthority(resource)};
@@ -73,7 +74,7 @@ test('exact source and publication profiles select their own structural check an
   const captured = JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_publication_catalog.json', import.meta.url), 'utf8'));
   assert.deepEqual(AUTHORITY_PUBLICATION_HISTORY, captured.history);
   assert.equal(EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT, captured.catalog_fingerprint);
-  assert.ok(AUTHORITY_HISTORY_SQL.endsWith('LIMIT 4'));
+  assert.ok(AUTHORITY_HISTORY_SQL.endsWith('LIMIT 5'));
   for (const publication of [false, true]) {
     const x = setup();
     if (publication) {
@@ -196,4 +197,98 @@ test('attestation source profile rejects hash/fingerprint mismatch, fourth histo
   }
   const x=setup();x.state.history=AUTHORITY_ATTESTATION_HISTORY.map(row=>[...row]);x.state.fingerprint=[[EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT]];
   try{await x.authority.initialize({deadline:deadline()});x.state.role=false;await assert.rejects(read(x),UnauthorizedScope);assert.equal(x.state.queries.some(query=>query.text.includes('FROM cragkit_qdrant.members m')),false);}finally{await x.resource.close();}
+});
+
+function guardSetup(){
+  const x=setup();x.state.history=AUTHORITY_SECURITY_GUARD_HISTORY.map(row=>[...row]);
+  x.state.fingerprint=[[EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT]];return x;
+}
+test('profile4 pins exact accepted metadata and keeps writer/recovery selection unsupported',async()=>{
+  const captured=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_security_guard_catalog.json',import.meta.url),'utf8'));
+  assert.deepEqual(AUTHORITY_SECURITY_GUARD_HISTORY,captured.history);
+  assert.equal(EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,captured.catalog_fingerprint);
+  assert.ok(AUTHORITY_HISTORY_SQL.endsWith('LIMIT 5'));
+  assert.throws(()=>publication_schema_profile(AUTHORITY_SECURITY_GUARD_HISTORY),UnsupportedCapability);
+  assert.ok(AUTHORITY_PUBLICATION_CATALOG_SQL.includes("AND p.prosecdef)"));
+  assert.ok(AUTHORITY_ATTESTATION_CATALOG_SQL.includes("AND p.prosecdef)"));
+  assert.ok(AUTHORITY_SECURITY_GUARD_CATALOG_SQL.includes('p.pronargs<>22'));
+  assert.ok(AUTHORITY_SECURITY_GUARD_CATALOG_SQL.includes('p.proconfig IS DISTINCT FROM'));
+  const x=guardSetup();
+  try{
+    await x.authority.initialize({deadline:deadline()});
+    assert.ok(x.state.queries.some(query=>query.text===AUTHORITY_SECURITY_GUARD_CATALOG_SQL));
+    assert.ok(x.state.queries.some(query=>query.text===SECURITY_GUARD_OWNER_SQL));
+    assert.equal(x.state.queries.some(query=>query.text===AUTHORITY_ATTESTATION_CATALOG_SQL),false);
+    assert.equal(x.state.queries.some(query=>/^SELECT cragkit_qdrant\.lock_current_security\(/.test(query.text)),false);
+    assert.equal(x.pool.ends,0);
+  }finally{await x.resource.close();}
+});
+
+test('profile4 validates history body fingerprint and owner privileges before every source read including direct reads',async()=>{
+  for(const initialized of [false,true]){
+    const x=guardSetup();
+    try{
+      if(initialized)await x.authority.initialize({deadline:deadline()});
+      let start=x.state.queries.length;await read(x);
+      let queries=x.state.queries.slice(start),source=queries.findIndex(query=>query.text.includes('FROM cragkit_qdrant.members m'));
+      for(const sql of [AUTHORITY_HISTORY_SQL,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,AUTHORITY_FINGERPRINT_SQL,SECURITY_GUARD_OWNER_SQL])
+        assert.ok(queries.findIndex(query=>query.text===sql)>=0&&queries.findIndex(query=>query.text===sql)<source);
+      x.state.ownerRows=[[false]];start=x.state.queries.length;
+      await assert.rejects(read(x),UnsupportedCapability);
+      assert.equal(x.state.queries.slice(start).some(query=>query.text.includes('FROM cragkit_qdrant.members m')),false);
+      x.state.ownerRows=[[true]];await read(x);
+      x.state.fingerprint=[['changed-body-or-policy']];start=x.state.queries.length;
+      await assert.rejects(read(x),UnsupportedCapability);
+      assert.equal(x.state.queries.slice(start).some(query=>query.text.includes('FROM cragkit_qdrant.members m')),false);
+    }finally{await x.resource.close();}
+  }
+});
+
+for(const drift of ['checksum','suffix','downgrade','catalog','owner'])test(`profile4 ${drift} drift cannot fall back to an old source profile`,async()=>{
+  const x=guardSetup();
+  try{
+    await x.authority.initialize({deadline:deadline()});
+    if(drift==='checksum')x.state.history[3][1]='f'.repeat(64);
+    if(drift==='suffix')x.state.history.push(['0005_unknown','f'.repeat(64)]);
+    if(drift==='downgrade'){x.state.history=AUTHORITY_ATTESTATION_HISTORY.map(row=>[...row]);x.state.fingerprint=[[EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT]];}
+    if(drift==='catalog')x.state.catalog=false;
+    if(drift==='owner')x.state.ownerRows=[[false]];
+    const start=x.state.queries.length;await assert.rejects(read(x),UnsupportedCapability);
+    assert.equal(x.state.queries.slice(start).some(query=>query.text.includes('FROM cragkit_qdrant.members m')),false);
+    assert.equal(x.state.clients.at(-1).status,'I');
+  }finally{await x.resource.close();}
+});
+
+test('owner metadata is a complete read-only catalog predicate rather than a guard call or minimal subset',()=>{
+  for(const required of ['pg_catalog.pg_auth_members','pg_catalog.pg_namespace','pg_catalog.pg_database','pg_catalog.pg_class',
+    'pg_catalog.pg_type','pg_catalog.pg_proc','pg_catalog.pg_policy','has_table_privilege','has_column_privilege','has_function_privilege',
+    'has_schema_privilege','admin_option','inherit_option','set_option','m.grantor=10','m.grantor=operator_id',
+    'scope_visible(text,text,text[],text[],text,boolean)','valid_identity_array(text[])','scope_grants()',
+    'security_guard_document_update','polwithcheck','a.is_grantable','rolcanlogin','rolcreaterole','rolbypassrls','rolinherit'])assert.ok(SECURITY_GUARD_OWNER_SQL.includes(required),required);
+  assert.equal(/\b(?:INSERT INTO|UPDATE cragkit|DELETE FROM|SET ROLE|SET LOCAL|FOR UPDATE|FOR SHARE)\b/.test(SECURITY_GUARD_OWNER_SQL),false);
+  assert.equal(SECURITY_GUARD_OWNER_SQL.includes('payload_bytes'),false);
+  assert.equal(SECURITY_GUARD_OWNER_SQL.includes('canonical_utf8'),false);
+});
+
+test('profile4 owner result rejects malformed native scalars without serialization hooks',async()=>{
+  let called=0;
+  const cell={toJSON(){called++;return true;}},accessor=[];
+  Object.defineProperty(accessor,'0',{get(){called++;return true;},enumerable:true});
+  for(const ownerRows of [[],[[1]],[[cell]],[accessor],new Proxy([[true]],{get(){called++;return [];}})]){
+    const x=guardSetup();x.state.ownerRows=ownerRows;
+    try{await assert.rejects(x.authority.initialize({deadline:deadline()}),UnsupportedCapability);}
+    finally{await x.resource.close();}
+  }
+  assert.equal(called,0);
+});
+
+test('profile4 retained/current source filters and byte budgets remain parameterized after metadata checks',async()=>{
+  const x=guardSetup();
+  try{
+    await x.authority.initialize({deadline:deadline()});await read(x,{retained:true,max_source_bytes:7});
+    const source=x.state.queries.find(query=>query.text.includes('FROM cragkit_qdrant.members m'));
+    assert.equal(source.values[0],7);assert.ok(source.text.includes('g.ever_published AND TRUE'));
+    assert.ok(source.text.includes('d.authorization_revision=$10'));assert.ok(source.text.includes('d.kind = $16'));
+    assert.equal(x.pool.ends,0);
+  }finally{await x.resource.close();}
 });

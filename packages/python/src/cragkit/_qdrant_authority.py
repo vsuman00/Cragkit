@@ -114,7 +114,105 @@ EXPECTED_ATTESTATION_HISTORY = (*EXPECTED_PUBLICATION_HISTORY,
 EXPECTED_ATTESTATION_CATALOG_FINGERPRINT = '7ffd3b585b1fe32bc3476a3dc4390b022f5dcfd6c5ed186c9964fec4ffd72848'
 EXPECTED_ATTESTATION_FINGERPRINT = EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
 _ATTESTATION_CATALOG_SQL = _PUBLICATION_CATALOG_SQL.replace('count(*)=13', 'count(*)=14').replace('count(*)=12', 'count(*)=13')
-_HISTORY_SQL = 'SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version LIMIT 4'
+EXPECTED_SECURITY_GUARD_HISTORY = (*EXPECTED_ATTESTATION_HISTORY,
+    ('0004_security_settlement_guard', '44b666cb47f3bb51ac8c5f6eb05fe8aea9138a9c603ab2fa427bdd807255be0b'))
+EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT = '352cf043dc8c19f700b8e2e9b4776dede7dd0402b2db79f7d79668cab115d8a3'
+_SECURITY_GUARD_SIGNATURE = 'cragkit_qdrant.lock_current_security(text,text,text,text,text,bigint,text,text,text,text,uuid,text,text,text,text,bigint,text[],text[],text,text,text,boolean)'
+# The complete fingerprint pins the function body; this separate structural
+# predicate admits only the one deliberately privileged routine.
+_SECURITY_GUARD_CATALOG_SQL = _ATTESTATION_CATALOG_SQL.replace(
+    "WHERE n.nspname='cragkit_qdrant' AND p.prosecdef)",
+    "WHERE n.nspname='cragkit_qdrant' AND p.prosecdef AND p.oid IS DISTINCT FROM "
+    "to_regprocedure('" + _SECURITY_GUARD_SIGNATURE + "'))") + """
+ AND (SELECT count(*)=1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      WHERE n.nspname='cragkit_qdrant' AND p.prosecdef)
+ AND EXISTS(SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+      WHERE p.oid=to_regprocedure('""" + _SECURITY_GUARD_SIGNATURE + """')
+      AND p.prokind='f' AND p.prorettype='void'::regtype AND l.lanname='plpgsql'
+      AND p.prosecdef AND NOT p.proleakproof AND NOT p.proisstrict
+      AND p.provolatile='v' AND p.proparallel='u'
+      AND p.proconfig=ARRAY['search_path=pg_catalog','row_security=on'])
+"""
+_SECURITY_GUARD_OWNER_SQL = """WITH guard_profile AS (
+ SELECT (SELECT oid FROM pg_catalog.pg_roles WHERE rolname='cragkit_qdrant_security_guard') AS guard_id,
+ (SELECT oid FROM pg_catalog.pg_roles WHERE rolname='cragkit_qdrant_supervisor') AS supervisor_role_id,
+ (SELECT nspowner FROM pg_catalog.pg_namespace WHERE nspname='cragkit_qdrant') AS operator_id,
+ pg_catalog.to_regprocedure('cragkit_qdrant.lock_current_security(text,text,text,text,text,bigint,text,text,text,text,uuid,text,text,text,text,bigint,text[],text[],text,text,text,boolean)') AS function_id
+)
+SELECT guard_id IS NOT NULL AND supervisor_role_id IS NOT NULL AND operator_id IS NOT NULL AND function_id IS NOT NULL
+ AND EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE oid=operator_id AND rolcanlogin AND rolcreaterole AND NOT rolsuper AND NOT rolbypassrls)
+ AND pg_catalog.has_schema_privilege(supervisor_role_id,'cragkit_qdrant','USAGE')
+ AND NOT pg_catalog.has_schema_privilege(supervisor_role_id,'cragkit_qdrant','CREATE')
+ AND NOT (NOT EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE oid=guard_id AND NOT
+           (rolcanlogin OR rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication OR rolinherit))
+       OR NOT EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE oid=supervisor_role_id AND NOT
+           (rolcanlogin OR rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication OR rolinherit))
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members WHERE member IN (guard_id,supervisor_role_id))
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_namespace WHERE nspowner=supervisor_role_id)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_class WHERE relowner=supervisor_role_id)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_proc WHERE proowner=supervisor_role_id)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_type WHERE typowner=supervisor_role_id)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_database WHERE datdba=supervisor_role_id)
+       OR NOT EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE oid=operator_id AND rolcreaterole AND NOT rolsuper AND NOT rolbypassrls)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members m WHERE m.roleid=guard_id AND NOT
+           (m.member=operator_id AND NOT m.inherit_option AND
+             ((m.grantor=10 AND m.admin_option AND NOT m.set_option)
+              OR (m.grantor=operator_id AND NOT m.admin_option AND m.set_option))))
+       OR (SELECT count(*) FROM pg_catalog.pg_auth_members WHERE roleid=guard_id)<>2
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_roles r WHERE NOT r.rolsuper AND
+           (pg_catalog.pg_has_role(r.oid,supervisor_role_id,'MEMBER') OR pg_catalog.pg_has_role(r.oid,'cragkit_qdrant_writer','MEMBER'))
+           AND pg_catalog.pg_has_role(r.oid,operator_id,'MEMBER'))
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_namespace WHERE nspowner=guard_id)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+           WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND c.relowner<>operator_id)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_class WHERE relowner=guard_id)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_type WHERE typowner=guard_id)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_database WHERE datdba=guard_id)
+       OR (SELECT count(*) FROM pg_catalog.pg_proc WHERE proowner=guard_id)<>1
+       OR NOT EXISTS(SELECT 1 FROM pg_catalog.pg_proc WHERE oid=function_id AND proowner=guard_id AND prosecdef
+           AND provolatile='v' AND proparallel='u' AND NOT proisstrict AND NOT proleakproof
+           AND proconfig=ARRAY['search_path=pg_catalog','row_security=on']::text[])
+       OR pg_catalog.has_schema_privilege(guard_id,'cragkit_qdrant','CREATE')
+       OR NOT pg_catalog.has_schema_privilege(guard_id,'cragkit_qdrant','USAGE')
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+           WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND c.relname<>'schema_migrations'
+             AND NOT(c.relrowsecurity AND c.relforcerowsecurity))
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+           WHERE n.nspname='cragkit_qdrant' AND p.prosecdef AND p.oid<>function_id)
+       OR (SELECT count(*) FROM pg_catalog.pg_policy WHERE guard_id=ANY(polroles))<>7
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_policy WHERE guard_id=ANY(polroles) AND
+          (polroles<>ARRAY[guard_id]::oid[] OR NOT polpermissive OR polqual IS NULL
+           OR polname NOT IN ('security_guard_backend_select','security_guard_backend_update','security_guard_owner_select',
+                             'security_guard_owner_update','security_guard_document_select','security_guard_document_update','security_guard_intent_select')
+           OR polcmd NOT IN ('r','w') OR (polcmd='w' AND pg_catalog.pg_get_expr(polwithcheck,polrelid) IS DISTINCT FROM 'false'))))
+ AND NOT (EXISTS(SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+        CROSS JOIN pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) privilege
+        WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND pg_catalog.has_table_privilege(guard_id,c.oid,privilege))
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid=a.attrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+        CROSS JOIN pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) privilege
+        WHERE n.nspname='cragkit_qdrant' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped
+        AND pg_catalog.has_column_privilege(guard_id,c.oid,a.attnum,privilege) IS DISTINCT FROM CASE
+          WHEN privilege='SELECT' THEN
+            (c.relname='backend_instances' AND a.attname IN ('instance_id','backend_namespace','storage_identity','supervisor_id','epoch','state','recovery_id'))
+            OR (c.relname='document_owners' AND a.attname IN ('tenant_id','collection','document_id','instance_id','intent_id','owner_token','backend_epoch'))
+            OR (c.relname='documents' AND a.attname IN ('tenant_id','collection','document_id','active_generation_id','authorization_revision','mutation_epoch','principal_ids','grant_ids','language','kind','tag','tombstoned'))
+            OR (c.relname='publication_intents' AND a.attname IN ('tenant_id','collection','document_id','intent_id','instance_id','action','payload_sha256','expected_mutation_epoch','authority_committed'))
+          WHEN privilege='UPDATE' THEN (c.relname='backend_instances' AND a.attname='epoch')
+            OR (c.relname='document_owners' AND a.attname='backend_epoch') OR (c.relname='documents' AND a.attname='mutation_epoch')
+          ELSE false END)
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+          WHERE n.nspname='cragkit_qdrant' AND pg_catalog.has_function_privilege(guard_id,p.oid,'EXECUTE') IS DISTINCT FROM
+            (p.oid=function_id OR p.oid=pg_catalog.to_regprocedure('cragkit_qdrant.scope_visible(text,text,text[],text[],text,boolean)')
+             OR p.oid=pg_catalog.to_regprocedure('cragkit_qdrant.scope_grants()')
+             OR p.oid=pg_catalog.to_regprocedure('cragkit_qdrant.valid_identity_array(text[])')))
+       OR EXISTS(SELECT 1 FROM pg_catalog.pg_proc p CROSS JOIN LATERAL pg_catalog.aclexplode(p.proacl) a
+          WHERE p.oid=function_id AND (a.grantee NOT IN (guard_id,supervisor_role_id) OR a.grantor<>guard_id
+            OR a.privilege_type<>'EXECUTE' OR (a.grantee=supervisor_role_id AND a.is_grantable)))
+       OR NOT EXISTS(SELECT 1 FROM pg_catalog.pg_proc p CROSS JOIN LATERAL pg_catalog.aclexplode(p.proacl) a
+          WHERE p.oid=function_id AND a.grantee=supervisor_role_id AND a.privilege_type='EXECUTE' AND NOT a.is_grantable))
+FROM guard_profile"""
+_HISTORY_SQL = 'SELECT version, checksum_sha256 FROM cragkit_qdrant.schema_migrations ORDER BY version LIMIT 5'
 _SCOPE_SQL = """SELECT set_config('cragkit_qdrant.tenant_id',%s,true),
  set_config('cragkit_qdrant.collection',%s,true),set_config('cragkit_qdrant.principal_id',%s,true),
  set_config('cragkit_qdrant.grant_ids',%s,true),set_config('cragkit_qdrant.authorization_revision',%s,true)"""
@@ -197,6 +295,7 @@ async def query(connection: SessionConnection, sql: str, params: tuple[object, .
 class PostgresQdrantAuthority:
     def __init__(self, resource: PoolResource) -> None:
         self.resource = resource
+        self._requires_security_guard = False
 
     @asynccontextmanager
     async def transaction(self, deadline: float) -> AsyncIterator[SessionConnection]:
@@ -252,30 +351,52 @@ class PostgresQdrantAuthority:
             if failure is not None:
                 raise failure from None
 
+    async def _history(self, connection: SessionConnection, deadline: float) -> tuple[tuple[str, str], ...]:
+        try:
+            rows = await query(connection, _HISTORY_SQL, None, deadline)
+        except IntegrityViolation:
+            raise UnsupportedCapability() from None
+        if len(rows) not in (1, 2, 3, 4) or any(
+                len(row) != 2 or any(type(value) is not str for value in row) for row in rows):
+            raise UnsupportedCapability()
+        history = tuple(rows)
+        if history not in (EXPECTED_HISTORY, EXPECTED_PUBLICATION_HISTORY,
+                           EXPECTED_ATTESTATION_HISTORY, EXPECTED_SECURITY_GUARD_HISTORY):
+            raise UnsupportedCapability()
+        if self._requires_security_guard and history != EXPECTED_SECURITY_GUARD_HISTORY:
+            raise UnsupportedCapability()
+        return history
+
+    async def _validate_profile(self, connection: SessionConnection,
+                                history: tuple[tuple[str, str], ...], deadline: float) -> None:
+        if history == EXPECTED_HISTORY:
+            catalog_sql, fingerprint = _CATALOG_SQL, EXPECTED_CATALOG_FINGERPRINT
+        elif history == EXPECTED_PUBLICATION_HISTORY:
+            catalog_sql, fingerprint = _PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
+        elif history == EXPECTED_ATTESTATION_HISTORY:
+            catalog_sql, fingerprint = _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
+        else:
+            catalog_sql, fingerprint = _SECURITY_GUARD_CATALOG_SQL, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT
+        catalog = await query(connection, catalog_sql, None, deadline)
+        if len(catalog) != 1 or len(catalog[0]) != 1 or catalog[0][0] is not True:
+            raise UnsupportedCapability()
+        role = await query(connection, _ROLE_SQL, None, deadline)
+        if len(role) != 1 or len(role[0]) != 1 or role[0][0] is not True:
+            raise UnauthorizedScope()
+        observed = await query(connection, _CATALOG_FINGERPRINT_SQL, None, deadline)
+        if (len(observed) != 1 or len(observed[0]) != 1 or type(observed[0][0]) is not str
+                or observed[0][0] != fingerprint):
+            raise UnsupportedCapability()
+        if history == EXPECTED_SECURITY_GUARD_HISTORY:
+            owner = await query(connection, _SECURITY_GUARD_OWNER_SQL, None, deadline)
+            if len(owner) != 1 or len(owner[0]) != 1 or owner[0][0] is not True:
+                raise UnsupportedCapability()
+
     async def initialize(self, *, deadline: float) -> None:
         async with self.transaction(deadline) as connection:
-            try:
-                rows = await query(connection, _HISTORY_SQL, None, deadline)
-            except IntegrityViolation:
-                raise UnsupportedCapability() from None
-            if len(rows) not in (1, 2, 3) or any(len(row) != 2 or any(type(value) is not str for value in row)
-                                             for row in rows):
-                raise UnsupportedCapability()
-            history = tuple(rows)
-            if history == EXPECTED_HISTORY:
-                catalog_sql, fingerprint = _CATALOG_SQL, EXPECTED_CATALOG_FINGERPRINT
-            elif history == EXPECTED_PUBLICATION_HISTORY:
-                catalog_sql, fingerprint = _PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
-            elif history == EXPECTED_ATTESTATION_HISTORY:
-                catalog_sql, fingerprint = _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
-            else:
-                raise UnsupportedCapability()
-            if await query(connection, catalog_sql, None, deadline) != [(True,)]:
-                raise UnsupportedCapability()
-            if await query(connection, _ROLE_SQL, None, deadline) != [(True,)]:
-                raise UnauthorizedScope()
-            if await query(connection, _CATALOG_FINGERPRINT_SQL, None, deadline) != [(fingerprint,)]:
-                raise UnsupportedCapability()
+            history = await self._history(connection, deadline)
+            await self._validate_profile(connection, history, deadline)
+        self._requires_security_guard = history == EXPECTED_SECURITY_GUARD_HISTORY
 
     async def read(self, nomination: Any, request: RetrievalRequest, scope: TrustedScope, config: QdrantConfig, *,
                    retained: bool, max_source_bytes: int, deadline: float) -> list[dict[str, Any]]:
@@ -288,7 +409,11 @@ class PostgresQdrantAuthority:
         if len(grants.encode()) > 131072:
             raise InvalidRequest()
         async with self.transaction(deadline) as connection:
-            if await query(connection, _ROLE_SQL, None, deadline) != [(True,)]:
+            history = await self._history(connection, deadline)
+            if history == EXPECTED_SECURITY_GUARD_HISTORY:
+                await self._validate_profile(connection, history, deadline)
+                self._requires_security_guard = True
+            elif await query(connection, _ROLE_SQL, None, deadline) != [(True,)]:
                 raise UnauthorizedScope()
             await query(connection, _SCOPE_SQL, (scope.tenant_id,request.collection,scope.principal_id,grants,scope.authorization_revision), deadline)
             rows = await query(connection, _SOURCE_SQL.format(publication='TRUE' if retained else 'g.published AND d.active_generation_id=g.generation_id', predicate=predicate), args, deadline)
