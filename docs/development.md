@@ -1198,3 +1198,15 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory. This PostgreSQL-only fixture uses two restricted runtime clients plus one administrative advisory-barrier observer, sequential writer replacement and six server slots. A separate fixture schema leaves the production catalog and capability grants unchanged. Actual submitted COMMIT and retained-lock waits are observed through database lock/activity views. Completion metadata is explicitly synthetic. The sixty-second business deadline and separate twelve-second cleanup allowance are development limits. Owned connections/schema/process/storage are closed and checked. No Qdrant, provider or hosted target is involved.
+
+
+## V5-04G2b2d1 restricted same-transaction SQL guard
+
+[SQL guard evidence](../evaluation/reports/V5/V5-04G2b2d1.md) covers the additive migration under an explicit non-superuser operator. Runtime profile-4 compatibility and receipt settlement remain separate tasks; use only disposable fixtures at this checkpoint.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_security_guard_schema.py tools/tests/test_qdrant_security_guard_races.py tools/tests/test_qdrant_security_guard_native.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_security_guard.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --artifacts-dir artifacts/V5/V5-04G2b2d1/a-new-guard-run
+```
+
+Use a fresh directory. The parent explicitly bootstraps a trusted non-superuser schema-owner operator on a new PostgreSQL fixture, seeds five small documents through accepted three-profile writer APIs, then applies 0004 as that operator. It checks rollback, preexisting-role refusal, twelve restricted SQL groups and six atomic-lock races. At most two restricted runtime clients plus one admin observer run at once; the server has six slots. Actual barriers stay in an owned separate schema. The test enables `client_connection_check_interval=100ms` and observes server-side termination; client close alone is not treated as that proof. Its outer 180-second deadline bounds the combined development profile, with separate twelve-second race cleanup. Final history, catalog and owned process/storage cleanup are checked. No Qdrant service, provider, hosted target or genuine recovery receipt is involved.
