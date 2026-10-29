@@ -57,6 +57,30 @@ function rows(value:unknown,max:number):Data[]{
   try{return native_array(value,0,max).map(row=>fields(row,['id','payload','vector'],['shard_key']));}
   catch(error){if(error instanceof InvalidRequest)throw new IntegrityViolation();throw error;}
 }
+/** One fixed storage budget also meters recovery acknowledgment responses. */
+export async function security_storage_request(transport:SupervisorTransport,method:string,path:string,body:readonly number[],
+  rawOptions:unknown,inputBudget:SecurityReadbackBudget):Promise<readonly number[]>{
+  try{
+    const options=parse_options(rawOptions),budget=security_readback_budget(inputBudget),state=budget_state(budget);
+    if(!['POST','PUT'].includes(method))throw new InvalidRequest();
+    const payload=Object.freeze(native_array(body,0,RESPONSE).map(value=>count(value,0,255)));
+    if(state.calls===0||state.bytes===0)throw new ProviderUnavailable();
+    state.calls--;const maximum=Math.min(RESPONSE,state.bytes);
+    const pending=transport.request(method,path,{deadline:options.deadline,signal:options.signal,
+      body:payload,max_response_bytes:maximum}).then(raw=>{
+      // Observe and charge late returned bytes even after the caller has timed out.
+      if(!Array.isArray(raw)||types.isProxy(raw))throw new IntegrityViolation();
+      const length=Object.getOwnPropertyDescriptor(raw,'length')!.value as number;
+      const remaining=state.bytes;state.bytes=Math.max(0,remaining-length);
+      if(length>remaining)throw new ProviderUnavailable();
+      if(length>maximum)throw new IntegrityViolation();return raw;
+    });
+    const raw=await bounded(pending,options);
+    let bytes:unknown[];try{bytes=native_array(raw,0,RESPONSE);}catch{throw new IntegrityViolation();}
+    const buffer=Buffer.from(bytes.map(value=>{try{return count(value,0,255);}catch{throw new IntegrityViolation();}}));
+    parse_options(options);return Object.freeze(Array.from(buffer));
+  }catch(error){throw safe(error);}
+}
 export type SecurityInspection=Readonly<{present_ids:readonly string[];missing_ids:readonly string[];stale_ids:readonly string[]}>;
 export async function inspect_security_readback(transport:SupervisorTransport,rawConfig:unknown,rawExpected:unknown,
   rawOptions:unknown,inputBudget?:SecurityReadbackBudget):Promise<SecurityInspection>{
@@ -97,25 +121,8 @@ export async function inspect_security_readback(transport:SupervisorTransport,ra
     if(groups.size>64||[...groups.values()].some(size=>size>64))throw new InvalidRequest();
     admitted=true;
     const request=async(path:string,body:unknown):Promise<Data>=>{
-      parse_options(options);const state=budget_state(budget);
-      if(state.calls===0||state.bytes===0)throw new ProviderUnavailable();
-      state.calls--;const maximum=Math.min(RESPONSE,state.bytes);
-      const pending=transport.request('POST',path,{deadline:options.deadline,signal:options.signal,
-        body:Object.freeze(Array.from(Buffer.from(JSON.stringify(body)))),max_response_bytes:maximum}).then(raw=>{
-        // Account for returned bytes even if the caller already timed out.
-        // bounded observes late rejection; no late result resumes verification.
-        if(!Array.isArray(raw)||types.isProxy(raw))throw new IntegrityViolation();
-        const length=Object.getOwnPropertyDescriptor(raw,'length')!.value as number;
-        const remaining=state.bytes;state.bytes=Math.max(0,remaining-length);
-        if(length>remaining)throw new ProviderUnavailable();
-        if(length>maximum)throw new IntegrityViolation();
-        return raw;
-      });
-      const raw=await bounded(pending,options);
-      let bytes:unknown[];
-      try{bytes=native_array(raw,0,RESPONSE);}catch{throw new IntegrityViolation();}
-      const buffer=Buffer.from(bytes.map(value=>{try{return count(value,0,255);}catch{throw new IntegrityViolation();}}));
-      parse_options(options);return envelope(buffer);
+      const raw=await security_storage_request(transport,'POST',path,Object.freeze(Array.from(Buffer.from(JSON.stringify(body)))),options,budget);
+      return envelope(Buffer.from(raw));
     };
     const validate=(row:Data):Readonly<Data>=>{
       try{

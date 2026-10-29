@@ -169,3 +169,16 @@ test('caller deadline and abort prevent late transport success from becoming ver
   const g=setup(0);g.transport.request=async()=>{await new Promise(resolve=>setTimeout(resolve,30));return bytes({status:'ok',result:{points:[],next_page_offset:null}});};
   await assert.rejects(verify_security_readback(g.transport,config,g.expected,{deadline:now()+.01}),DeadlineExceeded);
 });
+
+
+test('storage mutation acknowledgment shares readback call and byte limits',async()=>{
+  const {security_storage_request}=await import('../dist/qdrant-security-readback.js');
+  let calls=0;const transport={async request(method,path,options){calls++;assert.ok(['POST','PUT'].includes(method));
+    assert.deepEqual(options.body,[123,125]);assert.ok(options.max_response_bytes<=1048576);return Object.freeze([123,125]);}};
+  const budget=new SecurityReadbackBudget(),lease=options();
+  for(let index=0;index<512;index++)await security_storage_request(transport,'POST','/read',[123,125],lease,budget);
+  assert.deepEqual(await security_storage_request(transport,'PUT','/write',[123,125],lease,budget),[123,125]);
+  assert.equal(budget.remaining_calls,0);assert.equal(budget.remaining_bytes,8388608-1026);
+  await assert.rejects(security_storage_request(transport,'POST','/read',[123,125],lease,budget),ProviderUnavailable);
+  assert.equal(calls,513);
+});

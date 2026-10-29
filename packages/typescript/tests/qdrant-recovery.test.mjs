@@ -5,7 +5,7 @@ import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
 import {PostgresQdrantWriter} from '../dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,settlement_data,recovery_components,validate_security_guarded,security_guard_binding} from '../dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,settlement_data,recovery_components,validate_security_guarded,dispatch_security_recovery,security_guard_binding} from '../dist/qdrant-recovery.js';
 import {QdrantSecurityVerifier} from '../dist/qdrant-security-verification.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
@@ -124,6 +124,20 @@ test('guarded driver rejects forged Recovery and mismatched contexts before admi
       assert.throws(()=>security_guard_binding(guard,f.writer,{},options()),InvalidRequest);
     }
   }finally{await securityVerifier.close();await f.coordinator.close();await f.writer.close();}
+});
+test('security recovery dispatcher is constructor-bound and rejects malformed modes before callbacks or SQL',async()=>{
+  const f=setup(),security={...context,intent_id:'security-current'};let called=0;const authorize=async()=>{called++;return true;};
+  try{
+    for(const recovery of [{},Object.create(PostgresQdrantRecovery.prototype),new Proxy(f.coordinator,{})]){
+      await assert.rejects(dispatch_security_recovery(recovery,{},context,security,authorize,options()),InvalidRequest);
+    }
+    for(const changed of [context,{...security,collection:'other'},{...security,scope:{...security.scope,grant_ids:['other']}}]){
+      await assert.rejects(dispatch_security_recovery(f.coordinator,{},context,changed,authorize,options()),InvalidRequest);
+    }
+    for(const callback of [true,null,{},new Proxy(authorize,{})])await assert.rejects(dispatch_security_recovery(f.coordinator,{},context,security,callback,options()),InvalidRequest);
+    await assert.rejects(dispatch_security_recovery(f.coordinator,{},context,security,authorize,options()),IndexNotReady);
+    assert.equal(called,0);assert.equal(f.state.queries.length,0);
+  }finally{await f.coordinator.close();await f.writer.close();}
 });
 
 test('guarded driver requires ready profile4 and original verifier dependencies',async()=>{

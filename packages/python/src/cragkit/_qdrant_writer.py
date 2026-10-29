@@ -56,6 +56,15 @@ class SecurityProjection:
 
 _SECURITY_PROJECTIONS: WeakKeyDictionary[SecurityProjection, tuple[object, Mapping[str, Any]]] = WeakKeyDictionary()
 _GUARDED_WRITERS: WeakKeyDictionary[object, Callable[..., Awaitable[None]]] = WeakKeyDictionary()
+_SECURITY_RECOVERY_SOURCES: WeakKeyDictionary[object, Callable[..., Awaitable[SecurityProjection]]] = WeakKeyDictionary()
+
+
+async def security_recovery_projection(writer: object, value: object, *, deadline: float,
+                                        previous: object | None = None) -> SecurityProjection:
+    writer_binding(writer)
+    if writer not in _SECURITY_RECOVERY_SOURCES:
+        raise InvalidRequest()
+    return await _SECURITY_RECOVERY_SOURCES[writer](value,deadline=deadline,previous=previous)
 
 
 async def validate_guarded_security_projection(writer: object, guard: object, projection: object, *,
@@ -208,6 +217,28 @@ class _RecoveryDispatchPlan:
 _RECOVERY_PLANS: WeakKeyDictionary[_RecoveryDispatchPlan, tuple[object, object, Mapping[str, Any]]] = WeakKeyDictionary()
 
 
+class _SecurityDispatchPlan:
+    __slots__ = ('__weakref__',)
+
+    def __reduce__(self) -> Any:
+        raise TypeError('Security dispatch plans cannot be serialized')
+
+
+_SECURITY_DISPATCH_PLANS: WeakKeyDictionary[_SecurityDispatchPlan, tuple[object, object, Mapping[str, Any]]] = WeakKeyDictionary()
+
+
+def security_dispatch_plan_data(plan: object, authorization: object, expected_writer: object, *,
+                                deadline: float) -> Mapping[str, Any]:
+    from ._qdrant_recovery import security_dispatch_authorization
+    security_dispatch_authorization(authorization,expected_writer,deadline=deadline)
+    if type(plan) is not _SecurityDispatchPlan or plan not in _SECURITY_DISPATCH_PLANS:
+        raise InvalidRequest()
+    writer,issued,result=_SECURITY_DISPATCH_PLANS[plan]
+    if writer is not expected_writer or issued is not authorization:
+        raise InvalidRequest()
+    return result
+
+
 def recovery_dispatch_plan_data(plan: object, authorization: object, expected_writer: object,
                                 *, deadline: float) -> Mapping[str, Any]:
     from ._qdrant_recovery import recovery_dispatch_authorization
@@ -345,6 +376,12 @@ class PostgresQdrantWriter:
                 raise InvalidRequest()
             await fixed(writer,guard,projection,deadline=deadline)
         _GUARDED_WRITERS[self] = guarded
+        source_fixed=PostgresQdrantWriter._security_recovery_projection
+        async def source(value: object,*,deadline: float,previous: object | None=None) -> SecurityProjection:
+            writer=original()
+            if writer is None:raise InvalidRequest()
+            return await source_fixed(writer,value,deadline=deadline,previous=previous)
+        _SECURITY_RECOVERY_SOURCES[self]=source
 
     async def _query(self, connection: SessionConnection, sql: str,
                      params: tuple[object, ...] = ()) -> list[tuple[Any, ...]]:
@@ -1563,6 +1600,28 @@ class PostgresQdrantWriter:
             return projection
         return await self._run(ctx,deadline,project)
 
+    async def _security_recovery_projection(self, value: object, *, deadline: float,
+                                             previous: object | None=None) -> SecurityProjection:
+        ctx=context(value);task=asyncio.current_task()
+        original=security_projection_data(previous,self) if previous is not None else None
+        if original is not None and original['context']!=ctx:raise InvalidRequest()
+        def check() -> None:
+            deadline_value(deadline)
+            if task is None or task is not asyncio.current_task():raise InvalidRequest()
+            if task.cancelling():raise asyncio.CancelledError()
+            if self._closed:raise ProviderUnavailable()
+        check()
+        if self._schema_profile!=4:raise UnsupportedCapability()
+        async def project(connection: SessionConnection) -> SecurityProjection:
+            document=await self._document(connection,ctx)
+            data=await self._security_graph(connection,ctx,document)
+            if original is not None and any(original[key]!=data[key] for key in original if key!='points'):
+                raise UnauthorizedScope()
+            token=SecurityProjection();_SECURITY_PROJECTIONS[token]=(self,data)
+            return token
+        result=await self._run(ctx,deadline,project,guarded_check=check)
+        check();return result
+
     async def validate_security_projection(self, projection: object, *, deadline: float) -> None:
         original = security_projection_data(projection,self)
         fresh = security_projection_data(await self.project_security(original['context'],deadline=deadline),self)
@@ -1728,6 +1787,59 @@ class PostgresQdrantWriter:
         fresh = await self.project_recovery_dispatch(authorization,original['context'],original['point_ids'],deadline=deadline)
         current = recovery_dispatch_plan_data(fresh,authorization,self,deadline=deadline)
         if dict(current) != dict(original):
+            raise UnauthorizedScope()
+
+    async def project_security_dispatch(self, authorization: object, point_ids: object, *,
+                                         deadline: float) -> _SecurityDispatchPlan:
+        from ._qdrant_recovery import security_dispatch_authorization
+        def check() -> Mapping[str, Any]:
+            return security_dispatch_authorization(authorization,self,deadline=deadline)
+        auth=check();owner=auth['context'];current=auth['security_context']
+        source=security_projection_data(auth['projection'],self)
+        if self._schema_profile!=4 or source['tombstoned']:
+            raise UnsupportedCapability()
+        ids=tuple(sorted(sequence(point_ids,8)))
+        if len(set(ids))!=len(ids) or any(type(item) is not str or item not in source['point_ids'] for item in ids):
+            raise InvalidRequest()
+        physical=auth['physical_binding']
+        async def project(connection: SessionConnection) -> Mapping[str, Any]:
+            rows=await self._query(connection,'SELECT backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id FROM cragkit_qdrant.backend_instances WHERE instance_id=%s FOR SHARE',(self.instance_id,))
+            if rows!=[(self.config.backend_namespace,physical['storage_identity'],physical['supervisor_id'],
+                       physical['new_epoch'],'recovery_blocked',physical['recovery_id'])]:
+                raise ProviderUnavailable()
+            owners=await self._query(connection,'SELECT owner_token::text,intent_id,backend_epoch,instance_id FROM cragkit_qdrant.document_owners WHERE '+_DOC+' FOR UPDATE',_doc(owner))
+            if owners!=[(owner.owner_token,owner.intent_id,physical['new_epoch'],self.instance_id)]:
+                raise ProviderUnavailable()
+            document=await self._document(connection,current)
+            fresh=await self._security_graph(connection,current,document)
+            if fresh['tombstoned']:
+                raise UnsupportedCapability()
+            if any(source[key]!=fresh[key] for key in source if key!='points'):
+                raise UnauthorizedScope()
+            stages=await self._query(connection,'SELECT action,manifest_sha256,revision_id,generation_id,instance_id FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_key(owner))
+            if len(stages)!=1 or len(stages[0])!=5 or stages[0][0]!='stage':
+                raise IntegrityViolation()
+            stage=stages[0]
+            if stage[4]!=self.instance_id or not any((group['manifest_sha256'],group['revision_id'],group['generation_id'])==stage[1:4] for group in fresh['generations']):
+                raise IntegrityViolation()
+            available={point.point_id:point for point in fresh['points']}
+            points=[]
+            for identity in ids:
+                point=available[identity];vector: dict[str,Any]={'dense':list(point.dense.values)}
+                if point.sparse is not None:vector['sparse']={'indices':list(point.sparse.indices),'values':list(point.sparse.values)}
+                points.append(dict(id=identity,vector=vector,payload=point.payload.model_dump(mode='json',exclude_none=True)))
+            body=_complete_point_request(points)
+            return MappingProxyType({**dict(auth),'point_ids':ids,'request_bytes':body,'request_sha256':hashlib.sha256(body).hexdigest(),
+                'manifest_sha256':stage[1],'revision_id':stage[2],'generation_id':stage[3],
+                **{key:fresh[key] for key in ('intent_sha256','inventory_sha256','authorization_revision','mutation_epoch','active_generation_id')}})
+        result=await self._run(current,deadline,project,guarded_check=check)
+        check();token=_SecurityDispatchPlan();_SECURITY_DISPATCH_PLANS[token]=(self,authorization,result)
+        return token
+
+    async def validate_security_dispatch(self, plan: object, authorization: object, *, deadline: float) -> None:
+        original=security_dispatch_plan_data(plan,authorization,self,deadline=deadline)
+        fresh=await self.project_security_dispatch(authorization,original['point_ids'],deadline=deadline)
+        if dict(security_dispatch_plan_data(fresh,authorization,self,deadline=deadline))!=dict(original):
             raise UnauthorizedScope()
 
     async def project_stage(self,value: object,binding: object,*,deadline: float) -> ExpectedProjection:

@@ -6,7 +6,7 @@ import {isDeepStrictEqual as same} from 'node:util';
 import {PoolResource,parse_pool_config,bounded,now} from '../packages/typescript/dist/postgres-pool.js';
 import {PostgresQdrantWriter,prepare_stage,security_projection_data} from '../packages/typescript/dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../packages/typescript/dist/qdrant-supervisor.js';
-import {PostgresQdrantRecovery,validate_security_guarded,settle_security_guarded,SECURITY_GUARD_SQL} from '../packages/typescript/dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,validate_security_guarded,settle_security_guarded,dispatch_security_recovery,SECURITY_GUARD_SQL} from '../packages/typescript/dist/qdrant-recovery.js';
 import {QdrantReconciliationVerifier} from '../packages/typescript/dist/qdrant-reconciliation.js';
 import {QdrantSecurityVerifier,security_receipt_data} from '../packages/typescript/dist/qdrant-security-verification.js';
 import {InvalidRequest,IntegrityViolation,UnsupportedCapability,UnauthorizedScope,ProviderUnavailable} from '../packages/typescript/dist/errors.js';
@@ -35,6 +35,9 @@ const SETTLEMENT_CHECKS=Object.freeze(['retired_unknown_settled_with_genuine_cur
   'lost_commit_confirmed_once_after_authority_advance_without_dml_retry',
   'fresh_repeat_preserves_historical_completion_and_returns_zero',
   'current_credential_unknown_preserves_rows_and_closed_admission']);
+const DISPATCH_CHECKS=Object.freeze(['stale_missing_cross_generation_replayed_with_genuine_ack',
+  'fresh_security_receipt_settles_only_retired_journal','already_current_is_noop_and_immutable_corruption_refused',
+  'lost_http_ack_preserves_current_uncertainty_without_resend']);
 const ERRORS=new Set(['IntegrityViolation','InvalidRequest','ProviderUnavailable','UnauthorizedScope','UnsupportedCapability','DeadlineExceeded','IndexNotReady','AbortError']);
 const OWNER='00000000-0000-4000-8000-000000000001',SECURITY='00000000-0000-4000-8000-000000000002';
 const cancellation=new AbortController();let readingInput=true,step=0;
@@ -42,6 +45,7 @@ const cancel=()=>{cancellation.abort();if(readingInput)process.stdin.destroy();}
 process.on('SIGTERM',cancel);process.on('SIGINT',cancel);
 const bytes=value=>[...Buffer.from(JSON.stringify(value),'utf8')];
 const decode=value=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.from(value)));
+const clone=value=>structuredClone(value);
 function outcome(error){try{return ERRORS.has(error?.name)?error.name:'internal';}catch{return 'internal';}}
 class RuntimeCleanupFailure extends Error{constructor(primary,failures){super('runtime_cleanup_failed');this.primary=primary?outcome(primary):null;this.failures=failures;}}
 async function input(){
@@ -52,12 +56,15 @@ async function input(){
       ['binary','inputs','supervisor_config','work_dir','writer_config',
         ...(Object.hasOwn(value,'guard_operator_config')?['guard_operator_config']:[]),
         ...(Object.hasOwn(value,'guard_graph_config')?['guard_graph_config']:[]),
-        ...(Object.hasOwn(value,'settlement_config')?['settlement_config']:[])].sort())
+        ...(Object.hasOwn(value,'settlement_config')?['settlement_config']:[]),
+        ...(Object.hasOwn(value,'dispatch_config')?['dispatch_config']:[])].sort())
     ||typeof value.binary!=='string'||typeof value.work_dir!=='string'||!value.inputs?.second_stage||!value.inputs?.security||!value.inputs?.tombstone)throw new Error('input_shape');
   if(Object.hasOwn(value,'guard_graph_config')&&(!Object.hasOwn(value,'guard_operator_config')
     ||!value.guard_graph_config||!same(Object.keys(value.guard_graph_config),['admin_config'])))throw new Error('graph_input_shape');
   if(Object.hasOwn(value,'settlement_config')&&(!Object.hasOwn(value,'guard_operator_config')||Object.hasOwn(value,'guard_graph_config')
     ||!value.settlement_config||!same(Object.keys(value.settlement_config),['admin_config'])))throw new Error('settlement_input_shape');
+  if(Object.hasOwn(value,'dispatch_config')&&(!Object.hasOwn(value,'guard_operator_config')||Object.hasOwn(value,'guard_graph_config')
+    ||Object.hasOwn(value,'settlement_config')||!value.dispatch_config||!same(Object.keys(value.dispatch_config),['admin_config'])))throw new Error('dispatch_input_shape');
   return value;
 }
 async function listener(address,absent=false){
@@ -79,6 +86,8 @@ async function cases(value){
   const guarded=Object.hasOwn(value,'guard_operator_config');
   const graphMode=Object.hasOwn(value,'guard_graph_config');
   const settlementMode=Object.hasOwn(value,'settlement_config');
+  const dispatchMode=Object.hasOwn(value,'dispatch_config');
+  let dispatchDropArmed=false,dispatchDrops=0,dispatchUpserts=0,dispatchDml=0;
   let settlementDropArmed=false,settlementAfterCommit,commitDrops=0,confirmationActive=false,confirmationTransactions=0,
     confirmationWrites=0,confirmationWriterQueries=0,httpQueries=0,confirmationHttpStart=0,guardQueries=0,confirmationGuardStart=0;
   const nativeHttpRequest=http.request;
@@ -108,6 +117,7 @@ async function cases(value){
       let guardedTransaction=false,settlementWritten=false;
       return {async query(query){
         if(typeof query?.text==='string'&&query.text.includes("set_config('cragkit_qdrant.backend_instance_id'"))backendQueries++;
+        if(dispatchMode&&/^(INSERT INTO|UPDATE) cragkit_qdrant\.(dispatch_journal|dispatch_points)\b/.test(query.text))dispatchDml++;
         if(query.text.startsWith('BEGIN')){guardedTransaction=false;settlementWritten=false;}
         if(confirmationActive){
           if(query.text==='SET TRANSACTION READ ONLY')confirmationTransactions++;
@@ -132,7 +142,8 @@ async function cases(value){
   const operatorConfig=guarded?parse_pool_config(value.guard_operator_config):undefined;
   if(operatorConfig&&operatorConfig.max_size!==1)throw new Error('operator_client_ceiling');
   const operator=operatorConfig?new PoolResource(operatorConfig):undefined;
-  const adminConfig=graphMode||settlementMode?parse_pool_config((graphMode?value.guard_graph_config:value.settlement_config).admin_config):undefined;
+  const adminConfig=graphMode||settlementMode||dispatchMode?parse_pool_config(
+    (graphMode?value.guard_graph_config:dispatchMode?value.dispatch_config:value.settlement_config).admin_config):undefined;
   if(adminConfig&&adminConfig.max_size!==1)throw new Error('admin_client_ceiling');
   const admin=adminConfig?new PoolResource(adminConfig):undefined;
   const contenderResource=graphMode?new PoolResource(writerConfig,{factory:async config=>{
@@ -201,6 +212,32 @@ async function cases(value){
     oldProjection=data.projection;semanticWitnessSha256=createHash('sha256').update(Buffer.from(JSON.stringify([data.witness[0],...data.witness.slice(4)]))).digest('hex');return data;
   }
   if(settlementMode)http.request=function(...args){httpQueries++;return nativeHttpRequest.apply(this,args);};
+  if(dispatchMode)http.request=function(requestOptions,callback){
+    const upsert=requestOptions?.method==='PUT'&&requestOptions.path===target+'/points?wait=true&ordering=strong';
+    if(upsert)dispatchUpserts++;
+    const drop=upsert&&dispatchDropArmed;if(drop)dispatchDropArmed=false;
+    return nativeHttpRequest.call(this,requestOptions,incoming=>{
+      if(!drop){callback(incoming);return;}
+      const chunks=[];let size=0,suppressed=false;
+      incoming.on('data',chunk=>{size+=chunk.length;if(size<=1048576)chunks.push(Buffer.from(chunk));});
+      const originalOnce=incoming.once;
+      originalOnce.call(incoming,'end',()=>{
+        try{
+          const body=decode(Buffer.concat(chunks));
+          if(!suppressed||size>1048576||incoming.statusCode!==200||body?.status!=='ok'||body?.result?.status!=='completed')throw new Error('completed_ack_missing');
+          dispatchDrops++;
+        }catch{/* A failed observation cannot count as a completed acknowledgment. */}
+        incoming.emit('error',new ProviderUnavailable());
+      });
+      // The actual supervisor registers its completion resolver synchronously.
+      // Withhold that resolver only; all request, body and socket I/O is real.
+      incoming.once=function(event,listener){
+        if(event==='end'&&!suppressed){suppressed=true;return this;}
+        return originalOnce.call(this,event,listener);
+      };
+      try{callback(incoming);}finally{incoming.once=originalOnce;}
+    });
+  };
   try{
     await supervisor.initialize({...options,provision:async(admin,probe)=>{
       await admin.request('PUT',target,{...options,body:bytes(inputs.collection_config)});
@@ -214,7 +251,7 @@ async function cases(value){
     const historical=context(inputs.scope,inputs.stage.intent.intent_id,OWNER);
     const admitted=await writer.admit_publication(historical,options);
     if(admitted.owner?.owner_token!==OWNER)throw new Error('historical_owner_missing');
-    if(settlementMode){
+    if(settlementMode||dispatchMode){
       const dispatch='native-security-retired-unknown';
       const attempt=supervisor.issue_attempt({intent_id:historical.intent_id,owner_token:OWNER,epoch:1,dispatch_id:dispatch},options);
       const binding=supervisor.attempt_binding(attempt);
@@ -223,12 +260,12 @@ async function cases(value){
       await writer.mark_dispatched(historical,dispatch,options);await writer.mark_unknown(historical,dispatch,options);
     }
     await writer.apply_security(inputs.security,inputs.scope,{...options,owner_token:SECURITY});
-    if(settlementMode&&(await writer.admit_publication(owner,options)).intent.state!=='denied')throw new Error('old_stage_not_denied');
+    if((settlementMode||dispatchMode)&&(await writer.admit_publication(owner,options)).intent.state!=='denied')throw new Error('old_stage_not_denied');
     const projected=await writer.project_security(security,options),source=security_projection_data(projected,writer);
     const state=await writer.manager_snapshot(owner,options);
     if(source.point_ids.length!==4||source.generations.length!==2||source.authorization_revision!=='auth-2'
       ||source.points.some(point=>point.payload.authorization_revision!=='auth-2')||state.owner?.owner_token!==OWNER||state.owner?.intent_id!==owner.intent_id)throw new Error('current_projection');
-    mark();
+    if(!dispatchMode)mark();
     const proof=await recovery.recover('security-receipt-native',options);
     if(guarded){
       await operator.open();
@@ -259,7 +296,60 @@ async function cases(value){
         ['9999_native_guard_recovery_probe','0'.repeat(64)],['9999_native_guard_recovery_probe','0'.repeat(64)]);
       await mutation("CREATE FUNCTION cragkit_qdrant.native_guard_recovery_probe() RETURNS boolean LANGUAGE SQL SECURITY DEFINER AS 'SELECT true'",
         'DROP FUNCTION cragkit_qdrant.native_guard_recovery_probe()');
-      if(graphMode||settlementMode)await operator.close();
+      if(graphMode||settlementMode||dispatchMode)await operator.close();
+    }
+    if(dispatchMode){
+      await admin.open();
+      const dispatchMark=()=>{checks.push(DISPATCH_CHECKS[checks.length]);step=checks.length;};
+      const authorize=async(scope,collection,document)=>same(scope,owner.scope)&&collection===owner.collection&&document===owner.document_id;
+      const dispatch=()=>dispatch_security_recovery(recovery,proof,owner,security,authorize,options);
+      async function fixture(selected,remove){
+        await supervisor.control_session(async control=>{
+          const attempt=control.issue_recovery_attempt(proof,{intent_id:owner.intent_id,owner_token:OWNER,epoch:2,
+            dispatch_id:'security-dispatch-native-maintenance',recovery_id:'security-receipt-native'},options);
+          const handle=control.recovery_transport_for(attempt);
+          try{
+            if(selected)completed(await handle.request('PUT',target+'/points?wait=true&ordering=strong',{...options,body:bytes({points:selected})}));
+            if(remove)completed(await handle.request('POST',target+'/points/delete?wait=true&ordering=strong',{...options,body:bytes({points:remove})}));
+          }finally{await handle.close();}
+        });
+      }
+      const journals=async()=>(await sql(admin,'SELECT dispatch_id,sequence,credential_generation,request_sha256,state,completion_sha256 '+
+        'FROM cragkit_qdrant.dispatch_journal WHERE '+docWhere+' AND intent_id=$4 ORDER BY sequence',[...docKeys,owner.intent_id])).rows;
+      const current=actualPoints(source),stale=clone(current);
+      for(const point of stale)point.payload.authorization_revision='auth-1';
+      await fixture(stale,[current.at(-1).id]);
+      const before=await journals(),beforePuts=dispatchUpserts;
+      const replay=await dispatch(),after=await journals();
+      if(!same(replay,{batches:1,points:4})||before.length!==1||after.length!==2||!same(after[0],before[0])
+        ||after[1][4]!=='settled'||typeof after[1][5]!=='string'||dispatchUpserts!==beforePuts+1)throw new Error('security_dispatch_ack_journal');
+      dispatchMark();
+      await supervisor.control_session(async control=>{receipt=await verifier.verify(proof,control,owner,security,options);assertReceipt(control);});
+      if(!same(await settle_security_guarded(recovery,verifier,proof,owner,security,options),{settled_count:1}))throw new Error('security_dispatch_retired_settlement');
+      const settled=await journals();
+      if(settled[0][4]!=='settled'||!same(settled[1],after[1]))throw new Error('security_dispatch_settled_wrong_row');
+      dispatchMark();
+      let puts=dispatchUpserts,dml=dispatchDml;
+      if(!same(await dispatch(),{batches:0,points:0})||!same(await journals(),settled)||dispatchUpserts!==puts||dispatchDml!==dml)throw new Error('security_dispatch_not_noop');
+      const corrupt=clone(current.slice(0,1));corrupt[0].vector.dense=corrupt[0].vector.dense.map(value=>-value);
+      await fixture(corrupt);puts=dispatchUpserts;dml=dispatchDml;
+      await refuses(dispatch,IntegrityViolation);
+      if(!same(await journals(),settled)||dispatchUpserts!==puts||dispatchDml!==dml)throw new Error('security_dispatch_corruption_mutated');
+      await fixture(current.slice(0,1));dispatchMark();
+      const staleOne=clone(current.slice(0,1));staleOne[0].payload.authorization_revision='auth-1';await fixture(staleOne);
+      dispatchDropArmed=true;
+      await refuses(dispatch,ProviderUnavailable);
+      const uncertain=await journals();puts=dispatchUpserts;dml=dispatchDml;
+      if(dispatchDrops!==1||uncertain.length!==3||!['reserved','dispatched','unknown'].includes(uncertain.at(-1)[4])
+        ||uncertain.at(-1)[5]!==null)throw new Error('security_dispatch_lost_ack_not_uncertain');
+      await refuses(dispatch,ProviderUnavailable);
+      if(!same(await journals(),uncertain)||dispatchUpserts!==puts||dispatchDml!==dml)throw new Error('security_dispatch_lost_ack_resent');
+      await refuses(()=>recovery.reopen(proof,options),ProviderUnavailable);
+      if(!same(await journals(),uncertain)||(await sql(admin,'SELECT state FROM cragkit_qdrant.backend_instances WHERE instance_id=$1',
+        [inputs.instance_id])).rows[0]?.[0]!=='recovery_blocked')throw new Error('security_dispatch_lost_ack_reopened');
+      dispatchMark();
+      return {runtime:'typescript',checks,proof_scope:'native_security_dispatch_only',semantic_witness_sha256:semanticWitnessSha256,
+        guard_admission:{checks:guardChecks,denied_backend_queries:deniedBackendQueries}};
     }
     await supervisor.control_session(async control=>{
       oldControl=control;
@@ -510,7 +600,7 @@ async function cases(value){
       ...(settlementMode?{security_settlement:{checks:settlementChecks,confirmation_writes:confirmationWrites}}:{})};
   }catch(error){primary=error;throw error;}
   finally{
-    if(settlementMode)http.request=nativeHttpRequest;
+    if(settlementMode||dispatchMode)http.request=nativeHttpRequest;
     const failures=[],deadline=now()+12;
     for(const release of gates)release();
     supBefore=supAfter=writerAfter=contenderAfter=undefined;

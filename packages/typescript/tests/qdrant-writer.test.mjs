@@ -9,7 +9,7 @@ import net from 'node:net';
 import crypto from 'node:crypto';
 import {EventEmitter} from 'node:events';
 import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,recovery_dispatch_plan_data,security_projection_data,validate_guarded_security_projection,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,recovery_dispatch_plan_data,security_projection_data,security_dispatch_plan_data,validate_guarded_security_projection,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
@@ -17,7 +17,8 @@ import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATIO
 import {AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL,publication_schema_profile} from '../dist/qdrant-authority.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,SECURITY_GUARD_SQL,validate_security_guarded,settle_security_guarded,security_guard_binding,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,SECURITY_GUARD_SQL,validate_security_guarded,settle_security_guarded,dispatch_security_recovery,security_dispatch_authorization,security_guard_binding,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
+import {SecurityReadbackBudget,inspect_security_readback} from '../dist/qdrant-security-readback.js';
 import {QdrantSecurityVerifier} from '../dist/qdrant-security-verification.js';
 import {QdrantPublicationVerifier} from '../dist/qdrant-publication-verification.js';
 import {publication_finalization} from '../dist/qdrant-publication-worker.js';
@@ -103,6 +104,7 @@ function guardedRuntime(){
       }else if(parts[3]==='points'&&settings.method==='PUT'){
         const collection=state.collections.get(name);for(const point of parsed.points)collection.points.set(point.id,point);
         payload={status:'ok',result:{status:'completed'}};
+        if(name===config.physical_collection){state.pointPuts=(state.pointPuts??0)+1;state.afterPointPut?.(parsed.points);if(state.failPointReply){status=503;payload={status:'error'};}}
       }else if(parts[3]==='points'&&settings.method==='POST'){
         if(parts[4]==='scroll')payload={status:'ok',result:{points:[...state.collections.get(name).points.values()],next_page_offset:null}};
         else payload={status:'ok',result:parsed.ids.map(id=>state.collections.get(name).points.get(id)).filter(Boolean)};
@@ -217,6 +219,7 @@ function setup(){
         const select=/^SELECT (.+?) FROM cragkit_qdrant\.(\w+) WHERE /.exec(sql);
         if(select){
           const [,columns,table]=select;
+          if(table==='documents')await state.onSecurityProjectionRead?.();
           if(table==='dispatch_journal'&&sql.includes('created_xid::text')&&sql.includes('dispatch_id=ANY'))await state.onSecurityConfirmation?.();
           if(state.guarded&&table==='documents'&&!sql.includes('FOR UPDATE')){
             state.guardDocumentReads=(state.guardDocumentReads??0)+1;
@@ -235,6 +238,8 @@ function setup(){
           if(sql.includes('intent_id<>$4'))rows=rows.filter(row=>row.intent_id!==params[3]);
           if(sql.includes('point_id=ANY'))rows=rows.filter(row=>params[3].includes(row.point_id));
           if(sql.includes('dispatch_id=ANY'))rows=rows.filter(row=>params[4].includes(row.dispatch_id));
+          if(sql.includes('credential_generation=$5'))rows=rows.filter(row=>row.credential_generation===params[4]);
+          if(sql.includes('dispatch_id<>$6'))rows=rows.filter(row=>row.dispatch_id!==params[5]);
           if(sql.includes("state<>'settled'"))rows=rows.filter(row=>row.state!=='settled');
           if(sql.includes('manifest_sha256<>$6'))rows=rows.filter(row=>row.manifest_sha256!==params[5]);
           if(sql.includes("action='stage'"))rows=rows.filter(row=>row.action==='stage');
@@ -1637,8 +1642,8 @@ async function guardedWriter(){const f=setup();useSecurityGuardProfile(f);await 
 
 // Actual nominal verifier/controller registries with fake SQL, OS and HTTP only.
 // These tests establish local protocol behavior, not PostgreSQL lock custody.
-async function guardedValidationFixture(){
-  const f=await securityProjectionFixture('tombstone'),fake=guardedRuntime();
+async function guardedValidationFixture(action='tombstone'){
+  const f=await securityProjectionFixture(action),fake=guardedRuntime();
   const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-fixture',config);
   let recovery,securityVerifier,reconciliation,supResource;
   try{
@@ -1680,6 +1685,138 @@ function seedSecurityJournals(f){
   return rows;
 }
 const settleGuarded=(f,lease=opts())=>settle_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,lease);
+async function securityDispatchFixture(){
+  const f=await guardedValidationFixture('update_authorization');seedSecurityJournals(f);
+  const projection=await f.writer.project_security(f.securityContext,opts()),source=security_projection_data(projection,f.writer);
+  const physical=f.fake.state.collections.get(config.physical_collection).points;
+  const wire=point=>({id:point.point_id,payload:clone(point.payload),vector:{dense:[...point.dense.values],sparse:{indices:[...point.sparse.indices],values:[...point.sparse.values]}}});
+  for(const point of source.points)physical.set(point.point_id,wire(point));
+  return {...f,source,physical,wire};
+}
+const dispatchSecurity=(f,authorize=async()=>true,lease=opts(),budget)=>dispatch_security_recovery(f.recovery,f.proof,f.owner,f.securityContext,authorize,lease,budget);
+test('current-security dispatcher replays only stale and missing cross-generation points under denied stage owner',guardedLocal,async()=>{
+  const f=await securityDispatchFixture();try{
+    const missing=f.source.points[0],stale=f.source.points.find(point=>point.payload.generation_id!==missing.payload.generation_id);
+    f.physical.delete(missing.point_id);f.physical.get(stale.point_id).payload.authorization_revision='old-security';
+    const old=clone(f.state.tables.dispatch_journal),authority=clone(f.state.tables.documents),start=f.state.queries.length;
+    const result=await dispatchSecurity(f);assert.deepEqual(result,{batches:1,points:2});assert.ok(Object.isFrozen(result));
+    assert.equal(f.fake.state.pointPuts,1);assert.deepEqual(f.state.tables.dispatch_journal.slice(0,old.length),old);
+    assert.deepEqual(f.state.tables.documents,authority);assert.equal(f.state.tables.publication_intents.find(row=>row.intent_id===f.owner.intent_id).state,'denied');
+    const row=f.state.tables.dispatch_journal.at(-1);assert.equal(row.recovery,true);assert.equal(row.state,'settled');assert.match(row.completion_sha256,/^[0-9a-f]{64}$/);
+    const request=JSON.parse(row.request_bytes.toString('utf8'));assert.deepEqual(request.points.map(point=>point.id),[missing.point_id,stale.point_id].sort());
+    for(const point of request.points){const expected=f.source.points.find(value=>value.point_id===point.id);assert.deepEqual(point,f.wire(expected));}
+    assert.equal(f.state.queries.slice(start).some(query=>query.text.startsWith('SELECT')&&query.text.includes('request_bytes')),false);
+    assert.equal(f.state.tables.backend_instances[0].state,'recovery_blocked');
+  }finally{await f.close();}
+});
+test('current-security no-op validates full history and preserves journals without PUT or reservation',guardedLocal,async()=>{
+  const f=await securityDispatchFixture();try{const before=clone(f.state.tables);assert.deepEqual(await dispatchSecurity(f),{batches:0,points:0});
+    assert.deepEqual(f.state.tables,before);assert.equal(f.fake.state.pointPuts??0,0);
+  }finally{await f.close();}
+});
+for(const fault of ['immutable_vector','extra','current_pending','foreign_pending','ordinary_cross_generation','sequence','tombstone'])test(`security dispatch ${fault} refuses before writes`,guardedLocal,async()=>{
+  const f=fault==='tombstone'?await guardedValidationFixture():await securityDispatchFixture();try{
+    if(fault==='immutable_vector')f.physical.values().next().value.vector.dense[0]=.5;
+    if(fault==='extra'){const id='00000000-0000-5000-8000-000000000099';f.physical.set(id,{...f.wire(f.source.points[0]),id});}
+    if(fault==='current_pending')f.state.tables.dispatch_journal[0].credential_generation=f.supervisor.recovery_binding(f.proof).credential_generation;
+    if(fault==='foreign_pending')f.state.tables.dispatch_journal.push({...f.state.tables.dispatch_journal[0],intent_id:'foreign'});
+    if(fault==='ordinary_cross_generation')f.state.tables.dispatch_points[0].point_id=f.source.points.find(point=>point.payload.generation_id!==fixture.intent.generation_id).point_id;
+    if(fault==='sequence'){f.state.tables.dispatch_journal[3].sequence=256;f.physical.delete(f.source.points[0].point_id);}
+    const before=clone(f.state.tables),Kind=['immutable_vector','extra','ordinary_cross_generation'].includes(fault)?IntegrityViolation:fault==='tombstone'?UnsupportedCapability:ProviderUnavailable;
+    await assert.rejects(dispatchSecurity(f),Kind);assert.deepEqual(f.state.tables,before);assert.equal(f.fake.state.pointPuts??0,0);
+  }finally{await f.close();}
+});
+test('lost SQL reservation and marker replies confirm exact keys without HTTP replay',guardedLocal,async()=>{
+  const f=await securityDispatchFixture();try{
+    f.physical.delete(f.source.points[0].point_id);f.state.recoveryCommitLost=true;f.state.recoveryMarkLost='dispatched';
+    assert.deepEqual(await dispatchSecurity(f),{batches:1,points:1});assert.equal(f.fake.state.pointPuts,1);
+    assert.equal(f.state.recoveryInsertAttempts,1);assert.equal(f.state.tables.dispatch_journal.at(-1).state,'settled');
+  }finally{await f.close();}
+});
+test('lost physical reply preserves current-credential durable uncertainty and blocks replay',guardedLocal,async()=>{
+  const f=await securityDispatchFixture();try{
+    f.physical.delete(f.source.points[0].point_id);f.fake.state.failPointReply=true;
+    await assert.rejects(dispatchSecurity(f),ProviderUnavailable);const row=f.state.tables.dispatch_journal.at(-1);
+    assert.ok(['dispatched','unknown'].includes(row.state));assert.equal(row.completion_sha256,null);assert.equal(f.fake.state.pointPuts,1);
+    f.fake.state.failPointReply=false;await assert.rejects(dispatchSecurity(f),ProviderUnavailable);assert.equal(f.fake.state.pointPuts,1);
+  }finally{await f.close();}
+});
+test('authority change after completed HTTP response refuses completion and preserves uncertainty',guardedLocal,async()=>{
+  const f=await securityDispatchFixture();try{
+    f.physical.delete(f.source.points[0].point_id);
+    f.fake.state.afterPointPut=()=>Object.assign(f.state.tables.documents[0],{authorization_revision:'auth-3',mutation_epoch:3});
+    await assert.rejects(dispatchSecurity(f),UnauthorizedScope);assert.equal(f.state.tables.dispatch_journal.at(-1).state,'dispatched');
+    assert.equal(f.state.tables.dispatch_journal.at(-1).completion_sha256,null);
+  }finally{await f.close();}
+});
+test('security dispatch native boolean authorization and cancellation precede reservation',guardedLocal,async()=>{
+  for(const allowed of [false,1]){const f=await securityDispatchFixture();try{
+    f.physical.delete(f.source.points[0].point_id);await assert.rejects(dispatchSecurity(f,async()=>allowed),allowed===false?UnauthorizedScope:InvalidRequest);
+    assert.equal(f.fake.state.pointPuts??0,0);
+  }finally{await f.close();}}
+  const f=await securityDispatchFixture(),controller=new AbortController();try{
+    await assert.rejects(dispatchSecurity(f,async()=>{controller.abort();return true;},{...opts(),signal:controller.signal}),error=>error.name==='AbortError');
+    assert.equal(f.fake.state.pointPuts??0,0);
+  }finally{await f.close();}
+});
+test('security dispatch rejects foreign authorizations and copied plans without writer SQL',async()=>{
+  const f=await guardedWriter();try{const start=f.state.queries.length;
+    for(const token of [{},new Proxy({},{}),null]){
+      assert.throws(()=>security_dispatch_authorization(token,f.writer,opts()),InvalidRequest);
+      assert.throws(()=>security_dispatch_plan_data({},token,f.writer,opts()),InvalidRequest);
+      await assert.rejects(f.writer.project_security_dispatch(token,fixture.members.map(member=>member.point_id),opts()),InvalidRequest);
+      await assert.rejects(f.writer.validate_security_dispatch({},token,opts()),InvalidRequest);
+    }assert.equal(f.state.queries.length,start);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+test('genuine security dispatch tokens and plans reject copies, wrong signal, stage adoption and expiry',guardedLocal,async()=>{
+  const f=await securityDispatchFixture(),project=f.writer.project_security_dispatch.bind(f.writer);let captured;
+  try{
+    f.physical.delete(f.source.points[0].point_id);
+    f.writer.project_security_dispatch=async(auth,ids,lease)=>{
+      const before=f.state.queries.length;
+      for(const forged of [{...auth},new Proxy(auth,{})])assert.throws(()=>security_dispatch_authorization(forged,f.writer,lease),InvalidRequest);
+      assert.throws(()=>security_dispatch_authorization(auth,f.writer,{...lease,signal:new AbortController().signal}),InvalidRequest);
+      assert.throws(()=>security_dispatch_authorization(auth,f.writer,{...lease,deadline:lease.deadline+1}),InvalidRequest);
+      assert.throws(()=>recovery_dispatch_authorization(auth,f.writer,lease),InvalidRequest);
+      assert.equal(f.state.queries.length,before);
+      const plan=await project(auth,ids,lease);captured={auth,plan,lease};
+      assert.throws(()=>security_dispatch_plan_data({...plan},auth,f.writer,lease),InvalidRequest);
+      assert.throws(()=>security_dispatch_plan_data(new Proxy(plan,{}),auth,f.writer,lease),InvalidRequest);
+      assert.throws(()=>recovery_dispatch_plan_data(plan,auth,f.writer,lease),InvalidRequest);
+      return plan;
+    };
+    assert.deepEqual(await dispatchSecurity(f),{batches:1,points:1});
+    assert.throws(()=>security_dispatch_authorization(captured.auth,f.writer,captured.lease),InvalidRequest);
+    assert.throws(()=>security_dispatch_plan_data(captured.plan,captured.auth,f.writer,captured.lease),InvalidRequest);
+  }finally{await f.close();}
+});
+test('security dispatcher budget exhaustion refuses storage writes without resetting shared usage',guardedLocal,async()=>{
+  const f=await securityDispatchFixture();try{
+    const budget=new SecurityReadbackBudget(),empty={context:f.securityContext,point_ids:[],points:[],tombstoned:false};
+    const transport={async request(){return bytes({status:'ok',result:{points:[],next_page_offset:null}});},async close(){}};
+    for(let index=0;index<513;index++)await inspect_security_readback(transport,config,empty,opts(),budget);
+    assert.equal(budget.remaining_calls,0);f.physical.delete(f.source.points[0].point_id);const before=clone(f.state.tables);
+    await assert.rejects(dispatchSecurity(f,async()=>true,opts(),budget),ProviderUnavailable);
+    assert.deepEqual(f.state.tables,before);assert.equal(f.fake.state.pointPuts??0,0);
+  }finally{await f.close();}
+});
+test('security dispatcher retains initial writer callback and facade after failed bounded drain',guardedLocal,async()=>{
+  const f=await securityDispatchFixture(),controller=new AbortController(),original=f.resource.withLease.bind(f.resource);
+  let entered,release;const started=new Promise(resolve=>{entered=resolve;}),waiting=new Promise(resolve=>{release=resolve;});
+  try{
+    f.resource.withLease=(lease,body)=>original({deadline:now()+5},body);
+    f.state.onSecurityProjectionRead=async()=>{entered();await waiting;};
+    const pending=dispatchSecurity(f,async()=>true,{...opts(),signal:controller.signal});void pending.catch(()=>{});
+    await started;controller.abort();await assert.rejects(pending,error=>error.name==='AbortError');
+    await assert.rejects(f.writer.project_security(f.securityContext,opts()),ProviderUnavailable);
+    await assert.rejects(f.supervisor.control_session(async()=>{}),ProviderUnavailable);
+    await assert.rejects(dispatchSecurity(f),ProviderUnavailable);
+    const boundary=f.state.queries.length;release();await f.writer.close().catch(()=>{});
+    assert.equal(f.state.queries.slice(boundary).some(query=>query.text==='COMMIT'||query.text.startsWith('INSERT INTO cragkit_qdrant.dispatch')),false);
+    assert.equal(f.fake.state.pointPuts??0,0);
+  }finally{release?.();await f.close();}
+});
 test('security settlement validates original and multi-generation recovery journals then changes only state/completion',guardedLocal,async()=>{
   const f=await guardedValidationFixture();try{
     seedSecurityJournals(f);
@@ -2026,4 +2163,14 @@ test('writer4 catalog drift remains UnsupportedCapability when it also changes e
   await assert.rejects(f.writer.inspect(context,opts()),UnsupportedCapability);
   assert.equal(f.state.queries.slice(start).some(query=>query.text.includes("set_config('cragkit_qdrant.writer_document_id'")),false);
  }finally{await f.writer.close();await f.resource.close();}
+});
+
+
+test('strict lease options can be parsed again without inventing an owner field',async()=>{
+  const {options:parse}=await import('../dist/qdrant-writer-contract.js');
+  const input=opts(),parsed=parse(input);
+  assert.equal(Object.hasOwn(parsed,'owner_token'),false);
+  assert.deepEqual(parse(parsed),parsed);
+  assert.equal(parse({...input,owner_token:token},true).owner_token,token);
+  assert.throws(()=>parse({...input,owner_token:undefined}),InvalidRequest);
 });

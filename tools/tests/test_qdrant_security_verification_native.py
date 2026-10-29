@@ -93,3 +93,16 @@ def test_security_settlement_evidence_is_closed_and_requires_exclusive_guard_pro
             validate_result(dict(baseline,security_settlement=settlement),'python',security_guard=True,security_settlement=True)
     value['security_settlement']['checks'].clear()
     assert accepted['security_settlement']['checks']==list(SETTLEMENT_CHECKS)
+
+
+def test_security_dispatch_evidence_requires_its_own_exclusive_native_scope():
+    from qdrant_security_verification_cases import GUARD_CHECKS, DISPATCH_CHECKS
+    value=dict(runtime='python',checks=list(DISPATCH_CHECKS),proof_scope='native_security_dispatch_only',semantic_witness_sha256='a'*64,
+        guard_admission=dict(checks=list(GUARD_CHECKS),denied_backend_queries=0))
+    assert validate_result(value,'python',security_guard=True,security_dispatch=True)==value
+    for flags in ({},{'security_guard':True},{'security_dispatch':True},
+            {'security_guard':True,'security_dispatch':True,'security_settlement':True},
+            {'security_guard':True,'security_dispatch':True,'guarded_graph':True}):
+        with pytest.raises(RuntimeError):validate_result(value,'python',**flags)
+    for change in (dict(value,checks=list(CHECKS)),dict(value,proof_scope='native_security_receipt_only'),dict(value,checks=[])):
+        with pytest.raises(RuntimeError):validate_result(change,'python',security_guard=True,security_dispatch=True)

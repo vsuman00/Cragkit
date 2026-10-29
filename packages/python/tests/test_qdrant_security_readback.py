@@ -251,3 +251,22 @@ async def test_failed_cancelled_and_expired_attempts_are_charged_without_later_h
     with pytest.raises(ProviderUnavailable if mode == 'failure' else DeadlineExceeded if mode == 'deadline' else asyncio.CancelledError) as error:
         await task
     assert 'PRIVATE' not in str(error.value) and budget.remaining_calls == 512 and handle.calls == 1
+
+
+@run_async
+async def test_storage_mutation_ack_shares_readback_call_and_byte_budget():
+    from cragkit._qdrant_security_readback import security_storage_request
+    class Storage:
+        calls=0
+        async def request(self,method,path,*,body,deadline,max_response_bytes):
+            self.calls+=1
+            assert method in ('POST','PUT') and body==b'{}' and max_response_bytes<=1048576
+            return b'{}'
+    transport=Storage();budget=SecurityReadbackBudget();limit=deadline()
+    for _ in range(512):
+        await security_storage_request(transport,'POST','/read',b'{}',deadline=limit,budget=budget)
+    assert await security_storage_request(transport,'PUT','/write',b'{}',deadline=limit,budget=budget)==b'{}'
+    assert budget.remaining_calls==0 and budget.remaining_bytes==8388608-1026
+    with pytest.raises(ProviderUnavailable):
+        await security_storage_request(transport,'POST','/read',b'{}',deadline=limit,budget=budget)
+    assert transport.calls==513

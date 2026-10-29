@@ -162,6 +162,43 @@ def _point(value: object, expected: Mapping[str, ExpectedPoint]) -> tuple[str, d
     return identity,actual,actual != current
 
 
+async def security_storage_request(transport: _ReadbackTransport, method: str, route: str, body: bytes, *,
+                                   deadline: float, budget: SecurityReadbackBudget) -> bytes:
+    """Share fixed storage metering; this helper grants no transport authority."""
+    budget=security_readback_budget(budget)
+    deadline=deadline_value(deadline)
+    if type(method) is not str or method not in ('POST','PUT') or type(body) is not bytes or len(body)>1048576:
+        raise InvalidRequest()
+    _check(deadline)
+    remaining,calls = _BUDGETS[budget]
+    if remaining <= 0 or calls <= 0:
+        raise ProviderUnavailable()
+    allowance = min(1048576,remaining)
+    _BUDGETS[budget] = (remaining,calls-1)
+    try:
+        async with asyncio.timeout_at(deadline):
+            raw = await transport.request(method,route,body=body,deadline=deadline,max_response_bytes=allowance)
+    except asyncio.CancelledError:
+        raise
+    except TimeoutError:
+        raise DeadlineExceeded() from None
+    except Exception as error:
+        for kind in (DeadlineExceeded,IntegrityViolation,InvalidRequest,ProviderUnavailable,UnauthorizedScope,UnsupportedCapability):
+            if type(error) is kind:
+                raise kind() from None
+        raise ProviderUnavailable() from None
+    if type(raw) is not bytes:
+        raise IntegrityViolation()
+    remaining,calls = _BUDGETS[budget]
+    _BUDGETS[budget] = (max(0,remaining-len(raw)),calls)
+    _check(deadline)
+    if len(raw) > remaining:
+        raise ProviderUnavailable()
+    if len(raw) > allowance:
+        raise IntegrityViolation()
+    return raw
+
+
 async def inspect_security_readback(transport: _ReadbackTransport, config: object, expected: object, *,
                                     deadline: float, budget: SecurityReadbackBudget | None = None) -> Mapping[str, tuple[str, ...]]:
     parsed,ctx,points,_ = _expected(config,expected)
@@ -172,34 +209,8 @@ async def inspect_security_readback(transport: _ReadbackTransport, config: objec
     path = '/collections/'+parsed.physical_collection+'/points'
 
     async def request(route: str, body: dict[str, Any]) -> dict[str, Any]:
-        _check(deadline)
-        remaining,calls = _BUDGETS[budget]
-        if remaining <= 0 or calls <= 0:
-            raise ProviderUnavailable()
-        allowance = min(1048576,remaining)
-        encoded = json.dumps(body,separators=(',',':'),allow_nan=False).encode('utf-8')
-        _BUDGETS[budget] = (remaining,calls-1)
-        try:
-            async with asyncio.timeout_at(deadline):
-                raw = await transport.request('POST',route,body=encoded,deadline=deadline,max_response_bytes=allowance)
-        except asyncio.CancelledError:
-            raise
-        except TimeoutError:
-            raise DeadlineExceeded() from None
-        except Exception as error:
-            for kind in (DeadlineExceeded,IntegrityViolation,InvalidRequest,ProviderUnavailable,UnauthorizedScope,UnsupportedCapability):
-                if type(error) is kind:
-                    raise kind() from None
-            raise ProviderUnavailable() from None
-        if type(raw) is not bytes:
-            raise IntegrityViolation()
-        remaining,calls = _BUDGETS[budget]
-        _BUDGETS[budget] = (max(0,remaining-len(raw)),calls)
-        _check(deadline)
-        if len(raw) > remaining:
-            raise ProviderUnavailable()
-        if len(raw) > allowance:
-            raise IntegrityViolation()
+        encoded=json.dumps(body,separators=(',',':'),allow_nan=False).encode('utf-8')
+        raw=await security_storage_request(transport,'POST',route,encoded,deadline=deadline,budget=budget)
         value = decode_response(raw)
         if type(value) is not dict or value.get('status') != 'ok':
             raise IntegrityViolation()

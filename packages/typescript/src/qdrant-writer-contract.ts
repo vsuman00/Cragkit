@@ -119,7 +119,7 @@ export function options(input: unknown, withOwner = false): LeaseOptions & {owne
   if (typeof deadline !== 'number') throw new InvalidRequest();
   check_deadline(deadline, signal as AbortSignal | undefined);
   const owner_token = withOwner ? uuid(value.owner_token) : undefined;
-  return Object.freeze({deadline, signal: signal as AbortSignal | undefined, owner_token});
+  return Object.freeze({deadline, signal: signal as AbortSignal | undefined, ...(withOwner ? {owner_token} : {})});
 }
 export function context(input: unknown): WriterContext {
   const value = fields(input, ['scope', 'collection', 'document_id', 'intent_id', 'owner_token']);

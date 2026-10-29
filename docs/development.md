@@ -1267,3 +1267,14 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory and the current TypeScript build. Settlement mode requires `--with-security-guard` and excludes `--guarded-graph`; earlier modes remain available separately. The checker runs both runtimes serially, with three SQL clients and six PostgreSQL slots. It preserves eight receipt and four admission checks and adds four settlement checks per runtime. Real native COMMIT succeeds before its reply is withheld, and the native writer advances authority before read-only confirmation. Confirmation must issue no DML, guard, HTTP or writer query replay. A fresh repeat preserves historical completion, while current-credential uncertainty preserves rows and closed admission. The unknown-dispatch metadata is synthetic; actual SQL transactions, restricted roles, current readback and COMMIT observations are native evidence. Task-owned servers and listeners are closed and cleanup is checked. No model, provider or hosted target is used.
+
+
+## V5-04G2b2d5a current-security recovery dispatch
+
+[Dispatch evidence](../evaluation/reports/V5/V5-04G2b2d5a.md) covers internal stale/missing replay and genuine acknowledgment binding. Security ownership handoff and public convergence are later gates.
+
+```bash
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_security_verification.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --with-security-guard --security-dispatch --runtime all --artifacts-dir artifacts/V5/V5-04G2b2d5/a-new-dispatch-run
+```
+
+Use a fresh directory and current TypeScript build. Dispatch mode requires the guard profile and excludes the graph and settlement modes. It runs its own four dispatch checks plus four admission checks per runtime, with three SQL clients and six PostgreSQL slots. Python and Node run serially. It checks actual cross-generation stale/missing replay, genuine receipt and retired settlement, no-op and corrupt-vector refusal, then controlled loss of a completed HTTP acknowledgment. The last case must preserve current-key uncertainty and closed admission without resend. The checker restores instrumentation and closes owned servers/listeners. No provider or hosted target is used.

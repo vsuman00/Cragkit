@@ -207,6 +207,12 @@ def security_projection_writer(monkeypatch, *, tombstone=False):
     connections = []
     class ProjectionConnection(Connection):
         async def execute(self,sql,params=None):
+            if sql.startswith('SELECT backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id') and 'dispatch_backend' in state:
+                self.calls.append((sql,params));return Cursor([state['dispatch_backend']])
+            if sql.startswith('SELECT owner_token::text,intent_id,backend_epoch,instance_id') and 'dispatch_owner' in state:
+                self.calls.append((sql,params));return Cursor([state['dispatch_owner']])
+            if sql.startswith('SELECT action,manifest_sha256,revision_id,generation_id,instance_id') and 'dispatch_stage' in state:
+                self.calls.append((sql,params));return Cursor([state['dispatch_stage']])
             if sql == implementation._SCOPE_SQL:
                 state['selected'] = params[6]
             if sql == "SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)":
@@ -1918,3 +1924,15 @@ def test_guarded_writer_transaction_boundary_accepts_native_intenum_intrans_only
     for invalid in (Status.IDLE,Status.INERROR,True,None,2.0):
         actual.info.transaction_status=invalid
         with pytest.raises(ProviderUnavailable):wrapped.boundary()
+
+
+@run_async
+async def test_security_dispatch_plans_do_not_adopt_unissued_or_stage_authorizations(monkeypatch):
+    from cragkit._qdrant_recovery import _SecurityDispatchAuthorization,_RecoveryDispatchAuthorization
+    writer,state,connections,target=security_projection_writer(monkeypatch)
+    before=len(connections)
+    for authorization in (object(),{},_SecurityDispatchAuthorization(),_RecoveryDispatchAuthorization()):
+        with pytest.raises(InvalidRequest):
+            await writer.project_security_dispatch(authorization,[FIXTURE['members'][0]['point_id']],
+                deadline=asyncio.get_running_loop().time()+1)
+    assert len(connections)==before

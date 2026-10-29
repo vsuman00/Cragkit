@@ -9,7 +9,7 @@ import { AUTHORITY_FINGERPRINT_SQL, AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION
   AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL } from './qdrant-authority.js';
 import {attestation_receipt_data,publication_verifier_controller,type QdrantPublicationVerifier} from './qdrant-publication-verification.js';
 import {require_publication_finalization} from './qdrant-publication-worker.js';
-import {recovery_dispatch_authorization,security_guard_binding} from './qdrant-recovery.js';
+import {recovery_dispatch_authorization,security_guard_binding,security_dispatch_authorization} from './qdrant-recovery.js';
 import { encode_manifest, encode_stage_intent, restore_dense_replay, restore_sparse_replay } from './qdrant-manifest.js';
 import { same, point_id, parse_response, type QdrantConfig } from './qdrant-contract.js';
 import { type TrustedScope } from './requests.js';
@@ -52,6 +52,13 @@ type WriterRegistration=Readonly<{resource:PoolResource;config:QdrantConfig;inst
 const writerRegistrations=new WeakMap<object,WriterRegistration>();
 const guardedReaders=new WeakMap<object,(guard:unknown,projection:unknown,options:LeaseOptions)=>Promise<void>>();
 const guardedAdmission=new WeakMap<object,()=>void>();
+const securityRecoveryReaders=new WeakMap<object,(context:WriterContext,options:LeaseOptions,projection?:unknown)=>Promise<SecurityProjection>>();
+/** D5-only owned reader; ordinary projection lifetimes remain unchanged. */
+export async function security_recovery_projection(writer:PostgresQdrantWriter,context:unknown,rawOptions:unknown,previous?:unknown):Promise<SecurityProjection>{
+  writer_binding(writer);const parsed=parseContext(context),options=parseOptions(rawOptions),read=securityRecoveryReaders.get(writer);
+  if(!read)throw new InvalidRequest();if(previous!==undefined)security_projection_data(previous,writer);
+  return read(parsed,options,previous);
+}
 export function require_security_guard_writer(writer:PostgresQdrantWriter):void{
   writer_binding(writer);const check=guardedAdmission.get(writer);if(!check)throw new InvalidRequest();check();
 }
@@ -103,6 +110,20 @@ export type RecoveryDispatchPlan=Readonly<Record<never,never>>;
 export type RecoveryDispatchPlanData=Readonly<{context:WriterContext;physical_binding:Readonly<Data>;attempt_binding:Readonly<Data>;sequence:number;
   point_ids:readonly string[];request_bytes:readonly number[];request_sha256:string;manifest_sha256:string;revision_id:string;generation_id:string;
   expected_active_generation_id:string|null;expected_authorization_revision:string;expected_mutation_epoch:number}>;
+export type SecurityDispatchPlan=Readonly<Record<never,never>>;
+export type SecurityDispatchPlanData=Readonly<Omit<RecoveryDispatchPlanData,'expected_active_generation_id'|'expected_authorization_revision'|'expected_mutation_epoch'>&{
+  security_context:WriterContext;projection:SecurityProjection;intent_sha256:string;inventory_sha256:string;
+  authorization_revision:string;mutation_epoch:number;active_generation_id:string|null}>;
+const securityDispatchPlans=new WeakMap<object,Readonly<{issuer:PostgresQdrantWriter;authorization:unknown;data:SecurityDispatchPlanData}>>();
+export function security_dispatch_plan_data(plan:unknown,authorization:unknown,writer:PostgresQdrantWriter,rawOptions:unknown):SecurityDispatchPlanData{
+  const options=parseOptions(rawOptions),binding=security_dispatch_authorization(authorization,writer,options);
+  if(typeof plan!=='object'||plan===null||types.isProxy(plan))throw new InvalidRequest();
+  const issued=securityDispatchPlans.get(plan);
+  if(!issued||issued.issuer!==writer||issued.authorization!==authorization)throw new InvalidRequest();
+  if(issued.data.projection!==binding.projection||!same(issued.data.context,binding.context)||!same(issued.data.security_context,binding.security_context)
+    ||!same(issued.data.physical_binding,binding.physical_binding)||!same(issued.data.attempt_binding,binding.attempt_binding)||issued.data.sequence!==binding.sequence)throw new IntegrityViolation();
+  return issued.data;
+}
 const recoveryPlans=new WeakMap<object,Readonly<{issuer:PostgresQdrantWriter;authorization:unknown;data:RecoveryDispatchPlanData}>>();
 export function recovery_dispatch_plan_data(plan:unknown,authorization:unknown,writer:PostgresQdrantWriter,rawOptions:unknown):RecoveryDispatchPlanData {
   const parsed=parseOptions(rawOptions),options={deadline:parsed.deadline,signal:parsed.signal};
@@ -297,6 +318,7 @@ export class PostgresQdrantWriter {
       if(!this.#initialized)throw new IndexNotReady();
       if(this.#profile!=='security_guard')throw new UnsupportedCapability();
     });
+    securityRecoveryReaders.set(this,(context,options,previous)=>this.#securityRecoveryProjection(context,options,previous));
   }
   async #work<T>(options: LeaseOptions, task:(options:LeaseOptions)=>Promise<T>, initialize=false):Promise<T> {
     if(this.#closed||this.#active) throw new ProviderUnavailable();
@@ -1069,6 +1091,66 @@ export class PostgresQdrantWriter {
       const current=await this.#projectSecurity(tx,previous.context);
       if(!same(current,previous))throw new UnauthorizedScope();
     }));
+  }
+  async #securityRecoveryProjection(context:WriterContext,options:LeaseOptions,previous?:unknown):Promise<SecurityProjection>{
+    const original=previous===undefined?undefined:security_projection_data(previous,this);
+    if(original&&!same(original.context,context))throw new InvalidRequest();
+    return this.#work(options,async writerOptions=>{
+      let valid=true;
+      const abort=()=>{valid=false;const active=this.#active;if(active)void bounded(active.done,{deadline:now()+this.#resource.config.release_timeout}).catch(()=>{if(this.#active===active)this.#closed=true;});};
+      writerOptions.signal?.addEventListener('abort',abort,{once:true});
+      const check=()=>{parseOptions(options);if(!valid||this.#closed)throw new ProviderUnavailable();};
+      try{return await this.#tx(context,writerOptions,async(tx,profile)=>{
+        check();if(profile!=='security_guard')throw new UnsupportedCapability();
+        const data=await this.#projectSecurity(tx,context);check();
+        if(original&&!same(data,original))throw new UnauthorizedScope();
+        if(previous!==undefined)return previous as SecurityProjection;
+        const projection=Object.freeze({});securityProjections.set(projection,Object.freeze({issuer:this,data}));return projection;
+      },false,false,{check,invalidate:()=>{valid=false;}});}
+      finally{valid=false;writerOptions.signal?.removeEventListener('abort',abort);}
+    });
+  }
+  async #securityDispatchSource(tx:Tx,binding:ReturnType<typeof security_dispatch_authorization>):Promise<Readonly<{source:SecurityProjectionData;stage:Data}>>{
+    const physical=binding.physical_binding,owner=binding.context;
+    const rows=await tx.query('SELECT backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id FROM cragkit_qdrant.backend_instances WHERE instance_id=$1 FOR SHARE',[this.#instance],2);
+    if(rows.length!==1||rows[0].length!==6)throw new IntegrityViolation();
+    if(!same([rows[0][0],rows[0][1],rows[0][2],db_count(rows[0][3]),rows[0][4],rows[0][5]],
+      [this.#config.backend_namespace,physical.storage_identity,physical.supervisor_id,physical.new_epoch,'recovery_blocked',physical.recovery_id]))throw new ProviderUnavailable();
+    const owners=await this.#select(tx,'document_owners',['instance_id','intent_id','owner_token','backend_epoch'],owner,' FOR UPDATE',[],2);
+    if(owners.length!==1||owners[0].instance_id!==this.#instance||owners[0].intent_id!==owner.intent_id
+      ||owners[0].owner_token!==owner.owner_token||db_count(owners[0].backend_epoch)!==physical.new_epoch)throw new ProviderUnavailable();
+    const source=await this.#projectSecurity(tx,binding.security_context),original=security_projection_data(binding.projection,this);
+    if(source.tombstoned)throw new UnsupportedCapability();if(!same(source,original))throw new UnauthorizedScope();
+    const stage=await this.#intent(tx,owner);
+    if(!stage||stage.action!=='stage')throw new UnsupportedCapability();
+    if(!source.generations.some(group=>group.revision_id===stage.revision_id&&group.generation_id===stage.generation_id&&group.manifest_sha256===stage.manifest_sha256))throw new IntegrityViolation();
+    return Object.freeze({source,stage});
+  }
+  async project_security_dispatch(authorization:unknown,rawIds:unknown,rawOptions:unknown):Promise<SecurityDispatchPlan>{
+    const options=parseOptions(rawOptions),binding=security_dispatch_authorization(authorization,this,options);
+    const ids=Object.freeze(native_array(rawIds,1,8).map(id=>uuid(id)).sort());if(new Set(ids).size!==ids.length)throw new InvalidRequest();
+    const data=await this.#work(options,async writerOptions=>{
+      let valid=true;const abort=()=>{valid=false;const active=this.#active;if(active)void bounded(active.done,{deadline:now()+this.#resource.config.release_timeout}).catch(()=>{if(this.#active===active)this.#closed=true;});};
+      writerOptions.signal?.addEventListener('abort',abort,{once:true});
+      const check=()=>{if(!valid)throw new ProviderUnavailable();security_dispatch_authorization(authorization,this,options);};
+      try{return await this.#tx(binding.security_context,writerOptions,async(tx,profile)=>{
+        if(profile!=='security_guard')throw new UnsupportedCapability();const {source,stage}=await this.#securityDispatchSource(tx,binding);check();
+        const points=ids.map(id=>{const point=source.points.find(point=>point.point_id===id);if(!point)throw new IntegrityViolation();return point;});
+        const request=this.#completePointRequest(points);
+        return Object.freeze({...binding,point_ids:ids,request_bytes:Object.freeze([...request]),request_sha256:hash(request),
+          manifest_sha256:digest(stage.manifest_sha256),revision_id:text(stage.revision_id),generation_id:text(stage.generation_id),
+          intent_sha256:source.intent_sha256,inventory_sha256:source.inventory_sha256,authorization_revision:source.authorization_revision,
+          mutation_epoch:source.mutation_epoch,active_generation_id:source.active_generation_id});
+      },false,false,{check,invalidate:()=>{valid=false;}});}
+      finally{valid=false;writerOptions.signal?.removeEventListener('abort',abort);}
+    });
+    security_dispatch_authorization(authorization,this,options);const plan=Object.freeze({});securityDispatchPlans.set(plan,{issuer:this,authorization,data});return plan;
+  }
+  async validate_security_dispatch(plan:unknown,authorization:unknown,rawOptions:unknown):Promise<void>{
+    const options=parseOptions(rawOptions),original=security_dispatch_plan_data(plan,authorization,this,options);
+    const fresh=await this.project_security_dispatch(authorization,original.point_ids,options);
+    if(!same(security_dispatch_plan_data(fresh,authorization,this,options),original))throw new UnauthorizedScope();
+    security_dispatch_authorization(authorization,this,options);
   }
   async #validateSecurityGuarded(guard:unknown,projection:unknown,options:LeaseOptions):Promise<void>{
     const previous=security_projection_data(projection,this);

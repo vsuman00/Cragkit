@@ -48,6 +48,14 @@ SETTLEMENT_CHECKS=(
 )
 
 
+DISPATCH_CHECKS=(
+ 'stale_missing_cross_generation_replayed_with_genuine_ack',
+ 'fresh_security_receipt_settles_only_retired_journal',
+ 'already_current_is_noop_and_immutable_corruption_refused',
+ 'lost_http_ack_preserves_current_uncertainty_without_resend',
+)
+
+
 class NativeSecurityVerificationFailure(RuntimeError):
     def __init__(self, observation):
         super().__init__('security_verification_native_case_failed')
@@ -81,7 +89,7 @@ async def python_security_verification_cases(value):
     from cragkit._qdrant_writer import PostgresQdrantWriter,security_projection_data
     from cragkit._qdrant_writer_contract import prepare_stage
     from cragkit._qdrant_reconciliation import QdrantReconciliationVerifier
-    from cragkit._qdrant_recovery import PostgresQdrantRecovery,validate_security_guarded,settle_security_guarded
+    from cragkit._qdrant_recovery import PostgresQdrantRecovery,validate_security_guarded,settle_security_guarded,dispatch_security_recovery
     from cragkit._qdrant_supervisor import ManagedQdrantSupervisor
     from cragkit._qdrant_security_verification import QdrantSecurityVerifier,security_receipt_data
     from cragkit.errors import (InvalidRequest,IntegrityViolation,UnsupportedCapability,UnauthorizedScope,
@@ -97,6 +105,8 @@ async def python_security_verification_cases(value):
         return result
     graph_mode='guard_graph_config' in value
     settlement_mode='settlement_config' in value
+    dispatch_mode='dispatch_config' in value
+    dispatch_fault=dict(armed=False,drops=0,upserts=0)
     settlement=dict(armed=False,fired=False,monitor=False,confirmations=0,confirmation_writes=0,
         confirmation_http=0,confirmation_guards=0,confirmation_writer_queries=0,confirmation_reads=0,
         attempted=[],updates=0,completion=None,advance=None)
@@ -218,10 +228,20 @@ async def python_security_verification_cases(value):
     verifier=QdrantSecurityVerifier(writer,supervisor)
     wrong_verifier=QdrantSecurityVerifier(writer,supervisor)
     original_http=supervisor._http
-    if settlement_mode:
+    if settlement_mode or dispatch_mode:
         async def observed_http(*args,**kwargs):
             if settlement['monitor']:settlement['confirmation_http']+=1
-            return await original_http(*args,**kwargs)
+            result=await original_http(*args,**kwargs)
+            if dispatch_mode and len(args)>2 and args[1]=='PUT' and args[2]==target+'/points?wait=true&ordering=strong':
+                dispatch_fault['upserts']+=1
+                if dispatch_fault['armed']:
+                    status,raw=result
+                    response=json.loads(raw)
+                    if status!=200 or response.get('result',{}).get('status')!='completed':
+                        raise RuntimeError('security_dispatch_fault_not_completed')
+                    dispatch_fault['armed']=False;dispatch_fault['drops']+=1
+                    raise ProviderUnavailable()
+            return result
         supervisor._http=observed_http
     deadline=asyncio.get_running_loop().time()+120
     checks=[]
@@ -423,6 +443,65 @@ async def python_security_verification_cases(value):
             graph['sup_close_verified']=True
             graph_checks.append(GRAPH_CHECKS[8])
         finally:gate.set();graph['reply']=None;graph['deny_commit']=False
+    async def dispatch_cases():
+        async def allowed(scope,collection,document):
+            return scope.tenant_id==owner['scope']['tenant_id'] and collection==owner['collection'] and document==owner['document_id']
+        async def dispatch():
+            return await dispatch_security_recovery(recovery,proof,owner,security,allowed,deadline=deadline)
+        async def fixture_mutate(point_values=None,delete_ids=None):
+            async with supervisor.control_session() as control:
+                attempt=control.issue_recovery_attempt(proof,dict(intent_id=owner['intent_id'],owner_token=token,
+                    epoch=2,dispatch_id='security-dispatch-native-maintenance',recovery_id='security-receipt-native'),deadline=deadline)
+                handle=control.recovery_transport_for(attempt)
+                try:
+                    if point_values is not None:await mutate(handle,target+'/points?wait=true&ordering=strong',dict(points=point_values))
+                    if delete_ids is not None:await mutate(handle,target+'/points/delete?wait=true&ordering=strong',dict(points=delete_ids),method='POST')
+                finally:await handle.close()
+        async def journals():
+            return await admin_query('SELECT dispatch_id,sequence,credential_generation,request_sha256,state,completion_sha256 '
+                'FROM cragkit_qdrant.dispatch_journal WHERE '+document_where+' AND intent_id=%s ORDER BY sequence',
+                (*document_key,owner['intent_id']))
+        current=points(data);stale=deepcopy(current)
+        for point in stale:point['payload']['authorization_revision']='auth-1'
+        await fixture_mutate(stale,[current[-1]['id']])
+        before=await journals();count=dispatch_fault['upserts']
+        if dict(await dispatch())!=dict(batches=1,points=4):raise RuntimeError('security_dispatch_replay_count')
+        after=await journals()
+        if (len(before)!=1 or len(after)!=2 or after[0]!=before[0] or after[1][4]!='settled'
+                or type(after[1][5]) is not str or dispatch_fault['upserts']!=count+1):
+            raise RuntimeError('security_dispatch_ack_journal')
+        checks.append(DISPATCH_CHECKS[0])
+        async with supervisor.control_session() as control:
+            observed=received(await verify(proof,control),control)
+            semantic=hashlib.sha256(json.dumps([observed['witness'][0],*observed['witness'][4:]],
+                ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+        if dict(await settle_security_guarded(recovery,verifier,proof,owner,security,deadline=deadline))!=dict(settled_count=1):
+            raise RuntimeError('security_dispatch_retired_settlement')
+        settled=await journals()
+        if settled[0][4]!='settled' or settled[1]!=after[1]:raise RuntimeError('security_dispatch_settled_wrong_row')
+        checks.append(DISPATCH_CHECKS[1])
+        count=dispatch_fault['upserts']
+        if dict(await dispatch())!=dict(batches=0,points=0) or await journals()!=settled or dispatch_fault['upserts']!=count:
+            raise RuntimeError('security_dispatch_nonempty_noop')
+        corrupt=deepcopy(current[:1]);corrupt[0]['vector']['dense']=[-value for value in current[0]['vector']['dense']]
+        await fixture_mutate(corrupt);count=dispatch_fault['upserts']
+        await expect(IntegrityViolation,dispatch)
+        if await journals()!=settled or dispatch_fault['upserts']!=count:raise RuntimeError('security_dispatch_corruption_mutated')
+        await fixture_mutate(current[:1]);checks.append(DISPATCH_CHECKS[2])
+        stale_one=deepcopy(current[:1]);stale_one[0]['payload']['authorization_revision']='auth-1'
+        await fixture_mutate(stale_one);dispatch_fault['armed']=True
+        await expect(ProviderUnavailable,dispatch)
+        uncertain=await journals();count=dispatch_fault['upserts']
+        if (dispatch_fault['drops']!=1 or len(uncertain)!=3 or uncertain[-1][4] not in ('reserved','dispatched','unknown')
+                or uncertain[-1][5] is not None):raise RuntimeError('security_dispatch_lost_ack_not_uncertain')
+        await expect(ProviderUnavailable,dispatch)
+        if await journals()!=uncertain or dispatch_fault['upserts']!=count:raise RuntimeError('security_dispatch_lost_ack_resent')
+        await expect(ProviderUnavailable,lambda:recovery.reopen(proof,deadline=deadline))
+        if await admin_query('SELECT state FROM cragkit_qdrant.backend_instances WHERE instance_id=%s',(inputs['instance_id'],))!=[('recovery_blocked',)]:
+            raise RuntimeError('security_dispatch_lost_ack_reopened')
+        checks.append(DISPATCH_CHECKS[3])
+        return dict(runtime='python',checks=checks,proof_scope='native_security_dispatch_only',semantic_witness_sha256=semantic,
+            guard_admission=dict(checks=guard_checks,denied_backend_queries=guard_denied_queries))
     async def settlement_cases():
         advanced={}
         async def advance_authority():
@@ -504,7 +583,7 @@ async def python_security_verification_cases(value):
             await writer.stage(prepare_stage(stage),original_scope,owner_token=token,deadline=deadline)
         await writer.admit_publication(ctx(inputs['stage']['intent']['intent_id'],original_scope),deadline=deadline)
         old_owner=dict((await writer.manager_snapshot(ctx(owner['intent_id'],original_scope),deadline=deadline))['owner'])
-        if settlement_mode:
+        if settlement_mode or dispatch_mode:
             old_dispatch='native-security-retired-unknown'
             settlement['attempted']=[old_dispatch]
             attempt=supervisor.issue_attempt(dict(intent_id=owner['intent_id'],owner_token=token,epoch=1,dispatch_id=old_dispatch),deadline=deadline)
@@ -516,7 +595,7 @@ async def python_security_verification_cases(value):
             await writer.mark_unknown(ctx(owner['intent_id'],original_scope),old_dispatch,deadline=deadline)
         result=await writer.apply_security(inputs['security'],original_scope,owner_token=security['owner_token'],deadline=deadline)
         if not result['authority_committed']:raise RuntimeError('security_receipt_authority_not_committed')
-        if settlement_mode:
+        if settlement_mode or dispatch_mode:
             denied=await writer.admit_publication(owner,deadline=deadline)
             if denied['intent']['state']!='denied':raise RuntimeError('security_settlement_original_stage_not_denied')
         projection=await writer.project_security(security,deadline=deadline)
@@ -525,7 +604,7 @@ async def python_security_verification_cases(value):
         if (len(data['point_ids'])!=4 or len(data['generations'])!=2 or snapshot['owner']!=old_owner
                 or any(point.payload.authorization_revision!='auth-2' for point in data['points'])):
             raise RuntimeError('security_receipt_current_projection')
-        checks.append(CHECKS[0])
+        if not dispatch_mode:checks.append(CHECKS[0])
         proof=await recovery.recover('security-receipt-native',deadline=deadline)
         if operator is not None:
             await operator.open()
@@ -550,12 +629,13 @@ async def python_security_verification_cases(value):
                 advanced=await recovery.advance_owner(proof,owner,deadline=deadline)
                 if dict(advanced)!=dict(owner_token=token,backend_epoch=2):raise RuntimeError('security_guard_owner_advance')
                 guard_checks.append(GUARD_CHECKS[index])
-        if graph_mode or settlement_mode:
+        if graph_mode or settlement_mode or dispatch_mode:
             if operator is None:raise RuntimeError('security_graph_requires_profile_four')
             await operator.close();operator=None
-            selected=value['guard_graph_config'] if graph_mode else value['settlement_config']
+            selected=value['guard_graph_config'] if graph_mode else value['dispatch_config'] if dispatch_mode else value['settlement_config']
             admin=PoolResource(pool_config(selected['admin_config']))
             await admin.open()
+        if dispatch_mode:return await dispatch_cases()
         async with supervisor.control_session() as control:
             await expect(IntegrityViolation,lambda:verify(proof,control))
             attempt=control.issue_recovery_attempt(proof,dict(intent_id=owner['intent_id'],owner_token=token,
@@ -637,7 +717,7 @@ async def python_security_verification_cases(value):
         failure.primary=error
         raise failure from None
     finally:
-        if settlement_mode:supervisor._http=original_http
+        if settlement_mode or dispatch_mode:supervisor._http=original_http
         failures=[]
         cleanup_deadline=asyncio.get_running_loop().time()+12
         if graph_mode:
