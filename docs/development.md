@@ -1289,3 +1289,32 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory and current TypeScript build. Completion mode requires the guard profile and excludes other optional modes. It runs four completion checks plus four admission checks per runtime. It closes the idle recovery SQL resource before opening a contender, retaining three clients and six PostgreSQL slots. The real writer completion COMMIT succeeds before its reply is withheld; a second writer advances authority before read-only confirmation. Immutable history, historical flags, witness parity and cleanup are checked. No provider or hosted target is used.
+
+## V5 profile-5 schema and optional MCP implementation
+
+For the additive Qdrant schema prerequisite, use a fresh artifact directory and
+the isolated local PostgreSQL 17 fixture:
+
+```bash
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest tools/tests/test_qdrant_purge_schema.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_purge_schema.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --artifacts-dir artifacts/V5/V5-04-profile5/a-new-native-run
+```
+
+The [schema report](../evaluation/reports/V5/V5-04-profile5-schema.md) records
+44 focused tests and 14 native SQL checks. The SQL fixture's absence digest is
+synthetic; actual Qdrant deletion and absence require their separate gate.
+
+The MCP hosts live in separate optional Python and Node packages. These
+commands use their pinned locks and exercise official SDK clients with fake
+native retrieval results:
+
+```bash
+uv run --project packages/mcp-python --frozen --no-sync pytest packages/mcp-python/tests -q
+uv run --project packages/mcp-python --frozen --no-sync mypy --config-file packages/mcp-python/pyproject.toml packages/mcp-python/src/cragkit_mcp
+npm --prefix packages/mcp-typescript test
+```
+
+Run one language suite at a time. The [MCP implementation report](../evaluation/reports/V5/V5-06-implementation.md)
+records 36 tests in each runtime and the remaining process-level check. The
+core package installs without these optional SDKs. No live model call is part
+of these checks.

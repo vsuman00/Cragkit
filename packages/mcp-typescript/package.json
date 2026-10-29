@@ -1,0 +1,17 @@
+{
+  "name": "cragkit-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=26.5.0 <27"},
+  "exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"}},
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test --test-concurrency=1 tests/*.test.mjs"
+  },
+  "dependencies": {"@modelcontextprotocol/server": "2.4.0", "zod": "4.6.7"},
+  "peerDependencies": {"cragkit": "0.0.0"},
+  "devDependencies": {"@modelcontextprotocol/client": "2.4.0", "cragkit": "file:../typescript", "@types/node": "26.6.5", "typescript": "7.0.2", "tiktoken": "1.0.22"}
+}

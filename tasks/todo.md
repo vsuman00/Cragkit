@@ -1560,3 +1560,92 @@ Independent G3 design-preparation pair while D5b/G2 native acceptance proceeds: 
 
 
 D5b final handoff COMPLETE forinitialstage-ownerhandoff/ordinarycompletion. Allpeerpaths transferred, rootintegrated. Focused400Python/tool/221Node, full2910Python/tool(fourexistingwarnings)/1468Node, strictbuild/mypy49, actualnativecompletion16+dispatchregression16 passed withcleanup; ordinarysemanticSHA matchedbothruntimes. [Report](../evaluation/reports/V5/V5-04G2b2d5b.md). RootaddedlatePythonuncertainty/sequencechecks matchingNode andcorrectednativeobserverrole/counter bookkeeping. No schema/grant/dependency/publicpackageexport change. Sixteenseals/sevenprotectedhashes unchanged; useraudits excluded. Successfulownedservices/processes/listenersclosed; failedprivateevidence retained; learningunassessed. Rootownsfinalprose/link/stagedreview andcommit/immediatepush/sync, thenD5c prior-security-ownercompatibility andG2c publicmanager. ParentD5/G2b2/V5 remainopen. G3Solpair recommendsnewadditiveprofile5 withirreversible managedsource/replay/requestbodyerasure andretainednontextidentity/claims; vectors-only completion rejected. Advisoryonly, schema/runtimeimplementationnotstarted; rootfreezesafterG2acceptance.
+
+
+### FullV5 parallel dependency refinement
+
+Rootmadeexplicit implementation/acceptance dependency distinction inV5plan: existing-index/MCP read-only consumers use stableacceptedV4/V5-03 retrieval/sourceinterfaces and may buildinparallel withV5-04repair/purge; finalacceptance stillwaitsV5-04/V5-05 andcombinedC2. No productscope/writecapability/releaseexpanded and no parentgate countedcomplete.
+
+Repeated-security protocol review pair: Solpartial_protocol owns only ignored artifacts/V5/V5-04G2c/owner-protocol-sql.md; Solpartial_review owns only ignored artifacts/V5/V5-04G2c/owner-protocol-runtime.md; Pythonassembles. Sharedoutcome chooseminimumcorrect repeatedpublicconvergence compatible0004stage-onlyguard versusnewprofileguardupgrade. Rootownsallproduct/contracts. No tests/processes/network/DB/install/Git; readonlycommandsallowed. Directpeercoord andconcreterootdecision neededbeforedependentedit; unresolvedAstra. CurrentD5baccepted02/4dd stage-ownerhandofffeature isinternal, publicconvergence notimplemented yet.
+
+IndependentV5-05 lane: Solsecurity_native owns only new examples/existing_index.py, examples/existing_index.mjs, examples/existing_index.md, packages/python/tests/test_existing_index_example.py, packages/typescript/tests/existing-index-example.test.mjs. Reuseactualnative evidence/source/retrievalinterfaces andexistingpublicsyntheticfixtures; no core/schema/manifests/locks/sharedfixture edits. Bothnativeexamples mustsubstantively mapcallerrecords withdeclaredcapabilities, immutableprovenance, exactUTF8source spans/digests, trustedtenantfilters, honestunsupportedcapabilities. No source/identity/providerclaim beyondexample. Rootowns tests/processes/docs/tracker/Git/finalintegration. Nopeerexecution/network/DB/install/Git. State implementationassigned; acceptancegatedV5-04.
+
+### V5 security and purge schema prerequisite
+
+Contract preflight found that the profile-4 guard accepts only a stage owner,
+so D5b ownership transfer cannot support a subsequent security update. The
+ownerless stale-stage lifecycle also prevents retaining a stage anchor as a
+universal workaround. Root selected the additive profile-5 prerequisite in
+[QP-r1](../contracts/QDRANT_PURGE_V5.md). The same migration introduces the
+managed-content erasure representation needed by G3. Installing it does not
+complete G2, G3 or V5; existing migrations remain byte-frozen.
+
+- Task: V5-04G2/D5c and G3 shared schema prerequisite, implementation in progress.
+- Shared outcome: repeated committed security owners and irreversible managed
+  source/replay/request erasure with actual restricted PostgreSQL probes.
+- Sol `purge_schema` owns only new migration
+  `storage/qdrant/postgres/migrations/0005_security_owners_and_erasure.sql` and
+  assembles the pair.
+- Sol `purge_probes` owns only `tools/qdrant_purge_schema.py` and
+  `tools/tests/test_qdrant_purge_schema.py`.
+- Root owns QP-r1, existing files, native runner, catalog pins, tracker, all
+  tests/services and Git; root is final integrator and escalation owner.
+- Peers resolve schema/probe dependencies directly. Protected-boundary, outcome
+  and external ownership changes require root before dependent edits; unresolved
+  decisions go to Astra.
+- Peers may inspect files and edit their paths, but run no tests, services,
+  installs, network calls, databases or Git. Root serializes native execution.
+- Acceptance starts with exact installation/rollback, caller/ACL/RLS probes and
+  guard/erasure failure cases. Physical Qdrant absence remains a separate gate.
+- V5-05 example paths transferred to root. Focused checks passed: 10 Python and
+  8 Node. Final V5-05 acceptance remains gated by V5-04/C2.
+
+Validation policy: preflight contracts and failure mechanisms before code;
+reproduce failures narrowly, fix their cause, then run focused checks. Run full
+suites at integration checkpoints. No further full-suite rerun is warranted
+solely by documentation or unchanged inputs.
+
+Independent V5-06 implementation lane: Sol `mcp_host` owns only source/tests in
+`packages/mcp-python/` and `packages/mcp-typescript/` against frozen
+[MT-r1](../contracts/MCP_V5.md). Root owns their manifests, lockfiles, TypeScript
+configuration, all execution and final integration. Pinned official SDKs were
+installed only in those optional packages: Python 2.3.0 and Node 2.4.0. No core
+manifest or public core API changed. The worker may inspect files and edit owned
+paths, but runs no tests, services, installs, network, databases or Git. One
+read-only retrieval tool binds trusted scope, filters and limits outside client
+input; no write/repair/purge transport. Final V5-06 acceptance remains gated.
+
+Native schema fixture preflight passed with cleanup in
+`artifacts/V5/V5-04-profile5/seed-02/`: real profile-4 writer commits purge,
+stage-owner, prior-security-owner and same-current-security-owner histories.
+The first fixture attempt exposed the profile-4-only admission requirement;
+the fixture now installs that exact prerequisite before constructing its writer.
+This is fixture evidence, not profile-5 or physical purge acceptance. Focused
+schema/probe helper checks passed, 43 tests; actual new SQL probes remain pending.
+Root committed the independently verified existing-index example as `93571df`;
+its report keeps final upstream acceptance separate.
+
+Profile-5 schema prerequisite accepted as an independent implementation gate:
+44 focused helper tests and 14 restricted native PostgreSQL checks passed,
+including real rollback and fresh read-only historical confirmation. The
+isolated fixture cleaned up. [Evidence](../evaluation/reports/V5/V5-04-profile5-schema.md).
+Commit `a5323bb` was pushed. The SQL fixture's absence digest is synthetic;
+runtime profile admission and actual Qdrant absence remain open.
+
+Profile-5 runtime admission pair: Sol `purge_schema` owns Python native
+authority, writer, recovery and source paths plus their existing focused tests,
+and assembles the pair. Sol `purge_probes` owns the corresponding TypeScript
+paths and tests. Their previous migration/probe paths transferred to root after
+the SQL acceptance. They share QP-r1's pinned profile and exact capability
+query; old profiles remain strict. Root owns fixtures, native consumers, all
+execution, Git and final integration. Peers edit only assigned paths, run no
+processes or tests, and coordinate exact SQL interfaces directly. Any protected
+boundary or outcome change comes to root before implementation. Python focused
+admission tests passed: 533. Native profile-5 runtime checks are pending.
+
+Optional MCP host implementation is ready for integration, with 36 Python and
+36 Node SDK tests passing and both strict builds/typechecks passing. The close
+regression was reproduced and fixed; [evidence](../evaluation/reports/V5/V5-06-implementation.md).
+Python child-process stdio and installed-artifact verification remain open;
+V5-06 final acceptance still depends on V5-04, V5-05 and C2. No live model or
+provider calls were used.

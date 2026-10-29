@@ -105,7 +105,9 @@ Execute V5-04 as bounded children. The parent remains incomplete until native pu
 
 ### V5-05: Existing-index contract example
 
-Dependency: V5-04. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.
+Implementation may proceed independently against the already accepted V4/V5-03 retrieval and source interfaces while V5-04 repair/purge is in progress. It adds no publication capability. Final acceptance remains dependent on V5-04 and the combined V5 checkpoint.
+
+Dependency: V5-04 for acceptance. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.
 
 Build: Provide an example adapter mapping caller-owned records to the source/profile/filter capability contract.
 
@@ -119,7 +121,9 @@ Expected areas: `Existing-index example`, `capability tests`.
 
 ### V5-06: Optional MCP host
 
-Dependency: V5-05. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.
+Implementation may proceed against frozen native retrieval/tool contracts after the V5-05 example contract is fixed. It adds no write, repair or purge transport. Final acceptance remains dependent on accepted V5-04/V5-05 and the combined checkpoint.
+
+Dependency: V5-05 for acceptance. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.
 
 Build: Select the supported MCP implementation at this phase; bind trusted identity outside tool input and propagate cancellation and limits.
 
