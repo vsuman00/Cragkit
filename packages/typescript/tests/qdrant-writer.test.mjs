@@ -8,6 +8,7 @@ import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
   AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
+import {AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL,publication_schema_profile} from '../dist/qdrant-authority.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
 import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
@@ -89,6 +90,8 @@ function setup(){
         if(sql===RECOVERY_ROLE_SQL)return {rows:[[state.recoveryRole!==false]]};
         if(sql===WRITER_ROLE_SQL){if(state.wait)await state.wait;return {rows:[[state.role]]};}
         if(sql===AUTHORITY_HISTORY_SQL)return {rows:state.history};
+        if(sql===SECURITY_GUARD_OWNER_SQL){if(state.guardWait)await state.guardWait;return {rows:state.guardOwnerRows??[[true]]};}
+        if(sql===AUTHORITY_SECURITY_GUARD_CATALOG_SQL)return {rows:state.guardCatalogRows??[[state.catalog]]};
         if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL||sql===AUTHORITY_ATTESTATION_CATALOG_SQL)return {rows:[[state.catalog]]};
         if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
         if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config'))return {rows:[]};
@@ -858,8 +861,8 @@ test('projection distinguishes unavailable recovery control from immutable physi
 
 function useAttestationProfile(f){f.state.history=AUTHORITY_ATTESTATION_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT;}
 /** Actual private F1 provenance/context over deterministic SQL/HTTP doubles, not native proof. */
-async function attestationSetup(){
-  const f=setup();useAttestationProfile(f);await f.writer.initialize(opts());
+async function attestationSetup(securityGuard=false){
+  const f=setup();if(securityGuard)useSecurityGuardProfile(f);else useAttestationProfile(f);await f.writer.initialize(opts());
   await f.writer.stage(prepare_stage(input()),scope,stageOpts());await f.writer.acquire_owner(context,opts());
   await f.writer.reserve_dispatch(context,dispatchRequest,opts());await f.writer.settle_dispatch(context,dispatchRequest.dispatch_id,'a'.repeat(64),opts());
   await f.writer.prepare(context,'b'.repeat(64),opts());
@@ -1510,4 +1513,113 @@ for(const malformed of ['payload','expected_fence','uncommitted','scope'])test(`
     await assert.rejects(f.writer.project_security(f.securityContext,opts()),
       ['uncommitted','scope'].includes(malformed)?UnauthorizedScope:IntegrityViolation);
   }finally{await f.writer.close();await f.resource.close();}
+});
+
+function useSecurityGuardProfile(f){f.state.history=AUTHORITY_SECURITY_GUARD_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT;}
+async function guardedWriter(){const f=setup();useSecurityGuardProfile(f);await f.writer.initialize(opts());return f;}
+
+test('writer profile4 uses exact attestation role with complete metadata before scope or business SQL',async()=>{
+ const f=await guardedWriter();
+ try{
+  assert.throws(()=>publication_schema_profile(AUTHORITY_SECURITY_GUARD_HISTORY),UnsupportedCapability);
+  const start=f.state.queries.length;await f.writer.inspect(context,opts());const queries=f.state.queries.slice(start);
+  const scopeAt=queries.findIndex(query=>query.text.includes("set_config('cragkit_qdrant.writer_document_id'"));
+  assert.ok(scopeAt>=0);
+  for(const sql of [AUTHORITY_HISTORY_SQL,WRITER_ATTESTATION_ROLE_SQL,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,AUTHORITY_FINGERPRINT_SQL,SECURITY_GUARD_OWNER_SQL]){
+   const index=queries.findIndex(query=>query.text===sql);assert.ok(index>=0&&index<scopeAt);
+  }
+  assert.equal(queries.some(query=>query.text===WRITER_ROLE_SQL||query.text===AUTHORITY_ATTESTATION_CATALOG_SQL),false);
+  assert.equal(queries.some(query=>/^SELECT cragkit_qdrant\.lock_current_security\(/.test(query.text)),false);
+  assert.equal(f.pool.ends,0);
+ }finally{await f.writer.close();await f.resource.close();}
+});
+
+for(const drift of ['owner_grant','owner_login','catalog','fingerprint','suffix','checksum','downgrade','role'])
+ test(`writer4 ${drift} drift refuses before scope and restores safely`,async()=>{
+  const f=await guardedWriter();
+  try{
+   if(drift==='owner_grant'||drift==='owner_login')f.state.guardOwnerRows=[[false]];
+   if(drift==='catalog')f.state.catalog=false;
+   if(drift==='fingerprint')f.state.fingerprint='f'.repeat(64);
+   if(drift==='suffix')f.state.history.push(['0005_unknown','f'.repeat(64)]);
+   if(drift==='checksum')f.state.history[3][1]='f'.repeat(64);
+   if(drift==='downgrade'){useAttestationProfile(f);}
+   if(drift==='role')f.state.attestationRole=false;
+   const start=f.state.queries.length;
+   await assert.rejects(f.writer.inspect(context,opts()),drift==='role'?UnauthorizedScope:UnsupportedCapability);
+   assert.equal(f.state.queries.slice(start).some(query=>query.text.includes("set_config('cragkit_qdrant.writer_document_id'")),false);
+   assert.equal(f.state.queries.slice(start).some(query=>query.text.includes('FROM cragkit_qdrant.publication_intents ')),false);
+   useSecurityGuardProfile(f);f.state.catalog=true;f.state.guardOwnerRows=[[true]];f.state.attestationRole=true;
+   await f.writer.inspect(context,opts());
+  }finally{await f.writer.close();await f.resource.close();}
+ });
+
+test('writer upgrades require explicit initialization and profile4 admission is sticky across failed reinitialization',async()=>{
+ const f=setup();useAttestationProfile(f);
+ try{
+  await f.writer.initialize(opts());useSecurityGuardProfile(f);
+  await assert.rejects(f.writer.inspect(context,opts()),UnsupportedCapability);
+  await f.writer.initialize(opts());await f.writer.inspect(context,opts());
+  useAttestationProfile(f);await assert.rejects(f.writer.initialize(opts()),UnsupportedCapability);
+  await assert.rejects(f.writer.inspect(context,opts()),IndexNotReady);
+  useSecurityGuardProfile(f);f.state.guardOwnerRows=[[false]];await assert.rejects(f.writer.initialize(opts()),UnsupportedCapability);
+  useAttestationProfile(f);await assert.rejects(f.writer.initialize(opts()),UnsupportedCapability);
+  useSecurityGuardProfile(f);f.state.guardOwnerRows=[[true]];await f.writer.initialize(opts());await f.writer.inspect(context,opts());
+ }finally{await f.writer.close();await f.resource.close();}
+});
+
+for(const profile of ['publication','attestation'])test(`live ${profile} writer rejects every implicit profile change`,async()=>{
+ const f=setup();if(profile==='attestation')useAttestationProfile(f);
+ try{
+  await f.writer.initialize(opts());
+  if(profile==='publication')useAttestationProfile(f);else{f.state.history=AUTHORITY_PUBLICATION_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT;}
+  await assert.rejects(f.writer.inspect(context,opts()),UnsupportedCapability);
+  await f.writer.initialize(opts());await f.writer.inspect(context,opts());
+ }finally{await f.writer.close();await f.resource.close();}
+});
+
+test('profile4 retains cross-epoch attestation and publication requirements',async()=>{
+ const f=await attestationSetup(true);
+ try{
+  await assert.rejects(f.writer.publish(context,opts()),ProviderUnavailable);
+  await f.run(options=>f.writer.attest_prepared(f.receipt,f.verifier,options));
+  assert.equal((await f.writer.publish(context,opts())).state,'published');
+  assert.deepEqual(f.state.tables.preparations[0],f.original);
+ }finally{await f.close();}
+});
+
+test('writer4 metadata is actual native scalar data and cannot invoke JSON hooks',async()=>{
+ let hooks=0;
+ const cell={toJSON(){hooks++;return true;}},accessor=[];
+ Object.defineProperty(accessor,'0',{get(){hooks++;return true;},enumerable:true});
+ for(const rows of [[],[[1]],[[cell]],[accessor],new Proxy([[true]],{get(){hooks++;return [];}})]){
+  const f=setup();useSecurityGuardProfile(f);f.state.guardOwnerRows=rows;
+  try{await assert.rejects(f.writer.initialize(opts()),UnsupportedCapability);}
+  finally{await f.writer.close();await f.resource.close();}
+ }
+ assert.equal(hooks,0);
+});
+
+test('writer4 preserves caller cancellation/deadline and closes only owned work',async()=>{
+ for(const mode of ['cancel','deadline']){
+  const f=await guardedWriter();let finish;f.state.guardWait=new Promise(resolve=>{finish=resolve;});const controller=new AbortController();
+  try{
+   const pending=f.writer.inspect(context,{deadline:mode==='deadline'?now()+.02:now()+5,signal:controller.signal});
+   const refused=assert.rejects(pending,mode==='deadline'?DeadlineExceeded:error=>error.name==='AbortError');
+   await new Promise(resolve=>setImmediate(resolve));if(mode==='cancel')controller.abort();await refused;
+   assert.equal(f.state.queries.some(query=>query.text.includes("set_config('cragkit_qdrant.writer_document_id'")),false);
+   assert.equal(f.pool.ends,0);finish();
+  }finally{finish();await f.writer.close();await f.resource.close();}
+ }
+});
+
+
+test('writer4 catalog drift remains UnsupportedCapability when it also changes executable privileges',async()=>{
+ const f=await guardedWriter();
+ try{
+  f.state.catalog=false;f.state.attestationRole=false;
+  const start=f.state.queries.length;
+  await assert.rejects(f.writer.inspect(context,opts()),UnsupportedCapability);
+  assert.equal(f.state.queries.slice(start).some(query=>query.text.includes("set_config('cragkit_qdrant.writer_document_id'")),false);
+ }finally{await f.writer.close();await f.resource.close();}
 });

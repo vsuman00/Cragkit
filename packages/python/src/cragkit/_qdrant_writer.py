@@ -15,7 +15,9 @@ from ._postgres_pool import PoolResource
 from ._postgres_session import SessionConnection
 from ._qdrant_authority import (_HISTORY_SQL, _PUBLICATION_CATALOG_SQL, _CATALOG_FINGERPRINT_SQL,
     EXPECTED_PUBLICATION_HISTORY, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT,
-    _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_HISTORY, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT)
+    _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_HISTORY, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT,
+    EXPECTED_SECURITY_GUARD_HISTORY, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT,
+    _SECURITY_GUARD_CATALOG_SQL, _SECURITY_GUARD_OWNER_SQL)
 from ._qdrant_contract import (CandidatePayload, QdrantConfig, SPARSE_PROFILE, decode_response,
                                parse_model, point_id)
 from ._qdrant_manifest import (_Security, _Purge, _Manifest, _Stage, _ReplayResult, _parse,
@@ -294,6 +296,7 @@ class PostgresQdrantWriter:
         self.instance_id = _identity(instance_id)
         self._ready = False
         self._schema_profile = 2
+        self._security_guard_admitted = False
         self._closed = False
         self._active: asyncio.Task[Any] | None = None
         _WRITER_ORIGINS[self] = (self.resource, self.config, self.instance_id)
@@ -305,6 +308,38 @@ class PostgresQdrantWriter:
         if type(rows) is not list or any(type(row) is not tuple for row in rows):
             raise IntegrityViolation()
         return rows
+
+    @staticmethod
+    def _history_profile(rows: list[tuple[Any, ...]]) -> int:
+        if (type(rows) is not list or len(rows) not in (2, 3, 4)
+                or any(type(row) is not tuple or len(row) != 2
+                       or any(type(value) is not str for value in row) for row in rows)):
+            raise UnsupportedCapability()
+        if rows == list(EXPECTED_PUBLICATION_HISTORY):
+            return 2
+        if rows == list(EXPECTED_ATTESTATION_HISTORY):
+            return 3
+        if rows == list(EXPECTED_SECURITY_GUARD_HISTORY):
+            return 4
+        raise UnsupportedCapability()
+
+    async def _catalog_profile(self, connection: SessionConnection, profile: int) -> None:
+        catalog, fingerprint = {
+            2: (_PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT),
+            3: (_ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT),
+            4: (_SECURITY_GUARD_CATALOG_SQL, EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT),
+        }[profile]
+        checks: list[tuple[str, object]] = [(catalog, True), (_CATALOG_FINGERPRINT_SQL, fingerprint)]
+        if profile == 4:
+            checks.append((_SECURITY_GUARD_OWNER_SQL, True))
+        for sql, expected in checks:
+            try:
+                rows = await self._query(connection, sql)
+            except IntegrityViolation:
+                raise UnsupportedCapability() from None
+            if (type(rows) is not list or len(rows) != 1 or type(rows[0]) is not tuple or len(rows[0]) != 1
+                    or type(rows[0][0]) is not type(expected) or rows[0][0] != expected):
+                raise UnsupportedCapability()
 
     async def _run(self, ctx: WriterContext | None, deadline: float,
                    operation: Callable[[SessionConnection], Awaitable[_T]], *, initializing: bool = False,
@@ -331,17 +366,22 @@ class PostgresQdrantWriter:
                         await connection.execute('SET LOCAL search_path=pg_catalog')
                         milliseconds = max(1, min(2147483647, int((deadline-asyncio.get_running_loop().time())*1000)))
                         await connection.execute("SELECT set_config('statement_timeout',%s,true)", (str(milliseconds),))
-                        profile = self._schema_profile
-                        if initializing:
-                            history = await self._query(connection, _HISTORY_SQL)
-                            if history == list(EXPECTED_PUBLICATION_HISTORY):
-                                profile = 2
-                            elif history == list(EXPECTED_ATTESTATION_HISTORY):
-                                profile = 3
-                            else:
-                                raise UnsupportedCapability()
-                        role_sql = _WRITER_ATTESTATION_ROLE_SQL if profile == 3 else _WRITER_ROLE_SQL
-                        if await self._query(connection, role_sql) != [(True,)]:
+                        try:
+                            profile = self._history_profile(await self._query(connection, _HISTORY_SQL))
+                        except IntegrityViolation:
+                            raise UnsupportedCapability() from None
+                        if ((self._security_guard_admitted and profile != 4)
+                                or (not initializing and profile != self._schema_profile)):
+                            raise UnsupportedCapability()
+                        if initializing or profile == 4:
+                            await self._catalog_profile(connection, profile)
+                        role_sql = _WRITER_ATTESTATION_ROLE_SQL if profile in (3, 4) else _WRITER_ROLE_SQL
+                        try:
+                            role = await self._query(connection, role_sql)
+                        except IntegrityViolation:
+                            raise UnsupportedCapability() from None
+                        if (type(role) is not list or len(role) != 1 or type(role[0]) is not tuple
+                                or len(role[0]) != 1 or role[0][0] is not True):
                             raise UnauthorizedScope()
                         if ctx is not None:
                             grants = _json(list(ctx.scope.grant_ids))
@@ -371,6 +411,9 @@ class PostgresQdrantWriter:
                         if connection.info.transaction_status != 0:
                             raise ProviderUnavailable()
                         deadline_value(deadline)
+                        if initializing:
+                            self._schema_profile = profile
+                            self._security_guard_admitted = self._security_guard_admitted or profile == 4
                         return result
                     finally:
                         if entered:
@@ -413,18 +456,7 @@ class PostgresQdrantWriter:
             raise ProviderUnavailable()
         self._ready = False
         async def initialize(connection: SessionConnection) -> None:
-            history = await self._query(connection, _HISTORY_SQL)
-            if history == list(EXPECTED_PUBLICATION_HISTORY):
-                profile, catalog, fingerprint = 2, _PUBLICATION_CATALOG_SQL, EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
-            elif history == list(EXPECTED_ATTESTATION_HISTORY):
-                profile, catalog, fingerprint = 3, _ATTESTATION_CATALOG_SQL, EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
-            else:
-                raise UnsupportedCapability()
-            if await self._query(connection, catalog) != [(True,)]:
-                raise UnsupportedCapability()
-            if await self._query(connection, _CATALOG_FINGERPRINT_SQL) != [(fingerprint,)]:
-                raise UnsupportedCapability()
-            self._schema_profile = profile
+            return None
         await self._run(None, deadline, initialize, initializing=True)
         self._ready = True
 
@@ -1700,7 +1732,7 @@ class PostgresQdrantWriter:
             raise ProviderUnavailable()
         if not self._ready:
             raise IndexNotReady()
-        if self._schema_profile != 3:
+        if self._schema_profile not in (3, 4):
             raise UnsupportedCapability()
 
     @staticmethod
@@ -1911,7 +1943,7 @@ class PostgresQdrantWriter:
             await self._require_settled(connection,ctx)
             plan = await self._load_stage(connection,ctx)
             self._attestation_intent(plan, intent, existing)
-            if self._schema_profile == 3:
+            if self._schema_profile in (3, 4):
                 preparation, attestation = await self._attestation_material(connection,ctx,epoch,document,intent)
                 current = (preparation['owner_token'] == ctx.owner_token and preparation['backend_epoch'] == epoch)
                 if not current and attestation is None:

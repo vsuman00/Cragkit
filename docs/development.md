@@ -1221,3 +1221,14 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory. The parent runs Python and Node serially on disposable PostgreSQL 17 fixtures, seeds through the accepted older writer profile, then explicitly applies 0004 with the restricted operator. Each runtime uses one reader and one operator client plus the parent admin observer. The development profile has a 120-second business deadline, separate twelve-second cleanup allowance and 175-second outer runtime limit. It checks unsafe permission, role and catalog changes before source SQL, restores owned changes and closes owned processes before removing storage. It releases no source bytes and runs no Qdrant service, provider or hosted mutation. Node requires the current package build.
+
+
+## V5-04G2b2d2b1 native profile-4 writer admission
+
+[Writer admission evidence](../evaluation/reports/V5/V5-04G2b2d2b1.md) covers exact profile-4 admission and permission drift before business SQL. It adds no writer grants; recovery admission remains separate.
+
+```bash
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_guard_writer.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04G2b2d2b1/a-new-writer-run
+```
+
+Use a fresh directory and the current TypeScript build. Python and Node run serially on separate disposable PostgreSQL 17 fixtures, with one writer and one operator client plus the parent admin. The explicit development profile uses a 120-second business deadline, twelve-second cleanup allowance and 175-second outer runtime limit. It reconstructs a synthetic complete security projection, rejects committed metadata faults before writer scope binding, restores owned changes and verifies resource cleanup. No Qdrant service, provider, hosted write or migration on import is involved.

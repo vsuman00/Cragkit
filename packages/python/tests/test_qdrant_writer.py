@@ -59,6 +59,7 @@ class Connection:
         self.role=True; self.history=list(implementation.EXPECTED_PUBLICATION_HISTORY)
         self.hash=implementation.EXPECTED_PUBLICATION_CATALOG_FINGERPRINT
         self.failure=None; self.commit_failure=False; self.block=None
+        self.guard_catalog=[(True,)];self.guard_owner=[(True,)]
     def transaction(self):
         owner=self
         class Transaction:
@@ -78,6 +79,8 @@ class Connection:
         if self.failure is not None: raise self.failure
         if sql in (implementation._WRITER_ROLE_SQL,implementation._WRITER_ATTESTATION_ROLE_SQL):return Cursor([(self.role,)])
         if sql==implementation._HISTORY_SQL:return Cursor(self.history)
+        if sql==implementation._SECURITY_GUARD_CATALOG_SQL:return Cursor(self.guard_catalog)
+        if sql==implementation._SECURITY_GUARD_OWNER_SQL:return Cursor(self.guard_owner)
         if sql in (implementation._PUBLICATION_CATALOG_SQL,implementation._ATTESTATION_CATALOG_SQL):return Cursor([(True,)])
         if sql==implementation._CATALOG_FINGERPRINT_SQL:return Cursor([(self.hash,)])
         if 'SELECT action,state,payload_sha256' in sql:return Cursor([])
@@ -1020,7 +1023,9 @@ class ManagerConnection(Connection):
 
     async def execute(self, sql, params=None):
         if (sql.startswith('SET ') or 'set_config(' in sql
-                or sql in (implementation._WRITER_ROLE_SQL,implementation._WRITER_ATTESTATION_ROLE_SQL)):
+                or sql in (implementation._WRITER_ROLE_SQL,implementation._WRITER_ATTESTATION_ROLE_SQL,
+                           implementation._HISTORY_SQL,implementation._SECURITY_GUARD_CATALOG_SQL,
+                           implementation._SECURITY_GUARD_OWNER_SQL,implementation._CATALOG_FINGERPRINT_SQL)):
             return await super().execute(sql, params)
         self.calls.append((sql, params))
         if self.state.get('body_error') is not None:
@@ -1421,6 +1426,13 @@ def test_writer_attestation_literal_permissions_do_not_broaden_ordinary_profile(
 
 class AttestationConnection(ManagerConnection):
     """SQL transaction/acknowledgment double, not a physical F1 proof."""
+    def __init__(self, state):
+        super().__init__(state)
+        profile=state.get('schema_profile',3)
+        self.history=list({2:implementation.EXPECTED_PUBLICATION_HISTORY,
+                           3:implementation.EXPECTED_ATTESTATION_HISTORY,
+                           4:implementation.EXPECTED_SECURITY_GUARD_HISTORY}[profile])
+        if profile==4:self.hash=implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT
     def transaction(self):
         transaction=super().transaction()
         owner=self
@@ -1619,6 +1631,7 @@ async def test_unknown_attestation_commit_absence_allows_one_same_key_sql_retry(
 async def test_old_publication_profile_cannot_use_retired_original_preparation(monkeypatch):
     writer,state,_,_,_,_,_=attestation_writer(monkeypatch)
     writer._schema_profile=2
+    state['schema_profile']=2
     with pytest.raises(ProviderUnavailable):
         await writer.publish(ctx(),deadline=asyncio.get_running_loop().time()+5)
     assert not state.get('publication_updates') and state['intent']['state']=='prepared'
@@ -1655,6 +1668,11 @@ async def recovery_plan_writer(monkeypatch,tmp_path):
     from test_qdrant_reconciliation import setup
     writer,supervisor,proof,projection,handle,document,physical=await setup(monkeypatch,tmp_path)
     writer._schema_profile=3
+    original_query=writer._query
+    async def attestation_query(connection,sql,params=()):
+        if sql==implementation._HISTORY_SQL:return list(implementation.EXPECTED_ATTESTATION_HISTORY)
+        return await original_query(connection,sql,params)
+    monkeypatch.setattr(writer,'_query',attestation_query)
     stage=prepare_stage(stage_input())
     state={'action':'stage','state':'writing','manifest_sha256':stage.manifest_sha256,
            'payload_sha256':stage.payload_sha256,'generation_id':'gen-2','revision_id':'rev-2'}
@@ -1761,3 +1779,109 @@ async def test_repair_preflight_old_profile_fails_before_checkout(monkeypatch):
     with pytest.raises(UnsupportedCapability):
         await writer.preflight_repair(ctx(),deadline=asyncio.get_running_loop().time()+5)
     assert connections==[]
+
+
+def writer_guard_profile(connection):
+    connection.history=list(implementation.EXPECTED_SECURITY_GUARD_HISTORY)
+    connection.hash=implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT
+
+
+@run_async
+async def test_writer_profile4_rechecks_exact_metadata_and_unchanged_attestation_role_each_lease(monkeypatch):
+    connection=Connection();writer_guard_profile(connection)
+    writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    deadline=asyncio.get_running_loop().time()+5
+    await writer.initialize(deadline=deadline)
+    assert writer._schema_profile==4 and writer._ready
+    connection.calls.clear()
+    assert await writer.inspect(ctx(),deadline=deadline) is None
+    queries=[sql for sql,_ in connection.calls]
+    scope=queries.index(implementation._SCOPE_SQL)
+    for sql in (implementation._HISTORY_SQL,implementation._SECURITY_GUARD_CATALOG_SQL,
+                implementation._CATALOG_FINGERPRINT_SQL,implementation._SECURITY_GUARD_OWNER_SQL,
+                implementation._WRITER_ATTESTATION_ROLE_SQL):
+        assert queries.index(sql)<scope
+    assert implementation._WRITER_ROLE_SQL not in queries
+    assert not any(sql.startswith('SELECT cragkit_qdrant.lock_current_security(') for sql in queries)
+    writer._attestation_profile()  # Every profile-3 preparation gate remains enabled.
+
+
+@pytest.mark.parametrize('drift', ['fifth','history','downgrade','body','owner','login','role'])
+@run_async
+async def test_writer_profile4_drift_refuses_before_scope_or_business_and_restores(monkeypatch,drift):
+    connection=Connection();writer_guard_profile(connection)
+    writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    deadline=asyncio.get_running_loop().time()+5
+    await writer.initialize(deadline=deadline)
+    if drift=='fifth':connection.history.append(('0005_unknown','a'*64))
+    elif drift=='history':connection.history[-1]=(connection.history[-1][0],'b'*64)
+    elif drift=='downgrade':connection.history=list(implementation.EXPECTED_ATTESTATION_HISTORY)
+    elif drift=='body':connection.hash='c'*64
+    elif drift=='owner':connection.guard_owner=[(False,)]
+    elif drift=='login':connection.guard_catalog=[(False,)]
+    else:connection.role=False
+    connection.calls.clear()
+    with pytest.raises(UnauthorizedScope if drift=='role' else UnsupportedCapability):
+        await writer.inspect(ctx(),deadline=deadline)
+    assert all(sql!=implementation._SCOPE_SQL and not sql.startswith('SELECT action,state,payload_sha256')
+               for sql,_ in connection.calls)
+    writer_guard_profile(connection);connection.guard_owner=connection.guard_catalog=[(True,)];connection.role=True
+    assert await writer.inspect(ctx(),deadline=deadline) is None
+    assert writer._schema_profile==4 and writer._ready
+
+
+@pytest.mark.parametrize('initial', [2,3])
+@run_async
+async def test_writer_live_profile_change_requires_explicit_initialization_and_four_is_sticky(monkeypatch,initial):
+    connection=Connection()
+    if initial==3:
+        connection.history=list(implementation.EXPECTED_ATTESTATION_HISTORY)
+        connection.hash=implementation.EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
+    writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    deadline=asyncio.get_running_loop().time()+5
+    await writer.initialize(deadline=deadline)
+    writer_guard_profile(connection);connection.calls.clear()
+    with pytest.raises(UnsupportedCapability):await writer.inspect(ctx(),deadline=deadline)
+    assert implementation._SCOPE_SQL not in [sql for sql,_ in connection.calls]
+    assert writer._schema_profile==initial
+    await writer.initialize(deadline=deadline)
+    assert writer._schema_profile==4
+    connection.history=list(implementation.EXPECTED_ATTESTATION_HISTORY)
+    connection.hash=implementation.EXPECTED_ATTESTATION_CATALOG_FINGERPRINT
+    with pytest.raises(UnsupportedCapability):await writer.initialize(deadline=deadline)
+    assert not writer._ready and writer._schema_profile==4
+    writer_guard_profile(connection)
+    await writer.initialize(deadline=deadline)
+    assert await writer.inspect(ctx(),deadline=deadline) is None
+
+
+@pytest.mark.parametrize('query_name,rows', [
+    ('_SECURITY_GUARD_OWNER_SQL',[(1,)]), ('_SECURITY_GUARD_OWNER_SQL',[]),
+    ('_SECURITY_GUARD_CATALOG_SQL',[(True,), (True,)]),
+    ('_SECURITY_GUARD_CATALOG_SQL',[(1,)]),
+    ('_CATALOG_FINGERPRINT_SQL',[(implementation.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT.encode(),)]),
+    ('_HISTORY_SQL',[*implementation.EXPECTED_SECURITY_GUARD_HISTORY[:-1],
+                     list(implementation.EXPECTED_SECURITY_GUARD_HISTORY[-1])]),
+])
+@run_async
+async def test_writer_profile4_metadata_requires_native_closed_scalars(monkeypatch,query_name,rows):
+    connection=Connection();writer_guard_profile(connection)
+    writer=PostgresQdrantWriter(resource(monkeypatch,connection),config(),'instance-1')
+    original=writer._query
+    async def query(conn,sql,params=()):
+        if sql==getattr(implementation,query_name):return rows
+        return await original(conn,sql,params)
+    monkeypatch.setattr(writer,'_query',query)
+    with pytest.raises(UnsupportedCapability):
+        await writer.initialize(deadline=asyncio.get_running_loop().time()+5)
+    assert not writer._ready and connection.commits==0
+
+
+@run_async
+async def test_profile4_cannot_publish_retired_preparation_without_current_attestation(monkeypatch):
+    writer,state,connections,_,_,_,_=attestation_writer(monkeypatch)
+    writer._schema_profile=4;state['schema_profile']=4
+    with pytest.raises(ProviderUnavailable):
+        await writer.publish(ctx(),deadline=asyncio.get_running_loop().time()+5)
+    assert connections and not state.get('publication_updates')
+    assert state['intent']['state']=='prepared'
