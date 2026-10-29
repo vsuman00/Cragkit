@@ -17,7 +17,7 @@ import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATIO
 import {AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL,publication_schema_profile} from '../dist/qdrant-authority.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,SECURITY_GUARD_SQL,validate_security_guarded,security_guard_binding,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,SECURITY_GUARD_SQL,validate_security_guarded,settle_security_guarded,security_guard_binding,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
 import {QdrantSecurityVerifier} from '../dist/qdrant-security-verification.js';
 import {QdrantPublicationVerifier} from '../dist/qdrant-publication-verification.js';
 import {publication_finalization} from '../dist/qdrant-publication-worker.js';
@@ -170,6 +170,10 @@ function setup(){
         if(sql==='ROLLBACK'){if(state.rollbackFail)throw Error('private rollback');state.tables=this.snapshot;this.status='I';return {rows:[]};}
         if(sql==='COMMIT'){
           this.status='I';
+          if(this.securitySettled&&state.securitySettlementLost){
+            state.securitySettlementLost=false;state.settlementLostAt=state.queries.length;state.afterSettlementCommit?.();
+            throw Object.assign(Error('private lost settlement reply'),{code:'08006'});
+          }
           if(this.recoveryInserted&&state.recoveryCommitLost){state.recoveryCommitLost=false;throw Object.assign(Error('synthetic recovery commit lost'),{code:'08006'});}
           if(state.recoveryMarkLost&&this.recoveryMarked===state.recoveryMarkLost){state.recoveryMarkLost=null;throw Object.assign(Error('synthetic marker commit lost'),{code:'08006'});}
           if(this.attestationInserted&&state.attestationCommitLost){state.attestationCommitLost=false;state.onAttestationLost?.();throw Error('synthetic attestation commit acknowledgment loss');}
@@ -192,6 +196,7 @@ function setup(){
         if(sql===AUTHORITY_PUBLICATION_CATALOG_SQL||sql===AUTHORITY_ATTESTATION_CATALOG_SQL)return {rows:[[state.catalog]]};
         if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[state.fingerprint]]};
         if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config')){
+          if(sql==='SET TRANSACTION READ ONLY')state.onSecurityReadOnly?.();
           if(state.guarded&&sql.includes("set_config('cragkit_qdrant.writer_intent_id'")&&params[0]==='security-confirmation')state.afterGuardGraph?.();
           return {rows:[]};
         }
@@ -212,6 +217,7 @@ function setup(){
         const select=/^SELECT (.+?) FROM cragkit_qdrant\.(\w+) WHERE /.exec(sql);
         if(select){
           const [,columns,table]=select;
+          if(table==='dispatch_journal'&&sql.includes('created_xid::text')&&sql.includes('dispatch_id=ANY'))await state.onSecurityConfirmation?.();
           if(state.guarded&&table==='documents'&&!sql.includes('FOR UPDATE')){
             state.guardDocumentReads=(state.guardDocumentReads??0)+1;
             await state.onGuardDocument?.(query);
@@ -228,6 +234,7 @@ function setup(){
           else if(sql.includes('(tenant_id,collection,document_id,intent_id)='))rows=rows.filter(row=>row.intent_id===params[3]);
           if(sql.includes('intent_id<>$4'))rows=rows.filter(row=>row.intent_id!==params[3]);
           if(sql.includes('point_id=ANY'))rows=rows.filter(row=>params[3].includes(row.point_id));
+          if(sql.includes('dispatch_id=ANY'))rows=rows.filter(row=>params[4].includes(row.dispatch_id));
           if(sql.includes("state<>'settled'"))rows=rows.filter(row=>row.state!=='settled');
           if(sql.includes('manifest_sha256<>$6'))rows=rows.filter(row=>row.manifest_sha256!==params[5]);
           if(sql.includes("action='stage'"))rows=rows.filter(row=>row.action==='stage');
@@ -244,7 +251,13 @@ function setup(){
               if(sql.includes('authority_committed=true'))row.authority_committed=true;if(sql.includes('replica_complete=true'))row.replica_complete=true;}
           }else if(table==='document_owners')for(const row of rows)Object.assign(row,{instance_id:params[3],intent_id:params[4],owner_token:params[5],backend_epoch:params[6]});
           else if(table==='dispatch_journal'){
-            rows=rows.filter(row=>row.intent_id===params[3]&&row.dispatch_id===params[4]);for(const row of rows)Object.assign(row,{state:params[5],completion_sha256:params[6]});if(rows.some(row=>row.recovery))this.recoveryMarked=params[5];
+            rows=rows.filter(row=>row.intent_id===params[3]&&row.dispatch_id===params[4]);
+            if(sql.includes("SET state='settled'")){
+              this.securitySettled=true;state.securitySettlementUpdates=(state.securitySettlementUpdates??0)+1;
+              state.onSettlementUpdate?.(rows,params);
+              for(const row of rows)Object.assign(row,{state:'settled',completion_sha256:params[5]});
+            }else for(const row of rows)Object.assign(row,{state:params[5],completion_sha256:params[6]});
+            if(rows.some(row=>row.recovery))this.recoveryMarked=params[5];
           }else if(table==='documents'){
             if(sql.includes('SET active_generation_id'))for(const row of rows)row.active_generation_id=params[3];
             else {await state.onSecurityBody?.();for(const row of rows)Object.assign(row,{principal_ids:params[3],grant_ids:params[4],authorization_revision:params[5],mutation_epoch:params[6],language:params[7],kind:params[8],tag:params[9],tombstoned:params[10]});}
@@ -1652,6 +1665,148 @@ async function guardedValidationFixture(){
   }fake.restore();throw error;}
 }
 const guardedLocal={skip:process.platform!=='darwin'||process.arch!=='arm64'};
+function seedSecurityJournals(f){
+  const target={tenant_id:f.owner.scope.tenant_id,collection:f.owner.collection,document_id:f.owner.document_id,intent_id:f.owner.intent_id};
+  const main=f.state.tables.point_claims.filter(row=>row.generation_id===fixture.intent.generation_id).map(row=>row.point_id);
+  const all=f.state.tables.point_claims.map(row=>row.point_id);
+  const rows=['reserved','dispatched','unknown','settled'].map((state,index)=>({...target,dispatch_id:'security-dispatch-'+index,
+    instance_id:'instance-fixture',sequence:index+1,owner_token:token,backend_epoch:1,credential_generation:'retired-credential',
+    operation:'complete_point_upsert',recovery:index!==0,request_sha256:digest('private request '+index),created_xid:String(101+index),
+    state,completion_sha256:state==='settled'?'e'.repeat(64):null}));
+  f.state.tables.dispatch_journal=rows;
+  f.state.tables.dispatch_points=rows.flatMap((row,index)=>(index===0?main:all).map(point_id=>({...target,dispatch_id:row.dispatch_id,
+    backend_namespace:config.backend_namespace,physical_collection:config.physical_collection,collection_incarnation:config.collection_incarnation,point_id})));
+  f.state.tables.publication_intents.find(row=>row.intent_id===f.owner.intent_id).state='denied';
+  return rows;
+}
+const settleGuarded=(f,lease=opts())=>settle_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,lease);
+test('security settlement validates original and multi-generation recovery journals then changes only state/completion',guardedLocal,async()=>{
+  const f=await guardedValidationFixture();try{
+    seedSecurityJournals(f);
+    f.state.tables.dispatch_journal.push({...clone(f.state.tables.dispatch_journal[0]),document_id:'other-document',dispatch_id:'foreign-document'});
+    const before=clone(f.state.tables),start=f.state.queries.length,result=await settleGuarded(f);
+    assert.deepEqual(result,{settled_count:3});assert.ok(Object.isFrozen(result));
+    const completed=f.state.tables.dispatch_journal.slice(0,3);assert.ok(completed.every(row=>row.state==='settled'&&/^[0-9a-f]{64}$/.test(row.completion_sha256)));
+    assert.equal(new Set(completed.map(row=>row.completion_sha256)).size,1);
+    const preserved=clone(f.state.tables);for(let index=0;index<3;index++){
+      preserved.dispatch_journal[index].state=before.dispatch_journal[index].state;
+      preserved.dispatch_journal[index].completion_sha256=null;
+    }
+    assert.deepEqual(preserved,before);assert.equal(f.state.tables.backend_instances[0].state,'recovery_blocked');
+    const queries=f.state.queries.slice(start),guardAt=queries.findIndex(query=>query.text===SECURITY_GUARD_SQL);
+    const updateAt=queries.findIndex(query=>query.text.startsWith('UPDATE cragkit_qdrant.dispatch_journal'));
+    assert.ok(guardAt>=0&&updateAt>guardAt);
+    assert.ok(queries.slice(guardAt,updateAt).some(query=>query.text.includes('created_xid::text')));
+    const historical=clone(f.state.tables.dispatch_journal);assert.deepEqual(await settleGuarded(f),{settled_count:0});
+    assert.deepEqual(f.state.tables.dispatch_journal,historical);
+  }finally{await f.close();}
+});
+test('lost settlement COMMIT reply confirms exact historical rows once after later authority change',guardedLocal,async()=>{
+  const f=await guardedValidationFixture();try{
+    seedSecurityJournals(f);f.state.securitySettlementLost=true;
+    let requestsAtCommit;
+    f.state.afterSettlementCommit=()=>{requestsAtCommit=f.fake.state.requests.length;Object.assign(f.state.tables.documents[0],{authorization_revision:'auth-3',mutation_epoch:3});};
+    const requestCount=f.fake.state.requests.length;assert.deepEqual(await settleGuarded(f),{settled_count:3});
+    assert.equal(f.state.securitySettlementUpdates,3);
+    const confirmation=f.state.queries.slice(f.state.settlementLostAt).map(query=>query.text);
+    assert.ok(confirmation.includes('SET TRANSACTION READ ONLY'));
+    assert.equal(confirmation.some(sql=>sql===SECURITY_GUARD_SQL||/^(INSERT|UPDATE|DELETE)/.test(sql)||/FOR (UPDATE|SHARE)/.test(sql)),false);
+    assert.equal(confirmation.some(sql=>sql.includes('FROM cragkit_qdrant.documents')||sql.includes('FROM cragkit_qdrant.document_revisions')),false);
+    assert.equal(confirmation.filter(sql=>sql.startsWith('BEGIN')).length,1);
+    assert.ok(f.fake.state.requests.length>requestCount);
+    assert.equal(f.fake.state.requests.length,requestsAtCommit);
+    assert.equal(f.state.tables.documents[0].authorization_revision,'auth-3');
+  }finally{await f.close();}
+});
+for(const change of ['missing','partial','header','membership'])test(`lost settlement confirmation refuses ${change} historical contradiction without replay`,guardedLocal,async()=>{
+  const f=await guardedValidationFixture();try{
+    seedSecurityJournals(f);f.state.securitySettlementLost=true;
+    f.state.afterSettlementCommit=()=>{
+      if(change==='missing')f.state.tables.dispatch_journal.shift();
+      if(change==='partial')f.state.tables.dispatch_journal[0].state='unknown';
+      if(change==='header')f.state.tables.dispatch_journal[0].request_sha256='a'.repeat(64);
+      if(change==='membership')f.state.tables.dispatch_points.shift();
+    };
+    await assert.rejects(settleGuarded(f),ProviderUnavailable);assert.equal(f.state.securitySettlementUpdates,3);
+  }finally{await f.close();}
+});
+for(const fault of ['current_credential','foreign_intent','wrong_owner','epoch','sequence','operation','request_hash','xid','recovery_flag','missing_members','ordinary_cross_generation','duplicate_member','physical','orphan','duplicate_header','rows_overflow','points_overflow']){
+  test(`security settlement ${fault} refuses before all DML`,guardedLocal,async()=>{
+    const f=await guardedValidationFixture();try{
+      seedSecurityJournals(f);const row=f.state.tables.dispatch_journal[0],points=f.state.tables.dispatch_points;
+      if(fault==='current_credential')row.credential_generation=f.supervisor.recovery_binding(f.proof).credential_generation;
+      if(fault==='foreign_intent')f.state.tables.dispatch_journal.push({...row,intent_id:'another-intent'});
+      if(fault==='wrong_owner')row.owner_token='00000000-0000-4000-8000-000000000099';
+      if(fault==='epoch')row.backend_epoch=3;
+      if(fault==='sequence')row.sequence=257;
+      if(fault==='operation')row.operation='exact_point_delete';
+      if(fault==='request_hash')row.request_sha256='invalid';
+      if(fault==='xid')row.created_xid='01';
+      if(fault==='recovery_flag')row.recovery=1;
+      if(fault==='missing_members')f.state.tables.dispatch_points=points.filter(point=>point.dispatch_id!==row.dispatch_id);
+      if(fault==='ordinary_cross_generation')points[0].point_id=f.state.tables.point_claims.find(point=>point.generation_id!==fixture.intent.generation_id).point_id;
+      if(fault==='duplicate_member')points.push({...points[0]});
+      if(fault==='physical')points[0].collection_incarnation='foreign';
+      if(fault==='orphan')points.push({...points[0],dispatch_id:'orphan'});
+      if(fault==='duplicate_header')f.state.tables.dispatch_journal.push({...row});
+      if(fault==='rows_overflow')f.state.tables.dispatch_journal=Array.from({length:257},(_,index)=>({...row,dispatch_id:'overflow-'+index,sequence:index+1}));
+      if(fault==='points_overflow')f.state.tables.dispatch_points=Array.from({length:2049},()=>({...points[0]}));
+      const before=clone(f.state.tables);
+      const Kind=['current_credential','foreign_intent'].includes(fault)?ProviderUnavailable:fault==='operation'?UnsupportedCapability:IntegrityViolation;
+      await assert.rejects(settleGuarded(f),Kind);assert.equal(f.state.securitySettlementUpdates??0,0);assert.deepEqual(f.state.tables,before);
+    }finally{await f.close();}
+  });
+}
+test('partial security settlement failure rolls back all prior rows and body failure never confirms',guardedLocal,async()=>{
+  const f=await guardedValidationFixture();try{
+    seedSecurityJournals(f);const before=clone(f.state.tables),start=f.state.queries.length;
+    f.state.onSettlementUpdate=()=>{if(f.state.securitySettlementUpdates===2)throw Error('private body failure');};
+    await assert.rejects(settleGuarded(f),ProviderUnavailable);assert.deepEqual(f.state.tables,before);
+    assert.equal(f.state.queries.slice(start).some(query=>query.text==='SET TRANSACTION READ ONLY'),false);
+  }finally{await f.close();}
+});
+test('cancelled settlement reply cannot start historical confirmation or retry DML',guardedLocal,async()=>{
+  const f=await guardedValidationFixture(),controller=new AbortController();try{
+    seedSecurityJournals(f);f.state.securitySettlementLost=true;f.state.afterSettlementCommit=()=>controller.abort();
+    const start=f.state.queries.length;await assert.rejects(settleGuarded(f,{...opts(),signal:controller.signal}),error=>error.name==='AbortError');
+    assert.equal(f.state.securitySettlementUpdates,3);
+    assert.equal(f.state.queries.slice(start).some(query=>query.text==='SET TRANSACTION READ ONLY'),false);
+  }finally{await f.close();}
+});
+test('historical confirmation retains actual callback and facade after failed caller drain',guardedLocal,async()=>{
+  const f=await guardedValidationFixture(),controller=new AbortController();let entered,release;
+  const started=new Promise(resolve=>{entered=resolve;}),waiting=new Promise(resolve=>{release=resolve;});
+  const original=f.supResource.withLease.bind(f.supResource);
+  try{
+    seedSecurityJournals(f);f.state.securitySettlementLost=true;
+    f.supResource.withLease=(lease,body)=>original(f.state.settlementLostAt?{deadline:now()+5}:lease,body);
+    f.state.onSecurityConfirmation=async()=>{entered();await waiting;};
+    const pending=settleGuarded(f,{...opts(),signal:controller.signal});void pending.catch(()=>{});
+    await started;controller.abort();await assert.rejects(pending,error=>error.name==='AbortError');
+    await assert.rejects(f.recovery.advance_owner(f.proof,f.owner,opts()),ProviderUnavailable);
+    await assert.rejects(f.supervisor.control_session(async()=>{}),ProviderUnavailable);
+    const boundary=f.state.queries.length;release();
+    // Actual callback must finish before the supervisor facade is reusable.
+    await f.recovery.close().catch(()=>{});
+    assert.equal(f.state.queries.slice(boundary).some(query=>query.text==='COMMIT'||/^(INSERT|UPDATE|DELETE)/.test(query.text)),false);
+    assert.equal(f.state.securitySettlementUpdates,3);
+  }finally{release?.();await f.close();}
+});
+for(const boundary of ['before_begin','after_readonly'])test(`historical confirmation cancellation ${boundary} stops query construction`,guardedLocal,async()=>{
+  const f=await guardedValidationFixture(),controller=new AbortController(),original=f.supResource.withLease.bind(f.supResource);
+  try{
+    seedSecurityJournals(f);f.state.securitySettlementLost=true;
+    if(boundary==='before_begin')f.supResource.withLease=(lease,body)=>original(lease,(client,signal)=>{
+      if(f.state.settlementLostAt)controller.abort();return body(client,signal);
+    });
+    else f.state.onSecurityReadOnly=()=>controller.abort();
+    await assert.rejects(settleGuarded(f,{...opts(),signal:controller.signal}),error=>error.name==='AbortError');
+    const confirmation=f.state.queries.slice(f.state.settlementLostAt).map(query=>query.text);
+    assert.equal(confirmation.some(sql=>sql==='SET LOCAL search_path=pg_catalog'||sql===AUTHORITY_HISTORY_SQL||sql==='COMMIT'),false);
+    if(boundary==='before_begin')assert.equal(confirmation.some(sql=>sql.startsWith('BEGIN')),false);
+    assert.equal(f.state.securitySettlementUpdates,3);
+  }finally{await f.close();}
+});
 test('guarded graph uses actual nominal receipt, exact22 args and full nonlocking source graph',guardedLocal,async()=>{
   const f=await guardedValidationFixture();
   try{

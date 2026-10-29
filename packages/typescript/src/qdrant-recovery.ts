@@ -2,9 +2,9 @@
 import { types } from 'node:util';
 import {randomUUID} from 'node:crypto';
 import { PoolResource, bounded, now, type LeaseOptions, type PgClient } from './postgres-pool.js';
-import { ManagedQdrantSupervisor, type SupervisorControlSession } from './qdrant-supervisor.js';
+import { ManagedQdrantSupervisor,control_session_binding, type SupervisorControlSession } from './qdrant-supervisor.js';
 import { QdrantReconciliationVerifier, receipt_data, verifier_authority, inspect_missing_readback, verification_budget, type VerificationBudget } from './qdrant-reconciliation.js';
-import { projection_data, writer_binding, recovery_dispatch_plan_data,security_projection_data,validate_guarded_security_projection,require_security_guard_writer, type RecoveryDispatchPlanData, type PostgresQdrantWriter } from './qdrant-writer.js';
+import { projection_data, writer_binding, recovery_dispatch_plan_data,security_projection_data,validate_guarded_security_projection,require_security_guard_writer, type SecurityProjectionData, type RecoveryDispatchPlanData, type PostgresQdrantWriter } from './qdrant-writer.js';
 import {QdrantSecurityVerifier,security_verifier_binding,security_receipt_data} from './qdrant-security-verification.js';
 import {security_readback_budget,type SecurityReadbackBudget} from './qdrant-security-readback.js';
 import { AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY, AUTHORITY_PUBLICATION_CATALOG_SQL,
@@ -33,10 +33,13 @@ type RecoveryRegistration=Readonly<{
 }>;
 const recoveryRegistrations=new WeakMap<object,RecoveryRegistration>();
 const guardedDrivers=new WeakMap<object,(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,security:WriterContext,options:LeaseOptions,budget:SecurityReadbackBudget)=>Promise<void>>();
+type SecuritySettlement=Readonly<{settled_count:number}>;
+const securitySettlers=new WeakMap<object,(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,security:WriterContext,options:LeaseOptions,budget:SecurityReadbackBudget)=>Promise<SecuritySettlement>>();
+type SecurityAttempt=Readonly<{headers:readonly (readonly unknown[])[];members:readonly (readonly unknown[])[];completion:string}>;
 type GuardMetadata=Readonly<{context:WriterContext;owner_context:WriterContext;document:Readonly<Data>}>;
 type GuardRecord=Readonly<{writer:PostgresQdrantWriter;projection:unknown;options:LeaseOptions;data:GuardMetadata;check:()=>void}>;
 const securityGuards=new WeakMap<object,GuardRecord>();
-type GuardedTransaction=Readonly<{attach:(client:PgClient,signal:AbortSignal)=>void;check:()=>void;commit:()=>void;invalidate:()=>void}>;
+type GuardedTransaction=Readonly<{attach:(client:PgClient,signal:AbortSignal)=>void;check:()=>void;commit:()=>void;invalidate:()=>void;readOnly?:true;preflight?:(client:PgClient,signal:AbortSignal)=>void}>;
 /** Read-only private capability inspection. No transaction or callable escapes. */
 export function security_guard_binding(token:unknown,writer:PostgresQdrantWriter,projection:unknown,rawOptions:unknown):GuardMetadata{
   writer_binding(writer);const options=parse_options(rawOptions);
@@ -53,6 +56,13 @@ export async function validate_security_guarded(recovery:unknown,verifier:Qdrant
   const driver=guardedDrivers.get(recovery);if(!driver)throw new InvalidRequest();
   if(owner.intent_id===security.intent_id||owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
   await driver(verifier,proof,owner,security,options,budget);
+}
+export async function settle_security_guarded(recovery:unknown,verifier:QdrantSecurityVerifier,proof:unknown,rawOwner:unknown,rawSecurity:unknown,rawOptions:unknown,inputBudget?:SecurityReadbackBudget):Promise<SecuritySettlement>{
+  const owner=parse_context(rawOwner),security=parse_context(rawSecurity),options=parse_options(rawOptions),budget=security_readback_budget(inputBudget);
+  if(typeof recovery!=='object'||recovery===null||types.isProxy(recovery)||Object.getPrototypeOf(recovery)!==PostgresQdrantRecovery.prototype)throw new InvalidRequest();
+  const settle=securitySettlers.get(recovery);if(!settle)throw new InvalidRequest();
+  if(owner.intent_id===security.intent_id||owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
+  return settle(verifier,proof,owner,security,options,budget);
 }
 export const SECURITY_GUARD_SQL="SELECT true FROM cragkit_qdrant.lock_current_security("+
   Array.from({length:22},(_,index)=>'$'+(index+1)).join(',')+")";
@@ -223,7 +233,8 @@ export class PostgresQdrantRecovery {
     this.#writer=verifier_authority(verifier,supervisor);
     recoveryRegistrations.set(this,Object.freeze({resource:this.#resource,config:this.#config,writer:this.#writer,
       supervisor:this.#supervisor,verifier:this.#verifier}));
-    guardedDrivers.set(this,(securityVerifier,proof,owner,security,options,budget)=>this.#validateSecurityGuarded(securityVerifier,proof,owner,security,options,budget));
+    guardedDrivers.set(this,async(securityVerifier,proof,owner,security,options,budget)=>{await this.#securityGuarded(securityVerifier,proof,owner,security,options,budget,'validate');});
+    securitySettlers.set(this,(securityVerifier,proof,owner,security,options,budget)=>this.#securityGuarded(securityVerifier,proof,owner,security,options,budget,'settle'));
   }
   #admit(initializing=false):void {
     if (this.#closed||this.#active) throw new ProviderUnavailable();
@@ -248,7 +259,7 @@ export class PostgresQdrantRecovery {
       finish();
     }
   }
-  async #validateSecurityGuarded(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,security:WriterContext,caller:LeaseOptions,budget:SecurityReadbackBudget):Promise<void>{
+  async #securityGuarded(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,security:WriterContext,caller:LeaseOptions,budget:SecurityReadbackBudget,mode:'validate'|'settle'):Promise<SecuritySettlement>{
     security_verifier_binding(verifier,this.#writer,this.#supervisor);
     this.#admit();if(this.#profile!=='security_guard')throw new UnsupportedCapability();
     require_security_guard_writer(this.#writer);
@@ -260,7 +271,7 @@ export class PostgresQdrantRecovery {
     // The inner promise owns the real facade through actual callback cleanup.
     // Only the external wait is bounded; its finally never clears admission.
     const inner=(async()=>{
-      try{await this.#supervisor.control_session(async session=>{
+      try{return await this.#supervisor.control_session(async session=>{
         parse_options(options);
         const binding=physical(this.#supervisor.recovery_binding(proof));
         if(binding.instance_id!==writer_binding(this.#writer).instance_id)throw new UnsupportedCapability();
@@ -286,7 +297,8 @@ export class PostgresQdrantRecovery {
         };
         const guarded:GuardedTransaction={attach:(actual,signal)=>{client=actual;leaseSignal=signal;},check,invalidate,
           commit:()=>{check();if(!required||!acknowledged||!validated||tokenLive)throw new ProviderUnavailable();active=false;}};
-        try{await this.#tx(String(binding.instance_id),options,async(tx,profile)=>{
+        let attempted:SecurityAttempt|undefined;
+        try{return await this.#tx(String(binding.instance_id),options,async(tx,profile)=>{
           if(profile!=='security_guard')throw new UnsupportedCapability();
           check();required=true;
           let rows:unknown[][];
@@ -310,19 +322,113 @@ export class PostgresQdrantRecovery {
           try{await validate_guarded_security_projection(this.#writer,token,projection,options);check();validated=true;}
           catch(error){invalidate();throw error;}
           finally{tokenLive=false;}
+          if(mode==='validate')return Object.freeze({settled_count:0});
+          attempted=await this.#securitySettlementAttempt(tx,binding,owner,source,receiptData.readback_sha256);
+          check();
+          for(const row of attempted.headers){
+            const id=row[0];
+            const changed=await tx.query("UPDATE cragkit_qdrant.dispatch_journal SET state='settled',completion_sha256=$6 WHERE (tenant_id,collection,document_id,intent_id,dispatch_id)=($1,$2,$3,$4,$5) AND state IN ('reserved','dispatched','unknown') AND completion_sha256 IS NULL RETURNING dispatch_id",
+              [owner.scope.tenant_id,owner.collection,owner.document_id,owner.intent_id,id,attempted.completion],1);
+            if(changed.length!==1||changed[0].length!==1||changed[0][0]!==id)throw new IntegrityViolation();
+          }
+          return Object.freeze({settled_count:attempted.headers.length});
         },false,undefined,guarded);}
+        catch(error){
+          if(mode!=='settle'||!(error instanceof CommitUnknown)||!attempted)throw error;
+          // A new lease confirms this exact historical set; it never reopens
+          // the receipt, guard, source graph or discovers new eligible work.
+          let confirming=true,confirmationClient:PgClient|undefined,confirmationSignal:AbortSignal|undefined;
+          const historicalScope=()=>{
+            parse_options(options);if(confirmationSignal)parse_options({deadline:options.deadline,signal:confirmationSignal});
+            if(!confirming||this.#closed||this.#active!==operation)throw new ProviderUnavailable();
+            const current=control_session_binding(session,this.#supervisor,proof);
+            if(current.activity!==receiptData.activity||!same(current.physical_binding,binding))throw new UnsupportedCapability();
+          };
+          const historical=()=>{historicalScope();if(!confirmationClient||confirmationClient.getTransactionStatus()!=='T')throw new ProviderUnavailable();};
+          const confirmation:GuardedTransaction={readOnly:true,attach:(actual,signal)=>{confirmationClient=actual;confirmationSignal=signal;},
+            preflight:(actual,signal)=>{confirmationClient=actual;confirmationSignal=signal;historicalScope();},
+            check:historical,commit:()=>{historical();confirming=false;},invalidate:()=>{confirming=false;}};
+          return await this.#tx(String(binding.instance_id),options,async tx=>{
+            await this.#confirmSecuritySettlement(tx,owner,attempted!);historical();
+            return Object.freeze({settled_count:attempted!.headers.length});
+          },false,undefined,confirmation);
+        }
         finally{invalidate();}
       });}
       finally{caller.signal?.removeEventListener('abort',relay);this.#active=undefined;finish();}
     })();
     void inner.catch(()=>{});
-    try{await bounded(inner,caller);}
+    try{return await bounded(inner,caller);}
     catch(error){
       controller.abort();
       try{await bounded(Promise.allSettled([inner]),{deadline:now()+this.#resource.config.release_timeout});}
       catch{this.#closed=true;}
       throw safe(error,caller.deadline);
     }
+  }
+  async #securitySettlementAttempt(tx:Tx,binding:Binding,owner:WriterContext,source:SecurityProjectionData,completion:string):Promise<SecurityAttempt>{
+    const target=[owner.scope.tenant_id,owner.collection,owner.document_id,owner.intent_id];
+    const intents=await tx.query('SELECT instance_id,action,manifest_sha256,revision_id,generation_id FROM cragkit_qdrant.publication_intents WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4)',target,2);
+    if(intents.length!==1||intents[0].length!==5)throw new IntegrityViolation();
+    const intent=intents[0];
+    if(intent[1]!=='stage')throw new UnsupportedCapability();
+    const group=source.generations.find(item=>item.revision_id===intent[3]&&item.generation_id===intent[4]);
+    if(intent[0]!==binding.instance_id||!group||group.manifest_sha256!==intent[2])throw new IntegrityViolation();
+    const foreign=await tx.query("SELECT intent_id FROM cragkit_qdrant.dispatch_journal WHERE (tenant_id,collection,document_id)=($1,$2,$3) AND intent_id<>$4 AND state<>'settled' LIMIT 1",target,1);
+    if(foreign.length){
+      if(foreign[0].length!==1||typeof foreign[0][0]!=='string'||foreign[0][0]===owner.intent_id)throw new IntegrityViolation();
+      throw new ProviderUnavailable();
+    }
+    const rows=await tx.query('SELECT dispatch_id,instance_id,sequence,owner_token::text,backend_epoch,credential_generation,operation,recovery,request_sha256,created_xid::text,state,completion_sha256 FROM cragkit_qdrant.dispatch_journal WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4) ORDER BY sequence LIMIT 257 FOR UPDATE',target,257);
+    const points=await tx.query('SELECT dispatch_id,backend_namespace,physical_collection,collection_incarnation,point_id::text FROM cragkit_qdrant.dispatch_points WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4) LIMIT 2049',target,2049);
+    if(rows.length>256||points.length>2048)throw new IntegrityViolation();
+    const ids=new Set<string>(),sequences=new Set<number>(),members=new Map<string,Set<string>>();
+    const full=new Set(source.point_ids),ordinary=new Set(group.point_ids),pending:unknown[][]=[];
+    try{
+      for(const row of rows){
+        if(row.length!==12)throw new IntegrityViolation();
+        const id=text(row[0]),sequence=db_count(row[2]),epoch=db_count(row[4]);
+        if(ids.has(id)||sequences.has(sequence)||sequence<1||sequence>256||epoch<1||epoch>Number(binding.new_epoch)
+          ||row[1]!==binding.instance_id||row[3]!==owner.owner_token||typeof row[7]!=='boolean')throw new IntegrityViolation();
+        text(row[5]);digest(row[8]);
+        if(typeof row[9]!=='string'||!/^[1-9][0-9]{0,19}$/.test(row[9])||BigInt(row[9])>18446744073709551615n)throw new IntegrityViolation();
+        if(row[6]!=='complete_point_upsert')throw new UnsupportedCapability();
+        if(row[10]==='settled')digest(row[11]);
+        else{
+          if(typeof row[10]!=='string'||!['reserved','dispatched','unknown'].includes(row[10])||row[11]!==null)throw new IntegrityViolation();
+          if(row[5]===binding.credential_generation)throw new ProviderUnavailable();
+          pending.push([id,row[1],sequence,row[3],epoch,...row.slice(5,10)]);
+        }
+        ids.add(id);sequences.add(sequence);members.set(id,new Set());
+      }
+      const headers=new Map(rows.map(row=>[String(row[0]),row]));
+      for(const point of points){
+        if(point.length!==5)throw new IntegrityViolation();
+        const id=text(point[0]),pid=uuid(point[4]),membership=members.get(id),header=headers.get(id);
+        if(!membership||!header||membership.has(pid)||!full.has(pid)||header[7]===false&&!ordinary.has(pid)
+          ||point[1]!==this.#config.backend_namespace||point[2]!==this.#config.physical_collection||point[3]!==this.#config.collection_incarnation)throw new IntegrityViolation();
+        membership.add(pid);
+      }
+      if([...members.values()].some(set=>set.size<1||set.size>8))throw new IntegrityViolation();
+    }catch(error){if(error instanceof InvalidRequest)throw new IntegrityViolation();throw error;}
+    const order=(left:readonly unknown[],right:readonly unknown[])=>Buffer.compare(Buffer.from(JSON.stringify(left)),Buffer.from(JSON.stringify(right)));
+    const attempted=new Set(pending.map(row=>row[0]));
+    return Object.freeze({headers:Object.freeze(pending.sort(order).map(row=>Object.freeze(row))),
+      members:Object.freeze(points.filter(row=>attempted.has(row[0])).sort(order).map(row=>Object.freeze([...row]))),completion:digest(completion)});
+  }
+  async #confirmSecuritySettlement(tx:Tx,owner:WriterContext,attempted:SecurityAttempt):Promise<void>{
+    const target=[owner.scope.tenant_id,owner.collection,owner.document_id,owner.intent_id,attempted.headers.map(row=>row[0])];
+    const rows=await tx.query('SELECT dispatch_id,instance_id,sequence,owner_token::text,backend_epoch,credential_generation,operation,recovery,request_sha256,created_xid::text,state,completion_sha256 FROM cragkit_qdrant.dispatch_journal WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4) AND dispatch_id=ANY($5::text[]) LIMIT 257',target,257);
+    const points=await tx.query('SELECT dispatch_id,backend_namespace,physical_collection,collection_incarnation,point_id::text FROM cragkit_qdrant.dispatch_points WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4) AND dispatch_id=ANY($5::text[]) LIMIT 2049',target,2049);
+    try{
+      if(rows.length!==attempted.headers.length||points.length!==attempted.members.length)throw new ProviderUnavailable();
+      const headers=rows.map(row=>{
+        if(row.length!==12||row[10]!=='settled'||row[11]!==attempted.completion)throw new ProviderUnavailable();
+        return [row[0],row[1],db_count(row[2]),row[3],db_count(row[4]),...row.slice(5,10)];
+      });
+      const order=(left:readonly unknown[],right:readonly unknown[])=>Buffer.compare(Buffer.from(JSON.stringify(left)),Buffer.from(JSON.stringify(right)));
+      if(!same(headers.sort(order),attempted.headers)||!same(points.sort(order),attempted.members))throw new ProviderUnavailable();
+    }catch(error){if(error instanceof InvalidRequest||error instanceof IntegrityViolation)throw new ProviderUnavailable();throw error;}
   }
   async #tx<T>(instance_id:string,options:LeaseOptions,body:(tx:Tx,profile:RecoverySchemaProfile)=>Promise<T>,initializing=false,expectedProfile?:RecoverySchemaProfile,guarded?:GuardedTransaction):Promise<T> {
     let actual:Promise<T>|undefined;
@@ -348,9 +454,12 @@ export class PostgresQdrantRecovery {
         } catch (error) { if(error instanceof InvalidRequest)throw new IntegrityViolation();throw error; }
       }};
       try {
+        guarded?.preflight?.(client,signal);
         await bounded(client.query({text:'BEGIN ISOLATION LEVEL READ COMMITTED',rowMode:'array'}),lease);
         begun=true;
         guarded?.attach(client,signal);
+        guarded?.check();
+        if(guarded?.readOnly)await bounded(client.query({text:'SET TRANSACTION READ ONLY',rowMode:'array'}),lease);
         guarded?.check();
         await bounded(client.query({text:'SET LOCAL search_path=pg_catalog',rowMode:'array'}),lease);
         let profile:RecoverySchemaProfile;

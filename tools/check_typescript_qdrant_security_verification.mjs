@@ -1,11 +1,12 @@
-/** Actual security receipts on disposable native servers; no settlement proof. */
+/** Actual native security receipts and optional private settlement acceptance. */
 import {execFile} from 'node:child_process';
+import http from 'node:http';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual as same} from 'node:util';
 import {PoolResource,parse_pool_config,bounded,now} from '../packages/typescript/dist/postgres-pool.js';
 import {PostgresQdrantWriter,prepare_stage,security_projection_data} from '../packages/typescript/dist/qdrant-writer.js';
 import {ManagedQdrantSupervisor} from '../packages/typescript/dist/qdrant-supervisor.js';
-import {PostgresQdrantRecovery,validate_security_guarded,SECURITY_GUARD_SQL} from '../packages/typescript/dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,validate_security_guarded,settle_security_guarded,SECURITY_GUARD_SQL} from '../packages/typescript/dist/qdrant-recovery.js';
 import {QdrantReconciliationVerifier} from '../packages/typescript/dist/qdrant-reconciliation.js';
 import {QdrantSecurityVerifier,security_receipt_data} from '../packages/typescript/dist/qdrant-security-verification.js';
 import {InvalidRequest,IntegrityViolation,UnsupportedCapability,UnauthorizedScope,ProviderUnavailable} from '../packages/typescript/dist/errors.js';
@@ -30,6 +31,10 @@ const GRAPH_CHECKS=Object.freeze(['actual_guard_nonlocking_full_graph','document
   'late_canonical_drift_refused','late_vector_drift_refused','late_manifest_drift_refused','extra_raw_claim_refused',
   'post_wait_authority_mismatch_refused','supervisor_connection_loss_releases_document_without_commit',
   'late_callback_retains_control_and_writer_until_drained']);
+const SETTLEMENT_CHECKS=Object.freeze(['retired_unknown_settled_with_genuine_current_security_receipt',
+  'lost_commit_confirmed_once_after_authority_advance_without_dml_retry',
+  'fresh_repeat_preserves_historical_completion_and_returns_zero',
+  'current_credential_unknown_preserves_rows_and_closed_admission']);
 const ERRORS=new Set(['IntegrityViolation','InvalidRequest','ProviderUnavailable','UnauthorizedScope','UnsupportedCapability','DeadlineExceeded','IndexNotReady','AbortError']);
 const OWNER='00000000-0000-4000-8000-000000000001',SECURITY='00000000-0000-4000-8000-000000000002';
 const cancellation=new AbortController();let readingInput=true,step=0;
@@ -46,10 +51,13 @@ async function input(){
   if(!value||typeof value!=='object'||Array.isArray(value)||!same(Object.keys(value).sort(),
       ['binary','inputs','supervisor_config','work_dir','writer_config',
         ...(Object.hasOwn(value,'guard_operator_config')?['guard_operator_config']:[]),
-        ...(Object.hasOwn(value,'guard_graph_config')?['guard_graph_config']:[])].sort())
+        ...(Object.hasOwn(value,'guard_graph_config')?['guard_graph_config']:[]),
+        ...(Object.hasOwn(value,'settlement_config')?['settlement_config']:[])].sort())
     ||typeof value.binary!=='string'||typeof value.work_dir!=='string'||!value.inputs?.second_stage||!value.inputs?.security||!value.inputs?.tombstone)throw new Error('input_shape');
   if(Object.hasOwn(value,'guard_graph_config')&&(!Object.hasOwn(value,'guard_operator_config')
     ||!value.guard_graph_config||!same(Object.keys(value.guard_graph_config),['admin_config'])))throw new Error('graph_input_shape');
+  if(Object.hasOwn(value,'settlement_config')&&(!Object.hasOwn(value,'guard_operator_config')||Object.hasOwn(value,'guard_graph_config')
+    ||!value.settlement_config||!same(Object.keys(value.settlement_config),['admin_config'])))throw new Error('settlement_input_shape');
   return value;
 }
 async function listener(address,absent=false){
@@ -70,6 +78,10 @@ async function cases(value){
   const options={deadline:now()+120,signal:cancellation.signal};
   const guarded=Object.hasOwn(value,'guard_operator_config');
   const graphMode=Object.hasOwn(value,'guard_graph_config');
+  const settlementMode=Object.hasOwn(value,'settlement_config');
+  let settlementDropArmed=false,settlementAfterCommit,commitDrops=0,confirmationActive=false,confirmationTransactions=0,
+    confirmationWrites=0,confirmationWriterQueries=0,httpQueries=0,confirmationHttpStart=0,guardQueries=0,confirmationGuardStart=0;
+  const nativeHttpRequest=http.request;
   let backendQueries=0,deniedBackendQueries=0,activeRestore;
   let supBefore,supAfter,writerAfter,contenderAfter,supPid,contenderPid,forbidCommit=false,deniedCommits=0,nonlockingReads=0,supFaultClosed=false;
   const documentQuery=query=>typeof query?.text==='string'&&query.text.startsWith('SELECT ')
@@ -78,10 +90,11 @@ async function cases(value){
   const factoryResource=guarded?new PoolResource(supervisorConfig):undefined;
   const defaultFactory=factoryResource?.factory;
   if(guarded&&typeof defaultFactory!=='function')throw new Error('native_factory_unavailable');
-  const resource=new PoolResource(writerConfig,graphMode?{factory:async config=>{
+  const resource=new PoolResource(writerConfig,graphMode||settlementMode?{factory:async config=>{
     const actual=await defaultFactory(config);
     return {async connect(){const client=await actual.connect();
       return {async query(query){
+        if(confirmationActive)confirmationWriterQueries++;
         if(documentQuery(query)&&!query.text.endsWith('FOR UPDATE'))nonlockingReads++;
         const result=await client.query(query);if(writerAfter)await writerAfter(query,result);return result;
       },
@@ -91,14 +104,27 @@ async function cases(value){
     const actual=await defaultFactory(config);
     return {async connect(){
       const client=await actual.connect();
-      supPid=graphMode?(await client.query({text:'SELECT pg_backend_pid()',rowMode:'array'})).rows[0][0]:undefined;let guardedTransaction=false;
+      supPid=graphMode?(await client.query({text:'SELECT pg_backend_pid()',rowMode:'array'})).rows[0][0]:undefined;
+      let guardedTransaction=false,settlementWritten=false;
       return {async query(query){
         if(typeof query?.text==='string'&&query.text.includes("set_config('cragkit_qdrant.backend_instance_id'"))backendQueries++;
-        if(query.text.startsWith('BEGIN'))guardedTransaction=false;
-        if(query.text===SECURITY_GUARD_SQL){guardedTransaction=true;if(supBefore)await supBefore();}
+        if(query.text.startsWith('BEGIN')){guardedTransaction=false;settlementWritten=false;}
+        if(confirmationActive){
+          if(query.text==='SET TRANSACTION READ ONLY')confirmationTransactions++;
+          if(/^\s*(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE)\b/i.test(query.text))confirmationWrites++;
+        }
+        if(query.text===SECURITY_GUARD_SQL){guardQueries++;guardedTransaction=true;if(supBefore)await supBefore();}
+        if(query.text.startsWith("UPDATE cragkit_qdrant.dispatch_journal SET state='settled'"))settlementWritten=true;
         if(query.text==='COMMIT'&&guardedTransaction&&forbidCommit)deniedCommits++;
         const result=await client.query(query);
         if(query.text===SECURITY_GUARD_SQL&&supAfter)await supAfter();
+        if(settlementMode&&query.text==='COMMIT'&&settlementDropArmed&&settlementWritten){
+          settlementDropArmed=false;commitDrops++;
+          await settlementAfterCommit();
+          confirmationHttpStart=httpQueries;confirmationGuardStart=guardQueries;confirmationActive=true;
+          throw Object.assign(new Error('committed_reply_withheld'),{code:'08006'});
+        }
+        if(confirmationActive&&query.text==='COMMIT')confirmationActive=false;
         return result;
       },getTransactionStatus(){return client.getTransactionStatus();},release(destroy){client.release(destroy);}};
     },end(){return actual.end();}};
@@ -106,7 +132,7 @@ async function cases(value){
   const operatorConfig=guarded?parse_pool_config(value.guard_operator_config):undefined;
   if(operatorConfig&&operatorConfig.max_size!==1)throw new Error('operator_client_ceiling');
   const operator=operatorConfig?new PoolResource(operatorConfig):undefined;
-  const adminConfig=graphMode?parse_pool_config(value.guard_graph_config.admin_config):undefined;
+  const adminConfig=graphMode||settlementMode?parse_pool_config((graphMode?value.guard_graph_config:value.settlement_config).admin_config):undefined;
   if(adminConfig&&adminConfig.max_size!==1)throw new Error('admin_client_ceiling');
   const admin=adminConfig?new PoolResource(adminConfig):undefined;
   const contenderResource=graphMode?new PoolResource(writerConfig,{factory:async config=>{
@@ -122,7 +148,7 @@ async function cases(value){
   const reconciliation=new QdrantReconciliationVerifier(writer,supervisor);
   const recovery=new PostgresQdrantRecovery(supervisorResource,inputs.config,supervisor,reconciliation);
   const verifier=new QdrantSecurityVerifier(writer,supervisor),other=new QdrantSecurityVerifier(writer,supervisor);
-  const target='/collections/'+inputs.config.physical_collection,checks=[],guardChecks=[],graphChecks=[];
+  const target='/collections/'+inputs.config.physical_collection,checks=[],guardChecks=[],graphChecks=[],settlementChecks=[];
   const mark=()=>{checks.push(CHECKS[checks.length]);step=checks.length;};
   const base={collection:inputs.stage.manifest.collection,document_id:inputs.stage.manifest.document_id};
   const context=(scope,intent,owner)=>({...base,scope,intent_id:intent,owner_token:owner});
@@ -174,6 +200,7 @@ async function cases(value){
       ||data.sha256!==createHash('sha256').update(Buffer.from(data.encoded_bytes)).digest('hex')||data.readback_sha256!==data.sha256)throw new Error('receipt_binding');
     oldProjection=data.projection;semanticWitnessSha256=createHash('sha256').update(Buffer.from(JSON.stringify([data.witness[0],...data.witness.slice(4)]))).digest('hex');return data;
   }
+  if(settlementMode)http.request=function(...args){httpQueries++;return nativeHttpRequest.apply(this,args);};
   try{
     await supervisor.initialize({...options,provision:async(admin,probe)=>{
       await admin.request('PUT',target,{...options,body:bytes(inputs.collection_config)});
@@ -187,7 +214,16 @@ async function cases(value){
     const historical=context(inputs.scope,inputs.stage.intent.intent_id,OWNER);
     const admitted=await writer.admit_publication(historical,options);
     if(admitted.owner?.owner_token!==OWNER)throw new Error('historical_owner_missing');
+    if(settlementMode){
+      const dispatch='native-security-retired-unknown';
+      const attempt=supervisor.issue_attempt({intent_id:historical.intent_id,owner_token:OWNER,epoch:1,dispatch_id:dispatch},options);
+      const binding=supervisor.attempt_binding(attempt);
+      await writer.reserve_dispatch(historical,{dispatch_id:dispatch,sequence:1,credential_generation:binding.credential_generation,
+        operation:'complete_point_upsert',point_ids:inputs.stage.manifest.members.map(member=>member.point_id)},options);
+      await writer.mark_dispatched(historical,dispatch,options);await writer.mark_unknown(historical,dispatch,options);
+    }
     await writer.apply_security(inputs.security,inputs.scope,{...options,owner_token:SECURITY});
+    if(settlementMode&&(await writer.admit_publication(owner,options)).intent.state!=='denied')throw new Error('old_stage_not_denied');
     const projected=await writer.project_security(security,options),source=security_projection_data(projected,writer);
     const state=await writer.manager_snapshot(owner,options);
     if(source.point_ids.length!==4||source.generations.length!==2||source.authorization_revision!=='auth-2'
@@ -223,7 +259,7 @@ async function cases(value){
         ['9999_native_guard_recovery_probe','0'.repeat(64)],['9999_native_guard_recovery_probe','0'.repeat(64)]);
       await mutation("CREATE FUNCTION cragkit_qdrant.native_guard_recovery_probe() RETURNS boolean LANGUAGE SQL SECURITY DEFINER AS 'SELECT true'",
         'DROP FUNCTION cragkit_qdrant.native_guard_recovery_probe()');
-      if(graphMode)await operator.close();
+      if(graphMode||settlementMode)await operator.close();
     }
     await supervisor.control_session(async control=>{
       oldControl=control;
@@ -322,6 +358,76 @@ async function cases(value){
       const tombData=security_receipt_data(tombReceipt,verifier,control,options);
       if(!security_projection_data(tombData.projection,writer).tombstoned||tombData.point_ids.length!==4)throw new Error('tombstone_receipt');mark();
     });
+    if(settlementMode){
+      await admin.open();
+      const auth3Scope={...currentScope,authorization_revision:'auth-3'},tombOwner={...owner,scope:auth3Scope},
+        tombSecurity=context(auth3Scope,inputs.tombstone.intent_id,SECURITY);
+      const next={...inputs.tombstone,intent_id:'native-security-settlement-auth-4',expected_authorization_revision:'auth-3',
+        expected_mutation_epoch:3,authorization:{...inputs.tombstone.authorization,authorization_revision:'auth-4'}};
+      settlementAfterCommit=async()=>{
+        const result=await writer.apply_security(next,auth3Scope,{...options,owner_token:SECURITY});
+        if(!result.authority_committed)throw new Error('post_commit_authority_missing');
+      };
+      settlementDropArmed=true;
+      const result=await settle_security_guarded(recovery,verifier,proof,tombOwner,tombSecurity,options);
+      const journalTarget=[...docKeys,owner.intent_id];
+      const settledRows=(await sql(admin,'SELECT state,completion_sha256 FROM cragkit_qdrant.dispatch_journal WHERE '+docWhere+
+        " AND intent_id=$4 AND dispatch_id='native-security-retired-unknown'",journalTarget)).rows;
+      if(!same(result,{settled_count:1})||!Object.isFrozen(result)||settledRows.length!==1||settledRows[0][0]!=='settled'
+        ||typeof settledRows[0][1]!=='string'||!/^[0-9a-f]{64}$/.test(settledRows[0][1]))throw new Error('retired_journal_not_settled');
+      settlementChecks.push(SETTLEMENT_CHECKS[0]);
+      if(commitDrops!==1||confirmationTransactions!==1||confirmationActive||confirmationWrites!==0||confirmationWriterQueries!==0
+        ||guardQueries!==confirmationGuardStart||httpQueries!==confirmationHttpStart)throw new Error('settlement_confirmation_replayed_work');
+      const authority=(await sql(admin,'SELECT authorization_revision,mutation_epoch FROM cragkit_qdrant.documents WHERE '+docWhere,docKeys)).rows;
+      if(!same(authority,[['auth-4','4']])&&!same(authority,[['auth-4',4]]))throw new Error('confirmation_did_not_follow_authority_advance');
+      settlementChecks.push(SETTLEMENT_CHECKS[1]);
+      const auth4Scope={...auth3Scope,authorization_revision:'auth-4'},freshOwner={...owner,scope:auth4Scope},
+        freshSecurity=context(auth4Scope,next.intent_id,SECURITY);
+      const repeat=await settle_security_guarded(recovery,verifier,proof,freshOwner,freshSecurity,options);
+      const repeatedRows=(await sql(admin,'SELECT state,completion_sha256 FROM cragkit_qdrant.dispatch_journal WHERE '+docWhere+
+        " AND intent_id=$4 AND dispatch_id='native-security-retired-unknown'",journalTarget)).rows;
+      if(!same(repeat,{settled_count:0})||!same(repeatedRows,settledRows))throw new Error('repeat_changed_historical_completion');
+      settlementChecks.push(SETTLEMENT_CHECKS[2]);
+      const binding=supervisor.recovery_binding(proof),dispatch='native-security-current-key-synthetic',request=Buffer.from(
+        JSON.stringify({synthetic:'D4 current-credential uncertainty; no HTTP acknowledgment'}));
+      await supervisorResource.withLease(options,async client=>{
+        const run=(text,values=[])=>client.query({text,values,rowMode:'array'});
+        await run('BEGIN ISOLATION LEVEL READ COMMITTED');
+        try{
+          await run('SET LOCAL search_path=pg_catalog');
+          await run("SELECT set_config('cragkit_qdrant.backend_instance_id',$1,true)",[inputs.instance_id]);
+          await run('INSERT INTO cragkit_qdrant.dispatch_journal (tenant_id,collection,document_id,intent_id,dispatch_id,instance_id,'+
+            'sequence,owner_token,backend_epoch,credential_generation,operation,recovery,request_bytes,request_sha256) '+
+            'VALUES($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9,$10,$11,$12,$13,$14)',
+            [...journalTarget,dispatch,inputs.instance_id,2,OWNER,2,binding.credential_generation,'complete_point_upsert',true,request,hash(request)]);
+          for(const id of [...inputs.stage.manifest.members,...inputs.second_stage.manifest.members].map(member=>member.point_id).sort()){
+            await run('INSERT INTO cragkit_qdrant.dispatch_points (tenant_id,collection,document_id,intent_id,dispatch_id,'+
+              'backend_namespace,physical_collection,collection_incarnation,point_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid)',
+              [...journalTarget,dispatch,inputs.config.backend_namespace,inputs.config.physical_collection,inputs.config.collection_incarnation,id]);
+          }
+          await run("UPDATE cragkit_qdrant.dispatch_journal SET state='dispatched' WHERE "+docWhere+' AND intent_id=$4 AND dispatch_id=$5',
+            [...journalTarget,dispatch]);
+          await run("UPDATE cragkit_qdrant.dispatch_journal SET state='unknown' WHERE "+docWhere+' AND intent_id=$4 AND dispatch_id=$5',
+            [...journalTarget,dispatch]);
+          await run('COMMIT');
+        }catch(error){await run('ROLLBACK');throw error;}
+      });
+      const snapshot=async()=>{
+        const headers=await sql(admin,'SELECT dispatch_id,instance_id,sequence,owner_token::text,backend_epoch,credential_generation,'+
+          'operation,recovery,request_sha256,created_xid::text,state,completion_sha256 FROM cragkit_qdrant.dispatch_journal WHERE '+
+          docWhere+' AND intent_id=$4 ORDER BY sequence',journalTarget);
+        const members=await sql(admin,'SELECT dispatch_id,backend_namespace,physical_collection,collection_incarnation,point_id::text '+
+          'FROM cragkit_qdrant.dispatch_points WHERE '+docWhere+' AND intent_id=$4 ORDER BY dispatch_id,point_id',journalTarget);
+        return [headers.rows,members.rows];
+      };
+      const before=await snapshot();
+      await refuses(()=>settle_security_guarded(recovery,verifier,proof,freshOwner,freshSecurity,options),ProviderUnavailable);
+      if(!same(await snapshot(),before))throw new Error('current_credential_settlement_changed_rows');
+      await refuses(()=>recovery.reopen(proof,options),ProviderUnavailable);
+      if(!same(await snapshot(),before)||(await sql(admin,'SELECT state FROM cragkit_qdrant.backend_instances WHERE instance_id=$1',
+        [inputs.instance_id])).rows[0]?.[0]!=='recovery_blocked')throw new Error('current_credential_reopened_admission');
+      settlementChecks.push(SETTLEMENT_CHECKS[3]);
+    }
     if(graphMode){
       const auth3Scope={...currentScope,authorization_revision:'auth-3'};
       const tombOwner={...owner,scope:auth3Scope},tombSecurity=context(auth3Scope,inputs.tombstone.intent_id,SECURITY);
@@ -400,9 +506,11 @@ async function cases(value){
     }
     return {runtime:'typescript',checks,proof_scope:'native_security_receipt_only',semantic_witness_sha256:semanticWitnessSha256,
       ...(guarded?{guard_admission:{checks:guardChecks,denied_backend_queries:deniedBackendQueries}}:{}),
-      ...(graphMode?{guarded_graph:{checks:graphChecks,denied_commits:deniedCommits}}:{})};
+      ...(graphMode?{guarded_graph:{checks:graphChecks,denied_commits:deniedCommits}}:{}),
+      ...(settlementMode?{security_settlement:{checks:settlementChecks,confirmation_writes:confirmationWrites}}:{})};
   }catch(error){primary=error;throw error;}
   finally{
+    if(settlementMode)http.request=nativeHttpRequest;
     const failures=[],deadline=now()+12;
     for(const release of gates)release();
     supBefore=supAfter=writerAfter=contenderAfter=undefined;

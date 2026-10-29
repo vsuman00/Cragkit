@@ -75,3 +75,21 @@ def test_guarded_graph_mode_keeps_closed_evidence_and_requires_guard_admission()
         with pytest.raises(RuntimeError):validate_result(dict(baseline,guarded_graph=graph),'python',security_guard=True,guarded_graph=True)
     value['guarded_graph']['checks'].clear()
     assert accepted['guarded_graph']['checks']==list(GRAPH_CHECKS)
+
+
+def test_security_settlement_evidence_is_closed_and_requires_exclusive_guard_profile():
+    from qdrant_security_verification_cases import GUARD_CHECKS, SETTLEMENT_CHECKS
+    baseline=dict(runtime='python',checks=list(CHECKS),proof_scope='native_security_receipt_only',semantic_witness_sha256='a'*64,
+        guard_admission=dict(checks=list(GUARD_CHECKS),denied_backend_queries=0))
+    value=dict(baseline,security_settlement=dict(checks=list(SETTLEMENT_CHECKS),confirmation_writes=0))
+    accepted=validate_result(value,'python',security_guard=True,security_settlement=True)
+    for flags in ({},{'security_guard':True},{'security_settlement':True},
+            {'security_guard':True,'security_settlement':True,'guarded_graph':True}):
+        with pytest.raises(RuntimeError):validate_result(value,'python',**flags)
+    for settlement in (dict(checks=[],confirmation_writes=0),dict(checks=list(SETTLEMENT_CHECKS),confirmation_writes=True),
+            dict(checks=list(SETTLEMENT_CHECKS),confirmation_writes=1),
+            dict(checks=list(SETTLEMENT_CHECKS),confirmation_writes=0,private='data')):
+        with pytest.raises(RuntimeError):
+            validate_result(dict(baseline,security_settlement=settlement),'python',security_guard=True,security_settlement=True)
+    value['security_settlement']['checks'].clear()
+    assert accepted['security_settlement']['checks']==list(SETTLEMENT_CHECKS)

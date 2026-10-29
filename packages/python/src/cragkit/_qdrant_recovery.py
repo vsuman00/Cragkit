@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
+from uuid import UUID
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from types import MappingProxyType
@@ -23,7 +25,7 @@ from ._qdrant_reconciliation import (
     QdrantReconciliationVerifier, physical_binding, receipt_data, verifier_authority,
     VerificationBudget, verification_budget, _Readback, inspect_missing_readback, projection_data,
 )
-from ._qdrant_supervisor import ManagedQdrantSupervisor, _config
+from ._qdrant_supervisor import ManagedQdrantSupervisor, _config, control_session_binding
 from ._qdrant_transport import deadline_value
 from ._qdrant_writer import (PostgresQdrantWriter, writer_binding, _safe as writer_error,
     recovery_dispatch_plan_data, security_projection_data, validate_guarded_security_projection)
@@ -49,7 +51,11 @@ _BACKEND_FIELDS = ('backend_namespace', 'storage_identity', 'supervisor_id',
                    'epoch', 'state', 'recovery_id')
 _DOCUMENT_FIELDS = ('active_generation_id','authorization_revision','mutation_epoch','principal_ids',
                     'grant_ids','language','kind','tag','tombstoned')
+_SECURITY_JOURNAL_COLUMNS = ('dispatch_id,instance_id,sequence,owner_token::text,backend_epoch,'
+    'credential_generation,operation,recovery,request_sha256,created_xid::text,state,completion_sha256')
+_SECURITY_MEMBER_COLUMNS = 'dispatch_id,backend_namespace,physical_collection,collection_incarnation,point_id::text'
 _GUARD_DRIVERS: WeakKeyDictionary[object, Callable[..., Awaitable[None]]] = WeakKeyDictionary()
+_SECURITY_SETTLERS: WeakKeyDictionary[object, Callable[..., Awaitable[Mapping[str, Any]]]] = WeakKeyDictionary()
 _GUARDS: WeakKeyDictionary[object, dict[str, Any]] = WeakKeyDictionary()
 
 
@@ -123,6 +129,38 @@ async def validate_security_guarded(recovery: object, security_verifier: object,
         raise InvalidRequest()
     await _GUARD_DRIVERS[recovery](security_verifier,proof,owner_context,security_context,
                                  deadline=deadline,budget=budget)
+
+
+async def settle_security_guarded(recovery: object, security_verifier: object, proof: object,
+                                  owner_context: object, security_context: object, *, deadline: float,
+                                  budget: SecurityReadbackBudget | None = None) -> Mapping[str, Any]:
+    _recovery_origin(recovery)
+    if recovery not in _SECURITY_SETTLERS:
+        raise InvalidRequest()
+    return await _SECURITY_SETTLERS[recovery](security_verifier,proof,owner_context,security_context,
+                                             deadline=deadline,budget=budget)
+
+
+def _confirmation_boundary(record: dict[str, Any], *, attached: bool = True) -> None:
+    deadline_value(record['deadline'])
+    task=asyncio.current_task();scope=record['scope'];recovery=record['recovery']
+    if task is not scope['task']:
+        raise InvalidRequest()
+    if scope['cancelled'] or task is None or task.cancelling():
+        raise asyncio.CancelledError()
+    _recovery_origin(recovery)
+    if (recovery._closed or scope['poisoned'] or record['ending']
+            or recovery._active is not task or recovery._guard_scope is not scope
+            or recovery._scoped_control is not record['control']):
+        raise ProviderUnavailable()
+    if attached:
+        status=record['connection'].info.transaction_status
+        if (recovery._security_confirmation is not record or isinstance(status,bool)
+                or not isinstance(status,int) or status!=2):
+            raise ProviderUnavailable()
+    current=control_session_binding(record['control'],recovery.supervisor,record['proof'])
+    if dict(current['physical_binding'])!=dict(record['physical']) or current['activity']!=record['activity']:
+        raise UnsupportedCapability()
 _SUPERVISOR_ROLE_SQL = """
 SELECT current_user=session_user
  AND EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolcanlogin)
@@ -349,6 +387,7 @@ class PostgresQdrantRecovery:
         self._scoped_control: _ScopedControl | None = None
         self._guard_scope: dict[str, Any] | None = None
         self._guard_transaction: dict[str, Any] | None = None
+        self._security_confirmation: dict[str, Any] | None = None
         _RECOVERY_ORIGINS[self] = (resource, self._writer, supervisor, verifier, self.config)
         fixed = PostgresQdrantRecovery._validate_security_guarded
         original = ref(self)
@@ -358,6 +397,12 @@ class PostgresQdrantRecovery:
                 raise InvalidRequest()
             await fixed(recovery,*args,**kwargs)
         _GUARD_DRIVERS[self] = guarded
+        async def settle(*args: Any, **kwargs: Any) -> Mapping[str, Any]:
+            recovery=original()
+            if recovery is None:
+                raise InvalidRequest()
+            return cast(Mapping[str, Any],await fixed(recovery,*args,**kwargs,settle=True))
+        _SECURITY_SETTLERS[self]=settle
 
     def _control(self) -> _ScopedControl:
         if self._scoped_control is None:
@@ -399,12 +444,19 @@ class PostgresQdrantRecovery:
     async def _query(self, connection: SessionConnection, sql: str,
                      params: tuple[object, ...] = ()) -> list[tuple[Any, ...]]:
         guard = self._guard_transaction
+        confirmation=self._security_confirmation
+        if confirmation is not None and confirmation['connection'] is connection:
+            _confirmation_boundary(confirmation)
         if guard is not None and guard['connection'] is connection:
             _guard_boundary(guard,deadline=guard['deadline'])
         cursor = await connection.execute(sql, params)
+        if confirmation is not None and confirmation['connection'] is connection:
+            _confirmation_boundary(confirmation)
         if guard is not None and guard['connection'] is connection:
             _guard_boundary(guard,deadline=guard['deadline'])
         rows = await cursor.fetchall()
+        if confirmation is not None and confirmation['connection'] is connection:
+            _confirmation_boundary(confirmation)
         if guard is not None and guard['connection'] is connection:
             _guard_boundary(guard,deadline=guard['deadline'])
         if type(rows) is not list or any(type(row) is not tuple for row in rows):
@@ -446,7 +498,9 @@ class PostgresQdrantRecovery:
     async def _transaction(self, deadline: float,
                            action: Callable[[SessionConnection], Awaitable[_T]], *,
                            initializing: bool = False,
-                           guarded: dict[str, Any] | None = None) -> _T:
+                           guarded: dict[str, Any] | None = None,
+                           confirmation: dict[str, Any] | None = None) -> _T:
+        if confirmation is not None:_confirmation_boundary(confirmation,attached=False)
         async with self.resource.lease(deadline=deadline) as leased:
             connection = cast(SessionConnection, leased)
             if connection.info.transaction_status != 0:
@@ -457,19 +511,27 @@ class PostgresQdrantRecovery:
             entered = False
             committing = False
             try:
+                if confirmation is not None:_confirmation_boundary(confirmation,attached=False)
                 await transaction.__aenter__()
                 entered = True
+                if confirmation is not None:
+                    confirmation['connection']=connection;confirmation['transaction']=transaction
+                    self._security_confirmation=confirmation
+                    _confirmation_boundary(confirmation)
                 if guarded is not None:
                     guarded['connection'] = connection
                     guarded['transaction'] = transaction
                     self._guard_transaction = guarded
                     _guard_boundary(guarded,deadline=deadline)
-                await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
+                await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED'+(' READ ONLY' if confirmation is not None else ''))
+                if confirmation is not None:_confirmation_boundary(confirmation)
                 await connection.execute('SET LOCAL search_path=pg_catalog')
+                if confirmation is not None:_confirmation_boundary(confirmation)
                 milliseconds = max(1, min(2147483647, int(
                     (deadline - asyncio.get_running_loop().time()) * 1000)))
                 await connection.execute("SELECT set_config('statement_timeout',%s,true)",
                                          (str(milliseconds),))
+                if confirmation is not None:_confirmation_boundary(confirmation)
                 try:
                     profile = self._history_profile(await self._query(connection, _HISTORY_SQL))
                 except IntegrityViolation:
@@ -491,6 +553,7 @@ class PostgresQdrantRecovery:
                     # Keep lost-COMMIT confirmation bound to this exact profile.
                     self._schema_profile = profile
                 if self._identity is not None:
+                    if confirmation is not None:_confirmation_boundary(confirmation)
                     if guarded is not None:
                         _guard_boundary(guarded,deadline=deadline)
                     await connection.execute(
@@ -498,6 +561,7 @@ class PostgresQdrantRecovery:
                         (self._identity['instance_id'],))
                     if guarded is not None:
                         _guard_boundary(guarded,deadline=deadline)
+                    if confirmation is not None:_confirmation_boundary(confirmation)
                 result = await action(connection)
                 _dispatch_check(deadline)
                 if guarded is not None:
@@ -505,6 +569,9 @@ class PostgresQdrantRecovery:
                     if not guarded['required'] or not guarded['validated'] or guarded['valid']:
                         raise ProviderUnavailable()
                     guarded['ending'] = True
+                if confirmation is not None:
+                    _confirmation_boundary(confirmation)
+                    confirmation['ending']=True
                 committing = True
                 await transaction.__aexit__(None, None, None)
                 entered = False
@@ -526,37 +593,156 @@ class PostgresQdrantRecovery:
                         raise _CommitUnknown() from None
                 raise
             finally:
+                if confirmation is not None:confirmation['ending']=True
                 if guarded is not None:
                     guarded['valid'] = False
                     guarded['ending'] = True
-                if entered:
-                    async def cleanup() -> None:
-                        try:
-                            async with asyncio.timeout(self.resource.config.release_timeout):
-                                if committing:
-                                    await connection.close()
-                                else:
-                                    await transaction.__aexit__(Exception, Exception(), None)
-                                    if connection.info.transaction_status != 0:
-                                        await connection.close()
-                        except BaseException:
+                try:
+                    if entered:
+                        async def cleanup() -> None:
                             try:
                                 async with asyncio.timeout(self.resource.config.release_timeout):
-                                    await connection.close()
+                                    if committing:
+                                        await connection.close()
+                                    else:
+                                        await transaction.__aexit__(Exception, Exception(), None)
+                                        if connection.info.transaction_status != 0:
+                                            await connection.close()
                             except BaseException:
-                                pass
-                    task = asyncio.create_task(cleanup())
-                    try:
-                        await asyncio.shield(task)
-                    except asyncio.CancelledError:
-                        await asyncio.shield(task)
-                        raise
-                if guarded is not None and self._guard_transaction is guarded:
-                    self._guard_transaction = None
+                                try:
+                                    async with asyncio.timeout(self.resource.config.release_timeout):
+                                        await connection.close()
+                                except BaseException:
+                                    pass
+                        task = asyncio.create_task(cleanup())
+                        try:
+                            await asyncio.shield(task)
+                        except asyncio.CancelledError:
+                            await asyncio.shield(task)
+                            raise
+                finally:
+                    if guarded is not None and self._guard_transaction is guarded:
+                        self._guard_transaction = None
+                    if confirmation is not None and self._security_confirmation is confirmation:
+                        self._security_confirmation=None
+
+    async def _settle_security_rows(self, connection: SessionConnection, target: WriterContext,
+                                    physical: Mapping[str, Any], projection: Mapping[str, Any],
+                                    completion: str) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+        intent=await self._query(connection,'SELECT action,instance_id,manifest_sha256,revision_id,generation_id '
+            'FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_intent(target))
+        if len(intent)!=1 or len(intent[0])!=5:
+            raise IntegrityViolation()
+        action,instance,manifest,revision,generation=intent[0]
+        if any(type(value) is not str for value in intent[0]):
+            raise IntegrityViolation()
+        if action!='stage':
+            raise UnsupportedCapability()
+        groups=[group for group in projection['generations'] if
+                (group['revision_id'],group['generation_id'],group['manifest_sha256'])==(revision,generation,manifest)]
+        if instance!=physical['instance_id'] or len(groups)!=1:
+            raise IntegrityViolation()
+        foreign=await self._query(connection,'SELECT 1 FROM cragkit_qdrant.dispatch_journal WHERE '+_DOC+
+            " AND intent_id<>%s AND state<>'settled' LIMIT 1",_intent(target))
+        if foreign:
+            raise ProviderUnavailable()
+        rows=await self._query(connection,'SELECT '+_SECURITY_JOURNAL_COLUMNS+
+            ' FROM cragkit_qdrant.dispatch_journal WHERE '+_INTENT+' ORDER BY sequence LIMIT 257 FOR UPDATE',_intent(target))
+        members=await self._query(connection,'SELECT '+_SECURITY_MEMBER_COLUMNS+
+            ' FROM cragkit_qdrant.dispatch_points WHERE '+_INTENT+' LIMIT 2049',_intent(target))
+        if len(rows)>256 or len(members)>2048:
+            raise IntegrityViolation()
+        identifiers=set();sequences=set();pending=[]
+        def identity(value: object) -> None:
+            if type(value) is not str:
+                raise IntegrityViolation()
+            try:
+                _parse(_RecoveryId,{'recovery_id':value})
+            except InvalidRequest:
+                raise IntegrityViolation() from None
+        for row in rows:
+            if len(row)!=12:
+                raise IntegrityViolation()
+            dispatch,instance,sequence,owner,epoch,credential,operation,recovery,request,xid,state,digest=row
+            identity(dispatch);identity(credential)
+            if (type(sequence) is not int or not 1<=sequence<=256
+                    or dispatch in identifiers or sequence in sequences or type(epoch) is not int
+                    or not 1<=epoch<=physical['new_epoch'] or instance!=physical['instance_id']
+                    or type(instance) is not str or type(owner) is not str or owner!=target.owner_token
+                    or type(recovery) is not bool or type(request) is not str or re.fullmatch('[0-9a-f]{64}',request) is None
+                    or type(xid) is not str or re.fullmatch('[1-9][0-9]{0,19}',xid) is None
+                    or int(xid)>18446744073709551615 or type(state) is not str
+                    or state not in ('reserved','dispatched','unknown','settled')):
+                raise IntegrityViolation()
+            if operation!='complete_point_upsert' or type(operation) is not str:
+                raise UnsupportedCapability()
+            if state=='settled':
+                if type(digest) is not str or re.fullmatch('[0-9a-f]{64}',digest) is None:
+                    raise IntegrityViolation()
+            else:
+                if digest is not None:
+                    raise IntegrityViolation()
+                if credential==physical['credential_generation']:
+                    raise ProviderUnavailable()
+                pending.append(row)
+            identifiers.add(dispatch);sequences.add(sequence)
+        grouped: dict[str, set[str]]={row[0]:set() for row in rows}
+        headers={row[0]:row for row in rows}
+        physical_tuple=(self.config.backend_namespace,self.config.physical_collection,self.config.collection_incarnation)
+        for member in members:
+            if (len(member)!=5 or any(type(item) is not str for item in member)
+                    or member[0] not in grouped or member[1:4]!=physical_tuple):
+                raise IntegrityViolation()
+            selected=projection['point_ids'] if headers[member[0]][7] else groups[0]['point_ids']
+            try:
+                parsed=UUID(member[4])
+                if str(parsed)!=member[4] or parsed.version!=5:raise ValueError()
+            except (ValueError,AttributeError):
+                raise IntegrityViolation() from None
+            if member[4] not in selected or member[4] in grouped[member[0]]:
+                raise IntegrityViolation()
+            grouped[member[0]].add(member[4])
+        if any(not 1<=len(points)<=8 for points in grouped.values()):
+            raise IntegrityViolation()
+        attempted=tuple(sorted(row[0] for row in pending))
+        snapshot=MappingProxyType(dict(headers=tuple(sorted((row[:10] for row in pending),key=lambda row:row[0])),
+            members=tuple(sorted(row for row in members if row[0] in attempted)),completion=completion))
+        for dispatch in attempted:
+            changed=await self._query(connection,"UPDATE cragkit_qdrant.dispatch_journal SET state='settled',completion_sha256=%s WHERE "+
+                _INTENT+" AND dispatch_id=%s AND state IN ('reserved','dispatched','unknown') AND completion_sha256 IS NULL RETURNING dispatch_id",
+                (completion,*_intent(target),dispatch))
+            if len(changed)!=1 or changed[0]!=(dispatch,):
+                raise IntegrityViolation()
+        return MappingProxyType({'settled_count':len(attempted)}),snapshot
+
+    async def _confirm_security_rows(self, connection: SessionConnection, target: WriterContext,
+                                     snapshot: Mapping[str, Any]) -> None:
+        expected=snapshot['headers'];identifiers=[row[0] for row in expected]
+        try:
+            rows=await self._query(connection,'SELECT '+_SECURITY_JOURNAL_COLUMNS+
+                ' FROM cragkit_qdrant.dispatch_journal WHERE '+_INTENT+
+                ' AND dispatch_id=ANY(%s::text[]) ORDER BY sequence LIMIT 257',(*_intent(target),identifiers))
+            members=await self._query(connection,'SELECT '+_SECURITY_MEMBER_COLUMNS+
+                ' FROM cragkit_qdrant.dispatch_points WHERE '+_INTENT+
+                ' AND dispatch_id=ANY(%s::text[]) LIMIT 2049',(*_intent(target),identifiers))
+        except IntegrityViolation:
+            raise ProviderUnavailable() from None
+        if (len(rows)!=len(expected) or any(len(row)!=12 for row in rows)
+                or len({row[0] for row in rows})!=len(rows)
+                or any(type(row[10]) is not str or type(row[11]) is not str
+                       or row[10:]!=('settled',snapshot['completion']) for row in rows)):
+            raise ProviderUnavailable()
+        actual=tuple(sorted((row[:10] for row in rows),key=lambda row:row[0]))
+        if (len(actual)!=len(expected) or any(any(type(a) is not type(b) or a!=b for a,b in zip(row,bound,strict=True))
+                for row,bound in zip(actual,expected,strict=True))
+                or any(len(row)!=5 or any(type(item) is not str for item in row) for row in members)
+                or tuple(sorted(members))!=snapshot['members']):
+            raise ProviderUnavailable()
 
     async def _validate_security_guarded(self, verifier: object, proof: object,
                                          owner_value: object, security_value: object, *, deadline: float,
-                                         budget: SecurityReadbackBudget | None = None) -> None:
+                                         budget: SecurityReadbackBudget | None = None,
+                                         settle: bool = False) -> Mapping[str, Any] | None:
         deadline = deadline_value(deadline)
         owner,security = context(owner_value),context(security_value)
         if (owner.scope != security.scope or (owner.collection,owner.document_id) != (security.collection,security.document_id)
@@ -576,7 +762,7 @@ class PostgresQdrantRecovery:
         scope: dict[str, Any] = dict(task=None,cancelled=False,poisoned=False)
         self._guard_scope = scope
 
-        async def work() -> None:
+        async def work() -> Mapping[str, Any] | None:
             try:
                 async with self._operation(deadline):
                     if scope['cancelled']:
@@ -601,7 +787,10 @@ class PostgresQdrantRecovery:
                         control=control,scope=scope,deadline=deadline,connection=None,transaction=None,
                         required=False,validated=False,valid=False,poisoned=False,ending=False,
                         metadata=MappingProxyType(dict(context=security,owner_context=owner,document=document)))
+                    attempted: dict[str, Any] = {}
+                    outcome: Mapping[str, Any] | None = None
                     async def validate(connection: SessionConnection) -> None:
+                        nonlocal outcome
                         record['required'] = True
                         arguments = (physical['instance_id'],self.config.backend_namespace,physical['storage_identity'],
                             physical['supervisor_id'],physical['recovery_id'],physical['new_epoch'],owner.scope.tenant_id,
@@ -632,10 +821,23 @@ class PostgresQdrantRecovery:
                                 record['validated'] = True
                             finally:
                                 record['valid'] = False
+                            if settle:
+                                outcome,snapshot=await self._settle_security_rows(connection,owner,physical,data,received['readback_sha256'])
+                                attempted.update(snapshot)
                         except BaseException:
                             record['poisoned'] = True
                             raise
-                    await self._transaction(deadline,validate,guarded=record)
+                    try:
+                        await self._transaction(deadline,validate,guarded=record)
+                    except _CommitUnknown:
+                        if not settle:
+                            raise
+                        confirmation=dict(recovery=self,scope=scope,control=control,proof=proof,physical=physical,
+                            activity=received['activity'],deadline=deadline,connection=None,transaction=None,ending=False)
+                        async def confirm(connection: SessionConnection) -> None:
+                            await self._confirm_security_rows(connection,owner,attempted)
+                        await self._transaction(deadline,confirm,confirmation=confirmation)
+                    return outcome
             finally:
                 if self._guard_scope is scope:
                     self._guard_scope = None
@@ -652,7 +854,7 @@ class PostgresQdrantRecovery:
             done,_ = await asyncio.wait({task},timeout=max(0,deadline-asyncio.get_running_loop().time()))
             if not done:
                 raise TimeoutError()
-            await task
+            return await task
         except (asyncio.CancelledError,TimeoutError) as error:
             scope['cancelled'] = True
             task.cancel()

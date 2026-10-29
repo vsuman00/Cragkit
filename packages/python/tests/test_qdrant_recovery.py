@@ -375,6 +375,10 @@ class Connection:
     async def execute(self, sql, params=None):
         db = self.db
         db.calls.append((sql, params))
+        if sql=='SET TRANSACTION ISOLATION LEVEL READ COMMITTED READ ONLY':self.readonly=True
+        if (getattr(self,'readonly',False) and getattr(db,'cancel_confirmation_setup',False)
+                and sql=='SET LOCAL search_path=pg_catalog'):
+            asyncio.current_task().cancel()
         if sql.startswith('SET ') or 'set_config(' in sql:
             return Cursor([])
         if db.block_query is not None:
@@ -421,6 +425,18 @@ class Connection:
             return Cursor([])
         if sql.startswith('SELECT action,manifest_sha256,revision_id,generation_id'):
             return Cursor([('stage', FIXTURE['intent']['manifest_sha256'], 'rev-2', 'gen-2')])
+        if sql.startswith('SELECT action,instance_id,manifest_sha256,revision_id,generation_id'):
+            return Cursor([db.security_stage])
+        if sql.startswith('SELECT 1 FROM cragkit_qdrant.dispatch_journal'):
+            return Cursor([(1,)] if any(row['foreign'] and row['state']!='settled' for row in db.journals) else [])
+        if sql.startswith('SELECT '+implementation._SECURITY_JOURNAL_COLUMNS):
+            if 'ANY' in sql and getattr(db,'confirmation_hook',None) is not None:
+                await db.confirmation_hook(self)
+            selected=[row for row in db.journals if not row['foreign'] and ('ANY' not in sql or row['dispatch_id'] in params[-1])]
+            return Cursor([tuple(row[field] for field in ('dispatch_id','instance_id','sequence','owner_token','backend_epoch',
+                'credential_generation','operation','recovery','request_sha256','created_xid','state','completion_sha256')) for row in selected])
+        if sql.startswith('SELECT '+implementation._SECURITY_MEMBER_COLUMNS):
+            return Cursor([row for row in db.security_members if 'ANY' not in sql or row[0] in params[-1]])
         if sql.startswith('SELECT dispatch_id,credential_generation'):
             return Cursor([tuple(row[field] for field in ('dispatch_id', 'credential_generation',
                 'operation', 'owner_token', 'backend_epoch', 'instance_id')) for row in db.journals
@@ -430,6 +446,7 @@ class Connection:
                 FIXTURE['physical']['physical_collection'], FIXTURE['physical']['collection_incarnation'])
                 for dispatch in params[-1] for point in db.points.get(dispatch, [])])
         if sql.startswith('UPDATE cragkit_qdrant.dispatch_journal'):
+            if getattr(db,'failed_update',None)==params[-1]:return Cursor([])
             found = [row for row in db.journals if row['dispatch_id'] == params[-1]
                      and row['state'] != 'settled']
             for row in found:
@@ -894,6 +911,170 @@ async def test_cancelled_noncooperative_graph_retains_actual_control_and_writer_
     release.set();await asyncio.gather(inner,return_exceptions=True)
     assert recovery._active is None and writer._active is None and recovery._guard_scope is None
     assert 'commit' not in db.events and guarded_connection.commits==0
+
+
+async def settlement_fixture(monkeypatch,tmp_path):
+    from cragkit._qdrant_writer_contract import stage_data
+    values=await guarded_fixture(monkeypatch,tmp_path)
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=values
+    graphs=[stage_data(plan) for plan in state['plans'].values()]
+    first=graphs[0]
+    db.security_stage=('stage','instance-1',first.manifest_encoding.sha256,
+                       first.manifest.revision_id,first.manifest.generation_id)
+    original_ids=tuple(member.point_id for member in first.manifest.members)
+    all_ids=tuple(member.point_id for graph in graphs for member in graph.manifest.members)
+    db.journals=[];db.security_members=[]
+    for index,(kind,recovery_flag,points) in enumerate([
+        ('reserved',False,original_ids),('unknown',True,all_ids),('dispatched',True,all_ids[:1]),
+        ('settled',False,original_ids[:1])]):
+        identity=f'security-old-{index}'
+        db.journals.append(dict(dispatch_id=identity,instance_id='instance-1',sequence=index+1,
+            owner_token=owner['owner_token'],backend_epoch=1,credential_generation='credential-2' if kind=='settled' else 'credential-1',
+            operation='complete_point_upsert',recovery=recovery_flag,request_sha256=f'{index+1:064x}',
+            created_xid=str(100+index),state=kind,completion_sha256='d'*64 if kind=='settled' else None,foreign=False))
+        db.security_members.extend((identity,writer.config.backend_namespace,writer.config.physical_collection,
+                                   writer.config.collection_incarnation,point) for point in points)
+    return values
+
+
+@run_async
+async def test_security_settlement_reuses_guard_and_preserves_historical_completion_on_repeat(monkeypatch,tmp_path):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await settlement_fixture(monkeypatch,tmp_path)
+    headers=deepcopy(db.journals);owner_before=deepcopy(db.owner);authority=deepcopy(state['document'])
+    limit=asyncio.get_running_loop().time()+5
+    result=await implementation.settle_security_guarded(recovery,verifier,proof,owner,target,deadline=limit)
+    assert result=={'settled_count':3}
+    with pytest.raises(TypeError):result['settled_count']=4
+    completions=[row['completion_sha256'] for row in db.journals]
+    assert len(set(completions[:3]))==1 and completions[3]=='d'*64
+    assert all(row['state']=='settled' for row in db.journals)
+    assert all({k:v for k,v in actual.items() if k not in ('state','completion_sha256')}==
+               {k:v for k,v in original.items() if k not in ('state','completion_sha256')}
+               for actual,original in zip(db.journals,headers,strict=True))
+    assert await implementation.settle_security_guarded(recovery,verifier,proof,owner,target,deadline=limit)=={'settled_count':0}
+    assert [row['completion_sha256'] for row in db.journals]==completions
+    assert db.owner==owner_before and state['document']==authority and db.open_updates==0
+    assert sum(sql.startswith('UPDATE cragkit_qdrant.dispatch_journal') for sql,_ in db.calls)==3
+    assert db.active_leases==0 and recovery._active is None and supervisor._control_token is None
+
+
+@pytest.mark.parametrize('fault,error',[
+    ('current',ProviderUnavailable),('foreign',ProviderUnavailable),('missing',IntegrityViolation),
+    ('duplicate_member',IntegrityViolation),('ordinary_other_generation',IntegrityViolation),
+    ('physical',IntegrityViolation),('header_owner',IntegrityViolation),('sequence',IntegrityViolation),
+    ('request',IntegrityViolation),('xid',IntegrityViolation),('operation',UnsupportedCapability),
+    ('completion',IntegrityViolation),('overflow_headers',IntegrityViolation),('overflow_members',IntegrityViolation),
+])
+@run_async
+async def test_security_settlement_validates_all_headers_and_raw_members_before_updates(monkeypatch,tmp_path,fault,error):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await settlement_fixture(monkeypatch,tmp_path)
+    if fault=='current':db.journals[1]['credential_generation']='credential-2'
+    elif fault=='foreign':db.journals.append({**db.journals[0],'dispatch_id':'foreign','foreign':True})
+    elif fault=='missing':db.security_members=[row for row in db.security_members if row[0]!=db.journals[1]['dispatch_id']]
+    elif fault=='duplicate_member':db.security_members.append(db.security_members[0])
+    elif fault=='ordinary_other_generation':
+        db.security_members[0]=(*db.security_members[0][:4],db.security_members[4][4])
+    elif fault=='physical':db.security_members[0]=(db.security_members[0][0],'wrong',*db.security_members[0][2:])
+    elif fault=='header_owner':db.journals[1]['owner_token']=target['owner_token']
+    elif fault=='sequence':db.journals[1]['sequence']=True
+    elif fault=='request':db.journals[1]['request_sha256']='not-a-digest'
+    elif fault=='xid':db.journals[1]['created_xid']='001'
+    elif fault=='operation':db.journals[1]['operation']='set_security_payload'
+    elif fault=='completion':db.journals[1]['completion_sha256']='f'*64
+    elif fault=='overflow_headers':db.journals*=65
+    else:db.security_members=[db.security_members[0]]*2049
+    before=deepcopy(db.journals)
+    with pytest.raises(error):
+        await implementation.settle_security_guarded(recovery,verifier,proof,owner,target,
+            deadline=asyncio.get_running_loop().time()+5)
+    assert db.journals==before
+    assert all(not sql.startswith('UPDATE cragkit_qdrant.dispatch_journal') for sql,_ in db.calls)
+    assert 'commit' not in db.events
+
+
+@run_async
+async def test_security_settlement_partial_update_failure_rolls_back_whole_exact_set(monkeypatch,tmp_path):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await settlement_fixture(monkeypatch,tmp_path)
+    before=deepcopy(db.journals);db.failed_update=db.journals[1]['dispatch_id']
+    with pytest.raises(IntegrityViolation):
+        await implementation.settle_security_guarded(recovery,verifier,proof,owner,target,
+            deadline=asyncio.get_running_loop().time()+5)
+    assert db.journals==before and 'commit' not in db.events
+    assert sum(sql.startswith('UPDATE cragkit_qdrant.dispatch_journal') for sql,_ in db.calls)==2
+
+
+@run_async
+async def test_security_settlement_lost_commit_confirms_exact_history_after_authority_changes(monkeypatch,tmp_path):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await settlement_fixture(monkeypatch,tmp_path)
+    db.drop_next_commit=True
+    def advanced():state['document'].update(authorization_revision='auth-after-commit',mutation_epoch=3)
+    db.after_lost_commit=advanced
+    assert await implementation.settle_security_guarded(recovery,verifier,proof,owner,target,
+        deadline=asyncio.get_running_loop().time()+5)=={'settled_count':3}
+    assert sum(sql.startswith('UPDATE cragkit_qdrant.dispatch_journal') for sql,_ in db.calls)==3
+    assert sum(sql.startswith('SELECT true FROM cragkit_qdrant.lock_current_security(') for sql,_ in db.calls)==1
+    assert len(state['document_locks'][-3:])==3 and state['document_locks'][-3:]==[True,True,False]
+    readonly=next(index for index,(sql,_) in enumerate(db.calls) if sql.endswith('READ COMMITTED READ ONLY'))
+    assert all('FOR UPDATE' not in sql and not sql.startswith(('UPDATE ','INSERT ','DELETE ')) for sql,_ in db.calls[readonly:])
+    assert all('dispatch_id=ANY' in sql for sql,_ in db.calls[readonly:] if 'FROM cragkit_qdrant.dispatch_' in sql)
+    assert recovery._security_confirmation is None and db.active_leases==0
+
+
+@pytest.mark.parametrize('fault',['missing','partial','header','membership','digest'])
+@run_async
+async def test_lost_commit_confirmation_contradictions_do_not_replay_mutation(monkeypatch,tmp_path,fault):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await settlement_fixture(monkeypatch,tmp_path)
+    db.drop_next_commit=True
+    def changed():
+        if fault=='missing':db.journals.pop(0)
+        elif fault=='partial':db.journals[0].update(state='unknown',completion_sha256=None)
+        elif fault=='header':db.journals[0]['request_sha256']='e'*64
+        elif fault=='membership':db.security_members.pop(0)
+        else:db.journals[0]['completion_sha256']='e'*64
+    db.after_lost_commit=changed
+    with pytest.raises(ProviderUnavailable):
+        await implementation.settle_security_guarded(recovery,verifier,proof,owner,target,
+            deadline=asyncio.get_running_loop().time()+5)
+    assert sum(sql.startswith('UPDATE cragkit_qdrant.dispatch_journal') for sql,_ in db.calls)==3
+    assert sum(sql.startswith('SELECT true FROM cragkit_qdrant.lock_current_security(') for sql,_ in db.calls)==1
+
+
+@run_async
+async def test_cancelled_confirmation_retains_real_control_until_actual_read_drains(monkeypatch,tmp_path):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await settlement_fixture(monkeypatch,tmp_path)
+    recovery.resource.config=recovery.resource.config.model_copy(update={'release_timeout':.02})
+    entered=asyncio.Event();release=asyncio.Event();cancelled=asyncio.Event();db.drop_next_commit=True
+    async def held(connection):
+        entered.set()
+        while not release.is_set():
+            try:await release.wait()
+            except asyncio.CancelledError:cancelled.set()
+    db.confirmation_hook=held
+    task=asyncio.create_task(implementation.settle_security_guarded(recovery,verifier,proof,owner,target,
+        deadline=asyncio.get_running_loop().time()+5))
+    await entered.wait();inner=recovery._active;task.cancel();await cancelled.wait()
+    with pytest.raises(asyncio.CancelledError):await task
+    assert recovery._active is inner and recovery._scoped_control is not None and recovery._closed
+    async def raw_control():
+        async with supervisor.control_session():pytest.fail('confirmation control escaped')
+    with pytest.raises(ProviderUnavailable):await raw_control()
+    assert db.events.count('commit')==1  # The uncertain original commit, never a late confirmation.
+    release.set();await asyncio.gather(inner,return_exceptions=True)
+    assert recovery._active is None and recovery._security_confirmation is None
+    assert db.events.count('commit')==1
+
+
+@run_async
+async def test_confirmation_setup_cancellation_submits_no_following_query_or_commit(monkeypatch,tmp_path):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await settlement_fixture(monkeypatch,tmp_path)
+    db.drop_next_commit=True;db.cancel_confirmation_setup=True
+    with pytest.raises(asyncio.CancelledError):
+        await implementation.settle_security_guarded(recovery,verifier,proof,owner,target,
+            deadline=asyncio.get_running_loop().time()+5)
+    readonly=next(index for index,(sql,_) in enumerate(db.calls) if sql.endswith('READ COMMITTED READ ONLY'))
+    assert [sql for sql,_ in db.calls[readonly:]]==[
+        'SET TRANSACTION ISOLATION LEVEL READ COMMITTED READ ONLY','SET LOCAL search_path=pg_catalog']
+    assert db.events.count('commit')==1 and recovery._security_confirmation is None
 
 
 @run_async

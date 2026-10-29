@@ -16,7 +16,7 @@ from qdrant_authority_schema import ROOT
 from qdrant_native import REFERENCE_BINARY_SHA256
 from qdrant_publication_native import PublicationDatabase
 from qdrant_security_guard_native import SecurityGuardDatabase,install_guard
-from qdrant_security_verification_cases import (CHECKS, GUARD_CHECKS, ERRORS, NativeSecurityVerificationFailure,
+from qdrant_security_verification_cases import (CHECKS, GUARD_CHECKS, SETTLEMENT_CHECKS, ERRORS, NativeSecurityVerificationFailure,
     python_security_verification_cases, security_verification_input)
 from qdrant_source_native import PostgresSourceFixture
 from runtime_diagnostics import CleanupFailure, describe_error
@@ -36,10 +36,13 @@ GRAPH_CHECKS=(
 )
 
 
-def validate_result(value, runtime, *, security_guard=False, guarded_graph=False):
+def validate_result(value, runtime, *, security_guard=False, guarded_graph=False, security_settlement=False):
     fields={'runtime','checks','proof_scope','semantic_witness_sha256'}
     if security_guard:fields.add('guard_admission')
     if guarded_graph:fields.add('guarded_graph')
+    if security_settlement:fields.add('security_settlement')
+    if security_settlement and (not security_guard or guarded_graph):
+        raise RuntimeError('security_settlement_requires_exclusive_guard_profile')
     if (type(value) is not dict or set(value) != fields
             or value['runtime'] != runtime or value['checks'] != list(CHECKS)
             or value['proof_scope'] != 'native_security_receipt_only'
@@ -60,6 +63,13 @@ def validate_result(value, runtime, *, security_guard=False, guarded_graph=False
                 or any(type(item) is not str for item in graph['checks'])
                 or type(graph['denied_commits']) is not int or graph['denied_commits']!=0):
             raise RuntimeError('security_guarded_graph_result_shape')
+    if security_settlement:
+        settlement=value['security_settlement']
+        if (type(settlement) is not dict or set(settlement)!={'checks','confirmation_writes'}
+                or type(settlement['checks']) is not list or settlement['checks']!=list(SETTLEMENT_CHECKS)
+                or any(type(item) is not str for item in settlement['checks'])
+                or type(settlement['confirmation_writes']) is not int or settlement['confirmation_writes']!=0):
+            raise RuntimeError('security_settlement_result_shape')
     return json.loads(json.dumps(value))
 
 
@@ -115,7 +125,7 @@ async def node_security_verification_cases(value):
             raise failure
         if code != 0 or stderr:
             raise RuntimeError('security_verification_native_child_failed')
-        result = validate_result(json.loads(stdout), 'typescript',security_guard='guard_operator_config' in value,guarded_graph='guard_graph_config' in value)
+        result = validate_result(json.loads(stdout), 'typescript',security_guard='guard_operator_config' in value,guarded_graph='guard_graph_config' in value,security_settlement='settlement_config' in value)
         success = True
         return result
     except BaseException as error:
@@ -149,7 +159,7 @@ async def node_security_verification_cases(value):
             raise CleanupFailure(failures, primary=primary, stage='recovery') from None
 
 
-async def check(fixture, runtime, binary, work_dir, *, security_guard=False, guarded_graph=False):
+async def check(fixture, runtime, binary, work_dir, *, security_guard=False, guarded_graph=False, security_settlement=False):
     database_type=SecurityGuardDatabase if security_guard else PublicationDatabase
     async with database_type(fixture, with_attestations=True) as database:
         if security_guard:await install_guard(database)
@@ -169,9 +179,10 @@ async def check(fixture, runtime, binary, work_dir, *, security_guard=False, gua
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'))
         if security_guard:value['guard_operator_config']=dict(database._operator_config)
         if guarded_graph:value['guard_graph_config']=dict(admin_config=fixture.config)
+        if security_settlement:value['settlement_config']=dict(admin_config=fixture.config)
         await database.release_admin()
         runner = python_security_verification_cases if runtime == 'python' else node_security_verification_cases
-        return validate_result(await runner(value), runtime,security_guard=security_guard,guarded_graph=guarded_graph)
+        return validate_result(await runner(value), runtime,security_guard=security_guard,guarded_graph=guarded_graph,security_settlement=security_settlement)
 
 
 def main(argv=None):
@@ -182,12 +193,15 @@ def main(argv=None):
     parser.add_argument('--artifacts-dir', type=Path, required=True)
     parser.add_argument('--with-security-guard',action='store_true')
     parser.add_argument('--guarded-graph',action='store_true')
+    parser.add_argument('--security-settlement',action='store_true')
     parser.add_argument('--runtime', choices=('python', 'typescript', 'all'), default='all')
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
     artifacts_owned=False
     try:
         if args.guarded_graph and not args.with_security_guard:raise RuntimeError('guarded_graph_requires_guard_profile')
+        if args.security_settlement and (not args.with_security_guard or args.guarded_graph):
+            raise RuntimeError('security_settlement_requires_exclusive_guard_profile')
         binary = args.server_binary.resolve(strict=True)
         if (args.binary_sha256 != REFERENCE_BINARY_SHA256 or not binary.is_file()
                 or not os.access(binary, os.X_OK) or sha256(binary.read_bytes()).hexdigest() != REFERENCE_BINARY_SHA256):
@@ -200,14 +214,14 @@ def main(argv=None):
             private = Path(tempfile.mkdtemp(prefix=runtime + '-', dir=args.artifacts_dir)).resolve()
             # Two runtime clients and the default three reserved slots.
             with PostgresSourceFixture(args.postgres_bin, private / 'postgres', max_connections=7 if args.guarded_graph else 6 if args.with_security_guard else 5) as fixture:
-                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed',security_guard=args.with_security_guard,guarded_graph=args.guarded_graph), 210))
+                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed',security_guard=args.with_security_guard,guarded_graph=args.guarded_graph,security_settlement=args.security_settlement), 210))
             shutil.rmtree(private)
             results.append(result)
         if len({result['semantic_witness_sha256'] for result in results})!=1:
             raise RuntimeError('security_verification_native_semantic_witness_mismatch')
         (args.artifacts_dir / 'results.json').write_text(json.dumps(
             dict(ok=True, results=results, cleanup_verified=True), indent=2) + '\n')
-        print(json.dumps(dict(ok=True, checks=sum(len(r['checks'])+len(r.get('guard_admission',{}).get('checks',[]))+len(r.get('guarded_graph',{}).get('checks',[])) for r in results), cleanup_verified=True)))
+        print(json.dumps(dict(ok=True, checks=sum(len(r['checks'])+len(r.get('guard_admission',{}).get('checks',[]))+len(r.get('guarded_graph',{}).get('checks',[]))+len(r.get('security_settlement',{}).get('checks',[])) for r in results), cleanup_verified=True)))
         return 0
     except Exception as error:
         primary=getattr(error,'primary',None) if isinstance(error,NativeSecurityVerificationFailure) else None

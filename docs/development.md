@@ -1256,3 +1256,14 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 ```
 
 Use a fresh directory and the current TypeScript build. Guarded mode requires `--with-security-guard`; omit `--guarded-graph` to retain the earlier admission mode. It adds nine checks per runtime to the existing eight receipt and four admission checks. Four actual SQL clients use seven server slots; the old operator is closed before the fixture admin opens. Corruption maintenance is restricted to synthetic fixture data. Actual lock waits, backend termination, delayed callback ownership and closed-resource cleanup are checked. No model, provider, hosted target or new dependency is used.
+
+
+## V5-04G2b2d4 exact retired security settlement
+
+[Settlement evidence](../evaluation/reports/V5/V5-04G2b2d4.md) covers the internal guarded journal operation and exact historical lost-COMMIT confirmation. It does not establish current-payload recovery dispatch, replica convergence, purge or full V5 acceptance.
+
+```bash
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_security_verification.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --with-security-guard --security-settlement --runtime all --artifacts-dir artifacts/V5/V5-04G2b2d4/a-new-settlement-run
+```
+
+Use a fresh directory and the current TypeScript build. Settlement mode requires `--with-security-guard` and excludes `--guarded-graph`; earlier modes remain available separately. The checker runs both runtimes serially, with three SQL clients and six PostgreSQL slots. It preserves eight receipt and four admission checks and adds four settlement checks per runtime. Real native COMMIT succeeds before its reply is withheld, and the native writer advances authority before read-only confirmation. Confirmation must issue no DML, guard, HTTP or writer query replay. A fresh repeat preserves historical completion, while current-credential uncertainty preserves rows and closed admission. The unknown-dispatch metadata is synthetic; actual SQL transactions, restricted roles, current readback and COMMIT observations are native evidence. Task-owned servers and listeners are closed and cleanup is checked. No model, provider or hosted target is used.
