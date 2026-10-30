@@ -14,7 +14,7 @@ interfaces. Python's default SDK telemetry middleware is disabled in this host.
 
 | Local check | Result |
 | --- | --- |
-| Python official SDK stream round trip and boundary tests | 36 passed |
+| Python official SDK stream round trip and boundary tests | 40 passed, including four child-process cases |
 | Node official SDK stdio transport round trip and boundary tests | 36 passed |
 | Python strict mypy | Passed, one source file |
 | Node package build/typecheck | Passed |
@@ -25,8 +25,11 @@ token counting, competing calls, cancellation, noncooperative engine drainage,
 disconnect, malformed and oversized frames, and network denial. The local SDK
 round trips use synthetic native results; they do not establish live provider
 quality. Python uses SDK in-memory streams plus separate bounded-frame tests.
-Node uses its SDK through an injected byte-stream transport. A separate installed
-Python child-process stdio check remains to be run before final V5-06 acceptance.
+Node uses its SDK through an injected byte-stream transport. The Python
+child-process test runs `python -I` through the installed editable package and
+an official SDK stdio client. It verifies one valid retrieval, four rejected
+request overrides, EOF, malformed JSON and invalid UTF-8. The owned child exits
+within a bounded wait. Wheel installation remains a separate packaging gate.
 
 The first Python close regression kept the caller waiting when an engine
 suppressed cancellation. A dedicated close signal now wakes the caller while

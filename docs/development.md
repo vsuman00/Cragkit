@@ -1321,6 +1321,10 @@ uv run --project packages/mcp-python --frozen --no-sync mypy --config-file packa
 npm --prefix packages/mcp-typescript test
 ```
 
+The Python test command includes four bounded child-process stdio checks in
+`test_stdio_process.py`. It verifies the installed editable package using the
+official SDK client; it does not substitute for the V5-08 wheel installation.
+
 Run one language suite at a time. The [MCP implementation report](../evaluation/reports/V5/V5-06-implementation.md)
 records 36 tests in each runtime and the remaining process-level check. The
 core package installs without these optional SDKs. No live model call is part
