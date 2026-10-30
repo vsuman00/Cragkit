@@ -431,6 +431,9 @@ class Connection:
             return Cursor([])
         if sql.startswith('SELECT action,manifest_sha256,revision_id,generation_id'):
             return Cursor([('stage', FIXTURE['intent']['manifest_sha256'], 'rev-2', 'gen-2')])
+        if sql.startswith('SELECT instance_id,action,payload_sha256,expected_mutation_epoch') and hasattr(db,'security_owner_raw'):
+            raw=db.security_owner_raw
+            return Cursor([(raw[0],raw[1],raw[3],raw[5],raw[6],*raw[8:],'writing',False,False,raw[4])])
         if sql.startswith('SELECT action,instance_id,manifest_sha256,revision_id,generation_id'):
             return Cursor([db.security_stage])
         if sql.startswith('SELECT action,state,manifest_sha256,revision_id,generation_id,expected_authorization_revision'):
@@ -814,8 +817,8 @@ async def guarded_fixture(monkeypatch,tmp_path):
     async def lease(self,*,deadline):
         if self is writer.resource:
             async with original_lease(self,deadline=deadline) as connection:
-                connection.history=list(writer_module.EXPECTED_SECURITY_GUARD_HISTORY)
-                connection.hash=writer_module.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT
+                connection.history=list(writer_module.EXPECTED_PURGE_HISTORY if writer._schema_profile==5 else writer_module.EXPECTED_SECURITY_GUARD_HISTORY)
+                connection.hash=(writer_module.EXPECTED_PURGE_CATALOG_FINGERPRINT if writer._schema_profile==5 else writer_module.EXPECTED_SECURITY_GUARD_CATALOG_FINGERPRINT)
                 yield connection
         elif self is resource:
             connection=Connection(db);db.connections.append(connection);db.active_leases+=1
@@ -1132,9 +1135,9 @@ async def security_dispatch_fixture(monkeypatch,tmp_path):
     graph=stage_data(next(iter(state['plans'].values())))
     state['dispatch_backend']=(writer.config.backend_namespace,'storage-1','supervisor-1',2,'recovery_blocked','fixture-recovery')
     state['dispatch_owner']=(owner['owner_token'],owner['intent_id'],2,'instance-1')
-    state['dispatch_stage']=('stage',graph.manifest_encoding.sha256,graph.manifest.revision_id,graph.manifest.generation_id,'instance-1')
+    state['dispatch_stage']=('stage',graph.manifest_encoding.sha256,graph.manifest.revision_id,graph.manifest.generation_id,'instance-1',graph.intent_encoding.sha256)
     db.security_owner_intent=('stage','denied',graph.manifest_encoding.sha256,graph.manifest.revision_id,graph.manifest.generation_id,
-                              'auth-1',1,None,'instance-1')
+                              'auth-1',1,None,'instance-1',graph.intent_encoding.sha256)
     db.security_fence=('update_authorization',source['intent_sha256'],True,'instance-1')
     db.security_claims=source['point_ids'];db.journals=[];db.security_members=[]
     handle=Handle([dict(id=point.point_id,payload=point.payload.model_dump(mode='json'),
@@ -1702,3 +1705,75 @@ def test_profile5_supervisor_marker_update_privilege_does_not_leak_into_table_ma
     assert "OR (c.relname='documents' AND a.attname IN ('tenant_id','collection','document_id','content_unavailable'))" in sql
     assert 'scope_visible(text,text,text[],text[],text,boolean)' in sql
     assert 'canonical_utf8' not in sql and 'excerpt_utf8' not in sql and 'erase_purged_document' not in sql
+
+
+@pytest.mark.parametrize('profile',[4,5])
+@run_async
+async def test_guarded_settlement_current_security_owner_requires_profile5(monkeypatch,tmp_path,profile):
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=await settlement_fixture(monkeypatch,tmp_path)
+    schema_profile(db,profile);recovery._schema_profile=writer._schema_profile=profile
+    db.owner.update(intent_id=target['intent_id'],owner_token=target['owner_token'])
+    db.security_stage=('update_authorization','instance-1',None,None,None)
+    db.security_owner_raw=state['raw']
+    for row in db.journals:
+        row['owner_token']=target['owner_token'];row['recovery']=True
+    before=deepcopy(db.journals)
+    if profile==4:
+        with pytest.raises(InvalidRequest):
+            await implementation.settle_security_guarded(recovery,verifier,proof,target,target,deadline=asyncio.get_running_loop().time()+5)
+        assert db.journals==before
+    else:
+        assert await implementation.settle_security_guarded(recovery,verifier,proof,target,target,deadline=asyncio.get_running_loop().time()+5)=={'settled_count':3}
+        assert all(row['state']=='settled' for row in db.journals)
+
+
+@run_async
+async def test_profile5_current_security_owner_dispatches_full_points_with_its_actual_identity(monkeypatch,tmp_path):
+    values,source,handle,events,authorize=await security_dispatch_fixture(monkeypatch,tmp_path)
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=values
+    schema_profile(db,5);recovery._schema_profile=writer._schema_profile=5
+    db.owner.update(intent_id=target['intent_id'],owner_token=target['owner_token'])
+    state['dispatch_owner']=(target['owner_token'],target['intent_id'],2,'instance-1')
+    state['dispatch_stage']=('update_authorization',None,None,None,'instance-1',source['intent_sha256'])
+    db.security_owner_intent=('update_authorization','writing',None,None,None,'auth-1',1,None,'instance-1',source['intent_sha256'])
+    db.security_owner_raw=state['raw']
+    handle.points=[]
+    result=await implementation.dispatch_security_recovery(recovery,proof,target,target,authorize,deadline=asyncio.get_running_loop().time()+5)
+    assert result['batches']>0 and events['puts']
+    assert all(row['owner_token']==target['owner_token'] and row['recovery'] for row in db.journals)
+    assert db.owner['intent_id']==target['intent_id'] and db.open_updates==0
+
+
+@pytest.mark.parametrize('ordinary',[False,True])
+@run_async
+async def test_profile5_prior_security_owner_dispatch_keeps_canonical_history_and_rejects_ordinary_headers(monkeypatch,tmp_path,ordinary):
+    import json
+    from hashlib import sha256
+    values,source,handle,events,authorize=await security_dispatch_fixture(monkeypatch,tmp_path)
+    recovery,verifier,writer,supervisor,proof,owner,target,state,db,connections=values
+    schema_profile(db,5);recovery._schema_profile=writer._schema_profile=5
+    retained=list(state['raw']);payload=json.loads(retained[2]);payload[2]=owner['intent_id']
+    retained[2]=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode()
+    retained[3]=sha256(retained[2]).hexdigest()
+    state['owner_raw']={owner['intent_id']:tuple(retained)}
+    current=list(state['raw']);current_payload=json.loads(current[2]);current_payload[7]='2'
+    current[2]=json.dumps(current_payload,ensure_ascii=False,separators=(',',':')).encode()
+    current[3]=sha256(current[2]).hexdigest();current[5]=2;state['raw']=tuple(current)
+    db.security_fence=('update_authorization',current[3],True,'instance-1')
+    state['document']['mutation_epoch']=3
+    state['dispatch_stage']=('update_authorization',None,None,None,'instance-1',retained[3])
+    db.security_owner_intent=('update_authorization','writing',None,None,None,'auth-1',1,None,'instance-1',retained[3])
+    db.security_owner_raw=tuple(retained)
+    if ordinary:
+        db.journals=[dict(dispatch_id='ordinary-security',instance_id='instance-1',sequence=1,
+            owner_token=owner['owner_token'],backend_epoch=1,credential_generation='retired-credential',
+            operation='complete_point_upsert',recovery=False,state='settled',completion_sha256='a'*64,
+            request_sha256='b'*64,foreign=False)]
+        with pytest.raises(IntegrityViolation):
+            await implementation.dispatch_security_recovery(recovery,proof,owner,target,authorize,deadline=asyncio.get_running_loop().time()+5)
+        assert not events['puts']
+    else:
+        handle.points=[]
+        result=await implementation.dispatch_security_recovery(recovery,proof,owner,target,authorize,deadline=asyncio.get_running_loop().time()+5)
+        assert result['batches']>0 and events['puts']
+        assert state['owner_raw'][owner['intent_id']]==tuple(retained)

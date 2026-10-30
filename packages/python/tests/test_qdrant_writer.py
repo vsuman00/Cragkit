@@ -229,7 +229,7 @@ def security_projection_writer(monkeypatch, *, tombstone=False):
                 assert sql.endswith(' FOR UPDATE') or state.get('allow_nonlocking',False)
                 return Cursor([tuple(state['document'].values())])
             if sql.startswith('SELECT instance_id,action,payload_bytes'):
-                self.calls.append((sql,params));return Cursor([state['raw']])
+                self.calls.append((sql,params));return Cursor([state.get('owner_raw',{}).get(params[3],state['raw'])])
             if sql.startswith('SELECT revision_id,generation_id,chunk_id,point_id::text,'):
                 self.calls.append((sql,params))
                 assert params == ('tenant-a','docs','doc-1') and sql.endswith(' LIMIT 2049')
@@ -1967,7 +1967,7 @@ def security_owner_fixture(monkeypatch):
         return await original_execute(connection,sql,params)
     monkeypatch.setattr(Connection,'__init__',initialize);monkeypatch.setattr(Connection,'execute',execute)
     async def backend(connection,**options):facts['events'].append(('backend',options));return dict(facts['backend'])
-    async def owner(connection,context,**options):facts['events'].append(('owner',options));return dict(facts['owner'])
+    async def owner(connection,context,**options):facts['events'].append(('owner',options));return None if facts['owner'] is None else dict(facts['owner'])
     async def intent(connection,context):return dict(facts['intent'])
     async def settled(connection,context):
         if facts['pending']:raise ProviderUnavailable()
@@ -2160,3 +2160,48 @@ async def test_profile5_keeps_ordinary_attestation_publication_failure_closed(mo
     with pytest.raises(ProviderUnavailable):await writer.publish(ctx(),deadline=asyncio.get_running_loop().time()+5)
     assert connections and not state.get('publication_updates')
     assert state['intent']['state']=='prepared'
+
+
+@pytest.mark.parametrize('fault',[None,'prior','uncommitted','future','digest','target','stage_fields','purge','same_epoch_acl'])
+@run_async
+async def test_retained_security_owner_metadata_is_canonical_committed_and_not_from_future(monkeypatch,fault):
+    writer,state,connections,target=security_projection_writer(monkeypatch)
+    owner=implementation.context(target)
+    row=list(state['raw']);current=copy.deepcopy(state['document'])
+    if fault=='prior':current.update(mutation_epoch=3,authorization_revision='auth-3')
+    elif fault=='uncommitted':row[6]=False
+    elif fault=='future':current['mutation_epoch']=1
+    elif fault=='digest':row[3]='0'*64
+    elif fault=='target':owner=implementation.context({**target,'intent_id':'other'})
+    elif fault=='stage_fields':row[8]='a'*64
+    elif fault=='purge':row[1]='purge'
+    elif fault=='same_epoch_acl':current['principal_ids']=['different']
+    if fault in (None,'prior'):
+        implementation.security_owner_intent(owner,tuple(row),writer.instance_id,current)
+    else:
+        error=UnsupportedCapability if fault=='purge' else UnauthorizedScope if fault in ('uncommitted','future','same_epoch_acl') else IntegrityViolation
+        with pytest.raises(error):implementation.security_owner_intent(owner,tuple(row),writer.instance_id,current)
+
+
+@pytest.mark.parametrize('profile',[4,5])
+@pytest.mark.parametrize('fault',[None,'blocked','pending','historical'])
+@run_async
+async def test_ownerless_security_admission_is_profile5_only_and_requires_open_current_history(monkeypatch,profile,fault):
+    writer,state,connections,target,facts=security_owner_fixture(monkeypatch)
+    writer._schema_profile=profile
+    if profile==5:
+        original_init=Connection.__init__
+        def initialize(connection):
+            original_init(connection);writer_purge_profile(connection)
+        monkeypatch.setattr(Connection,'__init__',initialize)
+    facts['owner']=None
+    if fault=='blocked':facts['backend'].update(state='recovery_blocked',recovery_id='recovery')
+    elif fault=='pending':facts['pending']=True
+    elif fault=='historical':facts['intent'].update(state='complete',replica_complete=True)
+    if profile==5 and fault is None:
+        await implementation.admit_security_owner(writer,target,deadline=asyncio.get_running_loop().time()+5)
+        assert facts['owner']['intent_id']==target['intent_id'] and facts['intent']['state']=='writing'
+    else:
+        with pytest.raises(UnauthorizedScope if profile==5 and fault=='historical' else ProviderUnavailable):
+            await implementation.admit_security_owner(writer,target,deadline=asyncio.get_running_loop().time()+5)
+        assert facts['owner'] is None

@@ -286,9 +286,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
     - [ ] V5-04G2: Current ACL/filter replica convergence and authority-first public security changes.
       - [x] G2a1: Exact read-only lost-COMMIT confirmation parity for authority-only security writes. [Evidence](../evaluation/reports/V5/V5-04G2a1.md).
       - [x] G2a2: Public authority-only update_authorization/tombstone admission with explicit replica-pending outcomes. [Evidence](../evaluation/reports/V5/V5-04G2a2.md).
-      - [ ] G2b: Bounded current-security projection, actual old-write reconciliation and ownership handoff.
+      - [x] G2b: Bounded current-security projection, actual old-write reconciliation and ownership handoff; children below passed.
         - [x] G2b1: Read-only current-security claim projection, raw inventory bounds, immutable graph/RLS and staging-lock proof. [Evidence](../evaluation/reports/V5/V5-04G2b1.md).
-        - [ ] G2b2: Multi-generation/full-document readback and actual security-bound old-owner settlement/handoff.
+        - [x] G2b2: Multi-generation/full-document readback and actual security-bound old-owner settlement/handoff; children below passed.
           - [x] G2b2a: Actual restricted-supervisor denied-owner recovery reservation and cross-generation membership permission proof. [Evidence](../evaluation/reports/V5/V5-04G2b2a.md).
           - [x] G2b2b: Bounded full-document security inspection and exact-current readback primitives, including native corruption/drift checks. [Evidence](../evaluation/reports/V5/V5-04G2b2b.md).
           - [x] G2b2c1: Authentic active recovery-session binding and conservative activity tracking. [Evidence](../evaluation/reports/V5/V5-04G2b2c1.md).
@@ -298,10 +298,10 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
           - [x] G2b2d2: Exact native profile-4 source/writer/recovery admission and guard-owner permission drift checks. [Final admission evidence](../evaluation/reports/V5/V5-04G2b2d2b2.md).
           - [x] G2b2d3: Private transaction-owned guard and full nonlocking current-security graph validation. [Evidence](../evaluation/reports/V5/V5-04G2b2d3.md).
           - [x] G2b2d4: Private retired security settlement and exact historical read-only lost-COMMIT confirmation. [Evidence](../evaluation/reports/V5/V5-04G2b2d4.md).
-          - [ ] G2b2d5: Current-security recovery plans, journaled full-point dispatch and genuine acknowledgment/receipt handoff.
+          - [x] G2b2d5: Current-security recovery plans, journaled full-point dispatch and genuine acknowledgment/receipt handoff; D5a-D5c passed.
             - [x] D5a: Private current-security plans and stale/missing full-point dispatch with genuine acknowledgment and retired-settlement acceptance. [Evidence](../evaluation/reports/V5/V5-04G2b2d5a.md).
             - [x] D5b: Initial security-owner handoff and genuine ordinary current-security completion. [Evidence](../evaluation/reports/V5/V5-04G2b2d5b.md).
-            - [ ] D5c: Repeated-update recovery anchored to a previous security owner.
+            - [x] D5c: Repeated-update recovery anchored to a previous/current security owner and ownerless bootstrap; [evidence](../evaluation/reports/V5/V5-04G2b2d5c.md).
       - [ ] G2c: Journaled full-point replica convergence and actual native failure/source acceptance.
     - [ ] V5-04G3: Tombstone-bound scoped purge, late-write safety, cleanup and native acceptance.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
@@ -1664,3 +1664,86 @@ edited. One local PostgreSQL fixture and one test process ran at a time; no
 model/provider/hosted run occurred. Learning practice remains unassessed. Next
 smallest action: native profile-5 recovery admission, then repeated security
 convergence with the current committed owner.
+
+### V5-04G2b2d5c private runtime assignment
+
+Task ID: V5-04G2b2d5c. Shared outcome: profile-5 private recovery, security
+projection, dispatch and guarded settlement accept an actual committed prior
+or current security owner, while stage owners retain their existing exact
+checks. Both runtimes must reject fabricated owner metadata and old-profile
+fallback. QP-r1 and migration 0005 are frozen inputs; this assignment does not
+include the public manager or physical purge.
+
+- Sol `security_owner_python` owns only `_qdrant_writer.py`,
+  `_qdrant_recovery.py` and their existing Python tests. It assembles the pair.
+- Sol `security_owner_node` owns only `qdrant-writer.ts`,
+  `qdrant-recovery.ts` and their existing Node tests.
+- Root owns shared contracts, native fixture/consumer files, execution,
+  tracker, final integration and Git. Peers may read dependencies and make
+  substantive edits only in their paths; no tests, services, database, network,
+  installs or Git actions in peer lanes. One test process at a time under root.
+- Peers coordinate exact owner binding and helper semantics directly. An agreed
+  path transfer requires the previous writer to stop and root to be notified.
+  Outcome, protected boundaries or another lane's ownership changes come to
+  root before dependent edits; unresolved decisions go to Astra.
+- Acceptance: focused tests per runtime, strict typechecks/build, then serial
+  actual PostgreSQL/Qdrant recovery and repeated-owner cases with cleanup.
+  State: assigned; native/public acceptance remains open.
+
+Independent V5-06 process lane: Sol `mcp_process` owns only a new
+`packages/mcp-python/tests/test_stdio_process.py` and any test-local fixture in
+that file. It will exercise the installed Python host through a real child
+process and official SDK stdio session with fake native retrieval. Root owns
+the MCP source, manifests, builds, tests, tracker, Git and integration. The
+worker may inspect dependencies but runs no processes, installs, network or
+tests. It reports any needed source/API change before editing outside its file.
+This lane does not alter the V5-06 upstream acceptance gate.
+
+V5-06 process-lane handoff: the Sol worker transferred only
+`packages/mcp-python/tests/test_stdio_process.py` to root. Root inspected and
+ran its four child-process cases, then the 40-test Python MCP package suite;
+both passed. The child used installed editable imports, an official SDK stdio
+session and bounded shutdown. The wheel-install gate remains V5-08. No provider,
+database or hosted service ran; task-owned children closed. Final V5-06
+acceptance still waits for V5-04/V5-05/C2. Learning practice is unassessed.
+
+Continuation check: MCP process evidence committed and pushed as `a04b3a6`,
+with exact remote head and zero ahead/behind verified. Earlier D5c worker
+handles are absent; their eight edited files are preserved as
+IMPLEMENTED_UNVALIDATED. New Sol pair `d5c_python` / `d5c_node` receives the
+same nonoverlapping Python/Node four-file ownership and QP-r1 outcome above;
+Python assembles. Root retains all native tools, contracts, execution, tracker
+and Git. Finish and review the actual existing edits before native acceptance;
+no new scope or services are authorized by this reassignment.
+
+D5c native repetition assignment: root owns the parent protocol and Python
+consumer. Sol `d5c_native_node` owns only
+`tools/check_typescript_qdrant_security_verification.mjs`, implementing the
+matching exclusive `repetition_config` mode. Four observations cover initial
+stage-to-security completion, same-current security owner refencing, a next
+authorization using the prior security owner, and ownerless denied-stage
+bootstrap. Python/Node run serially on actual disposable PostgreSQL/Qdrant.
+Root freezes the protocol, integrates and runs all checks; the worker runs no
+tests, processes, services, network, installs or Git. Existing modes and user
+audits are protected. Runtime/API dependencies go directly to the Node/Python
+peers, with outcome or protected changes escalated to root.
+
+D5c focused integration: Python 441 passed and Node build passed. Node focused
+run had 270 pass / 10 failures; root isolated obsolete admission expectation,
+undefined fake mutation counter and new security-owner metadata fixture paths.
+The previous Node worker handle is absent. Sol `d5c_node_fix` receives only
+the four Node runtime/test paths to resolve these exact failures; root retains
+the native consumer and all test execution. No acceptance claimed.
+
+D5c final handoff: all peer paths transferred to root. Focused Python/tool
+455 and Node 280 passed; strict Python typecheck (49 files) and Node build
+passed. Actual repetition probes passed eight checks per runtime, with matching
+semantic witness, and profile-5 lost-COMMIT completion passed 16 checks across
+both runtimes. All native runs verified cleanup. [Report](../evaluation/reports/V5/V5-04G2b2d5c.md).
+Root fixed the stage-only reservation assumption and three fixture defects,
+then checked the affected cases before the focused suite. G2b's private
+projection/dispatch/settlement/handoff is accepted; G2c public convergence,
+G3 purge, H and the remaining V5 gates stay open. No schema/grant/dependency
+or README change. User audits are excluded; last disk observation 24 GiB.
+Learning practice remains pending. Next action: G2c public convergence using
+the accepted private path, followed by native failure/source acceptance.

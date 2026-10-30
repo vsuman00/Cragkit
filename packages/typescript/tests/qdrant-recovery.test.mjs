@@ -142,6 +142,16 @@ test('security recovery dispatcher is constructor-bound and rejects malformed mo
     assert.equal(called,0);assert.equal(f.state.queries.length,0);
   }finally{await f.coordinator.close();await f.writer.close();}
 });
+test('profile4 keeps current-owner equality rejected before authorization callbacks or SQL',async()=>{
+  const f=setup(),verifier=new QdrantSecurityVerifier(f.writer,f.supervisor);let calls=0;
+  try{
+    f.state.history=AUTHORITY_SECURITY_GUARD_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT;
+    await f.coordinator.initialize(options());const before=f.state.queries.length;
+    await assert.rejects(validate_security_guarded(f.coordinator,verifier,{},context,context,options()),InvalidRequest);
+    await assert.rejects(dispatch_security_recovery(f.coordinator,{},context,context,async()=>{calls++;return true;},options()),InvalidRequest);
+    assert.equal(calls,0);assert.equal(f.state.queries.length,before);
+  }finally{await verifier.close();await f.coordinator.close();await f.writer.close();}
+});
 
 test('guarded driver requires ready profile4 and original verifier dependencies',async()=>{
   const f=setup(),securityVerifier=new QdrantSecurityVerifier(f.writer,f.supervisor),security={...context,intent_id:'security-1'};
@@ -489,7 +499,7 @@ test('recovery5 admits exact supervisor metadata additions before binding',async
   assert(RECOVERY_PURGE_ROLE_SQL.includes("c.relname='documents' AND a.attname='content_unavailable'"));
   assert(!RECOVERY_PURGE_ROLE_SQL.includes('canonical_utf8'));
   const start=f.state.queries.length;
-  await assert.rejects(dispatch_security_recovery(f.coordinator,{},context,{...context,intent_id:'security-5'},async()=>{},options()),UnsupportedCapability);
+  await assert.rejects(dispatch_security_recovery(f.coordinator,{},context,{...context,intent_id:'security-5'},async()=>{},options()),IndexNotReady);
   assert.equal(f.state.queries.length,start);
  }finally{await closeFixture(f);}
 });

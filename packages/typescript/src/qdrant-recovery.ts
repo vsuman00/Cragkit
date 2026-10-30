@@ -52,7 +52,7 @@ export async function dispatch_security_recovery(recovery:unknown,proof:unknown,
   if(typeof recovery!=='object'||recovery===null||types.isProxy(recovery)||Object.getPrototypeOf(recovery)!==PostgresQdrantRecovery.prototype
     ||typeof authorize!=='function'||types.isProxy(authorize))throw new InvalidRequest();
   const dispatch=securityDispatchers.get(recovery);if(!dispatch)throw new InvalidRequest();
-  if(owner.intent_id===security.intent_id||owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
+  if(owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
   return dispatch(proof,owner,security,authorize as SecurityAuthorizer,options,budget);
 }
 type DispatchPlanData=RecoveryDispatchPlanData|SecurityDispatchPlanData;
@@ -75,14 +75,14 @@ export async function validate_security_guarded(recovery:unknown,verifier:Qdrant
   const owner=parse_context(rawOwner),security=parse_context(rawSecurity),options=parse_options(rawOptions),budget=security_readback_budget(inputBudget);
   if(typeof recovery!=='object'||recovery===null||types.isProxy(recovery)||Object.getPrototypeOf(recovery)!==PostgresQdrantRecovery.prototype)throw new InvalidRequest();
   const driver=guardedDrivers.get(recovery);if(!driver)throw new InvalidRequest();
-  if(owner.intent_id===security.intent_id||owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
+  if(owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
   await driver(verifier,proof,owner,security,options,budget);
 }
 export async function settle_security_guarded(recovery:unknown,verifier:QdrantSecurityVerifier,proof:unknown,rawOwner:unknown,rawSecurity:unknown,rawOptions:unknown,inputBudget?:SecurityReadbackBudget):Promise<SecuritySettlement>{
   const owner=parse_context(rawOwner),security=parse_context(rawSecurity),options=parse_options(rawOptions),budget=security_readback_budget(inputBudget);
   if(typeof recovery!=='object'||recovery===null||types.isProxy(recovery)||Object.getPrototypeOf(recovery)!==PostgresQdrantRecovery.prototype)throw new InvalidRequest();
   const settle=securitySettlers.get(recovery);if(!settle)throw new InvalidRequest();
-  if(owner.intent_id===security.intent_id||owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
+  if(owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
   return settle(verifier,proof,owner,security,options,budget);
 }
 export const SECURITY_GUARD_SQL="SELECT true FROM cragkit_qdrant.lock_current_security("+
@@ -292,7 +292,8 @@ export class PostgresQdrantRecovery {
   }
   async #securityGuarded(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,security:WriterContext,caller:LeaseOptions,budget:SecurityReadbackBudget,mode:'validate'|'settle'):Promise<SecuritySettlement>{
     security_verifier_binding(verifier,this.#writer,this.#supervisor);
-    this.#admit();if(this.#profile!=='security_guard')throw new UnsupportedCapability();
+    if(owner.intent_id===security.intent_id&&this.#profile!=='purge')throw new InvalidRequest();
+    this.#admit();if(this.#profile!=='security_guard'&&this.#profile!=='purge')throw new UnsupportedCapability();
     require_security_guard_writer(this.#writer);
     const controller=new AbortController(),relay=()=>controller.abort();
     caller.signal?.addEventListener('abort',relay,{once:true});if(caller.signal?.aborted)controller.abort();
@@ -330,7 +331,7 @@ export class PostgresQdrantRecovery {
           commit:()=>{check();if(!required||!acknowledged||!validated||tokenLive)throw new ProviderUnavailable();active=false;}};
         let attempted:SecurityAttempt|undefined;
         try{return await this.#tx(String(binding.instance_id),options,async(tx,profile)=>{
-          if(profile!=='security_guard')throw new UnsupportedCapability();
+          if(profile!=='security_guard'&&profile!=='purge')throw new UnsupportedCapability();
           check();required=true;
           let rows:unknown[][];
           try{rows=await tx.query(SECURITY_GUARD_SQL,[binding.instance_id,this.#config.backend_namespace,binding.storage_identity,
@@ -397,14 +398,35 @@ export class PostgresQdrantRecovery {
       throw safe(error,caller.deadline);
     }
   }
+  async #securityOwnerMembers(tx:Tx,binding:Binding,owner:WriterContext,source:SecurityProjectionData):Promise<readonly string[]>{
+    const rows=await tx.query('SELECT instance_id,action,manifest_sha256,revision_id,generation_id FROM cragkit_qdrant.publication_intents WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4)',
+      [owner.scope.tenant_id,owner.collection,owner.document_id,owner.intent_id],2);
+    if(rows.length!==1||rows[0].length!==5)throw new IntegrityViolation();const row=rows[0];
+    if(row[0]!==binding.instance_id)throw new IntegrityViolation();
+    if(row[1]==='stage'){
+      const group=source.generations.find(item=>item.revision_id===row[3]&&item.generation_id===row[4]);
+      if(!group||group.manifest_sha256!==row[2])throw new IntegrityViolation();return group.point_ids;
+    }
+    if(this.#profile!=='purge'||!['update_authorization','tombstone'].includes(String(row[1])))throw new UnsupportedCapability();
+    const columns=['action','state','payload_sha256','manifest_sha256','revision_id','generation_id','authority_committed','replica_complete','purge_complete','expected_active_generation_id','expected_authorization_revision','expected_mutation_epoch','instance_id'];
+    const full=await tx.query('SELECT '+columns.join(',')+' FROM cragkit_qdrant.publication_intents WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4)',
+      [owner.scope.tenant_id,owner.collection,owner.document_id,owner.intent_id],2);
+    if(full.length!==1||full[0].length!==columns.length)throw new IntegrityViolation();
+    const intent=Object.fromEntries(columns.map((key,index)=>[key,full[0][index]]));
+    if(intent.authority_committed!==true)throw new UnauthorizedScope();
+    if(intent.instance_id!==binding.instance_id||!['update_authorization','tombstone'].includes(String(intent.action))
+      ||!['authority_committed','writing','complete'].includes(String(intent.state))
+      ||intent.replica_complete!==(intent.state==='complete')||intent.purge_complete!==false
+      ||['manifest_sha256','revision_id','generation_id','expected_active_generation_id'].some(key=>intent[key]!==null))throw new IntegrityViolation();
+    digest(intent.payload_sha256);text(intent.expected_authorization_revision);
+    if(db_count(intent.expected_mutation_epoch)+1>source.mutation_epoch)throw new UnauthorizedScope();
+    if(owner.intent_id===source.context.intent_id&&intent.payload_sha256!==source.intent_sha256)throw new IntegrityViolation();
+    // Security owners never issue ordinary physical writes.
+    return Object.freeze([]);
+  }
   async #securitySettlementAttempt(tx:Tx,binding:Binding,owner:WriterContext,source:SecurityProjectionData,completion:string):Promise<SecurityAttempt>{
     const target=[owner.scope.tenant_id,owner.collection,owner.document_id,owner.intent_id];
-    const intents=await tx.query('SELECT instance_id,action,manifest_sha256,revision_id,generation_id FROM cragkit_qdrant.publication_intents WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4)',target,2);
-    if(intents.length!==1||intents[0].length!==5)throw new IntegrityViolation();
-    const intent=intents[0];
-    if(intent[1]!=='stage')throw new UnsupportedCapability();
-    const group=source.generations.find(item=>item.revision_id===intent[3]&&item.generation_id===intent[4]);
-    if(intent[0]!==binding.instance_id||!group||group.manifest_sha256!==intent[2])throw new IntegrityViolation();
+    const ordinaryIds=await this.#securityOwnerMembers(tx,binding,owner,source);
     const foreign=await tx.query("SELECT intent_id FROM cragkit_qdrant.dispatch_journal WHERE (tenant_id,collection,document_id)=($1,$2,$3) AND intent_id<>$4 AND state<>'settled' LIMIT 1",target,1);
     if(foreign.length){
       if(foreign[0].length!==1||typeof foreign[0][0]!=='string'||foreign[0][0]===owner.intent_id)throw new IntegrityViolation();
@@ -414,7 +436,7 @@ export class PostgresQdrantRecovery {
     const points=await tx.query('SELECT dispatch_id,backend_namespace,physical_collection,collection_incarnation,point_id::text FROM cragkit_qdrant.dispatch_points WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4) LIMIT 2049',target,2049);
     if(rows.length>256||points.length>2048)throw new IntegrityViolation();
     const ids=new Set<string>(),sequences=new Set<number>(),members=new Map<string,Set<string>>();
-    const full=new Set(source.point_ids),ordinary=new Set(group.point_ids),pending:unknown[][]=[];
+    const full=new Set(source.point_ids),ordinary=new Set(ordinaryIds),pending:unknown[][]=[];
     try{
       for(const row of rows){
         if(row.length!==12)throw new IntegrityViolation();
@@ -424,6 +446,7 @@ export class PostgresQdrantRecovery {
         text(row[5]);digest(row[8]);
         if(typeof row[9]!=='string'||!/^[1-9][0-9]{0,19}$/.test(row[9])||BigInt(row[9])>18446744073709551615n)throw new IntegrityViolation();
         if(row[6]!=='complete_point_upsert')throw new UnsupportedCapability();
+        if(row[7]===false&&ordinaryIds.length===0)throw new IntegrityViolation();
         if(row[10]==='settled')digest(row[11]);
         else{
           if(typeof row[10]!=='string'||!['reserved','dispatched','unknown'].includes(row[10])||row[11]!==null)throw new IntegrityViolation();
@@ -716,11 +739,16 @@ export class PostgresQdrantRecovery {
     const rows=await tx.query('SELECT instance_id,action,state,manifest_sha256,revision_id,generation_id,expected_active_generation_id,expected_authorization_revision,expected_mutation_epoch FROM cragkit_qdrant.publication_intents WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4)',
       [context.scope.tenant_id,context.collection,context.document_id,context.intent_id],2);
     if(rows.length!==1||rows[0].length!==9)throw new IntegrityViolation();
-    const intent=rows[0];if(intent[0]!==binding.instance_id||intent[1]!=='stage')throw new UnsupportedCapability();
+    const intent=rows[0];if(intent[0]!==binding.instance_id)throw new UnsupportedCapability();
     if(plan&&'security_context'in plan){
+      await this.#securityOwnerMembers(tx,binding,context,security_projection_data(plan.projection,this.#writer));
       if(!same(intent.slice(3,6),[plan.manifest_sha256,plan.revision_id,plan.generation_id]))throw new IntegrityViolation();
+      const digestRows=await tx.query('SELECT action,payload_sha256 FROM cragkit_qdrant.publication_intents WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4)',
+        [context.scope.tenant_id,context.collection,context.document_id,context.intent_id],2);
+      if(digestRows.length!==1||digestRows[0].length!==2||!same(digestRows[0],[plan.owner_action,plan.owner_payload_sha256]))throw new IntegrityViolation();
       return intent;
     }
+    if(intent[1]!=='stage')throw new UnsupportedCapability();
     if(!['writing','prepared'].includes(String(intent[2])))throw new ProviderUnavailable();
     if(plan&&!same([...intent.slice(3,8),db_count(intent[8])],[plan.manifest_sha256,plan.revision_id,plan.generation_id,plan.expected_active_generation_id,
       plan.expected_authorization_revision,plan.expected_mutation_epoch]))throw new IntegrityViolation();
@@ -785,9 +813,9 @@ export class PostgresQdrantRecovery {
       await this.#dispatchIntent(tx,binding,ctx,plan);
       if(await confirm(tx))return true;
       if('security_context'in plan){
-        const source=security_projection_data(plan.projection,this.#writer),ordinary=source.generations.find(group=>group.revision_id===plan.revision_id&&group.generation_id===plan.generation_id);
-        if(!ordinary)throw new IntegrityViolation();
-        const maximum=await this.#dispatchRows(tx,binding,ctx,new Set(source.point_ids),new Set(ordinary.point_ids));
+        const source=security_projection_data(plan.projection,this.#writer);
+        const ordinary=await this.#securityOwnerMembers(tx,binding,ctx,source);
+        const maximum=await this.#dispatchRows(tx,binding,ctx,new Set(source.point_ids),new Set(ordinary));
         if(maximum+1!==plan.sequence)throw new ProviderUnavailable();
       }
       const claims=await tx.query('SELECT backend_namespace,physical_collection,collection_incarnation,point_id::text,instance_id,revision_id,generation_id FROM cragkit_qdrant.point_claims WHERE (tenant_id,collection,document_id)=($1,$2,$3) AND point_id=ANY($4::uuid[]) LIMIT 9',
@@ -823,7 +851,8 @@ export class PostgresQdrantRecovery {
     },confirm,beforeRetry,custody);
   }
   async #dispatchSecurity(proof:unknown,owner:WriterContext,security:WriterContext,authorize:SecurityAuthorizer,caller:LeaseOptions,budget:SecurityReadbackBudget):Promise<SecurityDispatchCounts>{
-    this.#admit();if(this.#profile!=='security_guard')throw new UnsupportedCapability();require_security_guard_writer(this.#writer);
+    if(owner.intent_id===security.intent_id&&this.#profile!=='purge')throw new InvalidRequest();
+    this.#admit();if(this.#profile!=='security_guard'&&this.#profile!=='purge')throw new UnsupportedCapability();require_security_guard_writer(this.#writer);
     const controller=new AbortController(),relay=()=>controller.abort();caller.signal?.addEventListener('abort',relay,{once:true});
     if(caller.signal?.aborted)controller.abort();const options={deadline:caller.deadline,signal:controller.signal};
     let finish!:()=>void;const done=new Promise<void>(resolve=>{finish=resolve;}),operation={controller,done};this.#active=operation;
@@ -856,12 +885,8 @@ export class PostgresQdrantRecovery {
           // reuses the historical stage's now-conflicting security fences.
           const preflight=async()=>this.#tx(String(binding.instance_id),options,async tx=>{
             this.#blocked((await this.#backend(tx,String(binding.instance_id),'SHARE'))!,binding);await this.#owner(tx,binding,owner);
-            const rows=await tx.query('SELECT instance_id,action,manifest_sha256,revision_id,generation_id FROM cragkit_qdrant.publication_intents WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4)',
-              [owner.scope.tenant_id,owner.collection,owner.document_id,owner.intent_id],2);
-            if(rows.length!==1||rows[0].length!==5)throw new IntegrityViolation();const row=rows[0];
-            if(row[0]!==binding.instance_id||row[1]!=='stage')throw new UnsupportedCapability();
-            const group=source.generations.find(group=>group.manifest_sha256===row[2]&&group.revision_id===row[3]&&group.generation_id===row[4]);
-            if(!group)throw new IntegrityViolation();return this.#dispatchRows(tx,binding,owner,new Set(source.point_ids),new Set(group.point_ids));
+            const ordinary=await this.#securityOwnerMembers(tx,binding,owner,source);
+            return this.#dispatchRows(tx,binding,owner,new Set(source.point_ids),new Set(ordinary));
           },false,undefined,custody());
           await preflight();check();
           const inspectAttempt=session.issue_recovery_attempt(proof,{intent_id:owner.intent_id,owner_token:owner.owner_token,

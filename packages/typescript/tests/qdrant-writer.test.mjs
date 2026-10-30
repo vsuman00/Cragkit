@@ -11,7 +11,7 @@ import net from 'node:net';
 import crypto from 'node:crypto';
 import {EventEmitter} from 'node:events';
 import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
-import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,recovery_dispatch_plan_data,security_projection_data,security_dispatch_plan_data,admit_security_owner,complete_security_replica,validate_guarded_security_projection,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
+import {PostgresQdrantWriter,prepare_stage,projection_data,publication_projection_data,writer_binding,recovery_dispatch_plan_data,security_projection_data,security_dispatch_plan_data,validate_security_owner_intent,admit_security_owner,complete_security_replica,validate_guarded_security_projection,WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL} from '../dist/qdrant-writer.js';
 import {stage_data} from '../dist/qdrant-writer-contract.js';
 import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,
@@ -19,7 +19,7 @@ import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATIO
 import {AUTHORITY_SECURITY_GUARD_HISTORY,AUTHORITY_SECURITY_GUARD_CATALOG_SQL,EXPECTED_SECURITY_GUARD_AUTHORITY_FINGERPRINT,SECURITY_GUARD_OWNER_SQL,publication_schema_profile} from '../dist/qdrant-authority.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {QdrantReconciliationVerifier} from '../dist/qdrant-reconciliation.js';
-import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,SECURITY_GUARD_SQL,validate_security_guarded,settle_security_guarded,dispatch_security_recovery,security_dispatch_authorization,security_guard_binding,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
+import {PostgresQdrantRecovery,RECOVERY_ROLE_SQL,RECOVERY_SECURITY_GUARD_ROLE_SQL,RECOVERY_PURGE_ROLE_SQL,SECURITY_GUARD_SQL,validate_security_guarded,settle_security_guarded,dispatch_security_recovery,security_dispatch_authorization,security_guard_binding,recovery_dispatch_authorization} from '../dist/qdrant-recovery.js';
 import {SecurityReadbackBudget,inspect_security_readback} from '../dist/qdrant-security-readback.js';
 import {QdrantSecurityVerifier,verify_security_ordinary,ordinary_security_receipt_data} from '../dist/qdrant-security-verification.js';
 import {QdrantPublicationVerifier} from '../dist/qdrant-publication-verification.js';
@@ -188,7 +188,7 @@ function setup(){
           return {rows:[]};
         }
         if(sql===WRITER_ATTESTATION_ROLE_SQL||sql===WRITER_PURGE_ROLE_SQL)return {rows:[[state.role&&state.attestationRole!==false]]};
-        if(sql===RECOVERY_ROLE_SQL||sql===RECOVERY_SECURITY_GUARD_ROLE_SQL)return {rows:[[state.recoveryRole!==false]]};
+        if(sql===RECOVERY_ROLE_SQL||sql===RECOVERY_SECURITY_GUARD_ROLE_SQL||sql===RECOVERY_PURGE_ROLE_SQL)return {rows:[[state.recoveryRole!==false]]};
         if(sql===SECURITY_GUARD_SQL){
           state.guardArguments=clone(params);state.guardSeen?.();
           if(state.guardError)throw state.guardError;
@@ -218,7 +218,7 @@ function setup(){
           if(table==='documents')Object.assign(row,{active_generation_id:null,...row});
           if(table==='generations')Object.assign(row,{published:false,ever_published:false,...row});
           if(table==='publication_intents')Object.assign(row,{state:'staged',authority_committed:false,replica_complete:false,purge_complete:false,...row});
-          if(table==='dispatch_journal')Object.assign(row,{state:'reserved',recovery:false,completion_sha256:null,...row});
+          if(table==='dispatch_journal')Object.assign(row,{state:'reserved',recovery:false,completion_sha256:null,created_xid:'2',...row});
           rows.push(row);return {rows:sql.includes('RETURNING document_id')?[[row.document_id]]:[]};
         }
         const select=/^SELECT (.+?) FROM cragkit_qdrant\.(\w+) WHERE /.exec(sql);
@@ -1649,12 +1649,12 @@ async function guardedWriter(){const f=setup();useSecurityGuardProfile(f);await 
 
 // Actual nominal verifier/controller registries with fake SQL, OS and HTTP only.
 // These tests establish local protocol behavior, not PostgreSQL lock custody.
-async function guardedValidationFixture(action='tombstone',ordinary=false){
+async function guardedValidationFixture(action='tombstone',ordinary=false,purge=false){
   const f=await securityProjectionFixture(action),fake=guardedRuntime();
   const supervisor=new ManagedQdrantSupervisor('/owned/qdrant','/private/work','instance-fixture',config);
   let recovery,securityVerifier,reconciliation,supResource;
   try{
-    useSecurityGuardProfile(f);await f.writer.initialize(opts());
+    if(purge)purgeWriterProfile(f);else useSecurityGuardProfile(f);await f.writer.initialize(opts());
     await supervisor.initialize({...opts(),provision:guardedProvision});
     const proof=ordinary?undefined:await supervisor.recover({recovery_id:'guarded-recovery',old_epoch:1,new_epoch:2},opts());
     const identity=supervisor.control_binding();
@@ -1692,8 +1692,8 @@ function seedSecurityJournals(f){
   return rows;
 }
 const settleGuarded=(f,lease=opts())=>settle_security_guarded(f.recovery,f.securityVerifier,f.proof,f.owner,f.securityContext,lease);
-async function ordinarySecurityFixture(){
-  const f=await guardedValidationFixture('update_authorization',true);seedSecurityJournals(f);
+async function ordinarySecurityFixture(purge=false){
+  const f=await guardedValidationFixture('update_authorization',true,purge);seedSecurityJournals(f);
   for(const row of f.state.tables.dispatch_journal)Object.assign(row,{state:'settled',completion_sha256:'e'.repeat(64)});
   f.securityContext={...f.securityContext,owner_token:'00000000-0000-4000-8000-000000000002'};
   const source=security_projection_data(await f.writer.project_security(f.securityContext,opts()),f.writer);
@@ -1707,6 +1707,18 @@ async function ordinarySecurityFixture(){
   };
   return {...f,source};
 }
+for(const purge of [false,true])test(`profile${purge?5:4} ownerless security admission preserves profile boundary`,guardedLocal,async()=>{
+  const f=await ordinarySecurityFixture(purge);try{
+    f.state.tables.document_owners=[];
+    if(!purge){await assert.rejects(admit_security_owner(f.writer,f.securityContext,opts()),ProviderUnavailable);return;}
+    const lease=opts(),{attempt,receipt}=await f.ordinaryReceipt(lease);
+    await publication_finalization(f.supervisor,attempt,()=>complete_security_replica(f.writer,f.securityVerifier,receipt,lease),lease);
+    const current=f.state.tables.publication_intents.find(row=>row.intent_id===f.securityContext.intent_id);
+    assert.equal(current.state,'complete');assert.equal(current.replica_complete,true);
+    f.state.tables.document_owners=[];
+    await assert.rejects(admit_security_owner(f.writer,f.securityContext,opts()),ProviderUnavailable);
+  }finally{await f.close();}
+});
 test('open security owner handoff changes only the exact owner and writing state, with idempotent retry',guardedLocal,async()=>{
   const f=await ordinarySecurityFixture();try{
     const before=clone(f.state.tables),start=f.state.queries.length,result=await admit_security_owner(f.writer,f.securityContext,opts());
@@ -1790,6 +1802,73 @@ async function securityDispatchFixture(){
   return {...f,source,physical,wire};
 }
 const dispatchSecurity=(f,authorize=async()=>true,lease=opts(),budget)=>dispatch_security_recovery(f.recovery,f.proof,f.owner,f.securityContext,authorize,lease,budget);
+async function securityOwnerFixture(prior=false,action='update_authorization'){
+  const f=await guardedValidationFixture(action,false,true);seedSecurityJournals(f);
+  const current=f.state.tables.publication_intents.find(row=>row.intent_id===f.securityContext.intent_id);
+  let owner=current;
+  if(prior){
+    owner=clone(current);owner.intent_id='prior-security';
+    const tuple=JSON.parse(owner.payload_bytes.toString('utf8'));tuple[2]=owner.intent_id;
+    owner.payload_bytes=Buffer.from(JSON.stringify(tuple));owner.payload_sha256=digest(owner.payload_bytes);
+    f.state.tables.publication_intents.push(owner);
+    // A later committed mutation makes the old payload historical metadata.
+    const tupleCurrent=JSON.parse(current.payload_bytes.toString('utf8'));tupleCurrent[6]='auth-2';tupleCurrent[7]='2';tupleCurrent[8][0]='auth-3';
+    current.expected_authorization_revision='auth-2';current.expected_mutation_epoch=2;
+    current.payload_bytes=Buffer.from(JSON.stringify(tupleCurrent));current.payload_sha256=digest(current.payload_bytes);
+    Object.assign(f.state.tables.documents[0],{authorization_revision:'auth-3',mutation_epoch:3});
+    f.securityContext={...f.securityContext,scope:{...f.securityContext.scope,authorization_revision:'auth-3'}};
+  }
+  f.owner={...f.securityContext,intent_id:owner.intent_id};
+  Object.assign(f.state.tables.document_owners[0],{intent_id:f.owner.intent_id});
+  for(const table of ['dispatch_journal','dispatch_points'])for(const row of f.state.tables[table])row.intent_id=f.owner.intent_id;
+  for(const row of f.state.tables.dispatch_journal)row.recovery=true;
+  const source=security_projection_data(await f.writer.project_security(f.securityContext,opts()),f.writer);
+  const physical=f.fake.state.collections.get(config.physical_collection).points;
+  for(const point of action==='tombstone'?[]:source.points)physical.set(point.point_id,{id:point.point_id,payload:clone(point.payload),
+    vector:{dense:[...point.dense.values],sparse:{indices:[...point.sparse.indices],values:[...point.sparse.values]}}});
+  return {...f,source,physical,ownerIntent:owner};
+}
+for(const prior of [false,true])test(`profile5 ${prior?'prior':'current'} committed security owner replays and settles without stage metadata`,guardedLocal,async()=>{
+  const f=await securityOwnerFixture(prior);try{
+    f.physical.delete(f.source.point_ids[0]);const before=clone(f.state.tables.documents);
+    assert.deepEqual(await dispatchSecurity(f),{batches:1,points:1});
+    assert.deepEqual(await settleGuarded(f),{settled_count:3});assert.deepEqual(f.state.tables.documents,before);
+    assert.equal(f.state.tables.dispatch_journal.every(row=>row.state==='settled'),true);
+  }finally{await f.close();}
+});
+test('profile5 security owner refuses unexpected ordinary journal before physical writes',guardedLocal,async()=>{
+  const f=await securityOwnerFixture(true);try{
+    f.state.tables.dispatch_journal[0].recovery=false;
+    await assert.rejects(dispatchSecurity(f),IntegrityViolation);assert.equal(f.fake.state.pointPuts??0,0);
+    await assert.rejects(settleGuarded(f),IntegrityViolation);
+  }finally{await f.close();}
+});
+for(const fault of ['uncommitted','digest','target','future','instance'])test(`profile5 security owner rejects ${fault} metadata before physical writes`,guardedLocal,async()=>{
+  const f=await securityOwnerFixture(true);try{
+    f.physical.delete(f.source.point_ids[0]);
+    if(fault==='uncommitted')f.ownerIntent.authority_committed=false;
+    if(fault==='digest')f.ownerIntent.payload_sha256='f'.repeat(64);
+    if(fault==='target')f.ownerIntent.payload_bytes=Buffer.from('[]');
+    if(fault==='future')f.ownerIntent.expected_mutation_epoch=4;
+    if(fault==='instance')f.ownerIntent.instance_id='foreign-instance';
+    await assert.rejects(dispatchSecurity(f));assert.equal(f.fake.state.pointPuts??0,0);
+  }finally{await f.close();}
+});
+test('profile5 tombstone current owner permits guarded settlement',guardedLocal,async()=>{
+  const f=await securityOwnerFixture(false,'tombstone');try{assert.deepEqual(await settleGuarded(f),{settled_count:3});}
+  finally{await f.close();}
+});
+test('committed owner metadata distinguishes prior history from future and contradictory current authorization',async()=>{
+  const f=await securityProjectionFixture();try{
+    const source=security_projection_data(await f.writer.project_security(f.securityContext,opts()),f.writer);
+    const intent=f.state.tables.publication_intents.find(row=>row.intent_id===f.securityContext.intent_id);
+    validate_security_owner_intent(f.securityContext,intent,source,'instance-fixture');
+    validate_security_owner_intent(f.securityContext,intent,{...source,mutation_epoch:source.mutation_epoch+1,authorization_revision:'later'},'instance-fixture');
+    assert.throws(()=>validate_security_owner_intent(f.securityContext,intent,{...source,mutation_epoch:source.mutation_epoch-1},'instance-fixture'),UnauthorizedScope);
+    assert.throws(()=>validate_security_owner_intent(f.securityContext,intent,{...source,authorization_revision:'contradiction'},'instance-fixture'),UnauthorizedScope);
+    assert.throws(()=>validate_security_owner_intent({...f.securityContext,intent_id:'fabricated'},intent,source,'instance-fixture'),IntegrityViolation);
+  }finally{await f.writer.close();await f.resource.close();}
+});
 test('current-security dispatcher replays only stale and missing cross-generation points under denied stage owner',guardedLocal,async()=>{
   const f=await securityDispatchFixture();try{
     const missing=f.source.points[0],stale=f.source.points.find(point=>point.payload.generation_id!==missing.payload.generation_id);
@@ -2272,7 +2351,7 @@ test('strict lease options can be parsed again without inventing an owner field'
 });
 
 function purgeWriterProfile(f){f.state.history=AUTHORITY_PURGE_HISTORY.map(row=>[...row]);f.state.fingerprint=EXPECTED_PURGE_CATALOG_FINGERPRINT;}
-test('writer5 admits exact privileges before business scope and retains security gate',async()=>{
+test('writer5 admits exact privileges before business scope and validates security semantics',async()=>{
  const f=setup();purgeWriterProfile(f);
  try{
   await f.writer.initialize(opts());const start=f.state.queries.length;await f.writer.inspect(context,opts());
@@ -2280,8 +2359,8 @@ test('writer5 admits exact privileges before business scope and retains security
   for(const sql of [WRITER_PURGE_ROLE_SQL,AUTHORITY_PURGE_CATALOG_SQL,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL]){
    const index=queries.findIndex(q=>q.text===sql);assert(index>=0&&index<scopeAt);
   }
-  const boundary=f.state.queries.length;await assert.rejects(admit_security_owner(f.writer,context,opts()),UnsupportedCapability);
-  assert.equal(f.state.queries.length,boundary);
+  const boundary=f.state.queries.length;await assert.rejects(admit_security_owner(f.writer,context,opts()));
+  assert(f.state.queries.length>boundary);
  }finally{await f.writer.close();await f.resource.close();}
 });
 for(const drift of ['capability','role','checksum','sixth','downgrade'])test(`writer5 ${drift} rejects before business scope`,async()=>{

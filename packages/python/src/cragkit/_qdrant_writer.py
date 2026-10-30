@@ -46,6 +46,49 @@ _WRITER_ORIGINS: WeakKeyDictionary[
 ] = WeakKeyDictionary()
 
 
+_SECURITY_OWNER_COLUMNS = ('instance_id,action,payload_bytes,payload_sha256,expected_authorization_revision,'
+    'expected_mutation_epoch,authority_committed,manifest_bytes,manifest_sha256,revision_id,generation_id,'
+    'expected_active_generation_id')
+
+
+def security_owner_intent(ctx: WriterContext, row: tuple[Any, ...], instance: str,
+                          current: Mapping[str, Any]) -> None:
+    """Validate retained committed owner metadata without reading source bodies."""
+    if len(row) != 12:
+        raise IntegrityViolation()
+    bound, action, raw, digest, revision, epoch, committed = row[:7]
+    if action not in ('update_authorization','tombstone'):
+        raise UnsupportedCapability()
+    if (bound != instance or any(item is not None for item in row[7:])
+            or type(raw) is not bytes or not 1 <= len(raw) <= 1048576
+            or hashlib.sha256(raw).hexdigest() != digest or type(epoch) is not int
+            or type(committed) is not bool):
+        raise IntegrityViolation()
+    try:
+        payload = json.loads(raw.decode('utf-8', errors='strict'))
+        if (type(payload) is not list or len(payload) != 9 or type(payload[8]) is not list
+                or len(payload[8]) != 7 or payload[8][6] not in ('true', 'false')):
+            raise ValueError()
+        desired = payload[8]
+        record = dict(action=action,intent_id=payload[2],tenant_id=payload[3],collection=payload[4],
+            document_id=payload[5],expected_authorization_revision=payload[6],expected_mutation_epoch=int(payload[7]),
+            authorization=dict(authorization_revision=desired[0],principal_ids=desired[1],grant_ids=desired[2],
+                language=desired[3],kind=desired[4],tag=desired[5],tombstoned=desired[6]=='true'))
+        encoded = encode_security_intent(record)
+        security = _parse(_Security,record)
+        if (encoded.encoded_bytes != raw or encoded.sha256 != digest
+                or (security.tenant_id,security.collection,security.document_id,security.intent_id) != (*_doc(ctx),ctx.intent_id)
+                or (security.expected_authorization_revision,security.expected_mutation_epoch) != (revision,epoch)):
+            raise ValueError()
+        current_authorization = _parse(_Security,{**record,'authorization':{key:current[key] for key in
+            ('authorization_revision','principal_ids','grant_ids','language','kind','tag','tombstoned')}}).authorization
+    except (ValueError,TypeError,IndexError,KeyError,UnicodeError,InvalidRequest):
+        raise IntegrityViolation() from None
+    if (not committed or epoch + 1 > current['mutation_epoch']
+            or epoch + 1 == current['mutation_epoch'] and security.authorization != current_authorization):
+        raise UnauthorizedScope()
+
+
 class SecurityProjection:
     __slots__ = ('__weakref__',)
 
@@ -1656,7 +1699,7 @@ class PostgresQdrantWriter:
             if task.cancelling():raise asyncio.CancelledError()
             if self._closed:raise ProviderUnavailable()
         check()
-        if self._schema_profile!=4:raise UnsupportedCapability()
+        if self._schema_profile not in (4,5):raise UnsupportedCapability()
         async def project(connection: SessionConnection) -> SecurityProjection:
             document=await self._document(connection,ctx)
             data=await self._security_graph(connection,ctx,document)
@@ -1682,7 +1725,7 @@ class PostgresQdrantWriter:
         def check() -> Mapping[str, Any]:
             return security_guard_binding(guard,self,projection,deadline=deadline)
         bound = check()
-        if self._schema_profile != 4:
+        if self._schema_profile not in (4,5):
             raise UnsupportedCapability()
         async def validate(connection: SessionConnection) -> None:
             check()
@@ -1694,6 +1737,19 @@ class PostgresQdrantWriter:
                 raise UnauthorizedScope()
             fresh = await self._security_graph(connection,original['context'],document)
             check()
+            if self._schema_profile==5:
+                owner=bound['owner_context']
+                try:
+                    await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(owner.intent_id,))
+                    rows=await self._query(connection,'SELECT '+_SECURITY_OWNER_COLUMNS+' FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_key(owner))
+                    if len(rows)!=1 or len(rows[0])!=12:raise IntegrityViolation()
+                    if rows[0][1]=='stage':
+                        if rows[0][0]!=self.instance_id or not any((group['manifest_sha256'],group['revision_id'],group['generation_id'])==rows[0][8:11] for group in fresh['generations']):
+                            raise IntegrityViolation()
+                    else:security_owner_intent(owner,rows[0],self.instance_id,fresh)
+                finally:
+                    await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(original['context'].intent_id,))
+                check()
             if any(original[key] != fresh[key] for key in original if key != 'points'):
                 raise UnauthorizedScope()
         await self._run(original['context'],deadline,validate,guarded_check=check)
@@ -1841,7 +1897,7 @@ class PostgresQdrantWriter:
             return security_dispatch_authorization(authorization,self,deadline=deadline)
         auth=check();owner=auth['context'];current=auth['security_context']
         source=security_projection_data(auth['projection'],self)
-        if self._schema_profile!=4 or source['tombstoned']:
+        if self._schema_profile not in (4,5) or source['tombstoned']:
             raise UnsupportedCapability()
         ids=tuple(sorted(sequence(point_ids,8)))
         if len(set(ids))!=len(ids) or any(type(item) is not str or item not in source['point_ids'] for item in ids):
@@ -1861,12 +1917,26 @@ class PostgresQdrantWriter:
                 raise UnsupportedCapability()
             if any(source[key]!=fresh[key] for key in source if key!='points'):
                 raise UnauthorizedScope()
-            stages=await self._query(connection,'SELECT action,manifest_sha256,revision_id,generation_id,instance_id FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_key(owner))
-            if len(stages)!=1 or len(stages[0])!=5 or stages[0][0]!='stage':
+            stages=await self._query(connection,'SELECT action,manifest_sha256,revision_id,generation_id,instance_id,payload_sha256 FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_key(owner))
+            if len(stages)!=1 or len(stages[0])!=6:
                 raise IntegrityViolation()
             stage=stages[0]
-            if stage[4]!=self.instance_id or not any((group['manifest_sha256'],group['revision_id'],group['generation_id'])==stage[1:4] for group in fresh['generations']):
-                raise IntegrityViolation()
+            owner_facts: dict[str, Any] = dict(owner_action=stage[0],owner_payload_sha256=stage[5])
+            if stage[0]=='stage':
+                if (type(stage[5]) is not str or re.fullmatch('[0-9a-f]{64}',stage[5]) is None
+                        or stage[4]!=self.instance_id) or not any((group['manifest_sha256'],group['revision_id'],group['generation_id'])==stage[1:4] for group in fresh['generations']):
+                    raise IntegrityViolation()
+            else:
+                if self._schema_profile!=5:raise UnsupportedCapability()
+                try:
+                    await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(owner.intent_id,))
+                    rows=await self._query(connection,'SELECT '+_SECURITY_OWNER_COLUMNS+' FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_key(owner))
+                    if len(rows)!=1:raise IntegrityViolation()
+                    security_owner_intent(owner,rows[0],self.instance_id,fresh)
+                    owner_facts=dict(owner_action=rows[0][1],owner_payload_sha256=rows[0][3])
+                finally:
+                    await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(current.intent_id,))
+                stage=(stage[0],None,None,None,self.instance_id,rows[0][3])
             available={point.point_id:point for point in fresh['points']}
             points=[]
             for identity in ids:
@@ -1874,7 +1944,7 @@ class PostgresQdrantWriter:
                 if point.sparse is not None:vector['sparse']={'indices':list(point.sparse.indices),'values':list(point.sparse.values)}
                 points.append(dict(id=identity,vector=vector,payload=point.payload.model_dump(mode='json',exclude_none=True)))
             body=_complete_point_request(points)
-            return MappingProxyType({**dict(auth),'point_ids':ids,'request_bytes':body,'request_sha256':hashlib.sha256(body).hexdigest(),
+            return MappingProxyType({**dict(auth),**owner_facts,'point_ids':ids,'request_bytes':body,'request_sha256':hashlib.sha256(body).hexdigest(),
                 'manifest_sha256':stage[1],'revision_id':stage[2],'generation_id':stage[3],
                 **{key:fresh[key] for key in ('intent_sha256','inventory_sha256','authorization_revision','mutation_epoch','active_generation_id')}})
         result=await self._run(current,deadline,project,guarded_check=check)
@@ -2215,7 +2285,7 @@ class PostgresQdrantWriter:
 
     async def _admit_security_owner(self, value: object, *, deadline: float) -> Mapping[str, Any]:
         ctx=context(value)
-        if self._schema_profile != 4:raise UnsupportedCapability()
+        if self._schema_profile not in (4,5):raise UnsupportedCapability()
         task=asyncio.current_task()
         def check() -> None:
             writer_binding(self);deadline_value(deadline)
@@ -2225,6 +2295,7 @@ class PostgresQdrantWriter:
         async def admit(connection: SessionConnection) -> Mapping[str,Any]:
             backend=await self._manager_backend(connection,lock=True)
             prior_owner=await self._manager_owner(connection,ctx,lock=True)
+            if prior_owner is None and self._schema_profile!=5:raise ProviderUnavailable()
             if prior_owner is not None and prior_owner['instance_id']!=self.instance_id:raise IntegrityViolation()
             document=await self._document(connection,ctx)
             if prior_owner is None and await self._manager_owner(connection,ctx) is not None:raise ProviderUnavailable()
@@ -2270,7 +2341,7 @@ class PostgresQdrantWriter:
         supervisor=security_verifier_supervisor(verifier,self)
         data=ordinary_security_receipt_data(receipt,verifier,deadline=deadline)
         ctx=data['context'];original=security_projection_data(data['projection'],self)
-        if self._schema_profile!=4:raise UnsupportedCapability()
+        if self._schema_profile not in (4,5):raise UnsupportedCapability()
         intended: dict[str,Any]={}
         def check() -> None:
             require_publication_finalization(supervisor,deadline=deadline)

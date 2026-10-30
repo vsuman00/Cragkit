@@ -20,6 +20,10 @@ def test_security_receipt_fixture_uses_two_distinct_complete_graphs_and_monotoni
     assert len(ids)==len(set(ids))==4
     assert len({stage['manifest']['generation_id'] for stage in stages})==2
     for name in ('security','tombstone'):encode_security_intent(value[name])
+    prepare_stage(value['ownerless_stage'])
+    encode_security_intent(value['ownerless_security'])
+    assert value['ownerless_stage']['manifest']['document_id']!=value['stage']['manifest']['document_id']
+    assert value['ownerless_security']['document_id']==value['ownerless_stage']['manifest']['document_id']
     assert value['security']['authorization']['authorization_revision']=='auth-2'
     assert not value['security']['authorization']['tombstoned']
     assert value['tombstone']['authorization']['authorization_revision']=='auth-3'
@@ -35,6 +39,17 @@ def test_native_receipt_protocol_never_claims_settlement_or_convergence():
         assert validate_result(value,runtime)==value
         for change in (dict(value,proof_scope='settled'),dict(value,runtime='other'),dict(value,checks=[]),dict(value,private='data'),dict(value,semantic_witness_sha256='PRIVATE')):
             with pytest.raises(RuntimeError):validate_result(change,runtime)
+
+
+def test_repetition_evidence_is_exclusive_and_cannot_be_receipt_or_purge_evidence():
+    from qdrant_security_verification_cases import REPETITION_CHECKS,GUARD_CHECKS
+    value=dict(runtime='python',checks=list(REPETITION_CHECKS),proof_scope='native_security_repetition_only',
+        semantic_witness_sha256='a'*64,guard_admission=dict(checks=list(GUARD_CHECKS),denied_backend_queries=0))
+    assert validate_result(value,'python',security_guard=True,security_repetition=True)==value
+    for options in ({},{'security_repetition':True},{'security_guard':True,'security_repetition':True,'security_completion':True}):
+        with pytest.raises(RuntimeError):validate_result(value,'python',**options)
+    for changed in (dict(value,proof_scope='physical_purge'),dict(value,checks=[]),dict(value,private='text')):
+        with pytest.raises(RuntimeError):validate_result(changed,'python',security_guard=True,security_repetition=True)
 
 
 def test_native_receipt_failure_details_are_closed_and_copied():

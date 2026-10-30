@@ -113,15 +113,17 @@ async def node_partial_repair_cases(value):
             raise CleanupFailure(failures, primary=primary, stage='recovery') from None
 
 
-async def native_role_checks(database):
-    from cragkit._qdrant_writer import _WRITER_ATTESTATION_ROLE_SQL
+async def native_role_checks(database, *, profile=3):
+    from cragkit._qdrant_writer import _WRITER_ATTESTATION_ROLE_SQL, _WRITER_PURGE_ROLE_SQL
     from qdrant_publication_native import writer_role_checks, LOGIN_ROLES
     from psycopg import sql
     environment = {key: value for key,value in os.environ.items()
         if key not in ('NODE_OPTIONS','NODE_USE_ENV_PROXY') and not key.startswith('PG')}
+    if profile not in (3, 5):raise ValueError('native_writer_role_profile')
+    export = 'WRITER_PURGE_ROLE_SQL' if profile == 5 else 'WRITER_ATTESTATION_ROLE_SQL'
     process = await asyncio.create_subprocess_exec('node', '--input-type=module', '-e',
-        "import {WRITER_ATTESTATION_ROLE_SQL} from './packages/typescript/dist/qdrant-writer.js';"
-        "process.stdout.write(JSON.stringify(WRITER_ATTESTATION_ROLE_SQL));",
+        "import {"+export+"} from './packages/typescript/dist/qdrant-writer.js';"
+        "process.stdout.write(JSON.stringify("+export+"));",
         cwd=ROOT,env=environment,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
     try:
         output,errors=await asyncio.wait_for(process.communicate(),10)
@@ -134,7 +136,7 @@ async def native_role_checks(database):
         if process.returncode is None:
             process.kill()
             await asyncio.wait_for(process.wait(),3)
-    queries=(_WRITER_ATTESTATION_ROLE_SQL,node_query)
+    queries=(_WRITER_PURGE_ROLE_SQL if profile == 5 else _WRITER_ATTESTATION_ROLE_SQL,node_query)
     checks=await writer_role_checks(database,queries)
     async with database.connection('writer') as connection:
         for role in (LOGIN_ROLES['writer'],'cragkit_qdrant_writer'):

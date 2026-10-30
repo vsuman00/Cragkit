@@ -698,6 +698,27 @@ class PostgresQdrantRecovery:
                     if confirmation is not None and self._security_confirmation is confirmation:
                         self._security_confirmation=None
 
+    async def _security_owner(self, connection: SessionConnection, target: WriterContext,
+                              physical: Mapping[str, Any], projection: Mapping[str, Any]) -> tuple[Any, ...]:
+        if self._schema_profile!=5:raise UnsupportedCapability()
+        rows=await self._query(connection,'SELECT instance_id,action,payload_sha256,expected_mutation_epoch,'
+            'authority_committed,manifest_sha256,revision_id,generation_id,expected_active_generation_id,'
+            'state,replica_complete,purge_complete,expected_authorization_revision '
+            'FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_intent(target))
+        if len(rows)!=1 or len(rows[0])!=13:raise IntegrityViolation()
+        row=rows[0]
+        if row[1] not in ('update_authorization','tombstone'):raise UnsupportedCapability()
+        if (row[0]!=physical['instance_id'] or type(row[2]) is not str or re.fullmatch('[0-9a-f]{64}',row[2]) is None
+                or type(row[3]) is not int or row[3]<0 or type(row[4]) is not bool
+                or any(value is not None for value in row[5:9])
+                or row[9] not in ('authority_committed','writing','complete')
+                or type(row[10]) is not bool or row[10]!=(row[9]=='complete') or row[11] is not False
+                or type(row[12]) is not str or not row[12]):raise IntegrityViolation()
+        if not row[4] or row[3]+1>projection['mutation_epoch']:raise UnauthorizedScope()
+        if target.intent_id==projection['context'].intent_id and row[2]!=projection['intent_sha256']:
+            raise IntegrityViolation()
+        return row
+
     async def _settle_security_rows(self, connection: SessionConnection, target: WriterContext,
                                     physical: Mapping[str, Any], projection: Mapping[str, Any],
                                     completion: str) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
@@ -706,14 +727,14 @@ class PostgresQdrantRecovery:
         if len(intent)!=1 or len(intent[0])!=5:
             raise IntegrityViolation()
         action,instance,manifest,revision,generation=intent[0]
-        if any(type(value) is not str for value in intent[0]):
-            raise IntegrityViolation()
-        if action!='stage':
-            raise UnsupportedCapability()
-        groups=[group for group in projection['generations'] if
-                (group['revision_id'],group['generation_id'],group['manifest_sha256'])==(revision,generation,manifest)]
-        if instance!=physical['instance_id'] or len(groups)!=1:
-            raise IntegrityViolation()
+        if action=='stage':
+            if any(type(value) is not str for value in intent[0]):raise IntegrityViolation()
+            groups=[group for group in projection['generations'] if
+                    (group['revision_id'],group['generation_id'],group['manifest_sha256'])==(revision,generation,manifest)]
+            if instance!=physical['instance_id'] or len(groups)!=1:raise IntegrityViolation()
+        else:
+            await self._security_owner(connection,target,physical,projection)
+            groups=[dict(point_ids=projection['point_ids'])]
         foreign=await self._query(connection,'SELECT 1 FROM cragkit_qdrant.dispatch_journal WHERE '+_DOC+
             " AND intent_id<>%s AND state<>'settled' LIMIT 1",_intent(target))
         if foreign:
@@ -747,6 +768,8 @@ class PostgresQdrantRecovery:
                     or state not in ('reserved','dispatched','unknown','settled')):
                 raise IntegrityViolation()
             if operation!='complete_point_upsert' or type(operation) is not str:
+                raise UnsupportedCapability()
+            if action!='stage' and not recovery:
                 raise UnsupportedCapability()
             if state=='settled':
                 if type(digest) is not str or re.fullmatch('[0-9a-f]{64}',digest) is None:
@@ -818,7 +841,7 @@ class PostgresQdrantRecovery:
         deadline = deadline_value(deadline)
         owner,security = context(owner_value),context(security_value)
         if (owner.scope != security.scope or (owner.collection,owner.document_id) != (security.collection,security.document_id)
-                or owner.intent_id == security.intent_id):
+                or owner.intent_id == security.intent_id and self._schema_profile != 5):
             raise InvalidRequest()
         security_verifier_binding(verifier,self._writer,self.supervisor)
         assert isinstance(verifier,QdrantSecurityVerifier)
@@ -827,9 +850,9 @@ class PostgresQdrantRecovery:
             raise ProviderUnavailable()
         if not self._ready:
             raise IndexNotReady()
-        if self._schema_profile != 4:
+        if self._schema_profile not in (4,5):
             raise UnsupportedCapability()
-        if self._writer._schema_profile != 4:
+        if self._writer._schema_profile not in (4,5):
             raise UnsupportedCapability()
         scope: dict[str, Any] = dict(task=None,cancelled=False,poisoned=False)
         self._guard_scope = scope
@@ -1306,6 +1329,7 @@ class PostgresQdrantRecovery:
                             or journal[3]!=target.owner_token or type(journal[4]) is not int
                             or not 1<=journal[4]<=physical['new_epoch'] or journal[1]!=physical['instance_id']
                             or journal[6]!='complete_point_upsert' or type(journal[7]) is not bool
+                            or row[0]!='stage' and not journal[7]
                             or type(journal[10]) is not str or len(journal[10])!=64
                             or any(character not in '0123456789abcdef' for character in journal[10])
                             or (journal[8]=='settled') != (journal[9] is not None)):
@@ -1499,12 +1523,12 @@ class PostgresQdrantRecovery:
         deadline=deadline_value(deadline);owner,current=context(owner_value),context(security_value)
         allowance=security_readback_budget(budget)
         if (owner.scope!=current.scope or (owner.collection,owner.document_id)!=(current.collection,current.document_id)
-                or owner.intent_id==current.intent_id or not callable(authorize)):
+                or owner.intent_id==current.intent_id and self._schema_profile!=5 or not callable(authorize)):
             raise InvalidRequest()
         if self._closed or self._active is not None or self._guard_scope is not None:
             raise ProviderUnavailable()
         if not self._ready:raise IndexNotReady()
-        if self._schema_profile!=4 or self._writer._schema_profile!=4:raise UnsupportedCapability()
+        if self._schema_profile not in (4,5) or self._writer._schema_profile not in (4,5):raise UnsupportedCapability()
         scope: dict[str, Any]=dict(task=None,cancelled=False,poisoned=False)
         self._guard_scope=scope
         async def work() -> Mapping[str, Any]:
@@ -1580,16 +1604,24 @@ class PostgresQdrantRecovery:
                     raise ProviderUnavailable()
                 rows = await self._query(connection,
                     'SELECT action,state,manifest_sha256,revision_id,generation_id,expected_authorization_revision,'
-                    'expected_mutation_epoch,expected_active_generation_id,instance_id '
+                    'expected_mutation_epoch,expected_active_generation_id,instance_id,payload_sha256 '
                     'FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_intent(target))
-                if len(rows) != 1 or len(rows[0]) != 9:
+                if len(rows) != 1 or len(rows[0]) != 10:
                     raise IntegrityViolation()
                 row = rows[0]
-                if row[0] != 'stage':
-                    raise UnsupportedCapability()
-                if row[8]!=physical['instance_id'] or not any((group['manifest_sha256'],group['revision_id'],group['generation_id'])==row[2:5] for group in source['generations']):
+                if type(row[9]) is not str or re.fullmatch('[0-9a-f]{64}',row[9]) is None:
                     raise IntegrityViolation()
+                if row[0]=='stage':
+                    if row[8]!=physical['instance_id'] or not any((group['manifest_sha256'],group['revision_id'],group['generation_id'])==row[2:5] for group in source['generations']):
+                        raise IntegrityViolation()
+                else:
+                    owner_row=await self._security_owner(connection,target,physical,source)
+                    if plan is not None and (plan.get('owner_action'),plan.get('owner_payload_sha256'))!=(owner_row[1],owner_row[2]):
+                        raise IntegrityViolation()
+                    row=(row[0],row[1],None,None,None,*row[5:])
                 if plan is not None and (plan['manifest_sha256'],plan['revision_id'],plan['generation_id'])!=row[2:5]:
+                    raise IntegrityViolation()
+                if plan is not None and (plan.get('owner_action'),plan.get('owner_payload_sha256'))!=(row[0],row[9]):
                     raise IntegrityViolation()
                 security_rows=await self._query(connection,'SELECT action,payload_sha256,authority_committed,instance_id FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_intent(current))
                 if security_rows!=[('update_authorization',source['intent_sha256'],True,physical['instance_id'])]:
@@ -1636,7 +1668,7 @@ class PostgresQdrantRecovery:
                     sequences.add(journal[2]);names.add(journal[0])
                 grouped:dict[str,set[str]]={name:set() for name in names}
                 journal_by_name={item[0]:item for item in journals}
-                stage_ids=next(group['point_ids'] for group in source['generations'] if (group['manifest_sha256'],group['revision_id'],group['generation_id'])==row[2:5])
+                stage_ids=(next(group['point_ids'] for group in source['generations'] if (group['manifest_sha256'],group['revision_id'],group['generation_id'])==row[2:5]) if row[0]=='stage' else source['point_ids'])
                 for membership in memberships:
                     if (len(membership)!=5 or membership[0] not in grouped or type(membership[4]) is not str
                             or membership[4] not in ids or membership[4] in grouped[membership[0]]

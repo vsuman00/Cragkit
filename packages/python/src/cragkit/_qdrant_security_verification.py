@@ -196,7 +196,7 @@ class QdrantSecurityVerifier:
         writer,supervisor=_origin(self)
         security=context(value);deadline=deadline_value(deadline);allowance=security_readback_budget(budget)
         if self._closed or self._active is not None:raise ProviderUnavailable()
-        if writer._schema_profile!=4:raise UnsupportedCapability()
+        if writer._schema_profile not in (4,5):raise UnsupportedCapability()
         binding=MappingProxyType(dict(supervisor.attempt_binding(attempt)))
         if ('recovery_id' in binding or binding['intent_id']!=security.intent_id or binding['owner_token']!=security.owner_token
                 or binding['instance_id']!=writer_binding(writer)['instance_id']):raise InvalidRequest()

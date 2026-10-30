@@ -55,6 +55,27 @@ const guardedReaders=new WeakMap<object,(guard:unknown,projection:unknown,option
 const guardedAdmission=new WeakMap<object,()=>void>();
 const securityRecoveryReaders=new WeakMap<object,(context:WriterContext,options:LeaseOptions,projection?:unknown)=>Promise<SecurityProjection>>();
 type SecurityOwner=Readonly<{owner_token:string;backend_epoch:number}>;
+/** Pure validation of committed metadata; this does not issue an owner capability. */
+export function validate_security_owner_intent(context:WriterContext,intent:Data,source:SecurityProjectionData,instance:string):void{
+  if(!['update_authorization','tombstone'].includes(String(intent.action)))throw new UnsupportedCapability();
+  if(intent.authority_committed!==true)throw new UnauthorizedScope();
+  if(intent.instance_id!==instance
+    ||!['authority_committed','writing','complete'].includes(String(intent.state))
+    ||intent.replica_complete!==(intent.state==='complete')||intent.purge_complete!==false
+    ||['manifest_bytes','manifest_sha256','revision_id','generation_id','expected_active_generation_id'].some(key=>intent[key]!==null))throw new IntegrityViolation();
+  try{
+    const bytes=db_bytes(intent.payload_bytes,1048576),tuple=native_array(JSON.parse(new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes)),9,9);
+    const desired=native_array(tuple[8],7,7),epoch=db_count(intent.expected_mutation_epoch)+1;
+    const canonical=parseOperation({action:intent.action,intent_id:context.intent_id,tenant_id:context.scope.tenant_id,
+      collection:context.collection,document_id:context.document_id,expected_authorization_revision:intent.expected_authorization_revision,
+      expected_mutation_epoch:db_count(intent.expected_mutation_epoch),authorization:{authorization_revision:desired[0],
+        principal_ids:desired[1],grant_ids:desired[2],language:desired[3],kind:desired[4],tag:desired[5],tombstoned:desired[6]==='true'}},context.scope,context.owner_token);
+    if(canonical.encoded.sha256!==intent.payload_sha256||!Buffer.from(canonical.encoded.encoded_bytes).equals(bytes))throw new IntegrityViolation();
+    if(epoch>source.mutation_epoch)throw new UnauthorizedScope();
+    if(epoch===source.mutation_epoch&&!same(desired,[source.authorization_revision,source.principal_ids,source.grant_ids,
+      source.language,source.kind,source.tag,source.tombstoned?'true':'false']))throw new UnauthorizedScope();
+  }catch(error){if(error instanceof InvalidRequest||error instanceof SyntaxError||error instanceof TypeError)throw new IntegrityViolation();throw error;}
+}
 const securityOwnerAdmissions=new WeakMap<object,(context:WriterContext,options:LeaseOptions)=>Promise<SecurityOwner>>();
 const securityReplicaCompletions=new WeakMap<object,(verifier:QdrantSecurityVerifier,receipt:unknown,options:LeaseOptions)=>Promise<IntentView>>();
 export async function admit_security_owner(writer:PostgresQdrantWriter,rawContext:unknown,rawOptions:unknown):Promise<SecurityOwner>{
@@ -123,7 +144,9 @@ export type RecoveryDispatchPlanData=Readonly<{context:WriterContext;physical_bi
   point_ids:readonly string[];request_bytes:readonly number[];request_sha256:string;manifest_sha256:string;revision_id:string;generation_id:string;
   expected_active_generation_id:string|null;expected_authorization_revision:string;expected_mutation_epoch:number}>;
 export type SecurityDispatchPlan=Readonly<Record<never,never>>;
-export type SecurityDispatchPlanData=Readonly<Omit<RecoveryDispatchPlanData,'expected_active_generation_id'|'expected_authorization_revision'|'expected_mutation_epoch'>&{
+export type SecurityDispatchPlanData=Readonly<Omit<RecoveryDispatchPlanData,'expected_active_generation_id'|'expected_authorization_revision'|'expected_mutation_epoch'|'manifest_sha256'|'revision_id'|'generation_id'>&{
+  manifest_sha256:string|null;revision_id:string|null;generation_id:string|null;
+  owner_action:string;owner_payload_sha256:string;
   security_context:WriterContext;projection:SecurityProjection;intent_sha256:string;inventory_sha256:string;
   authorization_revision:string;mutation_epoch:number;active_generation_id:string|null}>;
 const securityDispatchPlans=new WeakMap<object,Readonly<{issuer:PostgresQdrantWriter;authorization:unknown;data:SecurityDispatchPlanData}>>();
@@ -334,7 +357,7 @@ export class PostgresQdrantWriter {
     guardedAdmission.set(this,()=>{
       if(this.#closed||this.#active)throw new ProviderUnavailable();
       if(!this.#initialized)throw new IndexNotReady();
-      if(this.#profile!=='security_guard')throw new UnsupportedCapability();
+      if(this.#profile!=='security_guard'&&this.#profile!=='purge')throw new UnsupportedCapability();
     });
     securityRecoveryReaders.set(this,(context,options,previous)=>this.#securityRecoveryProjection(context,options,previous));
     securityOwnerAdmissions.set(this,(context,options)=>this.#admitSecurityOwner(context,options));
@@ -1125,7 +1148,7 @@ export class PostgresQdrantWriter {
       writerOptions.signal?.addEventListener('abort',abort,{once:true});
       const check=()=>{parseOptions(options);if(!valid||this.#closed)throw new ProviderUnavailable();};
       try{return await this.#tx(context,writerOptions,async(tx,profile)=>{
-        check();if(profile!=='security_guard')throw new UnsupportedCapability();
+        check();if(profile!=='security_guard'&&profile!=='purge')throw new UnsupportedCapability();
         const data=await this.#projectSecurity(tx,context);check();
         if(original&&!same(data,original))throw new UnauthorizedScope();
         if(previous!==undefined)return previous as SecurityProjection;
@@ -1151,6 +1174,7 @@ export class PostgresQdrantWriter {
           const owner=await this.#managerOwner(tx,context,true),document=await this.#document(tx,context,true);
           if(!document)throw new UnauthorizedScope();
           if(owner&&owner.instance_id!==this.#instance)throw new IntegrityViolation();
+          if(!owner&&this.#profile!=='purge')throw new ProviderUnavailable();
           if(!owner&&await this.#managerOwner(tx,context))throw new ProviderUnavailable();
           const intent=await this.#intent(tx,context);
           if(!intent||intent.action!=='update_authorization'||!intent.authority_committed||intent.purge_complete)throw new UnsupportedCapability();
@@ -1222,6 +1246,19 @@ export class PostgresQdrantWriter {
       }finally{valid=false;writerOptions.signal?.removeEventListener('abort',abort);}
     });
   }
+  async #securityOwnerIntent(tx:Tx,owner:WriterContext,current:WriterContext,source:SecurityProjectionData):Promise<Data>{
+    try{
+      await tx.query("SELECT set_config('cragkit_qdrant.writer_intent_id',$1,true)",[owner.intent_id],1);
+      const intent=await this.#intent(tx,owner);if(!intent)throw new IntegrityViolation();
+      if(intent.action==='stage'){
+        if(!source.generations.some(group=>group.revision_id===intent.revision_id&&group.generation_id===intent.generation_id&&group.manifest_sha256===intent.manifest_sha256))throw new IntegrityViolation();
+      }else{
+        if(this.#profile!=='purge')throw new UnsupportedCapability();
+        validate_security_owner_intent(owner,intent,source,this.#instance);
+      }
+      return intent;
+    }finally{await tx.query("SELECT set_config('cragkit_qdrant.writer_intent_id',$1,true)",[current.intent_id],1);}
+  }
   async #securityDispatchSource(tx:Tx,binding:ReturnType<typeof security_dispatch_authorization>):Promise<Readonly<{source:SecurityProjectionData;stage:Data}>>{
     const physical=binding.physical_binding,owner=binding.context;
     const rows=await tx.query('SELECT backend_namespace,storage_identity,supervisor_id,epoch,state,recovery_id FROM cragkit_qdrant.backend_instances WHERE instance_id=$1 FOR SHARE',[this.#instance],2);
@@ -1233,9 +1270,7 @@ export class PostgresQdrantWriter {
       ||owners[0].owner_token!==owner.owner_token||db_count(owners[0].backend_epoch)!==physical.new_epoch)throw new ProviderUnavailable();
     const source=await this.#projectSecurity(tx,binding.security_context),original=security_projection_data(binding.projection,this);
     if(source.tombstoned)throw new UnsupportedCapability();if(!same(source,original))throw new UnauthorizedScope();
-    const stage=await this.#intent(tx,owner);
-    if(!stage||stage.action!=='stage')throw new UnsupportedCapability();
-    if(!source.generations.some(group=>group.revision_id===stage.revision_id&&group.generation_id===stage.generation_id&&group.manifest_sha256===stage.manifest_sha256))throw new IntegrityViolation();
+    const stage=await this.#securityOwnerIntent(tx,owner,binding.security_context,source);
     return Object.freeze({source,stage});
   }
   async project_security_dispatch(authorization:unknown,rawIds:unknown,rawOptions:unknown):Promise<SecurityDispatchPlan>{
@@ -1246,11 +1281,13 @@ export class PostgresQdrantWriter {
       writerOptions.signal?.addEventListener('abort',abort,{once:true});
       const check=()=>{if(!valid)throw new ProviderUnavailable();security_dispatch_authorization(authorization,this,options);};
       try{return await this.#tx(binding.security_context,writerOptions,async(tx,profile)=>{
-        if(profile!=='security_guard')throw new UnsupportedCapability();const {source,stage}=await this.#securityDispatchSource(tx,binding);check();
+        if(profile!=='security_guard'&&profile!=='purge')throw new UnsupportedCapability();const {source,stage}=await this.#securityDispatchSource(tx,binding);check();
         const points=ids.map(id=>{const point=source.points.find(point=>point.point_id===id);if(!point)throw new IntegrityViolation();return point;});
         const request=this.#completePointRequest(points);
         return Object.freeze({...binding,point_ids:ids,request_bytes:Object.freeze([...request]),request_sha256:hash(request),
-          manifest_sha256:digest(stage.manifest_sha256),revision_id:text(stage.revision_id),generation_id:text(stage.generation_id),
+          manifest_sha256:stage.action==='stage'?digest(stage.manifest_sha256):null,
+          revision_id:stage.action==='stage'?text(stage.revision_id):null,generation_id:stage.action==='stage'?text(stage.generation_id):null,
+          owner_action:text(stage.action),owner_payload_sha256:digest(stage.payload_sha256),
           intent_sha256:source.intent_sha256,inventory_sha256:source.inventory_sha256,authorization_revision:source.authorization_revision,
           mutation_epoch:source.mutation_epoch,active_generation_id:source.active_generation_id});
       },false,false,{check,invalidate:()=>{valid=false;}});}
@@ -1280,7 +1317,7 @@ export class PostgresQdrantWriter {
       writerOptions.signal?.addEventListener('abort',abort,{once:true});if(writerOptions.signal?.aborted)abort();
       const check=()=>{if(!valid)throw new ProviderUnavailable();security_guard_binding(guard,this,projection,options);};
       try{await this.#tx(previous.context,writerOptions,async(tx,profile)=>{
-        check();if(profile!=='security_guard')throw new UnsupportedCapability();
+        check();if(profile!=='security_guard'&&profile!=='purge')throw new UnsupportedCapability();
         const binding=security_guard_binding(guard,this,projection,options);
         const document=await this.#document(tx,previous.context);
         check();
@@ -1289,6 +1326,7 @@ export class PostgresQdrantWriter {
         try{current=await this.#securityGraph(tx,previous.context,document);}
         catch(error){if(error instanceof InvalidRequest||error instanceof EmbeddingProfileMismatch)throw new IntegrityViolation();throw error;}
         check();if(!same(current,previous))throw new UnauthorizedScope();
+        if(profile==='purge')await this.#securityOwnerIntent(tx,binding.owner_context,previous.context,current);
       },false,false,{check,invalidate:()=>{valid=false;}});}
       finally{valid=false;writerOptions.signal?.removeEventListener('abort',abort);}
     });

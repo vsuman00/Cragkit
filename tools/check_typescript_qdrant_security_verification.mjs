@@ -42,6 +42,9 @@ const DISPATCH_CHECKS=Object.freeze(['stale_missing_cross_generation_replayed_wi
 const COMPLETION_CHECKS=Object.freeze(['retired_settlement_and_actual_reopen_precede_handoff',
   'ordinary_owner_and_genuine_receipt_bind_current_graph','same_writer_transaction_completes_only_security_intent',
   'lost_completion_commit_confirms_history_after_authority_advance']);
+const REPETITION_CHECKS=Object.freeze(['initial_security_owner_completes',
+  'same_current_security_owner_refenced_and_reverified','prior_security_owner_converges_next_authorization',
+  'ownerless_denied_stage_bootstraps_current_security']);
 const ERRORS=new Set(['IntegrityViolation','InvalidRequest','ProviderUnavailable','UnauthorizedScope','UnsupportedCapability','DeadlineExceeded','IndexNotReady','AbortError']);
 const OWNER='00000000-0000-4000-8000-000000000001',SECURITY='00000000-0000-4000-8000-000000000002';
 const cancellation=new AbortController();let readingInput=true,step=0;
@@ -62,7 +65,8 @@ async function input(){
         ...(Object.hasOwn(value,'guard_graph_config')?['guard_graph_config']:[]),
         ...(Object.hasOwn(value,'settlement_config')?['settlement_config']:[]),
         ...(Object.hasOwn(value,'dispatch_config')?['dispatch_config']:[]),
-        ...(Object.hasOwn(value,'completion_config')?['completion_config']:[])].sort())
+        ...(Object.hasOwn(value,'completion_config')?['completion_config']:[]),
+        ...(Object.hasOwn(value,'repetition_config')?['repetition_config']:[])].sort())
     ||typeof value.binary!=='string'||typeof value.work_dir!=='string'||!value.inputs?.second_stage||!value.inputs?.security||!value.inputs?.tombstone)throw new Error('input_shape');
   if(Object.hasOwn(value,'guard_graph_config')&&(!Object.hasOwn(value,'guard_operator_config')
     ||!value.guard_graph_config||!same(Object.keys(value.guard_graph_config),['admin_config'])))throw new Error('graph_input_shape');
@@ -73,6 +77,10 @@ async function input(){
   if(Object.hasOwn(value,'completion_config')&&(!Object.hasOwn(value,'guard_operator_config')||Object.hasOwn(value,'guard_graph_config')
     ||Object.hasOwn(value,'settlement_config')||Object.hasOwn(value,'dispatch_config')||!value.completion_config
     ||!same(Object.keys(value.completion_config),['admin_config'])))throw new Error('completion_input_shape');
+  if(Object.hasOwn(value,'repetition_config')&&(!Object.hasOwn(value,'guard_operator_config')
+    ||['guard_graph_config','settlement_config','dispatch_config','completion_config'].some(key=>Object.hasOwn(value,key))
+    ||!value.repetition_config||!same(Object.keys(value.repetition_config),['admin_config'])
+    ||!value.inputs.ownerless_stage||!value.inputs.ownerless_security))throw new Error('repetition_input_shape');
   return value;
 }
 async function listener(address,absent=false){
@@ -95,7 +103,8 @@ async function cases(value){
   const graphMode=Object.hasOwn(value,'guard_graph_config');
   const settlementMode=Object.hasOwn(value,'settlement_config');
   const dispatchMode=Object.hasOwn(value,'dispatch_config');
-  const completionMode=Object.hasOwn(value,'completion_config');
+  const repetitionMode=Object.hasOwn(value,'repetition_config');
+  const completionMode=Object.hasOwn(value,'completion_config')||repetitionMode;
   let completionDropArmed=false,completionAfterCommit,completionDrops=0,completionUpdates=0,
     completionConfirming=false,completionConfirmations=0,completionReadOnly=false,completionWrites=0,completionHttpStart=0;
   let dispatchDropArmed=false,dispatchDrops=0,dispatchUpserts=0,dispatchDml=0;
@@ -172,7 +181,7 @@ async function cases(value){
   if(operatorConfig&&operatorConfig.max_size!==1)throw new Error('operator_client_ceiling');
   const operator=operatorConfig?new PoolResource(operatorConfig):undefined;
   const adminConfig=graphMode||settlementMode||dispatchMode||completionMode?parse_pool_config(
-    (graphMode?value.guard_graph_config:completionMode?value.completion_config:dispatchMode?value.dispatch_config:value.settlement_config).admin_config):undefined;
+    (graphMode?value.guard_graph_config:repetitionMode?value.repetition_config:completionMode?value.completion_config:dispatchMode?value.dispatch_config:value.settlement_config).admin_config):undefined;
   if(adminConfig&&adminConfig.max_size!==1)throw new Error('admin_client_ceiling');
   const admin=adminConfig?new PoolResource(adminConfig):undefined;
   const contenderResource=graphMode||completionMode?new PoolResource(writerConfig,{factory:async config=>{
@@ -359,6 +368,73 @@ async function cases(value){
       const settled=await journals();
       if(settled[0][4]!=='settled'||!same(settled[1],after[1]))throw new Error('security_dispatch_settled_wrong_row');
       dispatchMark();
+      if(repetitionMode){
+        const observations=[];
+        const complete=async(selected,epoch,mutation)=>{
+          const admitted=await admit_security_owner(writer,selected,options);
+          if(!same(admitted,{owner_token:SECURITY,backend_epoch:epoch}))throw new Error('repetition_security_handoff');
+          const attempt=supervisor.issue_attempt({intent_id:selected.intent_id,owner_token:SECURITY,epoch,
+            dispatch_id:'native-security-repetition-complete-'+epoch},options);
+          const ordinary=await verify_security_ordinary(verifier,attempt,selected,options);
+          const result=await publication_finalization(supervisor,attempt,async()=>{
+            const data=ordinary_security_receipt_data(ordinary,verifier,options);
+            const actual=security_projection_data(data.projection,writer);
+            if(!same(data.context,selected)||data.attempt_binding.epoch!==epoch
+              ||actual.authorization_revision!==selected.scope.authorization_revision)throw new Error('repetition_ordinary_binding');
+            return complete_security_replica(writer,verifier,ordinary,options);
+          },options);
+          const keys=[selected.scope.tenant_id,selected.collection,selected.document_id];
+          const flags=(await sql(admin,'SELECT state,authority_committed,replica_complete,purge_complete FROM cragkit_qdrant.publication_intents '+
+            'WHERE '+docWhere+' AND intent_id=$4',[...keys,selected.intent_id])).rows;
+          const authority=(await sql(admin,'SELECT authorization_revision,mutation_epoch::text FROM cragkit_qdrant.documents WHERE '+docWhere,keys)).rows;
+          const owners=(await sql(admin,'SELECT intent_id,owner_token::text,backend_epoch::text FROM cragkit_qdrant.document_owners WHERE '+docWhere,keys)).rows;
+          if(result.state!=='complete'||!result.authority_committed||!result.replica_complete||result.purge_complete
+            ||!same(flags,[['complete',true,true,false]])
+            ||!same(authority,[[selected.scope.authorization_revision,String(mutation)]])
+            ||!same(owners,[[selected.intent_id,SECURITY,String(epoch)]]))throw new Error('repetition_completion_state');
+          observations.push([selected.intent_id,authority[0][0],Number(authority[0][1]),Number(owners[0][2]),...flags[0]]);
+          checks.push(REPETITION_CHECKS[checks.length]);step=checks.length;
+        };
+        if(!same(await recovery.reopen(proof,options),{state:'open',epoch:2}))throw new Error('repetition_initial_reopen');
+        await complete(security,2,2);
+        const repeat=await recovery.recover('security-repetition-same-current',options);
+        if(!same(await recovery.advance_owner(repeat,security,options),{owner_token:SECURITY,backend_epoch:3}))throw new Error('repetition_same_refence');
+        const authorizeCurrent=async(scope,collection,document)=>same(scope,currentScope)&&collection===base.collection&&document===base.document_id;
+        if(!same(await dispatch_security_recovery(recovery,repeat,security,security,authorizeCurrent,options),{batches:0,points:0})
+          ||!same(await settle_security_guarded(recovery,verifier,repeat,security,security,options),{settled_count:0})
+          ||!same(await recovery.reopen(repeat,options),{state:'open',epoch:3}))throw new Error('repetition_same_recovery');
+        await complete(security,3,2);
+        const next={...inputs.security,intent_id:'native-security-repeated-auth-3',expected_authorization_revision:'auth-2',
+          expected_mutation_epoch:2,authorization:{...inputs.security.authorization,authorization_revision:'auth-3'}};
+        await writer.apply_security(next,currentScope,{...options,owner_token:SECURITY});
+        const nextScope={...currentScope,authorization_revision:'auth-3'},priorOwner={...security,scope:nextScope},
+          nextSecurity=context(nextScope,next.intent_id,SECURITY);
+        const prior=await recovery.recover('security-repetition-prior-owner',options);
+        if(!same(await recovery.advance_owner(prior,priorOwner,options),{owner_token:SECURITY,backend_epoch:4}))throw new Error('repetition_prior_refence');
+        const authorizeNext=async(scope,collection,document)=>same(scope,nextScope)&&collection===base.collection&&document===base.document_id;
+        if(!same(await dispatch_security_recovery(recovery,prior,priorOwner,nextSecurity,authorizeNext,options),{batches:1,points:4})
+          ||!same(await settle_security_guarded(recovery,verifier,prior,priorOwner,nextSecurity,options),{settled_count:0})
+          ||!same(await recovery.reopen(prior,options),{state:'open',epoch:4}))throw new Error('repetition_prior_recovery');
+        await complete(nextSecurity,4,3);
+        const ownerlessBase={collection:inputs.ownerless_stage.manifest.collection,document_id:inputs.ownerless_stage.manifest.document_id};
+        const ownerlessStage={...ownerlessBase,scope:currentScope,intent_id:inputs.ownerless_stage.intent.intent_id,owner_token:OWNER};
+        const ownerlessSecurity={...ownerlessBase,scope:currentScope,intent_id:inputs.ownerless_security.intent_id,owner_token:SECURITY};
+        await writer.stage(prepare_stage(inputs.ownerless_stage),inputs.scope,{...options,owner_token:OWNER});
+        await writer.apply_security(inputs.ownerless_security,inputs.scope,{...options,owner_token:SECURITY});
+        const denied=await writer.admit_publication(ownerlessStage,options);
+        if(denied.intent.state!=='denied'||denied.owner!==null)throw new Error('repetition_ownerless_denial');
+        if(!same(await admit_security_owner(writer,ownerlessSecurity,options),{owner_token:SECURITY,backend_epoch:4}))throw new Error('repetition_ownerless_bootstrap');
+        const ownerless=await recovery.recover('security-repetition-ownerless',options);
+        if(!same(await recovery.advance_owner(ownerless,ownerlessSecurity,options),{owner_token:SECURITY,backend_epoch:5}))throw new Error('repetition_ownerless_refence');
+        const authorizeOwnerless=async(scope,collection,document)=>same(scope,currentScope)&&collection===ownerlessBase.collection&&document===ownerlessBase.document_id;
+        if(!same(await dispatch_security_recovery(recovery,ownerless,ownerlessSecurity,ownerlessSecurity,authorizeOwnerless,options),{batches:1,points:2})
+          ||!same(await settle_security_guarded(recovery,verifier,ownerless,ownerlessSecurity,ownerlessSecurity,options),{settled_count:0})
+          ||!same(await recovery.reopen(ownerless,options),{state:'open',epoch:5}))throw new Error('repetition_ownerless_recovery');
+        await complete(ownerlessSecurity,5,2);
+        semanticWitnessSha256=hash(Buffer.from(JSON.stringify(['cragkit.qdrant.security-repetition.v1',observations]),'utf8'));
+        return {runtime:'typescript',checks,proof_scope:'native_security_repetition_only',semantic_witness_sha256:semanticWitnessSha256,
+          guard_admission:{checks:guardChecks,denied_backend_queries:deniedBackendQueries}};
+      }
       if(completionMode){
         const completionMark=()=>{checks.push(COMPLETION_CHECKS[checks.length]);step=checks.length;};
         const immutable=async()=>{

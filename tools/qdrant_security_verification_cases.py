@@ -63,6 +63,13 @@ COMPLETION_CHECKS=(
  'lost_completion_commit_confirms_history_after_authority_advance',
 )
 
+REPETITION_CHECKS=(
+ 'initial_security_owner_completes',
+ 'same_current_security_owner_refenced_and_reverified',
+ 'prior_security_owner_converges_next_authorization',
+ 'ownerless_denied_stage_bootstraps_current_security',
+)
+
 
 class NativeSecurityVerificationFailure(RuntimeError):
     def __init__(self, observation):
@@ -83,6 +90,11 @@ def security_verification_input():
     value['tombstone'] = dict(value['security'],action='tombstone',intent_id='native-security-receipt-tombstone',
         expected_authorization_revision='auth-2',expected_mutation_epoch=2,
         authorization=dict(initial,authorization_revision='auth-3',tombstoned=True))
+    from qdrant_security_guard_native import guard_inputs
+    value['ownerless_stage'] = guard_inputs('ownerless')[0]['stage']
+    value['ownerless_security'] = deepcopy(value['security'])
+    value['ownerless_security'].update(intent_id='native-security-ownerless-update',
+        document_id=value['ownerless_stage']['manifest']['document_id'])
     return value
 
 
@@ -114,7 +126,8 @@ async def python_security_verification_cases(value):
     graph_mode='guard_graph_config' in value
     settlement_mode='settlement_config' in value
     dispatch_mode='dispatch_config' in value
-    completion_mode='completion_config' in value
+    repetition_mode='repetition_config' in value
+    completion_mode='completion_config' in value or repetition_mode
     dispatch_fault=dict(armed=False,drops=0,upserts=0)
     settlement=dict(armed=False,fired=False,monitor=False,confirmations=0,confirmation_writes=0,
         confirmation_http=0,confirmation_guards=0,confirmation_writer_queries=0,confirmation_source_queries=0,confirmation_reads=0,
@@ -456,6 +469,76 @@ async def python_security_verification_cases(value):
             graph['sup_close_verified']=True
             graph_checks.append(GRAPH_CHECKS[8])
         finally:gate.set();graph['reply']=None;graph['deny_commit']=False
+    async def repetition_cases():
+        from cragkit._qdrant_publication_worker import controller_finalization
+        observations=[]
+        async def complete(selected,epoch,mutation):
+            if dict(await admit_security_owner(writer,selected,deadline=deadline))!=dict(owner_token=security['owner_token'],backend_epoch=epoch):
+                raise RuntimeError('repetition_security_handoff')
+            attempt=supervisor.issue_attempt(dict(intent_id=selected['intent_id'],owner_token=security['owner_token'],
+                epoch=epoch,dispatch_id='native-security-repetition-complete-'+str(epoch)),deadline=deadline)
+            receipt=await verify_security_ordinary(verifier,attempt,selected,deadline=deadline)
+            async with controller_finalization(supervisor,attempt,deadline=deadline):
+                observed=ordinary_security_receipt_data(receipt,verifier,deadline=deadline)
+                actual=security_projection_data(observed['projection'],writer)
+                if (observed['context']!=parse_context(selected) or observed['attempt_binding']['epoch']!=epoch
+                        or actual['authorization_revision']!=selected['scope']['authorization_revision']):
+                    raise RuntimeError('repetition_ordinary_binding')
+                result=await complete_security_replica(writer,verifier,receipt,deadline=deadline)
+            keys=(selected['scope']['tenant_id'],selected['collection'],selected['document_id'])
+            flags=await admin_query('SELECT state,authority_committed,replica_complete,purge_complete FROM cragkit_qdrant.publication_intents WHERE '+
+                document_where+' AND intent_id=%s',(*keys,selected['intent_id']))
+            authority=await admin_query('SELECT authorization_revision,mutation_epoch FROM cragkit_qdrant.documents WHERE '+document_where,keys)
+            owners=await admin_query('SELECT intent_id,owner_token::text,backend_epoch FROM cragkit_qdrant.document_owners WHERE '+document_where,keys)
+            if (result['state']!='complete' or not result['authority_committed'] or not result['replica_complete'] or result['purge_complete']
+                    or flags!=[('complete',True,True,False)] or authority!=[(selected['scope']['authorization_revision'],mutation)]
+                    or owners!=[(selected['intent_id'],security['owner_token'],epoch)]):
+                raise RuntimeError('repetition_completion_state')
+            observations.append([selected['intent_id'],*authority[0],owners[0][2],*flags[0]])
+            checks.append(REPETITION_CHECKS[len(checks)])
+        if dict(await recovery.reopen(proof,deadline=deadline))!=dict(state='open',epoch=2):
+            raise RuntimeError('repetition_initial_reopen')
+        await complete(security,2,2)
+        async def cycle(selected_owner,selected_security,identity,epoch,expected):
+            recovered=await recovery.recover(identity,deadline=deadline)
+            if dict(await recovery.advance_owner(recovered,selected_owner,deadline=deadline))!=dict(owner_token=security['owner_token'],backend_epoch=epoch):
+                raise RuntimeError('repetition_owner_refence')
+            async def allowed(scope,collection,document):
+                return (scope==parse_context(selected_security).scope and collection==selected_security['collection']
+                        and document==selected_security['document_id'])
+            if (dict(await dispatch_security_recovery(recovery,recovered,selected_owner,selected_security,allowed,deadline=deadline))!=expected
+                    or dict(await settle_security_guarded(recovery,verifier,recovered,selected_owner,selected_security,deadline=deadline))!=dict(settled_count=0)
+                    or dict(await recovery.reopen(recovered,deadline=deadline))!=dict(state='open',epoch=epoch)):
+                raise RuntimeError('repetition_recovery')
+        await cycle(security,security,'security-repetition-same-current',3,dict(batches=0,points=0))
+        await complete(security,3,2)
+        record=deepcopy(inputs['security']);record.update(intent_id='native-security-repeated-auth-3',
+            expected_authorization_revision='auth-2',expected_mutation_epoch=2)
+        record['authorization']['authorization_revision']='auth-3'
+        await writer.apply_security(record,current_scope,owner_token=security['owner_token'],deadline=deadline)
+        next_scope=dict(current_scope,authorization_revision='auth-3')
+        prior_owner=dict(security,scope=next_scope)
+        next_security=ctx(record['intent_id'],next_scope,security['owner_token'])
+        await cycle(prior_owner,next_security,'security-repetition-prior-owner',4,dict(batches=1,points=4))
+        await complete(next_security,4,3)
+        stage=inputs['ownerless_stage'];change=inputs['ownerless_security']
+        base=dict(collection=stage['manifest']['collection'],document_id=stage['manifest']['document_id'])
+        ownerless_stage=dict(base,scope=current_scope,intent_id=stage['intent']['intent_id'],owner_token=token)
+        ownerless_security=dict(base,scope=current_scope,intent_id=change['intent_id'],owner_token=security['owner_token'])
+        await writer.stage(prepare_stage(stage),original_scope,owner_token=token,deadline=deadline)
+        await writer.apply_security(change,original_scope,owner_token=security['owner_token'],deadline=deadline)
+        denied=await writer.admit_publication(ownerless_stage,deadline=deadline)
+        if denied['intent']['state']!='denied' or denied['owner'] is not None:
+            raise RuntimeError('repetition_ownerless_denial')
+        if dict(await admit_security_owner(writer,ownerless_security,deadline=deadline))!=dict(owner_token=security['owner_token'],backend_epoch=4):
+            raise RuntimeError('repetition_ownerless_bootstrap')
+        await cycle(ownerless_security,ownerless_security,'security-repetition-ownerless',5,dict(batches=1,points=2))
+        await complete(ownerless_security,5,2)
+        semantic=hashlib.sha256(json.dumps(['cragkit.qdrant.security-repetition.v1',observations],
+            ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+        return dict(runtime='python',checks=checks,proof_scope='native_security_repetition_only',semantic_witness_sha256=semantic,
+            guard_admission=dict(checks=guard_checks,denied_backend_queries=guard_denied_queries))
+
     async def completion_cases():
         nonlocal contender_resource,contender
         from cragkit._qdrant_publication_worker import controller_finalization
@@ -548,6 +631,7 @@ async def python_security_verification_cases(value):
             raise RuntimeError('security_dispatch_retired_settlement')
         settled=await journals()
         if settled[0][4]!='settled' or settled[1]!=after[1]:raise RuntimeError('security_dispatch_settled_wrong_row')
+        if repetition_mode:return await repetition_cases()
         if completion_mode:return await completion_cases()
         checks.append(DISPATCH_CHECKS[1])
         count=dispatch_fault['upserts']
@@ -702,7 +786,7 @@ async def python_security_verification_cases(value):
         if graph_mode or settlement_mode or dispatch_mode or completion_mode:
             if operator is None:raise RuntimeError('security_graph_requires_profile_four')
             await operator.close();operator=None
-            selected=value['guard_graph_config'] if graph_mode else value['completion_config'] if completion_mode else value['dispatch_config'] if dispatch_mode else value['settlement_config']
+            selected=value['guard_graph_config'] if graph_mode else value['repetition_config'] if repetition_mode else value['completion_config'] if completion_mode else value['dispatch_config'] if dispatch_mode else value['settlement_config']
             admin=PoolResource(pool_config(selected['admin_config']))
             await admin.open()
         if dispatch_mode or completion_mode:return await dispatch_cases()

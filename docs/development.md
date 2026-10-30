@@ -1290,6 +1290,15 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 
 Use a fresh directory and current TypeScript build. Completion mode requires the guard profile and excludes other optional modes. It runs four completion checks plus four admission checks per runtime. It closes the idle recovery SQL resource before opening a contender, retaining three clients and six PostgreSQL slots. The real writer completion COMMIT succeeds before its reply is withheld; a second writer advances authority before read-only confirmation. Immutable history, historical flags, witness parity and cleanup are checked. No provider or hosted target is used.
 
+For [D5c repeated-owner acceptance](../evaluation/reports/V5/V5-04G2b2d5c.md),
+add `--with-purge-profile --security-repetition` to the native security verifier
+command instead of `--security-completion`. Keep `--with-security-guard`, a
+fresh artifact directory and the pinned local binaries. The checker installs
+profile 5 and runs four repeated-owner cases plus four guard-admission checks
+per runtime. `--runtime python` and `--runtime typescript` allow serial runs;
+compare their recorded semantic witnesses. Profile-5 lost-COMMIT checks use
+`--with-purge-profile --security-completion --runtime all` separately.
+
 ## V5 profile-5 schema and optional MCP implementation
 
 For the additive Qdrant schema prerequisite, use a fresh artifact directory and
