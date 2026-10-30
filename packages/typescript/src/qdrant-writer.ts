@@ -52,7 +52,7 @@ const ATTESTATION_COLUMNS=['tenant_id','collection','document_id','intent_id','i
 type WriterRegistration=Readonly<{resource:PoolResource;config:QdrantConfig;instance_id:string}>;
 const writerRegistrations=new WeakMap<object,WriterRegistration>();
 const guardedReaders=new WeakMap<object,(guard:unknown,projection:unknown,options:LeaseOptions)=>Promise<void>>();
-const guardedAdmission=new WeakMap<object,()=>void>();
+const guardedAdmission=new WeakMap<object,(ownerProfile?:boolean)=>void>();
 const securityRecoveryReaders=new WeakMap<object,(context:WriterContext,options:LeaseOptions,projection?:unknown)=>Promise<SecurityProjection>>();
 type SecurityOwner=Readonly<{owner_token:string;backend_epoch:number}>;
 /** Pure validation of committed metadata; this does not issue an owner capability. */
@@ -94,6 +94,9 @@ export async function security_recovery_projection(writer:PostgresQdrantWriter,c
 }
 export function require_security_guard_writer(writer:PostgresQdrantWriter):void{
   writer_binding(writer);const check=guardedAdmission.get(writer);if(!check)throw new InvalidRequest();check();
+}
+export function require_security_owner_writer(writer:PostgresQdrantWriter):void{
+  writer_binding(writer);const check=guardedAdmission.get(writer);if(!check)throw new InvalidRequest();check(true);
 }
 /** Fixed internal consumer; no caller callback or lock mode crosses this boundary. */
 export async function validate_guarded_security_projection(writer:PostgresQdrantWriter,guard:unknown,projection:unknown,rawOptions:unknown):Promise<void>{
@@ -354,10 +357,10 @@ export class PostgresQdrantWriter {
     this.#resource=resource; this.#config=parseConfig(config); this.#instance=text(instance_id);
     writerRegistrations.set(this,Object.freeze({resource:this.#resource,config:this.#config,instance_id:this.#instance}));
     guardedReaders.set(this,(guard,projection,options)=>this.#validateSecurityGuarded(guard,projection,options));
-    guardedAdmission.set(this,()=>{
+    guardedAdmission.set(this,(ownerProfile=false)=>{
       if(this.#closed||this.#active)throw new ProviderUnavailable();
       if(!this.#initialized)throw new IndexNotReady();
-      if(this.#profile!=='security_guard'&&this.#profile!=='purge')throw new UnsupportedCapability();
+      if(ownerProfile?this.#profile!=='purge':this.#profile!=='security_guard'&&this.#profile!=='purge')throw new UnsupportedCapability();
     });
     securityRecoveryReaders.set(this,(context,options,previous)=>this.#securityRecoveryProjection(context,options,previous));
     securityOwnerAdmissions.set(this,(context,options)=>this.#admitSecurityOwner(context,options));

@@ -1299,6 +1299,14 @@ per runtime. `--runtime python` and `--runtime typescript` allow serial runs;
 compare their recorded semantic witnesses. Profile-5 lost-COMMIT checks use
 `--with-purge-profile --security-completion --runtime all` separately.
 
+For [G2c public convergence](../evaluation/reports/V5/V5-04G2c.md), use
+`--with-security-guard --with-purge-profile --public-security` instead of the
+private completion/repetition mode. The same native parent accepts `--runtime
+python`, `--runtime typescript` or `--runtime all`; each run needs a fresh
+artifact directory. It provisions only disposable PostgreSQL/Qdrant fixtures
+and checks eight public/source/failure cases per runtime. Compare the final
+recorded semantic witnesses when languages run separately. No provider is used.
+
 ## V5 profile-5 schema and optional MCP implementation
 
 For the additive Qdrant schema prerequisite, use a fresh artifact directory and

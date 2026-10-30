@@ -283,7 +283,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
         - [x] B2a2: Wire one verification budget through manager/F1/E2 readback phases. [Evidence](../evaluation/reports/V5/V5-04G1b-B2a.md).
         - [x] B2b: Actual-proof-bound writer plans and supervisor journal/ACK transitions.
       - [x] V5-04G1b-B3: Native partial repair integration and failure acceptance; 16 native cases and full local suites passed. [Evidence](../evaluation/reports/V5/V5-04G1b-B2b-B3.md).
-    - [ ] V5-04G2: Current ACL/filter replica convergence and authority-first public security changes.
+    - [x] V5-04G2: Current ACL/filter replica convergence and authority-first public security changes; [public/native acceptance](../evaluation/reports/V5/V5-04G2c.md).
       - [x] G2a1: Exact read-only lost-COMMIT confirmation parity for authority-only security writes. [Evidence](../evaluation/reports/V5/V5-04G2a1.md).
       - [x] G2a2: Public authority-only update_authorization/tombstone admission with explicit replica-pending outcomes. [Evidence](../evaluation/reports/V5/V5-04G2a2.md).
       - [x] G2b: Bounded current-security projection, actual old-write reconciliation and ownership handoff; children below passed.
@@ -302,7 +302,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
             - [x] D5a: Private current-security plans and stale/missing full-point dispatch with genuine acknowledgment and retired-settlement acceptance. [Evidence](../evaluation/reports/V5/V5-04G2b2d5a.md).
             - [x] D5b: Initial security-owner handoff and genuine ordinary current-security completion. [Evidence](../evaluation/reports/V5/V5-04G2b2d5b.md).
             - [x] D5c: Repeated-update recovery anchored to a previous/current security owner and ownerless bootstrap; [evidence](../evaluation/reports/V5/V5-04G2b2d5c.md).
-      - [ ] G2c: Journaled full-point replica convergence and actual native failure/source acceptance.
+      - [x] G2c: Journaled full-point replica convergence and actual native failure/source acceptance; [evidence](../evaluation/reports/V5/V5-04G2c.md).
     - [ ] V5-04G3: Tombstone-bound scoped purge, late-write safety, cleanup and native acceptance.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
 
@@ -1747,3 +1747,48 @@ G3 purge, H and the remaining V5 gates stay open. No schema/grant/dependency
 or README change. User audits are excluded; last disk observation 24 GiB.
 Learning practice remains pending. Next action: G2c public convergence using
 the accepted private path, followed by native failure/source acceptance.
+
+### G2c public manager assignment
+
+Shared outcome: implement QSC-r1 `converge_security` on the existing publication
+manager in native Python and Node. Sol `g2c_python` owns only
+`qdrant_publication.py` and `test_qdrant_publication.py`; it assembles. Sol
+`g2c_node` owns only `qdrant-publication.ts` and `qdrant-publication.test.mjs`.
+Root owns QSC-r1, the narrow internal Node profile-5 gate, native consumers,
+all execution, docs/tracker/Git and final integration. Peers coordinate exact
+reference/result/owner and cleanup semantics directly. No peer tests, services,
+network, DB, installs or Git. No schema/roles/public authority API changes.
+Protected or outcome changes come to root before dependent edits, unresolved
+root/Astra. State assigned; public/native acceptance remains open. D5c commit
+`c82decb` is pushed with matching remote head and zero ahead/behind verified.
+
+G2c native acceptance pair: Sol `g2c_native_python` owns new
+`tools/qdrant_public_security_cases.py` and assembles; Sol `g2c_native_node`
+owns new `tools/check_typescript_qdrant_public_security.mjs`. Shared outcome:
+eight actual public-manager cases with the frozen observation protocol from
+root, including repeated updates, lost completed HTTP ACK/refencing retry,
+ownerless bootstrap, authority drift/tombstone and source authorization. Root
+owns the existing parent verifier, protocol tests, all execution/services,
+docs/tracker/Git and final integration. No worker execution, network, database,
+installs or Git. Peers coordinate exact witness and fixture semantics directly;
+protected/outcome changes root before edits, unresolved root/Astra. Native
+runtime clients remain at most writer, supervisor and reader; run languages
+serially and verify cleanup. Public implementations transferred to root;
+initial Python focused suite passed 44 after replacing an unsupported asyncio
+test marker with the existing project runner. Node's affected four public
+tests passed after completing its stored-row fixtures and exhausting a valid
+ledger instead of constructing invalid zero-attempt limits.
+
+G2c final handoff COMPLETE: all public/native peer paths transferred to root.
+Focused public manager tests passed Python 44 / Node 25; full Python/tool
+3,039 passed (four existing warnings), Node 1,515 passed, strict Python49 and
+Node build passed. Final combined actual PostgreSQL/Qdrant public run passed
+16 checks with exact witness parity and cleanup. [Evidence](../evaluation/reports/V5/V5-04G2c.md).
+Root corrected fixture pointer/row/async/ledger assumptions, strengthened exact
+two-generation/four-point and unavailable-source assertions, and integrated
+readable native consumers. No security predicate/schema/grant/dependency was
+relaxed. Sixteen seals unchanged; user audits excluded; disk24GiB observation.
+No model/provider/hosted run or release. Learning practice remains pending.
+Root owns final prose/link/staged review and commit/push/sync. Next: G3
+tombstone-bound exact-ID deletion, authenticated absence and managed body
+erasure under QP-r1; H and remaining V5 gates remain open.

@@ -737,3 +737,189 @@ async def test_repair_shares_verification_bytes_across_recovery_and_publication(
         assert result['published'] and state['mutations']==writes+1
         assert len(observed)==2 and observed[0] is observed[1]
         assert observed[0].remaining_bytes<8388608
+
+
+async def security_setup(monkeypatch, tmp_path, *, ownerless=False):
+    from contextlib import asynccontextmanager
+    manager, writer, recovery, supervisor, transport, state, document = await setup(monkeypatch, tmp_path)
+    await manager.initialize(deadline=asyncio.get_running_loop().time() + 5)
+    writer._schema_profile = 5
+    state['intent'] = dict(action='update_authorization', state='authority_committed',
+        authority_committed=True, replica_complete=False, purge_complete=False,
+        revision_id=None, generation_id=None)
+    state['owner'] = None if ownerless else dict(instance_id=manager._instance,
+        intent_id='previous-intent', owner_token=ctx()['owner_token'], backend_epoch=2)
+    events, budgets, owners = [], [], []
+    proof, attempt, receipt = object(), object(), object()
+
+    async def project(current, *, deadline):
+        events.append('project')
+
+    async def admit(selected, current, *, deadline):
+        assert selected is writer
+        events.append('admit')
+        state['owner'] = dict(instance_id=manager._instance, intent_id=current.intent_id,
+            owner_token=current.owner_token, backend_epoch=3)
+        return dict(owner_token=current.owner_token, backend_epoch=3)
+
+    async def recover(identity, *, deadline):
+        assert identity.startswith('g2-')
+        events.append('recover')
+        return proof
+
+    async def advance(actual, owner, *, deadline):
+        assert actual is proof
+        owners.append(owner)
+        events.append('advance')
+
+    async def dispatch(selected, actual, owner, current, authorize, *, deadline, budget):
+        assert selected is recovery and actual is proof
+        assert await authorize(current.scope, current.collection, current.document_id)
+        budgets.append(budget)
+        events.append('dispatch')
+
+    async def settle(selected, verifier, actual, owner, current, *, deadline, budget):
+        assert selected is recovery and actual is proof and owner == owners[0]
+        assert verifier is manager._security_verifier
+        budgets.append(budget)
+        events.append('settle')
+
+    async def reopen(actual, *, deadline):
+        assert actual is proof
+        events.append('reopen')
+
+    async def issue(selected, binding, *, deadline):
+        assert selected is supervisor
+        assert binding['owner_token'] == state['owner']['owner_token']
+        events.append('issue')
+        return attempt
+
+    async def verify(verifier, actual, current, *, deadline, budget):
+        assert actual is attempt and verifier is manager._security_verifier
+        budgets.append(budget)
+        events.append('verify')
+        return receipt
+
+    @asynccontextmanager
+    async def finalization(selected, actual, *, deadline):
+        assert selected is supervisor and actual is attempt
+        events.append('finalize')
+        yield
+        events.append('drained')
+
+    async def complete(selected, verifier, actual, *, deadline):
+        assert selected is writer and actual is receipt and events[-1] == 'finalize'
+        state['intent'].update(state='complete', replica_complete=True)
+        events.append('complete')
+        return dict(state['intent'])
+
+    monkeypatch.setattr(writer, 'project_security', project)
+    for name, callback in [('recover', recover), ('advance_owner', advance), ('reopen', reopen)]:
+        monkeypatch.setattr(recovery, name, callback)
+    for name, callback in [('admit_security_owner', admit), ('dispatch_security_recovery', dispatch),
+        ('settle_security_guarded', settle), ('controller_issue', issue),
+        ('verify_security_ordinary', verify), ('controller_finalization', finalization),
+        ('complete_security_replica', complete)]:
+        monkeypatch.setattr(implementation, name, callback)
+    return manager, writer, recovery, state, events, budgets, owners
+
+
+@run_async
+@pytest.mark.parametrize('ownerless', [False, True])
+async def test_public_security_convergence_order_budget_and_historical_retry(monkeypatch, tmp_path, ownerless):
+    manager, writer, recovery, state, events, budgets, owners = await security_setup(
+        monkeypatch, tmp_path, ownerless=ownerless)
+    reference = {key: ctx()[key] for key in ('collection', 'document_id', 'intent_id')}
+    result = await manager.converge_security(reference, ctx()['scope'], ledger(),
+        deadline=asyncio.get_running_loop().time() + 5)
+    assert result['operation'] == 'converge_security' and result['replica_complete']
+    assert events == (['project', 'admit'] if ownerless else ['project']) + [
+        'recover', 'advance', 'dispatch', 'settle', 'reopen', 'admit', 'issue', 'verify',
+        'finalize', 'complete', 'drained']
+    assert len(budgets) == 3 and all(item is budgets[0] for item in budgets)
+    assert owners[0].intent_id == (reference['intent_id'] if ownerless else 'previous-intent')
+    before = list(events)
+    repeated = await manager.converge_security(reference, ctx()['scope'], ledger(),
+        deadline=asyncio.get_running_loop().time() + 5)
+    assert repeated == result and events == before
+    await manager.close()
+    assert manager._security_verifier._closed
+    assert not writer._closed and not recovery._closed
+
+
+@run_async
+async def test_public_security_profile_gate_and_authorization_precede_storage(monkeypatch, tmp_path):
+    manager, writer, recovery, state, events, budgets, owners = await security_setup(monkeypatch, tmp_path)
+    reference = {key: ctx()[key] for key in ('collection', 'document_id', 'intent_id')}
+    state['events'].clear()
+    writer._schema_profile = 4
+    with pytest.raises(UnsupportedCapability):
+        await manager.converge_security(reference, ctx()['scope'], ledger(),
+            deadline=asyncio.get_running_loop().time() + 5)
+    assert not state['events'] and not events
+    writer._schema_profile = 5
+    async def deny(*args):
+        return False
+    state['authorizer'] = deny
+    with pytest.raises(UnauthorizedScope):
+        await manager.converge_security(reference, ctx()['scope'], ledger(),
+            deadline=asyncio.get_running_loop().time() + 5)
+    assert not events
+    await manager.close()
+
+
+@run_async
+@pytest.mark.parametrize('action,error', [('stage', InvalidRequest), ('tombstone', UnsupportedCapability)])
+async def test_public_security_refuses_wrong_action_without_physical_work(monkeypatch, tmp_path, action, error):
+    manager, writer, recovery, state, events, budgets, owners = await security_setup(monkeypatch, tmp_path)
+    state['intent']['action'] = action
+    reference = {key: ctx()[key] for key in ('collection', 'document_id', 'intent_id')}
+    with pytest.raises(error):
+        await manager.converge_security(reference, ctx()['scope'], ledger(),
+            deadline=asyncio.get_running_loop().time() + 5)
+    assert not events
+    await manager.close()
+
+
+@run_async
+async def test_public_security_cancellation_holds_admission_until_callback_drains(monkeypatch, tmp_path):
+    manager, writer, recovery, state, events, budgets, owners = await security_setup(monkeypatch, tmp_path)
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def slow(*args):
+        entered.set()
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            await release.wait()
+        return True
+    state['authorizer'] = slow
+    reference = {key: ctx()[key] for key in ('collection', 'document_id', 'intent_id')}
+    call = asyncio.create_task(manager.converge_security(reference, ctx()['scope'], ledger(),
+        deadline=asyncio.get_running_loop().time() + 5))
+    await entered.wait()
+    call.cancel()
+    await asyncio.sleep(0)
+    with pytest.raises(ProviderUnavailable):
+        await manager.converge_security(reference, ctx()['scope'], ledger(),
+            deadline=asyncio.get_running_loop().time() + 5)
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    assert not events
+    assert state['intent']['authority_committed'] and not state['intent']['replica_complete']
+    await manager.close()
+
+
+@run_async
+async def test_public_security_budget_failure_preserves_committed_authority(monkeypatch, tmp_path):
+    manager, writer, recovery, state, events, budgets, owners = await security_setup(monkeypatch, tmp_path)
+    async def exhausted(*args, **kwargs):
+        raise BudgetExhausted()
+    monkeypatch.setattr(implementation, 'dispatch_security_recovery', exhausted)
+    reference = {key: ctx()[key] for key in ('collection', 'document_id', 'intent_id')}
+    with pytest.raises(BudgetExhausted):
+        await manager.converge_security(reference, ctx()['scope'], ledger(),
+            deadline=asyncio.get_running_loop().time() + 5)
+    assert events == ['project', 'recover', 'advance']
+    assert state['intent']['authority_committed'] and not state['intent']['replica_complete']
+    await manager.close()

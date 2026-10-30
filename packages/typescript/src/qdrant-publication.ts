@@ -2,10 +2,12 @@ export {QdrantSecurityManager} from './qdrant-security.js';
 /** Optional native stage/publish manager. Dependencies remain application-owned. */
 import {randomUUID,createHash} from 'node:crypto';
 import {types} from 'node:util';
-import {PostgresQdrantWriter,writer_binding,type IntentView,type DispatchStatus,type DispatchView} from './qdrant-writer.js';
-import {PostgresQdrantRecovery,recovery_components} from './qdrant-recovery.js';
+import {PostgresQdrantWriter,writer_binding,require_security_owner_writer,admit_security_owner,complete_security_replica,security_projection_data,type IntentView,type DispatchStatus,type DispatchView} from './qdrant-writer.js';
+import {PostgresQdrantRecovery,recovery_components,dispatch_security_recovery,settle_security_guarded} from './qdrant-recovery.js';
 import {ManagedQdrantSupervisor,type SupervisorTransport} from './qdrant-supervisor.js';
 import {QdrantReconciliationVerifier,VerificationBudget} from './qdrant-reconciliation.js';
+import {QdrantSecurityVerifier,verify_security_ordinary} from './qdrant-security-verification.js';
+import {SecurityReadbackBudget} from './qdrant-security-readback.js';
 import {QdrantPublicationVerifier,validate_publication_receipt} from './qdrant-publication-verification.js';
 import {is_publication_controller,is_worker_controller,publication_worker_reference,publication_controller_profile,publication_issue_attempt,publication_attempt_binding,publication_transport_for,publication_before_write,publication_finalization,type OrdinaryPublicationController} from './qdrant-publication-worker.js';
 import {ExecutionLedger,BudgetExhausted,type Reservation} from './execution.js';
@@ -28,7 +30,7 @@ type Session=Readonly<{attempt:unknown;binding:Readonly<Data>;handle:SupervisorT
 type Ack=Readonly<Record<never,never>>;
 const acknowledgments=new WeakMap<object,Readonly<{session:Session;sha256:string}>>();
 type Reference=Readonly<{collection:string;document_id:string;intent_id:string}>;
-type Result=Readonly<{intent_id:string;operation:'stage'|'publish'|'repair';state:string;revision_id:string|null;
+type Result=Readonly<{intent_id:string;operation:'stage'|'publish'|'repair'|'converge_security';state:string;revision_id:string|null;
   generation_id:string|null;authority_committed:boolean;replica_complete:boolean;published:boolean;purge_complete:boolean}>;
 type Authorizer=(scope:TrustedScope,collection:string,document_id:string)=>Promise<boolean>;
 
@@ -45,7 +47,7 @@ function reference(input:unknown):Reference {
   const value=fields(input,['collection','document_id','intent_id']);
   return Object.freeze({collection:text(value.collection,true),document_id:text(value.document_id),intent_id:text(value.intent_id)});
 }
-function result(intent_id:string,operation:'stage'|'publish'|'repair',intent:IntentView):Result {
+function result(intent_id:string,operation:'stage'|'publish'|'repair'|'converge_security',intent:IntentView):Result {
   return Object.freeze({intent_id,operation,state:intent.state,revision_id:intent.revision_id,generation_id:intent.generation_id,
     authority_committed:intent.authority_committed,replica_complete:intent.replica_complete,published:intent.state==='published',purge_complete:intent.purge_complete});
 }
@@ -96,6 +98,7 @@ export class QdrantPublicationManager {
   readonly #authorizer:Authorizer;
   readonly #transport:TransportRegistration;
   readonly #verifier:QdrantPublicationVerifier;
+  readonly #securityVerifier:QdrantSecurityVerifier|null;
   #ready=false;
   #closed=false;
   #active?:Readonly<{controller:AbortController;done:Promise<void>}>;
@@ -118,6 +121,7 @@ export class QdrantPublicationManager {
     this.#authorizer=authorize_write;
     this.#transport=factory;
     this.#verifier=new QdrantPublicationVerifier(original.writer,supervisor);
+    this.#securityVerifier=is_worker_controller(supervisor)?null:new QdrantSecurityVerifier(original.writer,supervisor as ManagedQdrantSupervisor);
   }
 
   #admit(initialize=false):void {
@@ -542,11 +546,74 @@ export class QdrantPublicationManager {
     });
   }
 
+  async converge_security(input:unknown,inputScope:unknown,ledger:ExecutionLedger,rawOptions:unknown):Promise<Result> {
+    this.#admit();
+    if(is_worker_controller(this.#supervisor)||this.#authority.recovery===null||this.#securityVerifier===null)throw new UnsupportedCapability();
+    const writer=this.#authority.writer,recovery=this.#authority.recovery,verifier=this.#securityVerifier;
+    // Check the exact local profile before callbacks or storage checkout.
+    require_security_owner_writer(writer);
+    recovery_components(recovery,writer,this.#supervisor,this.#config);
+    const ref=reference(input),scope=parse_scope(inputScope),options=this.#ledger(ledger,rawOptions);
+    const lookup=parse_context({...ref,scope,owner_token:randomUUID()});
+    return this.#attempt(ledger,options,async lease=>{
+      const budget=new SecurityReadbackBudget();
+      await this.#authorize(lookup,lease);
+      let snapshot=await this.#await(writer.manager_snapshot(lookup,lease),lease);
+      const intent=snapshot.intent;
+      if(!intent)throw new InvalidRequest();
+      if(intent.action==='tombstone')throw new UnsupportedCapability();
+      if(intent.action!=='update_authorization')throw new InvalidRequest();
+      if(!intent.authority_committed||!['authority_committed','writing','complete'].includes(intent.state))throw new InvalidRequest();
+      if(intent.replica_complete!==(intent.state==='complete')||intent.purge_complete)throw new IntegrityViolation();
+      if(intent.replica_complete)return result(ref.intent_id,'converge_security',intent);
+      const projection=await this.#await(writer.project_security(lookup,lease),lease);
+      if(security_projection_data(projection,writer).tombstoned)throw new UnsupportedCapability();
+      if(!snapshot.owner){
+        if(snapshot.backend.state!=='open'||snapshot.pending)throw new ProviderUnavailable();
+        await this.#authorize(lookup,lease);
+        await this.#await(admit_security_owner(writer,lookup,lease),lease);
+        snapshot=await this.#await(writer.manager_snapshot(lookup,lease),lease);
+      }
+      const owner=snapshot.owner;
+      if(!owner||owner.instance_id!==snapshot.backend.instance_id)throw new ProviderUnavailable();
+      const ownerContext=parse_context({...lookup,intent_id:owner.intent_id,owner_token:owner.owner_token});
+      const current=parse_context({...lookup,owner_token:owner.intent_id===ref.intent_id?owner.owner_token:lookup.owner_token});
+      const id=snapshot.backend.recovery_id??'g2-'+createHash('sha256').update(JSON.stringify([
+        'cragkit.qdrant.security-recovery.v1',snapshot.backend.instance_id,String(snapshot.backend.epoch)])).digest('hex');
+      await this.#authorize(current,lease);
+      // Explicit retries refence through recovery rather than reusing old proofs.
+      const proof=await this.#await(recovery.recover(id,lease),lease);
+      await this.#await(recovery.advance_owner(proof,ownerContext,lease),lease);
+      const authorize=async(selected:TrustedScope,collection:string,document_id:string):Promise<boolean>=>{
+        if(!same(selected,current.scope)||collection!==current.collection||document_id!==current.document_id)throw new InvalidRequest();
+        await this.#authorize(current,lease);return true;
+      };
+      await this.#await(dispatch_security_recovery(recovery,proof,ownerContext,current,authorize,lease,budget),lease);
+      await this.#await(settle_security_guarded(recovery,verifier,proof,ownerContext,current,lease,budget),lease);
+      await this.#await(recovery.reopen(proof,lease),lease);
+      await this.#authorize(current,lease);
+      const admitted=await this.#await(admit_security_owner(writer,current,lease),lease);
+      const session=await this.#session(current,admitted.backend_epoch,'security-completion-'+randomUUID(),lease);
+      await this.#closeHandle(session);
+      const receipt=await this.#await(verify_security_ordinary(verifier,session.attempt,current,lease,budget),lease);
+      let finalization!:Promise<Result>;
+      finalization=publication_finalization(this.#supervisor,session.attempt,async()=>{
+        try{
+          await this.#authorize(current,lease);
+          const completed=await this.#await(complete_security_replica(writer,verifier,receipt,lease),lease);
+          return result(ref.intent_id,'converge_security',completed);
+        }finally{await Promise.allSettled([...this.#pending].filter(pending=>pending!==finalization));}
+      },lease);
+      return this.#await(finalization,lease);
+    });
+  }
+
   async close():Promise<void> {
     this.#closed=true;
     const active=this.#active;
     active?.controller.abort();
     if(active)await bounded(active.done,{deadline:now()+2});
     await this.#verifier.close();
+    await this.#securityVerifier?.close();
   }
 }

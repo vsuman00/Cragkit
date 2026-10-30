@@ -52,6 +52,19 @@ def test_repetition_evidence_is_exclusive_and_cannot_be_receipt_or_purge_evidenc
         with pytest.raises(RuntimeError):validate_result(changed,'python',security_guard=True,security_repetition=True)
 
 
+def test_public_security_evidence_has_its_own_complete_closed_observations():
+    from qdrant_public_security_cases import CHECKS as PUBLIC_CHECKS
+    value=dict(runtime='python',checks=list(PUBLIC_CHECKS),proof_scope='native_public_security_convergence_only',
+        semantic_witness_sha256='a'*64)
+    assert len(PUBLIC_CHECKS)==len(set(PUBLIC_CHECKS))==8
+    assert validate_result(value,'python',public_security=True)==value
+    for changed in (dict(value,checks=[]),dict(value,proof_scope='native_security_repetition_only'),
+                    dict(value,private='source'),dict(value,semantic_witness_sha256=True)):
+        with pytest.raises(RuntimeError):validate_result(changed,'python',public_security=True)
+    with pytest.raises(RuntimeError):validate_result(value,'python',public_security=True,security_repetition=True)
+    with pytest.raises(RuntimeError):validate_result(value,'python')
+
+
 def test_native_receipt_failure_details_are_closed_and_copied():
     for name in ERRORS:assert failure_observation(dict(ok=False,step=0,error=name))['error']==name
     value=dict(ok=False,step=8,error='cleanup_failed',primary=None,cleanup=[dict(operation='verifier_close',outcome='ProviderUnavailable')])

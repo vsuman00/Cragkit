@@ -1,6 +1,6 @@
 # Native Qdrant stage and publish
 
-The optional Python module `cragkit.qdrant_publication` and Node subpath `cragkit/qdrant-publication` provide the managed stage/publish path. [In-process evidence](../evaluation/reports/V5/V5-04F2a2ii.md) and [worker evidence](../evaluation/reports/V5/V5-04F2b.md) record their native checks. Repair, security convergence, purge and the complete fault matrix remain separate V5 tasks; this module does not yet establish full QD-r1 compatibility.
+The optional Python module `cragkit.qdrant_publication` and Node subpath `cragkit/qdrant-publication` provide managed stage, publication, repair and current-security convergence. [In-process evidence](../evaluation/reports/V5/V5-04F2a2ii.md), [worker evidence](../evaluation/reports/V5/V5-04F2b.md) and [public convergence evidence](../evaluation/reports/V5/V5-04G2c.md) record their native checks. Purge and the complete fault matrix remain open; this module does not yet establish full QD-r1 compatibility.
 
 For example, G1 remains active while G2 is staged, written and verified. Only the final SQL commit switches the active generation to G2. If that work fails first, G1 remains active.
 
@@ -157,4 +157,16 @@ await security.close()
 
 Node exports the same class from `cragkit/qdrant-publication`; methods use `{deadline, signal?}` options. `tombstone(record, scope, ledger, deadline/options)` admits the matching monotonic tombstone record. The record is the existing complete canonical security intent, and the application supplies trusted scope independently. Separate writer objects may share one bounded pool. The manager borrows the writer and pool and leaves them open; the application owns their lifetime.
 
-This component has no supervisor or vector transport and does not wait for the publication manager's operation slot. SQL contention and pool deadlines still apply. New success means source authority committed, with replica/purge completion still false. Exact historical retries preserve their durable flags and do not certify that replicas match a later authorization revision. Callback denial, invalid action/tenant and cancellation prevent a subsequent mutation. Physical convergence and scoped purge remain separate operations under development.
+This component has no supervisor or vector transport and does not wait for the publication manager's operation slot. SQL contention and pool deadlines still apply. New success means source authority committed, with replica/purge completion still false. Exact historical retries preserve their durable flags and do not certify that replicas match a later authorization revision. Callback denial, invalid action/tenant and cancellation prevent a subsequent mutation.
+
+The publication manager's `converge_security(reference, scope, ledger,
+deadline/options)` completes a current authorization update under the exact
+profile-5 managed supervisor and recovery graph. The reference contains
+`collection`, `document_id` and `intent_id`. Python uses a keyword deadline;
+Node uses `{deadline, signal?}`. It genuinely refences credentials, repairs the
+full claimed replica set and authenticates current readback before setting
+replica completion. An explicit retry reconciles a lost completed HTTP reply.
+It borrows the configured writer, recovery and supervisor and closes its own
+verifiers. Tombstones are admitted independently; scoped purge remains G3.
+[Native public evidence](../evaluation/reports/V5/V5-04G2c.md) records the
+tested scope and limits.

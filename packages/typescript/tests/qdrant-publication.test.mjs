@@ -5,11 +5,13 @@ import {PoolResource,parse_pool_config,now} from '../dist/postgres-pool.js';
 import {ExecutionLedger} from '../dist/execution.js';
 import {QdrantPublicationManager,PostgresQdrantPublicationAuthority,ManagedQdrantPublicationTransport,
   PostgresQdrantWriter,PostgresQdrantRecovery,ManagedQdrantSupervisor,QdrantReconciliationVerifier} from '../dist/qdrant-publication.js';
-import {WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL,prepare_stage} from '../dist/qdrant-writer.js';
-import {AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
+import {WRITER_ROLE_SQL,WRITER_ATTESTATION_ROLE_SQL,WRITER_PURGE_ROLE_SQL,prepare_stage} from '../dist/qdrant-writer.js';
+import {AUTHORITY_PURGE_HISTORY,AUTHORITY_PURGE_CATALOG_SQL,EXPECTED_PURGE_CATALOG_FINGERPRINT,EXPECTED_PURGE_CAPABILITY_FINGERPRINT,PURGE_OWNER_SQL,PURGE_CAPABILITY_FINGERPRINT_SQL,
+  AUTHORITY_HISTORY_SQL,AUTHORITY_PUBLICATION_HISTORY,AUTHORITY_PUBLICATION_CATALOG_SQL,
   AUTHORITY_FINGERPRINT_SQL,EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT,AUTHORITY_ATTESTATION_HISTORY,AUTHORITY_ATTESTATION_CATALOG_SQL,EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT} from '../dist/qdrant-authority.js';
 import {QdrantPublicationVerifier} from '../dist/qdrant-publication-verification.js';
 import {VerificationBudget} from '../dist/qdrant-reconciliation.js';
+import {encode_security_intent} from '../dist/qdrant-manifest.js';
 import {InvalidRequest,UnauthorizedScope,UnsupportedCapability,ProviderUnavailable,IndexNotReady,IntegrityViolation} from '../dist/errors.js';
 
 const fixture=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_publication.json',import.meta.url),'utf8'));
@@ -41,7 +43,7 @@ function change(){
 }
 
 /** SQL and controller method doubles exercise the manager, not native proofs. */
-function setup(authorize=async()=>true,attestation=false){
+function setup(authorize=async()=>true,attestation=false,purge=false){
   const state={queries:[],clients:[],http:[],points:new Map(),attempts:new Map(),handles:0,authorizations:0,
     callback:authorize,session:false,ackMode:null,afterPut:null,tables:{backend_instances:[{instance_id:'instance-fixture',backend_namespace:config.backend_namespace,
       storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',epoch:1,state:'open',recovery_id:null}]}};
@@ -59,9 +61,11 @@ function setup(authorize=async()=>true,attestation=false){
         if(sql==='ROLLBACK'){state.tables=this.before;this.status='I';return {rows:[]};}
         if(sql==='COMMIT'){this.status='I';return {rows:[]};}
         if(sql.startsWith('SET ')||sql.startsWith('SELECT set_config'))return {rows:[]};
+        if(sql===WRITER_PURGE_ROLE_SQL||sql===AUTHORITY_PURGE_CATALOG_SQL||sql===PURGE_OWNER_SQL)return {rows:[[true]]};
+        if(sql===PURGE_CAPABILITY_FINGERPRINT_SQL)return {rows:[[EXPECTED_PURGE_CAPABILITY_FINGERPRINT]]};
         if(sql===WRITER_ROLE_SQL||sql===WRITER_ATTESTATION_ROLE_SQL||sql===AUTHORITY_PUBLICATION_CATALOG_SQL||sql===AUTHORITY_ATTESTATION_CATALOG_SQL)return {rows:[[true]]};
-        if(sql===AUTHORITY_HISTORY_SQL)return {rows:(attestation?AUTHORITY_ATTESTATION_HISTORY:AUTHORITY_PUBLICATION_HISTORY).map(row=>[...row])};
-        if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[attestation?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT]]};
+        if(sql===AUTHORITY_HISTORY_SQL)return {rows:(purge?AUTHORITY_PURGE_HISTORY:attestation?AUTHORITY_ATTESTATION_HISTORY:AUTHORITY_PUBLICATION_HISTORY).map(row=>[...row])};
+        if(sql===AUTHORITY_FINGERPRINT_SQL)return {rows:[[purge?EXPECTED_PURGE_CATALOG_FINGERPRINT:attestation?EXPECTED_ATTESTATION_AUTHORITY_FINGERPRINT:EXPECTED_PUBLICATION_AUTHORITY_FINGERPRINT]]};
         const insert=/^INSERT INTO cragkit_qdrant\.(\w+) \(([^)]+)\)/.exec(sql);
         if(insert){
           const [,table,columns]=insert;
@@ -574,5 +578,86 @@ test('repair refuses to replace a settled foreign intent owner',async()=>{
     const original=clone(f.state.tables),http=f.state.http.length;
     await assert.rejects(f.manager.repair(ref,scope,ledger(),options()),ProviderUnavailable);
     assert.deepEqual(f.state.tables,original);assert.equal(f.state.http.length,http);
+  }finally{await f.close();}
+});
+
+
+test('converge_security gates old profiles before callbacks, SQL and accounting',async()=>{
+  for(const attestation of [false,true]){
+    const f=setup(async()=>true,attestation);
+    try{
+      await f.manager.initialize(options());
+      const queries=f.state.queries.length,usage=ledger();
+      await assert.rejects(f.manager.converge_security(ref,scope,usage,options()),UnsupportedCapability);
+      assert.equal(f.state.authorizations,0);
+      assert.equal(f.state.queries.length,queries);
+      assert.equal(usage.snapshot().attempts,0);
+    }finally{await f.close();}
+  }
+});
+
+function completedSecurity(f){
+  f.state.tables.documents=[{tenant_id:scope.tenant_id,collection:ref.collection,document_id:ref.document_id,
+    active_generation_id:'current-generation',authorization_revision:scope.authorization_revision,mutation_epoch:3,tombstoned:false,
+    principal_ids:[scope.principal_id],grant_ids:scope.grant_ids,language:null,kind:null,tag:null}];
+  const record={action:'update_authorization',intent_id:ref.intent_id,tenant_id:scope.tenant_id,
+    collection:ref.collection,document_id:ref.document_id,expected_authorization_revision:'auth-0',expected_mutation_epoch:1,
+    authorization:{authorization_revision:'auth-older',principal_ids:[scope.principal_id],grant_ids:scope.grant_ids,
+      language:null,kind:null,tag:null,tombstoned:false}};
+  const encoded=encode_security_intent(record);
+  f.state.tables.publication_intents=[{tenant_id:scope.tenant_id,collection:ref.collection,document_id:ref.document_id,intent_id:ref.intent_id,
+    instance_id:'instance-fixture',action:'update_authorization',state:'complete',payload_sha256:encoded.sha256,
+    payload_bytes:Buffer.from(encoded.encoded_bytes),manifest_bytes:null,manifest_sha256:null,revision_id:null,generation_id:null,
+    expected_active_generation_id:null,expected_authorization_revision:'auth-0',expected_mutation_epoch:1,
+    authority_committed:true,replica_complete:true,purge_complete:false}];
+}
+
+test('converge_security returns durable historical flags after fresh authorization without physical work',async()=>{
+  const f=setup(async()=>true,false,true);
+  try{
+    await f.manager.initialize(options());completedSecurity(f);
+    for(let retry=0;retry<2;retry++){
+      const usage=ledger();
+      const outcome=await f.manager.converge_security(ref,scope,usage,options());
+      assert.deepEqual(outcome,{intent_id:ref.intent_id,operation:'converge_security',state:'complete',revision_id:null,generation_id:null,
+        authority_committed:true,replica_complete:true,published:false,purge_complete:false});
+      assert.ok(Object.isFrozen(outcome));
+      assert.equal(usage.snapshot().attempts,1);assert.equal(usage.snapshot().provider_calls,0);
+    }
+    assert.equal(f.state.authorizations,2);assert.equal(f.state.http.length,0);
+    assert.equal(f.state.tables.documents[0].active_generation_id,'current-generation');
+  }finally{await f.close();}
+});
+
+test('converge_security validates closed reference, scope, action and shared ledger',async()=>{
+  const f=setup(async()=>true,false,true);
+  try{
+    await f.manager.initialize(options());completedSecurity(f);
+    for(const invalid of [{...ref,extra:true},{collection:'docs',document_id:'doc-1'},null]){
+      await assert.rejects(f.manager.converge_security(invalid,scope,ledger(),options()),InvalidRequest);
+    }
+    assert.equal(f.state.authorizations,0);
+    const exhausted=ledger(),used=exhausted.reserve({attempts:1});exhausted.dispatch(used);exhausted.reconcile(used);
+    await assert.rejects(f.manager.converge_security(ref,scope,exhausted,options()));
+    assert.equal(f.state.authorizations,0);
+    await assert.rejects(f.manager.converge_security(ref,{...scope,authorization_revision:'stale'},ledger(),options()),UnauthorizedScope);
+    f.state.tables.publication_intents[0].action='tombstone';
+    await assert.rejects(f.manager.converge_security(ref,scope,ledger(),options()),UnsupportedCapability);
+    assert.equal(f.state.http.length,0);
+  }finally{await f.close();}
+});
+
+test('converge_security denial and cancellation precede source checkout; borrowed graph remains open',async()=>{
+  const f=setup(async()=>false,false,true);
+  try{
+    await f.manager.initialize(options());completedSecurity(f);
+    const before=f.state.queries.length;
+    await assert.rejects(f.manager.converge_security(ref,scope,ledger(),options()),UnauthorizedScope);
+    assert.equal(f.state.queries.length,before);
+    const controller=new AbortController();controller.abort();
+    await assert.rejects(f.manager.converge_security(ref,scope,ledger(),{...options(),signal:controller.signal}),{name:'AbortError'});
+    await f.manager.close();
+    assert.equal(f.pool.ended,0);
+    assert.equal((await f.writer.manager_snapshot({...ref,scope,owner_token:'123e4567-e89b-42d3-a456-426614174000'},options())).intent.state,'complete');
   }finally{await f.close();}
 });

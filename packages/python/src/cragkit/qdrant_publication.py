@@ -18,6 +18,9 @@ from ._qdrant_publication_verification import (
 )
 from ._qdrant_reconciliation import QdrantReconciliationVerifier, _ReadbackTransport, VerificationBudget
 from ._qdrant_recovery import PostgresQdrantRecovery, recovery_components
+from ._qdrant_recovery import dispatch_security_recovery, settle_security_guarded
+from ._qdrant_security_readback import SecurityReadbackBudget
+from ._qdrant_security_verification import QdrantSecurityVerifier, verify_security_ordinary
 from ._qdrant_source import metadata_guard
 from ._qdrant_security import QdrantSecurityManager
 from ._qdrant_supervisor import ManagedQdrantSupervisor
@@ -26,6 +29,7 @@ from ._qdrant_publication_worker import (is_controller, is_worker, controller_pr
     controller_attempt, controller_issue, controller_finalization,
     ManagedQdrantPublicationWorkerHost, OwnedPublicationWorker, OrdinaryWorkerController)
 from ._qdrant_writer import PostgresQdrantWriter, writer_binding
+from ._qdrant_writer import admit_security_owner, complete_security_replica
 from ._qdrant_writer_contract import context, prepare_stage, stage_data
 from .contracts import TrustedScope
 from .execution import ExecutionLedger, BudgetExhausted
@@ -219,6 +223,8 @@ class QdrantPublicationManager:
         self._authorize_write = authorize_write
         self._instance = binding['instance_id']
         self._verifier = QdrantPublicationVerifier(self._writer, supervisor)
+        self._security_verifier = (None if is_worker(supervisor) else
+            QdrantSecurityVerifier(self._writer, cast(ManagedQdrantSupervisor, supervisor)))
         self._ready = False
         self._closed = False
         self._active: asyncio.Task[Any] | None = None
@@ -695,6 +701,97 @@ class QdrantPublicationManager:
                 return _result(ctx.intent_id, 'repair', result)
         return cast(Mapping[str, Any], await self._run(repair, deadline=deadline, ledger=ledger))
 
+    async def converge_security(self, reference: object, scope: object, ledger: ExecutionLedger, *,
+                                deadline: float) -> Mapping[str, Any]:
+        if type(ledger) is not ExecutionLedger:
+            raise InvalidRequest()
+        target = _reference(reference)
+        trusted = _scope(scope)
+        if (self._writer._schema_profile != 5 or is_worker(self._supervisor)
+                or self._recovery is None or self._security_verifier is None):
+            raise UnsupportedCapability()
+        recovery = self._recovery
+        verifier = self._security_verifier
+        lookup = context({**target, 'scope': trusted, 'owner_token': str(uuid4())})
+
+        async def converge(limit: float) -> Mapping[str, Any]:
+            budget = SecurityReadbackBudget()
+            await self._authorize(lookup, limit)
+            snapshot = await self._writer.manager_snapshot(lookup, deadline=limit)
+            self._check(limit)
+            intent, backend, owner = snapshot['intent'], snapshot['backend'], snapshot['owner']
+            if intent is None:
+                raise InvalidRequest()
+            if intent['action'] == 'tombstone':
+                raise UnsupportedCapability()
+            if intent['action'] != 'update_authorization' or not intent['authority_committed']:
+                raise InvalidRequest()
+            if intent['state'] not in ('authority_committed', 'writing', 'complete'):
+                raise InvalidRequest()
+            if intent['replica_complete'] != (intent['state'] == 'complete') or intent['purge_complete']:
+                raise IntegrityViolation()
+            if intent['state'] == 'complete' and intent['replica_complete']:
+                return _result(lookup.intent_id, 'converge_security', intent)
+            token = (owner['owner_token'] if owner is not None
+                     and owner['intent_id'] == lookup.intent_id else lookup.owner_token)
+            current = context({**target, 'scope': trusted, 'owner_token': token})
+            await self._writer.project_security(current, deadline=limit)
+            self._check(limit)
+            if owner is None:
+                if backend['state'] != 'open' or snapshot['pending']:
+                    raise ProviderUnavailable()
+                await admit_security_owner(self._writer, current, deadline=limit)
+                self._check(limit)
+                snapshot = await self._writer.manager_snapshot(current, deadline=limit)
+                self._check(limit)
+                backend, owner = snapshot['backend'], snapshot['owner']
+            if owner is None or owner['instance_id'] != self._instance:
+                raise ProviderUnavailable()
+            previous = context({**target, 'intent_id': owner['intent_id'], 'scope': trusted,
+                                'owner_token': owner['owner_token']})
+            if backend['state'] == 'recovery_blocked':
+                identity = backend['recovery_id']
+            else:
+                raw = ['cragkit.qdrant.security-recovery.v1', self._instance, str(backend['epoch'])]
+                identity = 'g2-' + hashlib.sha256(json.dumps(raw, separators=(',', ':'),
+                    ensure_ascii=False).encode('utf-8')).hexdigest()
+            await self._authorize(current, limit)
+            proof = await recovery.recover(identity, deadline=limit)
+            self._check(limit)
+            await recovery.advance_owner(proof, previous, deadline=limit)
+            self._check(limit)
+
+            async def authorize(selected: TrustedScope, collection: str, document_id: str) -> bool:
+                if selected != trusted or collection != current.collection or document_id != current.document_id:
+                    raise InvalidRequest()
+                await self._authorize(current, limit)
+                return True
+
+            await dispatch_security_recovery(recovery, proof, previous, current, authorize,
+                                             deadline=limit, budget=budget)
+            self._check(limit)
+            await settle_security_guarded(recovery, verifier, proof, previous, current,
+                                          deadline=limit, budget=budget)
+            self._check(limit)
+            await recovery.reopen(proof, deadline=limit)
+            self._check(limit)
+            await self._authorize(current, limit)
+            admitted = await admit_security_owner(self._writer, current, deadline=limit)
+            self._check(limit)
+            attempt = await controller_issue(self._supervisor, {'intent_id': current.intent_id,
+                'owner_token': current.owner_token, 'epoch': admitted['backend_epoch'],
+                'dispatch_id': 'security-completion-' + str(uuid4())}, deadline=limit)
+            self._check(limit)
+            receipt = await verify_security_ordinary(verifier, attempt, current, deadline=limit, budget=budget)
+            self._check(limit)
+            async with controller_finalization(self._supervisor, attempt, deadline=limit):
+                await self._authorize(current, limit)
+                result = await complete_security_replica(self._writer, verifier, receipt, deadline=limit)
+                self._check(limit)
+                return _result(current.intent_id, 'converge_security', result)
+
+        return cast(Mapping[str, Any], await self._run(converge, deadline=deadline, ledger=ledger))
+
     async def close(self) -> None:
         self._closed = True
         self._cancelled = True
@@ -710,3 +807,5 @@ class QdrantPublicationManager:
             except Exception:
                 raise ProviderUnavailable() from None
         await self._verifier.close()
+        if self._security_verifier is not None:
+            await self._security_verifier.close()

@@ -497,3 +497,6 @@ The counterexample is demonstrated only when the new authority commits before th
 ### G2b2d1: Same-transaction current-security SQL guard
 
 The [SG-r1 guard contract](QDRANT_SECURITY_GUARD_V5.md) is frozen following the actual D0 counterexample. It defines an additive fourth migration, one narrowly owned definer, exact caller/tuple checks and restricted metadata-locking policies. This is a target specification until actual non-superuser installation, rollback, restricted-role and lock-custody acceptance passes. Legacy catalog profiles remain unchanged; profile 4 later permits exactly the reviewed helper, owner/ACL/policy shape and no extra definer. Native receipt/graph/settlement integration remains a separate dependency.
+
+G2c public orchestration follows [QSC-r1](QDRANT_SECURITY_CONVERGENCE_V5.md)
+after D5c's accepted profile-5 private path.
