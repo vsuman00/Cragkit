@@ -9,6 +9,7 @@ CHECKS = (
     'completed_retry_has_no_physical_or_authority_mutation',
     'repeated_update_preserves_original_stage_history',
     'acl_replica_ack_lost_replays_current_revocation',
+    'revocation_between_stages_denies_stale_publication',
     'lost_completed_ack_keeps_pending_and_retry_refences',
     'current_source_allowed_and_revoked_scopes',
     'ownerless_denied_stage_public_bootstrap',
@@ -243,8 +244,18 @@ async def python_public_security_cases(value):
         retained_request, retained_store, retained = await source(auth2)
         if retained.state != 'verified':
             raise RuntimeError('public_security_source_initial')
+        revoked_stage = deepcopy(second)
+        revoked_stage['intent'].update(intent_id='native-security-revocation-between-stages',
+            expected_authorization_revision='auth-2', expected_mutation_epoch=2,
+            initial_authorization=None)
+        staged = plain(await call(manager.stage, revoked_stage, auth2))
+        if staged['state'] != 'staged' or staged['published']:
+            raise RuntimeError('public_security_revocation_stage')
         third = change(3)
+        authority_count = network['count']
         await commit(third, auth2)
+        if network['count'] != authority_count:
+            raise RuntimeError('public_security_revocation_authority_http')
         auth3 = trusted('auth-3', 'reader-b')
         drops, completed, puts = network['drops'], network['completed'], network['puts']
         network['armed'] = True
@@ -266,10 +277,16 @@ async def python_public_security_cases(value):
             raise RuntimeError('public_security_acl_completed_loss_count')
         if network['puts'] != puts + 1:
             raise RuntimeError('public_security_acl_initial_put_count')
-        released = await retained_request.release(retained.binding, purpose='final', max_source_bytes=16777216, include_source=True)
+        released = await retained_request.release(retained.binding, purpose='provider', max_source_bytes=16777216, include_source=True)
         if (released.state != 'unavailable' or released.binding is not None or released.evidence is not None
                 or released.private_source is not None or released.source_bytes != 0):
             raise RuntimeError('public_security_retained_release')
+        released_again = await retained_request.release(retained.binding, purpose='final',
+            max_source_bytes=16777216, include_source=True)
+        if (released_again.state != 'unavailable' or released_again.binding is not None
+                or released_again.evidence is not None or released_again.private_source is not None
+                or released_again.source_bytes != 0):
+            raise RuntimeError('public_security_revocation_retained_release')
         await close_source(retained_request, retained_store)
         denied_request, denied_store, denied = await source(trusted('auth-3'))
         allowed_request, allowed_store, allowed = await source(trusted('auth-3', 'reader-b'))
@@ -317,6 +334,25 @@ async def python_public_security_cases(value):
         checks.append(CHECKS[2]); observations.append(row(third_result))
         checks.append(CHECKS[3]); observations.append(['acl_replica_ack_lost', 'auth-3', 'recovery_blocked',
             'unknown', 'unavailable', 'unavailable', 0, 1, 0, True, True])
+        before = await snapshot(revoked_stage, auth3)
+        count, puts = network['count'], network['puts']
+        await expect(UnauthorizedScope, lambda: call(manager.publish, reference(revoked_stage), auth2))
+        denied_publication = plain(await call(manager.publish, reference(revoked_stage), auth3))
+        after = await snapshot(revoked_stage, auth3)
+        if (before['intent']['state'] != 'staged' or denied_publication['state'] != 'denied'
+                or denied_publication['published'] or after['intent']['state'] != 'denied'
+                or after['document'] != before['document']
+                or after['document']['active_generation_id'] != base['manifest']['generation_id']
+                or network['count'] != count or network['puts'] != puts):
+            raise RuntimeError('public_security_revocation_publication')
+        revoked_request, revoked_store, revoked = await source(trusted('auth-3'))
+        current_request, current_store, current_source = await source(auth3)
+        if (revoked.state, current_source.state) != ('unavailable', 'verified'):
+            raise RuntimeError('public_security_revocation_source')
+        await close_source(revoked_request, revoked_store)
+        await close_source(current_request, current_store)
+        checks.append(CHECKS[4]); observations.append(['revocation_between_stages',
+            'unauthorized_scope', 'denied', True, 0, 0, 'unavailable', 'unavailable', 'verified'])
         fourth = change(4)
         await commit(fourth, trusted('auth-3', 'reader-b'))
         auth4 = trusted('auth-4', 'reader-b')
@@ -331,8 +367,8 @@ async def python_public_security_cases(value):
         if (supervisor.control_binding()['credential_generation'] == generation
                 or network['drops'] != drops + 1 or network['completed'] != completed + 1):
             raise RuntimeError('public_security_retry_not_refenced')
-        checks.append(CHECKS[4]); observations.append(row(fourth_result))
-        checks.append(CHECKS[5]); observations.append(source_row)
+        checks.append(CHECKS[5]); observations.append(row(fourth_result))
+        checks.append(CHECKS[6]); observations.append(source_row)
         ownerless = inputs['ownerless_stage']
         await call(manager.stage, ownerless, scope)
         ownerless_change = deepcopy(inputs['ownerless_security'])
@@ -343,7 +379,7 @@ async def python_public_security_cases(value):
         if denied_stage['intent']['state'] != 'denied' or ownerless_before['owner'] is not None:
             raise RuntimeError('public_security_ownerless_prerequisite')
         ownerless_result = await converge(ownerless_change, auth2)
-        checks.append(CHECKS[6]); observations.append(row(ownerless_result))
+        checks.append(CHECKS[7]); observations.append(row(ownerless_result))
         fifth, sixth = change(5), change(6)
         await commit(fifth, auth4)
         hook.update(change=sixth, scope=trusted('auth-5', 'reader-b'))
@@ -352,7 +388,7 @@ async def python_public_security_cases(value):
         if (hook['change'] is not None or drift['document']['authorization_revision'] != 'auth-6'
                 or drift['document']['active_generation_id'] != base['manifest']['generation_id']):
             raise RuntimeError('public_security_drift_authority')
-        checks.append(CHECKS[7]); observations.append(['drift', 'unauthorized_scope', 'auth-6'])
+        checks.append(CHECKS[8]); observations.append(['drift', 'unauthorized_scope', 'auth-6'])
         await converge(sixth, trusted('auth-6', 'reader-b'))
         seventh, tombstone = change(7), change(8, tombstone=True)
         await commit(seventh, trusted('auth-6', 'reader-b'))
@@ -366,7 +402,7 @@ async def python_public_security_cases(value):
                 or unavailable.state != 'unavailable'):
             raise RuntimeError('public_security_tombstone_authority')
         await close_source(final_request, final_store)
-        checks.append(CHECKS[8]); observations.append(['tombstone', 'unauthorized_scope', 'unavailable', True, False])
+        checks.append(CHECKS[9]); observations.append(['tombstone', 'unauthorized_scope', 'unavailable', True, False])
         witness = json.dumps(['cragkit.qdrant.public-security.v1', observations], ensure_ascii=False,
             separators=(',', ':')).encode('utf-8')
         return dict(runtime='python', checks=checks, proof_scope='native_public_security_convergence_only',

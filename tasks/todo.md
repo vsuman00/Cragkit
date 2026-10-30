@@ -2748,3 +2748,49 @@ the checkpoint report. Native evidence is in ignored
 service remains. Learning practice unassessed. Next smallest action: select
 the next unresolved H fault, freeze its physical failure boundary, then run
 both native runtimes before updating acceptance.
+
+H-S24 assignment (V5-04H exact ID `revocation_between_stages`): the shared
+outcome is a real authorization/fence commit after a successor is staged and
+before it publishes, with stale publication denied, no extra Qdrant mutation,
+the prior active generation preserved, and revoked-reader source bytes
+withheld. The frozen ignored contract is
+`artifacts/V5/V5-04H/revocation-between-stages-r1-protocol.md`. Sol
+`h_revoke_python` owns only `tools/qdrant_public_security_cases.py` and
+assembles; Sol `h_revoke_node` owns only
+`tools/check_typescript_qdrant_public_security.mjs`. Both perform substantive
+native consumer work, coordinate exact ordering/witness directly, and change
+ownership only by explicit transfer with root notice. Root owns the shared
+closed-result test, native serial verification, report/tracker, Git and
+escalation. Product, SQL/schema/migrations, QSC/QW contracts, sealed/shared
+fixtures, locks and user edits are protected. Peers run no tests/processes,
+services, network, DB or Git; root uses one test process at a time. Outcome,
+protected or ownership changes return to root; unresolved material decisions
+go to Astra. State: assigned; H/V5 open.
+
+H-S24 accepted: a fresh successor intent staged under auth-2 was followed by
+the separate auth-3 authority commit, with zero Qdrant calls during that
+commit. Stale auth-2 publication raised `UnauthorizedScope`; current auth-3
+admission persisted the stale intent as denied. Both publication attempts
+made zero extra HTTP/point PUT calls and preserved the base active pointer.
+Retained provider/final source release returned zero bytes after revocation;
+fresh old-reader requests were unavailable and the current reader remained
+verified. Root inspected the assembled Python/Node consumer edits and ran
+the serial native parent: ten checks per runtime, matching witness
+`44428a6e3d9f975fab3563110cb86c0efb634478938ad94c075b71a53361f99a`,
+with verified cleanup. Ten focused protocol tests, Python compilation, Node
+syntax and all 16 seals passed. The H-S22 full Python/Node regressions were
+not rerun for this fixture-only slice. The first combined run exposed a Node
+fixture lifecycle error; the native diagnostic located its open retained
+handle, both peers corrected the source sequence, and temporary diagnostics
+were removed. No product, SQL/schema/migration, lockfile, sealed fixture,
+user edit, provider/hosted call or task-owned service remained.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-revocation-between-stages.md).
+State: COMPLETE for H-S24 only; 32 of 43 exact H IDs accepted. H and V5
+remain open. Handoff: changed `tools/qdrant_public_security_cases.py`,
+`tools/check_typescript_qdrant_public_security.mjs`,
+`tools/tests/test_qdrant_security_verification_native.py`, this tracker and
+the checkpoint report. Native result in ignored
+`artifacts/V5/V5-04H/revocation-between-stages-both-05/results.json`.
+Disk headroom 28 GiB; no owned process remains. Learning practice unassessed.
+Next smallest action: choose another unresolved H fault with an observable
+physical boundary, freeze the case, then verify both native runtimes.

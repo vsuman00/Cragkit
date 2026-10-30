@@ -16,6 +16,7 @@ const CHECKS = [
   'completed_retry_has_no_physical_or_authority_mutation',
   'repeated_update_preserves_original_stage_history',
   'acl_replica_ack_lost_replays_current_revocation',
+  'revocation_between_stages_denies_stale_publication',
   'lost_completed_ack_keeps_pending_and_retry_refences',
   'current_source_allowed_and_revoked_scopes',
   'ownerless_denied_stage_public_bootstrap',
@@ -368,8 +369,17 @@ async function cases(value) {
     mark(retry);
 
     const original = await writer.manager_snapshot(context(inputs.stage.intent.intent_id,'auth-2'), options);
+    const revokedStage = structuredClone(second);
+    revokedStage.intent.intent_id = 'native-security-revocation-between-stages';
+    revokedStage.intent.expected_authorization_revision = 'auth-2';
+    revokedStage.intent.expected_mutation_epoch = 2;
+    revokedStage.intent.initial_authorization = null;
+    const stagedRevocation = await call(book => manager.stage(revokedStage, scope('auth-2'), book, options));
+    assert(stagedRevocation.state === 'staged' && !stagedRevocation.published);
     const third = update(3);
+    const authorityCount = httpCount;
     await commit(third,'auth-2');
+    assert(httpCount === authorityCount);
     const thirdProjection = security_projection_data(await writer.project_security(context(third.intent_id,'auth-3'),options),writer);
     assert(thirdProjection.point_ids.length === 4);
     const thirdDrops = drops, thirdPuts = puts;
@@ -389,10 +399,16 @@ async function cases(value) {
     const thirdGeneration = supervisor.control_binding().credential_generation;
     const thirdKey = retiredKey, thirdRetiredResends = retiredResends;
     const released = await retained.handle.release(retained.result.binding, {
-      purpose:'final', max_source_bytes: 16777216, include_source: true
+      purpose:'provider', max_source_bytes: 16777216, include_source: true
     });
     assert(released.state === 'unavailable' && released.binding === null && released.evidence === null
       && released.private_source === null && released.source_bytes === 0);
+    const revokedRelease = await retained.handle.release(retained.result.binding, {
+      purpose:'final', max_source_bytes:16777216, include_source:true
+    });
+    assert(revokedRelease.state === 'unavailable' && revokedRelease.binding === null
+      && revokedRelease.evidence === null && revokedRelease.private_source === null
+      && revokedRelease.source_bytes === 0);
     await closeSource(retained);
     const denied = await source('auth-3');
     assert(denied.result.state === 'unavailable');
@@ -424,6 +440,28 @@ async function cases(value) {
         && same(point.payload.principal_ids,['reader-b']) && same(point.payload.grant_ids,[])
         && same(point.payload,thirdProjection.points.find(expected => expected.point_id === point.id)?.payload)));
     observations.push(['acl_replica_ack_lost','auth-3','recovery_blocked','unknown','unavailable','unavailable',0,1,0,true,true]);
+    step++;
+
+    const revokedBefore = await snapshot(revokedStage.intent,'auth-3');
+    const revokedCount = httpCount, revokedPuts = puts;
+    await refuses(UnauthorizedScope, () => call(book => manager.publish(ref(revokedStage.intent.intent_id), scope('auth-2'), book, options)));
+    const revokedPublication = await call(book => manager.publish(ref(revokedStage.intent.intent_id), {
+      ...scope('auth-3'), principal_id:'reader-b'
+    }, book, options));
+    const revokedAfter = await snapshot(revokedStage.intent,'auth-3');
+    assert(revokedBefore.intent.state === 'staged'
+      && revokedPublication.state === 'denied' && !revokedPublication.published
+      && revokedAfter.intent.state === 'denied'
+      && same(revokedAfter.document, revokedBefore.document)
+      && revokedAfter.document.active_generation_id === inputs.stage.manifest.generation_id
+      && httpCount === revokedCount && puts === revokedPuts);
+    const revokedFresh = await source('auth-3');
+    assert(revokedFresh.result.state === 'unavailable');
+    await closeSource(revokedFresh);
+    const currentReader = await source('auth-3','reader-b');
+    assert(currentReader.result.state === 'verified');
+    await closeSource(currentReader);
+    observations.push(['revocation_between_stages','unauthorized_scope','denied',true,0,0,'unavailable','unavailable','verified']);
     step++;
 
     const fourth = update(4);
