@@ -12,17 +12,22 @@ from qdrant_recovery_cases import CHECKS, _AckConnection, NativeRecoveryFailure,
 from cragkit._qdrant_writer_contract import prepare_stage
 
 
-def test_two_document_input_has_distinct_valid_claims_and_explicit_trusted_scopes():
+def test_three_document_input_has_distinct_valid_claims_and_explicit_trusted_scopes():
     value = recovery_input()
-    assert prepare_stage(value['stage']).member_count == prepare_stage(value['second_stage']).member_count == 2
-    assert value['scope']['tenant_id'] != value['second_scope']['tenant_id']
+    assert all(prepare_stage(value[key]).member_count == 2
+        for key in ('stage', 'second_stage', 'third_stage'))
+    assert len({value[key]['tenant_id'] for key in ('scope', 'second_scope', 'third_scope')}) == 3
     assert value['second_scope']['tenant_id'] == value['second_stage']['manifest']['tenant_id']
-    assert not {p['id'] for p in value['expected_points']} & {p['id'] for p in value['second_points']}
+    assert value['third_scope']['tenant_id'] == value['third_stage']['manifest']['tenant_id']
+    ids = [{member['point_id'] for member in value[key]['manifest']['members']}
+        for key in ('stage', 'second_stage', 'third_stage')]
+    assert all(not ids[left] & ids[right] for left, right in ((0, 1), (0, 2), (1, 2)))
     assert len(json.dumps(value).encode()) < 524288
     assert value['collection_config']['optimizers_config']['prevent_unoptimized'] is False
 
 
 def test_native_success_requires_all_cases_and_does_not_claim_publication():
+    assert CHECKS[-1] == 'backend_wide_recovery_gate_allows_independent_revocation'
     value = dict(runtime='python', checks=list(CHECKS), proof_scope='durable_recovery_settlement_only')
     assert validate_result(value, 'python') == value
     for changed in [dict(value, checks=value['checks'][:-1]), dict(value, runtime='typescript'),

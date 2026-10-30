@@ -2571,3 +2571,57 @@ Twenty-seven exact H IDs have accepted native evidence; H and V5 remain
 open. Next smallest action: select one unmet native matrix fault after
 checking its dependency and resource profile; retain final H integration
 and later V5 gates as open.
+
+H-S20 assignment (V5-04H exact ID `backend_wide_recovery_gate`): shared
+outcome is a real backend-wide mutation block across a third document while
+independent authoritative revocation commits during the same two-unknown
+recovery window. Contract `backend-gate-r1` is frozen in ignored
+`artifacts/V5/V5-04H/backend-gate-r1-protocol.md`. Sol `h_gate_python` owns
+only `tools/qdrant_recovery_cases.py` and assembles; Sol `h_gate_node` owns
+only `tools/check_typescript_qdrant_recovery.mjs`. Both do substantive native
+consumer work and coordinate concrete dependencies directly. Root owns
+focused parent tests, report/tracker, serial native verification, Git and
+final integration. Existing QW-r1/E2b contract, actual native recovery API,
+PostgreSQL 17 and pinned Qdrant 1.20 are read-only dependencies. Product,
+schema/migrations, sealed/shared fixtures, locks, unrelated consumers and
+user edits are protected. One test process, serial runtimes, small fake
+points, no worker tests/services/network/DB/Git, provider, model or hosted
+action. Outcome/protected/other ownership changes return to root; unresolved
+material decisions go to Astra. State: assigned; H/V5 open.
+
+Independent V5-downstream read-only lane: Sol `v5_gate_audit` owns only
+ignored `artifacts/V5/downstream-gates-audit.md`. It inspects actual V5-05,
+V5-06 and V5-C2 implementation/tests/docs against the active plan, then
+returns exact remaining acceptance checks and runnable serial commands.
+No source/tracker/shared fixture edits, tests/processes/services/network/DB/
+Git. It does not declare acceptance or overlap H-S20; root owns decisions,
+execution and final integration. Report dependency changes promptly. State:
+assigned; V5-05/06/C2 remain open.
+
+H-S20 final handoff: Sol Python and Node peers extended separate E2b native
+recovery consumers with a third staged document; Python assembled after both
+writers stopped. Root inspected both diffs and passed four focused protocol
+tests, Python compile and Node syntax checks. The serial native parent passed
+eight SQL plus 23 checks per runtime (54 total) with verified cleanup; all
+16 seals matched. During two genuine unknown journals and a durable backend
+block, third-document owner/native attempts were refused, while a separate
+authority transaction committed grant revocation and survived final reopen.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-backend-gate.md).
+Changed files: two recovery consumers, protocol guard, report and tracker.
+No product/schema/migration/sealed fixture/lockfile/provider/hosted action.
+The E2b trace checks old-scope authority refusal, not final source release;
+that remains a separate G2c/H integration boundary. Disk headroom 29 GiB,
+system memory free 34%; no owned service remains. Unrelated user edits stay
+outside scope. Learning practice unassessed. Twenty-eight exact H IDs have
+accepted native evidence; H and V5 remain open. Next smallest H action:
+native cancellation after dispatched side effect, bounded without weakening
+the durable unknown state.
+
+V5-downstream read-only handoff: Sol `v5_gate_audit` wrote only ignored
+`artifacts/V5/downstream-gates-audit.md`; no tests or services ran in that
+lane. It found V5-05/06 implementations and focused tests present, with final
+acceptance still gated by H/C2. It identified a stale MCP test-count sentence
+in `docs/development.md`, a duplicate Python `_SafeWrite.aclose()` delegation
+and incomplete MCP docstring examples for root review. Root has not treated
+the audit as acceptance. Next downstream action after H: run V5-05/06 focused
+suites serially, fix confirmed issues, then complete C2.

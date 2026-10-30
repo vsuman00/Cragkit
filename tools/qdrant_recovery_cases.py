@@ -35,6 +35,7 @@ CHECKS = (
     'private_sql_handoff_resumes_actual_ordinary_reads_at_current_epoch',
     'next_recovery_identity_advances_a_fresh_epoch_and_reopens_privately',
     'recovery_never_publishes_or_marks_replica_completion',
+    'backend_wide_recovery_gate_allows_independent_revocation',
 )
 ERRORS = frozenset(('IntegrityViolation', 'UnauthorizedScope', 'IndexNotReady', 'InvalidRequest',
     'ProviderUnavailable', 'UnsupportedCapability', 'DeadlineExceeded', 'internal'))
@@ -69,6 +70,20 @@ def recovery_input():
             ('tenant_id', 'document_id', 'revision_id', 'generation_id')})
     value.update(second_stage=stage, second_scope=dict(value['scope'], tenant_id=manifest['tenant_id']),
         second_points=points)
+    third_stage = deepcopy(stage)
+    third_manifest = third_stage['manifest']
+    third_manifest.update(tenant_id='tenant-e2b-third', document_id='doc-e2b-third',
+        revision_id='rev-e2b-third', generation_id='gen-e2b-third')
+    for member in third_manifest['members']:
+        member['point_id'] = point_id(['cragkit.qdrant.point.v1', third_manifest['backend_namespace'],
+            third_manifest['physical_collection'], third_manifest['collection_incarnation'], third_manifest['tenant_id'],
+            third_manifest['collection'], third_manifest['document_id'], third_manifest['revision_id'],
+            third_manifest['generation_id'], member['chunk_id'], third_manifest['dense_profile']['profile_id'],
+            third_manifest['sparse_profile']['profile_id']])
+    third_stage['intent'].update(tenant_id=third_manifest['tenant_id'], document_id=third_manifest['document_id'],
+        intent_id='intent-e2b-third', manifest_sha256=encode_manifest(third_manifest, third_stage['canonical_text']).sha256)
+    value.update(third_stage=third_stage,
+        third_scope=dict(value['scope'], tenant_id=third_manifest['tenant_id']))
     return value
 
 
@@ -159,7 +174,7 @@ async def python_recovery_cases(value):
     from cragkit._qdrant_reconciliation import QdrantReconciliationVerifier, receipt_data
     from cragkit._qdrant_recovery import PostgresQdrantRecovery, recovery_components
     from cragkit.contracts import TrustedScope
-    from cragkit.errors import InvalidRequest, ProviderUnavailable, UnsupportedCapability
+    from cragkit.errors import InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability
     import logging
 
     inputs = value['inputs']
@@ -189,6 +204,11 @@ async def python_recovery_cases(value):
     ctx = context(inputs['stage'], inputs['scope'], OWNER_TOKEN)
     second_token = '00000000-0000-4000-8000-000000000002'
     second = context(inputs['second_stage'], inputs['second_scope'], second_token)
+    third_token = '00000000-0000-4000-8000-000000000003'
+    third = context(inputs['third_stage'], inputs['third_scope'], third_token)
+    third_current = dict(third, scope=TrustedScope.model_validate(dict(inputs['third_scope'],
+        authorization_revision='auth-e2b-third-2')))
+    third_gate_checked = False
     deadline = asyncio.get_running_loop().time() + 100
     target = '/collections/' + inputs['config']['physical_collection']
     checks, handles, old_credential = [], set(), {}
@@ -266,6 +286,50 @@ async def python_recovery_cases(value):
         await handle.close()
         handles.discard(handle)
 
+    async def check_third_authority():
+        snapshot = await writer.manager_snapshot(third_current, deadline=deadline)
+        if (dict(snapshot['document']) != dict(active_generation_id=None,
+                authorization_revision='auth-e2b-third-2', mutation_epoch=2, tombstoned=False)
+                or snapshot['owner'] is not None or snapshot['max_sequence'] != 0 or snapshot['pending']):
+            raise RuntimeError('recovery_native_third_authority_changed')
+        await expect(UnauthorizedScope, lambda: writer.manager_snapshot(third, deadline=deadline))
+
+    async def check_third_gate(epoch):
+        nonlocal third_gate_checked
+        unknowns = [('e2b-first-lost', 'unknown'), ('e2b-second-lost', 'unknown')]
+        if await journal() != unknowns:
+            raise RuntimeError('recovery_native_third_gate_requires_two_unknowns')
+        before = await writer.manager_snapshot(third, deadline=deadline)
+        if (before['owner'] is not None or before['max_sequence'] != 0 or before['pending']
+                or before['intent']['state'] != 'staged'):
+            raise RuntimeError('recovery_native_third_already_mutated')
+        await expect(ProviderUnavailable, lambda: writer.acquire_owner(third, deadline=deadline))
+        try:
+            supervisor.issue_attempt(dict(intent_id=third['intent_id'], owner_token=third_token,
+                epoch=epoch, dispatch_id='e2b-third-must-remain-blocked'), deadline=deadline)
+        except ProviderUnavailable:
+            pass
+        else:
+            raise RuntimeError('recovery_native_third_native_gate_open')
+        if (await writer.manager_snapshot(third, deadline=deadline) != before
+                or await journal() != unknowns):
+            raise RuntimeError('recovery_native_third_block_mutated_authority')
+        initial = inputs['third_stage']['intent']['initial_authorization']
+        security = dict(action='update_authorization', intent_id='e2b-third-revoke',
+            tenant_id=third['scope'].tenant_id, collection=third['collection'], document_id=third['document_id'],
+            expected_authorization_revision='auth-1', expected_mutation_epoch=1,
+            authorization=dict(authorization_revision='auth-e2b-third-2', principal_ids=[], grant_ids=[],
+                tombstoned=False, **{key: initial[key] for key in ('language', 'kind', 'tag')}))
+        outcome = await writer.apply_security(security, third['scope'], owner_token=third_token, deadline=deadline)
+        if (outcome['state'] != 'authority_committed' or not outcome['authority_committed']
+                or outcome['replica_complete'] or outcome['purge_complete']):
+            raise RuntimeError('recovery_native_third_revocation_not_committed')
+        await check_third_authority()
+        await assert_blocked(epoch)
+        if await journal() != unknowns:
+            raise RuntimeError('recovery_native_third_revocation_changed_unknowns')
+        third_gate_checked = True
+
     async def ordinary_read(epoch, dispatch):
         cap = supervisor.issue_attempt(dict(intent_id=ctx['intent_id'], owner_token=OWNER_TOKEN,
             epoch=epoch, dispatch_id=dispatch), deadline=deadline)
@@ -307,6 +371,8 @@ async def python_recovery_cases(value):
         if await journal() != [('e2b-first-lost', 'unknown'), ('e2b-second-lost', 'unknown')]:
             raise RuntimeError('recovery_native_unknown_journals_missing')
         checks.append(CHECKS[1])
+        await writer.stage(prepare_stage(inputs['third_stage']), third['scope'],
+            owner_token=third_token, deadline=deadline)
         real_session = supervisor.control_session
         @asynccontextmanager
         async def observed_session():
@@ -317,6 +383,8 @@ async def python_recovery_cases(value):
                     if await state() != [('recovery_blocked', record['new_epoch'], record['recovery_id'])]:
                         raise RuntimeError('recovery_native_physical_before_commit')
                     ordinary_blocked(record['new_epoch'])
+                    if not third_gate_checked:
+                        await check_third_gate(record['new_epoch'])
                     if pause_physical is not None:
                         started, released = pause_physical
                         pause_physical = None
@@ -516,6 +584,10 @@ async def python_recovery_cases(value):
         if len(remaining) != 3 or any(row[1] != 'settled' for row in remaining):
             raise RuntimeError('recovery_native_final_journal')
         checks.append(CHECKS[21])
+        if not third_gate_checked:
+            raise RuntimeError('recovery_native_third_gate_not_checked')
+        await check_third_authority()
+        checks.append(CHECKS[22])
         return dict(runtime='python', checks=checks, proof_scope='durable_recovery_settlement_only')
     except BaseException as error:
         primary = error

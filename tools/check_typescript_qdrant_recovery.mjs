@@ -11,10 +11,11 @@ import {ManagedQdrantSupervisor} from '../packages/typescript/dist/qdrant-superv
 import {PostgresQdrantWriter, prepare_stage, writer_binding} from '../packages/typescript/dist/qdrant-writer.js';
 import {QdrantReconciliationVerifier, receipt_data} from '../packages/typescript/dist/qdrant-reconciliation.js';
 import {PostgresQdrantRecovery, recovery_components} from '../packages/typescript/dist/qdrant-recovery.js';
-import {InvalidRequest, ProviderUnavailable, UnsupportedCapability} from '../packages/typescript/dist/errors.js';
+import {InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability} from '../packages/typescript/dist/errors.js';
 
 const OWNER = '00000000-0000-4000-8000-000000000001';
 const SECOND_OWNER = '00000000-0000-4000-8000-000000000002';
+const THIRD_OWNER = '00000000-0000-4000-8000-000000000003';
 const CHECKS = Object.freeze([
   'actual_native_instance_registered_with_restricted_supervisor_login',
   'two_documents_have_real_journaled_writes_with_lost_acknowledgments',
@@ -38,6 +39,7 @@ const CHECKS = Object.freeze([
   'private_sql_handoff_resumes_actual_ordinary_reads_at_current_epoch',
   'next_recovery_identity_advances_a_fresh_epoch_and_reopens_privately',
   'recovery_never_publishes_or_marks_replica_completion',
+  'backend_wide_recovery_gate_allows_independent_revocation',
 ]);
 const ERRORS = new Set(['InvalidRequest', 'ProviderUnavailable', 'UnsupportedCapability', 'DeadlineExceeded',
   'IndexNotReady', 'IntegrityViolation', 'UnauthorizedScope']);
@@ -162,12 +164,16 @@ async function cases(value) {
     intent_id: inputs.stage.intent.intent_id, owner_token: OWNER};
   const second = {scope: inputs.second_scope, collection: inputs.second_stage.manifest.collection,
     document_id: inputs.second_stage.manifest.document_id, intent_id: inputs.second_stage.intent.intent_id, owner_token: SECOND_OWNER};
+  const third = {scope: inputs.third_scope, collection: inputs.third_stage.manifest.collection,
+    document_id: inputs.third_stage.manifest.document_id, intent_id: inputs.third_stage.intent.intent_id, owner_token: THIRD_OWNER};
+  const thirdFresh = {...third, scope: {...third.scope, authorization_revision: 'auth-e2b-third-2'}};
   const target = '/collections/' + inputs.config.physical_collection;
   const checks = [], handles = new Set(), oldCredential = {};
   const injection = {armed: false, fired: false, boundarySealed: false, openUpdates: 0, freshOpenReads: 0, handoffChecked: false, sqlCalls: 0};
   let supervisorResource, rawPool, recovery, competingRecovery, address, primary;
   let pausePhysical;
   let fenceCount = 0;
+  let thirdRevoked = false;
   function ordinaryBlocked(epoch) {
     try {
       supervisor.issue_attempt({intent_id: ctx.intent_id, owner_token: OWNER, epoch, dispatch_id: 'must-remain-blocked'}, options);
@@ -289,6 +295,7 @@ async function cases(value) {
 
     const originalRequest = await lostAck(ctx, inputs.stage, inputs.expected_points, 'e2b-first-lost', true);
     await lostAck(second, inputs.second_stage, inputs.second_points, 'e2b-second-lost');
+    await writer.stage(prepare_stage(inputs.third_stage), third.scope, {...options, owner_token: THIRD_OWNER});
     if (!isDeepStrictEqual(await journal(), [['e2b-first-lost', 'unknown'], ['e2b-second-lost', 'unknown']])) throw new Error('two_unknown_journals');
     checks.push(CHECKS[1]);
 
@@ -301,6 +308,34 @@ async function cases(value) {
           const observed = await state();
           if (!isDeepStrictEqual(observed, [['recovery_blocked', String(record.new_epoch), record.recovery_id]])) throw new Error('physical_before_durable_block');
           ordinaryBlocked(record.new_epoch);
+          if (!thirdRevoked) {
+            const unknowns = [['e2b-first-lost', 'unknown'], ['e2b-second-lost', 'unknown']];
+            if (!isDeepStrictEqual(await journal(), unknowns)) throw new Error('third_gate_requires_two_unknowns');
+            const before = await writer.manager_snapshot(third, options);
+            if (before.owner !== null || before.max_sequence !== 0 || before.pending) throw new Error('third_stage_already_mutated');
+            await expected(ProviderUnavailable, () => writer.acquire_owner(third, options));
+            await expected(ProviderUnavailable, () => supervisor.issue_attempt({intent_id: third.intent_id,
+              owner_token: THIRD_OWNER, epoch: record.new_epoch, dispatch_id: 'e2b-third-blocked'}, options));
+            if (!isDeepStrictEqual(await writer.manager_snapshot(third, options), before)
+              || !isDeepStrictEqual(await journal(), unknowns)) throw new Error('third_block_changed_mutation_state');
+            const initial = inputs.third_stage.intent.initial_authorization;
+            const revocation = await writer.apply_security({action: 'update_authorization', intent_id: 'e2b-third-revoke',
+              tenant_id: third.scope.tenant_id, collection: third.collection, document_id: third.document_id,
+              expected_authorization_revision: 'auth-1', expected_mutation_epoch: 1,
+              authorization: {authorization_revision: 'auth-e2b-third-2', principal_ids: [], grant_ids: [],
+                tombstoned: false, language: initial.language, kind: initial.kind, tag: initial.tag}},
+              third.scope, {...options, owner_token: THIRD_OWNER});
+            if (revocation.state !== 'authority_committed' || !revocation.authority_committed
+              || revocation.replica_complete || revocation.purge_complete) throw new Error('third_revocation_not_committed');
+            const after = await writer.manager_snapshot(thirdFresh, options);
+            if (after.document?.authorization_revision !== 'auth-e2b-third-2' || after.document.mutation_epoch !== 2
+              || after.document.tombstoned || after.owner !== null || after.max_sequence !== 0 || after.pending)
+              throw new Error('third_revocation_not_independently_visible');
+            await expected(UnauthorizedScope, () => writer.manager_snapshot(third, options));
+            if (!isDeepStrictEqual(await state(), observed) || !isDeepStrictEqual(await journal(), unknowns))
+              throw new Error('third_revocation_changed_recovery_window');
+            thirdRevoked = true;
+          }
           if (pausePhysical) {
             const pause = pausePhysical;
             pausePhysical = undefined;
@@ -467,6 +502,13 @@ async function cases(value) {
     const remaining = await journal();
     if (remaining.length !== 3 || remaining.some(row => row[1] !== 'settled')) throw new Error('unexpected_final_journal');
     checks.push(CHECKS[21]);
+    const thirdFinal = await writer.manager_snapshot(thirdFresh, options);
+    if (!thirdRevoked || thirdFinal.document?.authorization_revision !== 'auth-e2b-third-2'
+      || thirdFinal.document.mutation_epoch !== 2 || thirdFinal.document.tombstoned
+      || thirdFinal.owner !== null || thirdFinal.max_sequence !== 0 || thirdFinal.pending)
+      throw new Error('third_revocation_lost_after_recovery');
+    await expected(UnauthorizedScope, () => writer.manager_snapshot(third, options));
+    checks.push(CHECKS[22]);
     return {runtime: 'typescript', checks, proof_scope: 'durable_recovery_settlement_only'};
   } catch (error) { primary = error; throw error; }
   finally {
