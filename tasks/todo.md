@@ -2068,3 +2068,17 @@ outside scope. Learning practice unassessed. H and V5 remain open; next
 smallest action is to map already executed native fault evidence to exact H
 IDs where the mechanism and assertions match, then implement the next missing
 native boundary without relabeling adjacent evidence.
+
+H-S5 existing-evidence handoff: root reviewed the final native parent result
+and both consumer assertions, then registered exact frozen IDs
+`intent_payload_changed`, `write_ack_lost`, `verified_prepared_commit_lost`
+and `pointer_cas_race` in the [mapping report](../evaluation/reports/V5/V5-04H-existing-native-mapping.md).
+Their actual 19-check-per-runtime PostgreSQL 17/Qdrant 1.20 run, matching
+public hashes and cleanup are the H-S4 parent evidence; no new test or service
+run is claimed for this mapping. The changed file scope is this report and
+tracker only; user edits remain outside scope. Twelve exact H IDs now have
+native evidence. Resource observation is inherited from the same parent run:
+28 GiB disk headroom, 47% free system memory; no new task-owned processes.
+Learning practice unassessed. H and V5 remain open. Next smallest action is
+the reserved dispatch-before-HTTP process boundary (matrix IDs 8 and 9),
+which the existing dispatched-state worker crash cannot substitute.
