@@ -2176,3 +2176,28 @@ H and V5 remain open; next smallest action is to settle the lease-boundary
 interpretation for ID 9 and implement the remaining complete fault rows,
 including supervisor/coordinator death, without treating elapsed time alone
 as fencing.
+
+H-S7 assignment (V5-04H matrix ID `known_completed_replay`): one root writer
+owns only the existing Python native ordinary-worker consumer, the H report
+and tracker. The Node consumer already checks its settled journal across the
+second real child run; Python must add the same scoped read-only journal
+comparison. Shared existing worker result, no new HTTP event, one logical
+attempt and unchanged parent supervisor/pointer are required. Verify with
+both serial native runtimes and focused parent tests. No product/schema/
+fixture/migration/lockfile change; user edits remain outside scope. State:
+assigned, H/V5 open.
+
+H-S7 final handoff: root added a scoped SQL READ ONLY settled-journal
+comparison to the Python second-child historical replay, matching Node's
+existing assertion. The serial PostgreSQL 17/Qdrant 1.20 ordinary-worker
+parent passed 18 checks (nine per runtime), matching public hash and verified
+cleanup; focused parent tests passed three. Exact frozen ID
+`known_completed_replay` now has [native evidence](../evaluation/reports/V5/V5-04H-known-replay.md):
+a second real child returns identical durable publication without a new
+reserved/before-write/HTTP event or changed settled journal. Fourteen H IDs
+are complete. Changed files: Python native consumer, report and tracker.
+No product/schema/fixture/grant/dependency/lockfile/provider/hosted change;
+unrelated user edits remain outside scope. Disk headroom 28 GiB and system
+memory free 40%; task-owned services closed. Learning practice unassessed.
+H and V5 remain open; next smallest action is the next missing native matrix
+boundary, while ID9 waits for an explicit no-owner-lease acceptance decision.

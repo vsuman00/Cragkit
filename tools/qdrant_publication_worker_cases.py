@@ -165,6 +165,16 @@ async def python_publication_worker_cases(value):
         if result['document']['active_generation_id'] != expected_active or result['pending'] is not pending:
             raise RuntimeError('worker_authority_snapshot')
         return result
+    async def settled_journal(stage):
+        async with supervisor_resource.lease(deadline=deadline) as connection:
+            async with connection.transaction():
+                await connection.execute('SET TRANSACTION READ ONLY')
+                await connection.execute("SELECT set_config('cragkit_qdrant.backend_instance_id',%s,true)",
+                    (inputs['instance_id'],))
+                cursor = await connection.execute('SELECT dispatch_id,state,sequence::text,completion_sha256 '
+                    'FROM cragkit_qdrant.dispatch_journal WHERE instance_id=%s AND intent_id=%s '
+                    'ORDER BY sequence', (inputs['instance_id'], stage['intent']['intent_id']))
+                return await cursor.fetchall()
     def barrier_event(event, events):
         if event['kind'] == 'reserved':
             if (events or event['attempt_id'] != 1 or event['sequence'] != 1
@@ -209,12 +219,17 @@ async def python_publication_worker_cases(value):
         if dict(supervisor.control_binding()) != original_identity or await observed_listener(endpoint) != first_pid:
             raise RuntimeError('worker_parent_supervisor_replaced')
         checks.append(CHECKS[0])
+        original_journal = await settled_journal(inputs['stage'])
+        if (len(original_journal) != 1 or original_journal[0][1] != 'settled'
+                or type(original_journal[0][3]) is not str or len(original_journal[0][3]) != 64):
+            raise RuntimeError('worker_completed_journal_missing')
         observed.clear()
         normal_barriers.clear()
         book = ledger()
         historical = record(await host.publish(job(inputs['stage'], scopes[0]), book, deadline=deadline, observer=observe))
         usage(book)
-        if historical != result or observed or normal_barriers:
+        if (historical != result or observed or normal_barriers
+                or await settled_journal(inputs['stage']) != original_journal):
             raise RuntimeError('worker_historical_rewrite')
         checks.append(CHECKS[1])
         book = ledger()
