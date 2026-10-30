@@ -5,6 +5,7 @@ from copy import deepcopy
 import re
 
 CHECKS = (
+    'tombstone_before_purge_denies_source_while_points_remain',
     'published_retained_and_unknown_put_erased_with_claims_retained',
     'source_denied_before_and_after_managed_erasure',
     'completed_purge_retry_is_metadata_only',
@@ -436,14 +437,50 @@ async def python_purge_cases(value):
         released = await retained_request.release(fetched.binding, purpose='final', max_source_bytes=16777216, include_source=True)
         unavailable(released)
         _, before_source = await source(auth2); unavailable(before_source)
-        first = await purge(base['purge'])
         expected_ids = {member['point_id'] for stage in (base['stage'], base['second_stage']) for member in stage['manifest']['members']}
+        tombstoned = await snapshot(base['tombstone'])
+        if (tombstoned['document'] != dict(active_generation_id=base['stage']['manifest']['generation_id'],
+                authorization_revision='auth-2', mutation_epoch=2, tombstoned=True)
+                or tombstoned['intent']['action'] != 'tombstone'
+                or tombstoned['intent']['state'] != 'authority_committed'
+                or not tombstoned['intent']['authority_committed']
+                or tombstoned['intent']['replica_complete'] or tombstoned['intent']['purge_complete']
+                or not tombstoned['pending'] or (await snapshot(base['purge']))['intent'] is not None
+                or await content_unavailable(base['purge'])):
+            raise RuntimeError('purge_tombstone_before_purge_authority')
+        manifest = base['stage']['manifest']
+        fields = ('backend_namespace', 'physical_collection', 'collection_incarnation',
+            'tenant_id', 'collection', 'document_id')
+        filters = dict(must=[dict(key=field, match=dict(value=manifest[field])) for field in fields])
+        capability = supervisor.issue_attempt(dict(intent_id='native-tombstone-before-purge', owner_token=token,
+            epoch=supervisor.control_binding()['epoch'], dispatch_id='native-tombstone-before-purge'), deadline=deadline)
+        probe = supervisor.transport_for(capability)
+        try:
+            physical = json.loads(bytes(await probe.request('POST', target + '/points/scroll',
+                body=request_bytes(dict(filter=filters, limit=8, with_payload=True, with_vector=False)), deadline=deadline)))
+            result = physical.get('result', {})
+            points = result.get('points', [])
+            if (physical.get('status') != 'ok' or len(expected_ids) != 4 or len(points) != len(expected_ids)
+                    or {point['id'] for point in points} != expected_ids
+                    or result.get('next_page_offset', 'missing') is not None
+                    or any(point['payload'].get(field) != manifest[field] for point in points for field in fields)):
+                raise RuntimeError('purge_tombstone_before_purge_points')
+        finally:
+            await probe.close()
+        denied = await writer.admit_publication(context(base['second_stage']), deadline=deadline)
+        if (denied['intent']['state'] != 'denied'
+                or (await snapshot(base['tombstone']))['document'] != tombstoned['document']):
+            raise RuntimeError('purge_tombstone_before_purge_publication')
+        checks.append(CHECKS[0])
+        observations.append(['tombstone_before_purge', 'unavailable', 'unavailable', len(expected_ids),
+            True, False, True, 'denied'])
+        first = await purge(base['purge'])
         if (supervisor.control_binding()['credential_generation'] == credential or network['put_drops'] != 1
                 or set(point for batch in network['deletes'] for point in batch) != expected_ids):
             raise RuntimeError('purge_base_physical_fence')
-        checks.append(CHECKS[0]); observations.append(row(first))
+        checks.append(CHECKS[1]); observations.append(row(first))
         _, after_source = await source(auth2); unavailable(after_source)
-        checks.append(CHECKS[1]); observations.append(['source', 'verified', 'unavailable', 'unavailable'])
+        checks.append(CHECKS[2]); observations.append(['source', 'verified', 'unavailable', 'unavailable'])
         counts = (network['count'], database['writes'], database['bodies'])
         if await purge(base['purge']) != first or counts != (network['count'], database['writes'], database['bodies']):
             raise RuntimeError('purge_retry_not_metadata_only')
@@ -455,7 +492,7 @@ async def python_purge_cases(value):
         counts = (network['count'], database['writes'], database['bodies'])
         if await purge(base['purge'], auth3) != first or counts != (network['count'], database['writes'], database['bodies']):
             raise RuntimeError('purge_retry_new_authority_not_metadata_only')
-        checks.append(CHECKS[2]); observations.append(row(first))
+        checks.append(CHECKS[3]); observations.append(row(first))
         item = await setup('delete_loss'); await commit(item['tombstone'])
         network['mode'] = 'delete'
         await expect(ProviderUnavailable, lambda: purge(item['purge']))
@@ -509,7 +546,7 @@ async def python_purge_cases(value):
         result = await purge(item['purge'])
         if supervisor.control_binding()['credential_generation'] == credential or network['delete_drops'] != 1:
             raise RuntimeError('purge_delete_retry_not_refenced')
-        checks.append(CHECKS[3]); observations.append(row(result))
+        checks.append(CHECKS[4]); observations.append(row(result))
         item = await setup('handoff'); await commit(item['tombstone'])
         captured = {}
         async def interrupt(verifier, receipt, **options):
@@ -608,7 +645,7 @@ async def python_purge_cases(value):
         result = await purge(item['purge'])
         if counts != (supervisor.control_binding()['credential_generation'], len(network['deletes'])):
             raise RuntimeError('purge_handoff_repeated_delete')
-        checks.append(CHECKS[4]); observations.append(row(result))
+        checks.append(CHECKS[5]); observations.append(row(result))
         item = await setup('commit_loss'); await commit(item['tombstone'])
         captured.clear()
         async def rollback_completion(verifier, receipt, **options):
@@ -629,14 +666,14 @@ async def python_purge_cases(value):
         if (database['lost'] != 1 or database['confirmations'] != 1 or not database['confirm_queries']
                 or database['confirm_http'] or database['confirm_bodies'] or database['confirm_writes'] or database['confirming']):
             raise RuntimeError('purge_commit_confirmation_not_readonly')
-        checks.append(CHECKS[5]); observations.append(row(result))
+        checks.append(CHECKS[6]); observations.append(row(result))
         item = await setup('ownerless'); await commit(item['tombstone'])
         denied = await writer.admit_publication(context(item['stage']), deadline=deadline)
         pending = await snapshot(item['stage'])
         if denied['intent']['state'] != 'denied' or pending['owner'] is not None:
             raise RuntimeError('purge_ownerless_prerequisite')
         result = await purge(item['purge'])
-        checks.append(CHECKS[6]); observations.append(row(result))
+        checks.append(CHECKS[7]); observations.append(row(result))
         item = await setup('authority_change'); await commit(item['tombstone'])
         functions = database['functions']
         async def changed_authority(verifier,receipt,**options):
@@ -690,7 +727,7 @@ async def python_purge_cases(value):
         await expect(UnsupportedCapability, lambda: manager.purge(item['purge'], auth2,
             ExecutionLedger(Limits(max_provider_calls=0), deadline=deadline), retention_policy='unsupported', deadline=deadline))
         if counts != (network['count'], database['writes']): raise RuntimeError('purge_refusal_mutated')
-        checks.append(CHECKS[7]); observations.append(['refusals', 'integrity_violation', 'unauthorized_scope', 'unsupported_capability'])
+        checks.append(CHECKS[8]); observations.append(['refusals', 'integrity_violation', 'unauthorized_scope', 'unsupported_capability'])
         if tuple(fault_checks)!=FAULT_CHECKS:
             raise RuntimeError('purge_fault_checks_missing')
         witness = json.dumps(['cragkit.qdrant.managed-purge.v2', observations, fault_checks], ensure_ascii=False, separators=(',', ':')).encode('utf-8')

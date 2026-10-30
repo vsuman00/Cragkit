@@ -43,7 +43,8 @@ def test_purge_fixture_binds_distinct_documents_complete_graphs_and_exact_tombst
 
 
 def test_purge_native_evidence_cannot_substitute_partial_or_physical_only_results():
-    assert len(CHECKS) == len(set(CHECKS)) == 8
+    assert len(CHECKS) == len(set(CHECKS)) == 9
+    assert CHECKS[0] == 'tombstone_before_purge_denies_source_while_points_remain'
     for runtime in ('python', 'typescript'):
         value = dict(runtime=runtime, checks=list(CHECKS), fault_checks=list(FAULT_CHECKS), proof_scope='native_managed_purge_only',
             semantic_witness_sha256='a'*64)

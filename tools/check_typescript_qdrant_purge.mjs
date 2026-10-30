@@ -17,6 +17,7 @@ import {security_projection_data, purge_projection_data} from '../packages/types
 import {ProviderUnavailable, UnauthorizedScope, InvalidRequest, IntegrityViolation, UnsupportedCapability} from '../packages/typescript/dist/errors.js';
 const POLICY = 'erase_managed_source_and_replay_v1';
 const CHECKS = [
+  'tombstone_before_purge_denies_source_while_points_remain',
   'published_retained_and_unknown_put_erased_with_claims_retained',
   'source_denied_before_and_after_managed_erasure',
   'completed_purge_retry_is_metadata_only',
@@ -333,9 +334,34 @@ async function cases(value) {
     unavailable(await retained.handle.release(retained.result.binding,{purpose:'final',max_source_bytes:16777216,include_source:true}));
     await closeSource(retained);
     const denied = await source(base,'auth-2'); unavailable(denied.result); await closeSource(denied);
+    const tombstoned = await writer.manager_snapshot(context(base.tombstone),options);
+    assert(tombstoned.document.tombstoned && tombstoned.document.authorization_revision === 'auth-2'
+      && tombstoned.document.mutation_epoch === 2
+      && tombstoned.document.active_generation_id === base.stage.manifest.generation_id
+      && tombstoned.intent.action === 'tombstone' && tombstoned.intent.state === 'authority_committed'
+      && tombstoned.intent.authority_committed && !tombstoned.intent.replica_complete
+      && !tombstoned.intent.purge_complete && tombstoned.pending
+      && (await snapshot(base)).intent === null);
+    const baseIds = [...base.stage.manifest.members,...base.second_stage.manifest.members].map(member => member.point_id).sort();
+    const filterKeys = ['backend_namespace','physical_collection','collection_incarnation','tenant_id','collection','document_id'];
+    const filter = {must:filterKeys.map(key => ({key,match:{value:base.stage.manifest[key]}}))};
+    const readAttempt = supervisor.issue_attempt({intent_id:base.stage.intent.intent_id,owner_token:OWNER,
+      epoch:supervisor.control_binding().epoch,dispatch_id:'native-tombstone-before-purge-readback'},options);
+    const readback = supervisor.transport_for(readAttempt);
+    try {
+      const physical = decode(await readback.request('POST',pointPath+'/scroll',
+        {...options,body:bytes({filter,limit:8,with_payload:true,with_vector:false}),max_response_bytes:1048576}));
+      assert(physical.status === 'ok' && physical.result?.next_page_offset === null
+        && Array.isArray(physical.result.points) && baseIds.length === 4
+        && same(physical.result.points.map(point => point.id).sort(),baseIds)
+        && physical.result.points.every(point => filterKeys.every(key => point.payload?.[key] === base.stage.manifest[key])));
+    } finally { await readback.close(); }
+    const tombstoneAdmission = await writer.admit_publication(context(base.second_stage.intent),options);
+    assert(tombstoneAdmission.intent.state === 'denied'
+      && same((await snapshot(base)).document,tombstoned.document));
+    observations.push(['tombstone_before_purge','unavailable','unavailable',baseIds.length,true,false,true,'denied']); step++;
     const baseResult = await purge(base);
     assert(generation() !== oldGeneration && deleteBodies.length === 1);
-    const baseIds = [...base.stage.manifest.members,...base.second_stage.manifest.members].map(member => member.point_id).sort();
     assert(same([...deleteBodies[0]].sort(),baseIds) && baseIds.length === 4);
     mark(baseResult);
 

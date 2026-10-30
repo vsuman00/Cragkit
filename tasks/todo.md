@@ -2669,3 +2669,41 @@ files, including MCP sources, remain untouched. Learning practice is
 unassessed. Twenty-nine of 43 exact H IDs now have accepted native evidence;
 next smallest H action is one unresolved fault ID after reviewing the frozen
 matrix and current native harnesses. H, V5-05/06, C2 and full V5 stay open.
+
+H-S22 assignment (V5-04H exact ID `tombstone_before_purge`): shared outcome
+is a committed tombstone that immediately denies retained and fresh source
+release while actual old Qdrant points still exist and managed purge remains
+incomplete. The frozen ignored protocol is
+`artifacts/V5/V5-04H/tombstone-before-purge-r1-protocol.md`. Sol
+`h_tombstone_python` owns only `tools/qdrant_purge_cases.py` and assembles;
+Sol `h_tombstone_node` owns only `tools/check_typescript_qdrant_purge.mjs`.
+Both do substantive native consumer work and coordinate exact observations
+directly. Root owns the shared parent test, report/tracker, serial native
+integration, Git and escalation. Product, SQL/schema/migrations, QW/ QP
+contracts, sealed/shared fixtures, locks and user edits are read-only
+protected boundaries. One local test process at a time; peers run no tests,
+services, network, database or Git commands. Ownership transfer requires
+agreement and root notice. Outcome/protected changes return to root;
+unresolved material decisions go to Astra. State: assigned; H/V5 open.
+
+H-S22 final handoff: Sol Python and Node peers extended separate native purge
+consumers, coordinated the exact pre-purge scoped readback and witness order,
+and Python assembled. Root inspected both diffs. After a real tombstone
+commit, retained and fresh source reads denied release while a bounded
+six-field Qdrant scroll still found all four expected base/successor points;
+authority showed purge incomplete and successor publication was denied.
+The existing purge trace then completed. [Checkpoint report](../evaluation/reports/V5/V5-04H-tombstone-before-purge.md).
+Changed files: two native purge consumers, focused parent protocol test,
+report and tracker. Seven focused tests passed. The serial native parent
+passed 42 checks across Python/Node, matched semantic witness hashes and
+verified cleanup. Final full local suites passed 3,104 Python/package-tool
+tests (four existing serializer warnings) and 1,557 Node tests; strict
+Python/TypeScript types and all 16 seals passed. The earlier full Python
+suite ran against an in-progress split and failed the then-new nine-check
+assertion; the assembled rerun passed. No provider/hosted call, product or
+SQL/schema edit, migration, lockfile, shared sealed fixture or user edit.
+Disk headroom 28 GiB; no owned service remains. Learning practice unassessed.
+Thirty of 43 exact H IDs now have accepted native evidence. Next smallest
+action: map an unresolved H fault to the existing actual process/security
+harness, freeze its boundary and run both native runtimes. H and V5 remain
+open; downstream V5-05/06/C2 acceptance is still gated.
