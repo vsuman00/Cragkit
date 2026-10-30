@@ -13,6 +13,9 @@ CHECKS = (
     'independent_document_worker_pauses_after_dispatch_before_http',
     'same_supervisor_durable_recovery_retires_paused_worker_key_with_actual_401',
     'retired_worker_cannot_refresh_credential_or_publish',
+    'current_scope_reconciliation_settles_all_retired_documents',
+    'all_uncertainty_settled_before_single_reopen',
+    'reconciled_paused_target_publishes_current_authorization',
     'host_close_preserves_supervisor_and_reaps_owned_children',
 )
 ERRORS = frozenset(('IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability',
@@ -344,11 +347,81 @@ async def python_publication_worker_cases(value):
                 or state['intent']['state'] == 'published' or previous['intent']['state'] == 'published'):
             raise RuntimeError('worker_retired_publication_or_reopen')
         checks.append(CHECKS[7])
+        reconciled = []
+        for stage, scope, active in (
+                (inputs['successor'], scopes[0], inputs['stage']['manifest']['generation_id']),
+                (inputs['eof_stage'], scopes[2], None),
+                (inputs['second_stage'], scopes[1], None)):
+            before = await snapshot(bundle, stage, scope, active, True)
+            owner = before['owner']
+            if owner is None or owner['intent_id'] != stage['intent']['intent_id']:
+                raise RuntimeError('worker_reconciliation_owner_missing')
+            ctx = dict(context(stage, scope), owner_token=owner['owner_token'])
+            await bundle['recovery'].advance_owner(proof, ctx, deadline=deadline)
+            await bundle['recovery'].dispatch_stage_recovery(proof, ctx, authorize, deadline=deadline)
+            receipt = await bundle['verifier'].verify(proof, ctx, deadline=deadline)
+            settled = await bundle['recovery'].settle_retired(proof, receipt, deadline=deadline)
+            if settled['settled_count'] < 1:
+                raise RuntimeError('worker_reconciliation_settlement_missing')
+            after = await snapshot(bundle, stage, scope, active, False)
+            if after['backend']['state'] != 'recovery_blocked' or after['intent']['state'] == 'published':
+                raise RuntimeError('worker_reconciliation_early_reopen_or_publication')
+            reconciled.append((stage, scope, active))
+        checks.append(CHECKS[8])
+        for stage, scope, active in reconciled:
+            await snapshot(bundle, stage, scope, active, False)
+        async with supervisor_resource.lease(deadline=deadline) as connection:
+            async with connection.transaction():
+                await connection.execute('SET TRANSACTION READ ONLY')
+                await connection.execute("SELECT set_config('cragkit_qdrant.backend_instance_id',%s,true)",
+                    (inputs['instance_id'],))
+                cursor = await connection.execute('SELECT count(*) FROM cragkit_qdrant.dispatch_journal '
+                    "WHERE instance_id=%s AND state<>'settled'", (inputs['instance_id'],))
+                if await cursor.fetchall() != [(0,)]:
+                    raise RuntimeError('worker_reconciliation_instance_uncertainty_remaining')
+        opened = await bundle['recovery'].reopen(proof, deadline=deadline)
+        if dict(opened) != dict(state='open', epoch=2):
+            raise RuntimeError('worker_reconciliation_reopen_missing')
+        checks.append(CHECKS[9])
+        book = ledger()
+        repaired = plain(await bundle['manager'].repair(reference(inputs['second_stage']), scopes[1], book, deadline=deadline))
+        usage(book)
+        if (repaired['operation'] != 'repair' or repaired['state'] != 'published'
+                or repaired['published'] is not True or repaired['authority_committed'] is not True
+                or repaired['replica_complete'] is not True):
+            raise RuntimeError('worker_reconciled_target_not_published')
+        state = await snapshot(bundle, inputs['second_stage'], scopes[1],
+            inputs['second_stage']['manifest']['generation_id'], False)
+        if state['backend']['state'] != 'open' or state['backend']['epoch'] != 2:
+            raise RuntimeError('worker_reconciled_target_backend')
+        for stage, scope, active in reconciled[:2]:
+            outside = await snapshot(bundle, stage, scope, active, False)
+            if outside['intent']['state'] == 'published':
+                raise RuntimeError('worker_reconciliation_published_outside_target')
+        attempt = supervisor.issue_attempt(dict(intent_id='worker-reconciled-readback',
+            owner_token=context(inputs['second_stage'], scopes[1])['owner_token'], epoch=2,
+            dispatch_id='worker-reconciled-readback'), deadline=deadline)
+        handle = supervisor.transport_for(attempt)
+        try:
+            for expected in (inputs['expected_points'], inputs['eof_points'], inputs['second_points']):
+                response = json.loads(await handle.request('POST', target + '/points',
+                    body=request_bytes(dict(ids=[point['id'] for point in expected],
+                        with_payload=True, with_vector=True)), deadline=deadline))
+                actual = response.get('result')
+                if (response.get('status') != 'ok' or type(actual) is not list or len(actual) != len(expected)
+                        or sorted([{key: point[key] for key in ('id', 'payload', 'vector')} for point in actual],
+                            key=lambda point: point['id']) != sorted(expected, key=lambda point: point['id'])):
+                    raise RuntimeError('worker_current_authorization_or_outside_payload_changed')
+        finally:
+            await handle.close()
+        if len(observations) != 1 or observations[0]['status'] != 401:
+            raise RuntimeError('worker_retired_child_reused_after_reconciliation')
+        checks.append(CHECKS[10])
         await host.close()
         if supervisor.control_binding()['alive'] is not True:
             raise RuntimeError('worker_host_closed_borrowed_supervisor')
         await observed_listener(endpoint)
-        checks.append(CHECKS[8])
+        checks.append(CHECKS[11])
         return dict(runtime='python', checks=checks, proof_scope='ordinary_worker_process_only',
             public_results_sha256=sha256(request_bytes(results)).hexdigest())
     except BaseException as error:

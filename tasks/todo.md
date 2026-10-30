@@ -2955,3 +2955,55 @@ report. Ignored native result:
 Disk headroom 28 GiB; no owned process remains. Learning practice unassessed.
 Next smallest action: choose a remaining H ownership/crash/tombstone fault,
 freeze its native barrier and verify both runtimes.
+
+H-S28 assignment (V5-04H exact ID `paused_old_worker_resumes`): decide whether
+the existing owned-worker native acceptance already proves the exact matrix
+case in both runtimes. Contract QW-r1 and ignored frozen protocol:
+`artifacts/V5/V5-04H/paused-old-worker-r1-protocol.md`. Sol
+`h_paused_worker_python` owns a read-only Python child/supervisor/evidence
+audit and assembles the paired finding; Sol `h_paused_worker_node` owns a
+read-only TypeScript child/supervisor/evidence audit. Their only writable
+paths, if needed, are separate task-owned `/tmp` notes. Both inspect the
+committed-dispatch barrier, surviving-supervisor recovery and rotation,
+actual retired-key HTTP 401, no refresh/stale publication/backend reopen,
+and cleanup; they coordinate concrete gaps directly. Root is final integrator,
+tracker/report/Git owner and escalation owner. Product, SQL/schema/migrations,
+QSC/QW contracts, sealed/shared fixtures, locks and user files are protected.
+Peers run no tests/processes/services/network/DB/Git. Root runs one bounded
+native parent and focused checks serially. Outcome/protected/ownership changes
+return to root; unresolved material decisions go to Astra. State: assigned;
+H and V5 open.
+
+H-S28 audit found a missing exact-fixture criterion: `current_authorization_restored_by_reconciliation`.
+The ordinary worker native rerun passed 18 checks with matching public hash
+and verified cleanup, but ended `recovery_blocked`. The ID remains OPEN.
+Revised ignored protocol:
+`artifacts/V5/V5-04H/paused-old-worker-r2-protocol.md`. Sol Python and Node
+peers own separate ordinary worker consumer files for sequential current-scope
+reconciliation of every uncertain document, reopen, and target publication
+and current payload inspection; Python assembles. Root owns parent tests and
+final integration. No product/schema/fixture/contract/lock change is
+authorized. The fixture injects no authorization mutation, so unchanged
+current revision is the exact scope. Protected/outcome changes still return
+to root. State: running, H/V5 open.
+
+H-S28 accepted: the real old child resumed after durable recovery rotated its
+credential and received actual HTTP 401. Both native consumers then used the
+same proof and current authorized scopes to reconcile and settle all three
+uncertain documents, checked instance-wide journal settlement, reopened once,
+and repaired the paused target. Exact physical point/payload/vector readback
+confirmed current authorization fields and preservation of the prior
+published generation and separate document. Root ran Python-only and Node-only
+native cases, then the combined parent: 24 checks (12 per runtime), matching
+public hash `7ba570d37e0a78880cf9d914816ae12748590d656142dfbf4e6d8c6e030d267e`,
+verified cleanup. Three focused tests, Node syntax, Python compilation and 16
+seals passed. Full package regressions from H-S22 were not rerun for this
+native harness slice. [Checkpoint report](../evaluation/reports/V5/V5-04H-paused-old-worker.md).
+State: COMPLETE for H-S28 only; 36 of 43 exact H IDs accepted. H and V5
+remain open. Handoff: changed `tools/qdrant_publication_worker_cases.py`,
+`tools/check_typescript_qdrant_publication_worker.mjs`,
+`tools/check_qdrant_publication_worker.py`, this tracker and report. Ignored
+native result: `artifacts/V5/V5-04H/paused-old-worker-both-02/results.json`.
+Disk headroom 27 GiB; no owned process remains. Learning practice unassessed.
+Next smallest action: prove one of the seven remaining exact H faults,
+starting with `writer_crash_live_supervisor` or `supervisor_crash_blocks`.

@@ -126,7 +126,9 @@ async def node_publication_worker_cases(value, *, scenario='ordinary'):
 
 
 async def check(fixture, runtime, binary, work_dir, *, scenario='ordinary'):
-    async with PublicationDatabase(fixture) as database:
+    # Ordinary recovery replays and verifies dispatched writes through the
+    # already-owned attestation profile; reserved crash keeps its base profile.
+    async with PublicationDatabase(fixture, with_attestations=scenario == 'ordinary') as database:
         cursor = await database.admin.execute("SELECT current_setting('max_connections')::int,"
             "current_setting('superuser_reserved_connections')::int,"
             "current_setting('reserved_connections')::int")

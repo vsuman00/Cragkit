@@ -1,4 +1,4 @@
-/** Actual owned-child publication acceptance. No recovery settlement is performed. */
+/** Actual owned-child publication and current-scope recovery acceptance. */
 import {execFile,spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
@@ -18,6 +18,9 @@ const CHECKS=[
   'independent_document_worker_pauses_after_dispatch_before_http',
   'same_supervisor_durable_recovery_retires_paused_worker_key_with_actual_401',
   'retired_worker_cannot_refresh_credential_or_publish',
+  'current_scope_reconciliation_settles_all_retired_documents',
+  'all_uncertainty_settled_before_single_reopen',
+  'reconciled_paused_target_publishes_current_authorization',
   'host_close_preserves_supervisor_and_reaps_owned_children',
 ];
 const RESULT_KEYS=['intent_id','operation','state','revision_id','generation_id',
@@ -232,11 +235,11 @@ async function cases(value){
     const pendingB=(await journal()).filter(row=>row[0]===inputs.second_stage.intent.intent_id);
     assert(pauseBarriers.length===2&&statuses.length===0&&pendingB.length===1&&pendingB[0][2]==='dispatched');add(5);
     // This bounded window has three max-one clients: stopped child, parent writer and supervisor.
-    const recoveryEntry=await bundle();
+    const recoveryEntry=await bundle();let proof;
     try{
-      const proof=await recoveryEntry.recovery.recover('worker-native-recovery',options),binding=supervisor.recovery_binding(proof);
+      proof=await recoveryEntry.recovery.recover('worker-native-recovery',options);const binding=supervisor.recovery_binding(proof);
       assert(binding.new_epoch===2&&binding.credential_generation!==originalIdentity.credential_generation);
-    }finally{await closeBundle(recoveryEntry);}
+    }catch(error){await closeBundle(recoveryEntry);throw error;}
     assert(isDeepStrictEqual(await backend(),[['recovery_blocked','2','worker-native-recovery']])&&await listener(address)!==initialPid);
     await pausedWorker.resume(short());pausedWorker=null;
     await operational(activeJob);activeJob=null;assert(isDeepStrictEqual(statuses,[401]));add(6);
@@ -248,8 +251,49 @@ async function cases(value){
       &&old.document.active_generation_id===inputs.stage.manifest.generation_id&&old.pending
       &&remaining.filter(row=>row[0]!==inputs.stage.intent.intent_id).every(row=>['dispatched','unknown'].includes(row[2]))
       &&remaining.length===4&&isDeepStrictEqual(await backend(),[['recovery_blocked','2','worker-native-recovery']]));add(7);
+    const authorized=async(scope,collection,document)=>{
+      assert([[inputs.successor,inputs.scope],[inputs.eof_stage,inputs.eof_scope],[inputs.second_stage,inputs.second_scope]]
+        .some(([stage,expected])=>isDeepStrictEqual(scope,expected)&&collection===stage.manifest.collection&&document===stage.manifest.document_id));
+      return true;
+    };
+    for(const [selected,scope] of [[inputs.successor,inputs.scope],[inputs.eof_stage,inputs.eof_scope],[inputs.second_stage,inputs.second_scope]]){
+      const before=await recoveryEntry.writer.manager_snapshot(context(selected,scope),options);
+      assert(before.owner?.intent_id===selected.intent.intent_id&&typeof before.owner.owner_token==='string');
+      const current={...context(selected,scope),owner_token:before.owner.owner_token};
+      await recoveryEntry.recovery.advance_owner(proof,current,options);
+      await recoveryEntry.recovery.dispatch_stage_recovery(proof,current,authorized,options);
+      const receipt=await recoveryEntry.verifier.verify(proof,current,options);
+      assert((await recoveryEntry.recovery.settle_retired(proof,receipt,options)).settled_count>=1);
+      const after=await recoveryEntry.writer.manager_snapshot(current,options);
+      assert(!after.pending&&after.intent.state!=='published'&&after.document.active_generation_id===before.document.active_generation_id);
+      assert(isDeepStrictEqual(await backend(),[['recovery_blocked','2','worker-native-recovery']]));
+    }
+    assert((await journal()).every(row=>row[2]==='settled'));add(8);
+    assert(isDeepStrictEqual(await recoveryEntry.recovery.reopen(proof,options),{state:'open',epoch:2})
+      &&isDeepStrictEqual(await backend(),[['open','2',null]]));add(9);
+    const repairLedger=book();
+    const repaired=await recoveryEntry.manager.repair(reference(inputs.second_stage),inputs.second_scope,repairLedger,options);
+    accounting(repairLedger,1);
+    assert(repaired.operation==='repair'&&repaired.state==='published'&&repaired.published&&repaired.authority_committed&&repaired.replica_complete);
+    const target=await snapshot(inputs.second_stage,inputs.second_scope),preserved=await snapshot(inputs.successor),outside=await snapshot(inputs.eof_stage,inputs.eof_scope);
+    assert(target.document.active_generation_id===inputs.second_stage.manifest.generation_id&&!target.pending
+      &&preserved.document.active_generation_id===inputs.stage.manifest.generation_id&&!preserved.pending&&preserved.intent.state!=='published'
+      &&outside.document.active_generation_id===null&&!outside.pending&&outside.intent.state==='writing');
+    const readAttempt=supervisor.issue_attempt({intent_id:'worker-current-readback',owner_token:context(inputs.second_stage,inputs.second_scope).owner_token,
+      epoch:2,dispatch_id:'worker-current-readback'},options),readTransport=supervisor.transport_for(readAttempt);
+    try{
+      for(const expected of [inputs.expected_points,inputs.eof_points,inputs.second_points]){
+        const raw=await readTransport.request('POST','/collections/'+inputs.config.physical_collection+'/points',{
+          ...options,body:bytes({ids:expected.map(point=>point.id),with_payload:true,with_vector:true})});
+        const observed=JSON.parse(Buffer.from(raw).toString('utf8'));
+        const normalized=points=>points.map(({id,payload,vector})=>({id,payload,vector})).sort((a,b)=>a.id.localeCompare(b.id));
+        assert(observed.status==='ok'&&isDeepStrictEqual(normalized(observed.result),normalized(expected)));
+      }
+    }finally{await readTransport.close();}
+    assert(isDeepStrictEqual(statuses,[401])&&isDeepStrictEqual(await backend(),[['open','2',null]]));add(10);
+    await closeBundle(recoveryEntry);
     pausedWorker=null;
-    await host.close();host=null;assert(supervisor.control_binding().alive&&await listener(address));add(8);
+    await host.close();host=null;assert(supervisor.control_binding().alive&&await listener(address));add(11);
     return {runtime:'typescript',checks,proof_scope:'ordinary_worker_process_only',
       public_results_sha256:createHash('sha256').update(JSON.stringify(results),'utf8').digest('hex')};
   }catch(error){primary=error;throw error;}
