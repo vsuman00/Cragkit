@@ -201,3 +201,130 @@ content is unavailable before attempting body decoding and never release text
 from a marked document. Older profile query shapes and behavior remain intact.
 This admission slice does not widen stage-only recovery plans to security owners,
 issue purge receipts, erase through the public SDK or complete G2/G3.
+
+## G3-r1 native runtime addendum
+
+The SQL foundation above is unchanged. This addendum freezes the complete G3
+runtime outcome. It is a target until the tracker records native acceptance.
+
+### Public operation and identity
+
+Add `QdrantPublicationManager.purge(record, scope, ledger,
+retention_policy, deadline/options)`. Python uses keyword policy and deadline;
+Node takes the explicit policy argument before its existing options. Require
+exact `erase_managed_source_and_replay_v1` before callbacks or storage. Require
+the native profile-5 writer/recovery/supervisor graph; worker-only and older
+profiles fail locally. The record is the existing canonical purge intent,
+including its committed tombstone hash and original current fences. Never
+infer deletion permission from that record: apply the trusted authorizer.
+
+Use one logical ledger attempt and one shared SecurityReadbackBudget, no
+provider usage, no background job and no automatic retry loop. Preserve the
+caller deadline, cancellation and actual callback custody throughout. Return
+the existing nine manager fields with operation `purge`. Only atomic managed
+body erasure may return complete/replica_complete/purge_complete true.
+
+Bind or confirm the exact purge record first. A completed exact retry reads
+retained identity/erasure metadata and returns its historical flags without
+loading erased graphs, issuing HTTP or replaying DML. A changed same-key record
+is an integrity failure. Reject new purge identities on an already erased
+document; the first profile requires the stable original intent for retry.
+
+### Private projection and physical work
+
+Provide an opaque writer-issued PurgeProjection and private accessor. It binds
+the exact purge context/payload hash, current committed tombstone context/hash,
+fixed policy, full current security projection and canonical inventory bytes.
+Stage-only owner fields remain absent for security owners. Validate canonical
+purge bytes and original fences against the actual current tombstone and its
+committed intent. Read all raw claims/replays and original graphs through the
+existing bounded validation. Before any deletion, also bound all target journal
+headers/request bytes and replay bytes using their immutable original counts,
+including an overflow row. Recheck these bounds before erasure. No truncated
+set, join-hidden body or per-owner-only count can establish this projection.
+
+Preserve the actual existing stage/security owner through recovery, deletion
+and retirement. For an ownerless target, a separate purge-bound admission
+helper may acquire the current committed tombstone as owner only while open
+and free of target pending journals. Keep G2's non-tombstoned owner helper
+strict. Never use the purge intent as a recovery SQL-guard owner; that guard
+deliberately refuses purge owners.
+
+`dispatch_purge_recovery(recovery, proof, owner_context, purge_projection,
+authorize, deadline/options, budget?)` uses a separate nominal delete-plan
+registry, preserving the existing upsert-only path. Reauthorize and revalidate
+the current projection/owner before reservation, dispatch and acknowledgment.
+Reserve sorted batches of one through eight complete claimed UUIDs as
+recovery=true/delete_points under the actual owner. Require enough per-owner
+and total journal slots before the first side effect. Send only
+`POST /collections/{physical}/points/delete?wait=true&ordering=strong` with
+`{points:[exact UUIDs]}`. Account for dispatched requests/returned bytes even
+on late completion. A genuine completed acknowledgment settles only that new
+journal. Lost/accepted/malformed replies preserve uncertainty. SQL confirmation
+never resends HTTP. Repeated explicit recovery genuinely refences credentials.
+
+`settle_purge_guarded` consumes the nominal purge projection and a genuine
+current tombstone absence receipt through the existing same-session security
+verifier. Use a separate fixed purge settlement entry point: it may settle
+eligible retired complete-point PUTs and recovery DELETEs. Existing G2
+settlement remains PUT-only. Require the actual metadata-only SQL guard and
+same-client current full graph. Current-credential pending and foreign target
+work refuse settlement; unrelated work may keep global reopening blocked.
+Keep exact historical read-only COMMIT-loss confirmation and actual drainage.
+
+### Ordinary absence and atomic erasure
+
+After authenticated absence, retired settlement and legitimate reopening,
+handoff to the exact purge owner. The writer's existing acquisition trigger
+and pending checks still apply. No physical mutation is issued under that
+ordinary purge owner. An explicit retry after handoff may resume ordinary
+absence verification when this same purge owner/backend is open and no target
+journal is pending; it need not manufacture a forbidden purge recovery owner.
+A blocked instance or contradictory pending purge-owner journal refuses.
+
+Add a separate opaque PurgeAbsenceReceipt, issued only by
+`verify_purge_ordinary` on the registered QdrantSecurityVerifier. It binds a
+genuine current ordinary attempt for the purge owner and fresh nominal purge
+projection. Authenticate every claimed UUID absent plus full scoped enumeration
+EOF, including empty expected sets and unknown-extra refusal. Share the same
+budget. Never accept a serialized receipt or diagnostic hash as proof.
+
+The private receipt data has exactly ten fields: context, tombstone_context,
+projection, attempt_binding, purge_payload_sha256, inventory_sha256,
+absence_sha256, witness, encoded_bytes and sha256. Its compact UTF-8 witness is
+`["cragkit.qdrant.purge-ordinary-absence.v1",instance_id,storage_identity,
+supervisor_id,credential_generation,String(epoch),purge_intent_id,owner_token,
+tombstone_intent_id,purge_payload_sha256,tombstone_payload_sha256,
+inventory_sha256,policy_id,readback_sha256]`. The last hash comes from genuine
+strict absence readback; absence_sha256 and sha256 hash these witness bytes.
+Issuer, attempt, original signal/task, deadline and session stay registry-only.
+
+`complete_purge` requires that exact receipt and original controller
+finalization. Hold the writer transaction/callback until actual commit/cleanup
+drains. Reauthorize and revalidate current purge/tombstone binding and full
+inventory, then call the fixed twenty-argument SQL erasure capability using
+only genuine physical/receipt facts. Capture the intended immutable metadata
+and terminal erasure record inside this same transaction. No source/body/claim
+deletion, permission expansion or caller-selected SQL is introduced.
+
+A lost COMMIT reply permits one fresh read-only confirmation of the exact
+retained erasure record, intent flags, immutable inventory and erased markers.
+It performs no HTTP, graph reconstruction, guard/function/DML replay or new
+discovery of work. Missing or contradictory completion remains operationally
+unavailable or an integrity failure. Ordinary retries after committed erasure
+must not attempt to decode NULL bodies or restore them.
+
+### Required native acceptance
+
+Exercise both runtimes on actual isolated PostgreSQL/Qdrant: published and
+retained/staged generations, old unknown PUT, actual completed deletes,
+lost DELETE acknowledgment and real refencing retry, unknown extra points,
+current/foreign pending refusal, ownerless tombstone bootstrap, interruption
+after purge-owner handoff, actual erasure COMMIT reply loss, exact historical
+retry after source bytes are unavailable, malformed/copied/expired receipts,
+and changed authority/owner during guard or finalization. Prove every managed
+canonical/excerpt/replay/request body is NULL with irreversible markers while
+all original identity/digest/claim metadata remains. Source reads return known
+unavailable. Native SQL rollback and restore/reinsertion refusals from the
+accepted foundation remain required evidence. G3 completion still requires
+the public end-to-end path; vectors-only completion is not acceptance.

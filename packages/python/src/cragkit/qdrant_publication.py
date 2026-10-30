@@ -30,6 +30,10 @@ from ._qdrant_publication_worker import (is_controller, is_worker, controller_pr
     ManagedQdrantPublicationWorkerHost, OwnedPublicationWorker, OrdinaryWorkerController)
 from ._qdrant_writer import PostgresQdrantWriter, writer_binding
 from ._qdrant_writer import admit_security_owner, complete_security_replica
+from ._qdrant_writer import PURGE_POLICY, purge_projection_data
+from ._qdrant_manifest import _Purge, _parse, encode_purge_intent
+from ._qdrant_recovery import dispatch_purge_recovery, settle_purge_guarded
+from ._qdrant_security_verification import verify_purge_ordinary
 from ._qdrant_writer_contract import context, prepare_stage, stage_data
 from .contracts import TrustedScope
 from .execution import ExecutionLedger, BudgetExhausted
@@ -791,6 +795,99 @@ class QdrantPublicationManager:
                 return _result(current.intent_id, 'converge_security', result)
 
         return cast(Mapping[str, Any], await self._run(converge, deadline=deadline, ledger=ledger))
+
+    async def purge(self, record: object, scope: object, ledger: ExecutionLedger, *,
+                    retention_policy: str, deadline: float) -> Mapping[str,Any]:
+        if type(retention_policy) is not str:
+            raise InvalidRequest()
+        if retention_policy != PURGE_POLICY:
+            raise UnsupportedCapability()
+        if type(ledger) is not ExecutionLedger:
+            raise InvalidRequest()
+        if (self._writer._schema_profile != 5 or is_worker(self._supervisor)
+                or self._recovery is None or self._security_verifier is None):
+            raise UnsupportedCapability()
+        encode_purge_intent(record)
+        intent = _parse(_Purge,record)
+        trusted = _scope(scope)
+        if intent.tenant_id != trusted.tenant_id:
+            raise UnauthorizedScope()
+        target = dict(collection=intent.collection,document_id=intent.document_id,intent_id=intent.intent_id)
+        lookup = context({**target,'scope':trusted,'owner_token':str(uuid4())})
+        recovery,verifier = self._recovery,self._security_verifier
+        async def purge(limit: float) -> Mapping[str,Any]:
+            budget = SecurityReadbackBudget()
+            await self._authorize(lookup,limit)
+            bound = await self._writer.bind_purge(record,trusted,owner_token=lookup.owner_token,deadline=limit)
+            self._check(limit)
+            if bound['purge_complete']:
+                historical = await self._writer.historical_purge(lookup,deadline=limit)
+                self._check(limit)
+                return _result(lookup.intent_id,'purge',historical)
+            snapshot = await self._writer.manager_snapshot(lookup,deadline=limit)
+            self._check(limit)
+            backend,owner = snapshot['backend'],snapshot['owner']
+            if owner is not None and owner['instance_id'] != self._instance:
+                raise ProviderUnavailable()
+            token = lookup.owner_token if owner is None else owner['owner_token']
+            current = context({**target,'scope':trusted,'owner_token':token})
+            projection = await self._writer.project_purge(current,retention_policy,deadline=limit)
+            self._check(limit)
+            if owner is None:
+                if backend['state'] != 'open' or snapshot['pending']:
+                    raise ProviderUnavailable()
+                await self._writer.admit_purge_tombstone_owner(projection,deadline=limit)
+                self._check(limit)
+                snapshot = await self._writer.manager_snapshot(current,deadline=limit)
+                self._check(limit)
+                backend,owner = snapshot['backend'],snapshot['owner']
+            if owner is None:
+                raise ProviderUnavailable()
+            resumed = owner['intent_id'] == current.intent_id
+            if resumed:
+                if backend['state'] != 'open' or snapshot['pending'] or owner['backend_epoch'] != backend['epoch']:
+                    raise ProviderUnavailable()
+            else:
+                previous = context({**target,'scope':trusted,'intent_id':owner['intent_id'],'owner_token':owner['owner_token']})
+                identity = backend['recovery_id'] if backend['state'] == 'recovery_blocked' else 'g3-'+hashlib.sha256(
+                    json.dumps(['cragkit.qdrant.purge-recovery.v1',self._instance,str(backend['epoch'])],
+                        separators=(',',':')).encode('utf-8')).hexdigest()
+                await self._authorize(current,limit)
+                proof = await recovery.recover(identity,deadline=limit)
+                self._check(limit)
+                await recovery.advance_owner(proof,previous,deadline=limit)
+                self._check(limit)
+                async def authorize(selected: TrustedScope, collection: str, document_id: str) -> bool:
+                    if selected != trusted or collection != current.collection or document_id != current.document_id:
+                        raise InvalidRequest()
+                    await self._authorize(current,limit)
+                    return True
+                await dispatch_purge_recovery(recovery,proof,previous,projection,authorize,deadline=limit,budget=budget)
+                self._check(limit)
+                await settle_purge_guarded(recovery,verifier,proof,previous,projection,deadline=limit,budget=budget)
+                self._check(limit)
+                await recovery.reopen(proof,deadline=limit)
+                self._check(limit)
+            await self._authorize(current,limit)
+            await self._writer.validate_purge_projection(projection,deadline=limit)
+            self._check(limit)
+            admitted = await self._writer.acquire_owner(current,deadline=limit)
+            self._check(limit)
+            # The purge owner only observes absence; all physical mutations retain
+            # the original stage/security owner until fencing has settled them.
+            projection = await self._writer.project_purge(current,retention_policy,deadline=limit)
+            self._check(limit)
+            attempt = await controller_issue(self._supervisor,dict(intent_id=current.intent_id,owner_token=token,
+                epoch=admitted['backend_epoch'],dispatch_id='purge-completion-'+str(uuid4())),deadline=limit)
+            self._check(limit)
+            receipt = await verify_purge_ordinary(verifier,attempt,current,projection,deadline=limit,budget=budget)
+            self._check(limit)
+            async with controller_finalization(self._supervisor,attempt,deadline=limit):
+                await self._authorize(current,limit)
+                result = await self._writer.complete_purge(verifier,receipt,deadline=limit)
+                self._check(limit)
+                return _result(current.intent_id,'purge',result)
+        return cast(Mapping[str,Any],await self._run(purge,deadline=deadline,ledger=ledger))
 
     async def close(self) -> None:
         self._closed = True

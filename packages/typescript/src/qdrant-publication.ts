@@ -2,11 +2,11 @@ export {QdrantSecurityManager} from './qdrant-security.js';
 /** Optional native stage/publish manager. Dependencies remain application-owned. */
 import {randomUUID,createHash} from 'node:crypto';
 import {types} from 'node:util';
-import {PostgresQdrantWriter,writer_binding,require_security_owner_writer,admit_security_owner,complete_security_replica,security_projection_data,type IntentView,type DispatchStatus,type DispatchView} from './qdrant-writer.js';
-import {PostgresQdrantRecovery,recovery_components,dispatch_security_recovery,settle_security_guarded} from './qdrant-recovery.js';
+import {PostgresQdrantWriter,writer_binding,require_security_owner_writer,admit_security_owner,complete_security_replica,security_projection_data,PURGE_RETENTION_POLICY,type IntentView,type DispatchStatus,type DispatchView} from './qdrant-writer.js';
+import {PostgresQdrantRecovery,recovery_components,dispatch_security_recovery,settle_security_guarded,dispatch_purge_recovery,settle_purge_guarded} from './qdrant-recovery.js';
 import {ManagedQdrantSupervisor,type SupervisorTransport} from './qdrant-supervisor.js';
 import {QdrantReconciliationVerifier,VerificationBudget} from './qdrant-reconciliation.js';
-import {QdrantSecurityVerifier,verify_security_ordinary} from './qdrant-security-verification.js';
+import {QdrantSecurityVerifier,verify_security_ordinary,verify_purge_ordinary} from './qdrant-security-verification.js';
 import {SecurityReadbackBudget} from './qdrant-security-readback.js';
 import {QdrantPublicationVerifier,validate_publication_receipt} from './qdrant-publication-verification.js';
 import {is_publication_controller,is_worker_controller,publication_worker_reference,publication_controller_profile,publication_issue_attempt,publication_attempt_binding,publication_transport_for,publication_before_write,publication_finalization,type OrdinaryPublicationController} from './qdrant-publication-worker.js';
@@ -15,7 +15,7 @@ import {type TrustedScope} from './requests.js';
 import {same,parse_response,type QdrantConfig} from './qdrant-contract.js';
 import {bounded,now,type LeaseOptions} from './postgres-pool.js';
 import {config as parse_config,scope as parse_scope,context as parse_context,options as parse_options,
-  fields,metadata,native_array,text,count,hash,prepare_stage,stage_data,type WriterContext,type Data} from './qdrant-writer-contract.js';
+  operation as parse_operation,fields,metadata,native_array,text,count,hash,prepare_stage,stage_data,type WriterContext,type Data} from './qdrant-writer-contract.js';
 import {InvalidRequest,IntegrityViolation,UnauthorizedScope,UnsupportedCapability,ProviderUnavailable,
   DeadlineExceeded,IndexNotReady,EmbeddingProfileMismatch} from './errors.js';
 
@@ -30,7 +30,7 @@ type Session=Readonly<{attempt:unknown;binding:Readonly<Data>;handle:SupervisorT
 type Ack=Readonly<Record<never,never>>;
 const acknowledgments=new WeakMap<object,Readonly<{session:Session;sha256:string}>>();
 type Reference=Readonly<{collection:string;document_id:string;intent_id:string}>;
-type Result=Readonly<{intent_id:string;operation:'stage'|'publish'|'repair'|'converge_security';state:string;revision_id:string|null;
+type Result=Readonly<{intent_id:string;operation:'stage'|'publish'|'repair'|'converge_security'|'purge';state:string;revision_id:string|null;
   generation_id:string|null;authority_committed:boolean;replica_complete:boolean;published:boolean;purge_complete:boolean}>;
 type Authorizer=(scope:TrustedScope,collection:string,document_id:string)=>Promise<boolean>;
 
@@ -47,7 +47,7 @@ function reference(input:unknown):Reference {
   const value=fields(input,['collection','document_id','intent_id']);
   return Object.freeze({collection:text(value.collection,true),document_id:text(value.document_id),intent_id:text(value.intent_id)});
 }
-function result(intent_id:string,operation:'stage'|'publish'|'repair'|'converge_security',intent:IntentView):Result {
+function result(intent_id:string,operation:'stage'|'publish'|'repair'|'converge_security'|'purge',intent:IntentView):Result {
   return Object.freeze({intent_id,operation,state:intent.state,revision_id:intent.revision_id,generation_id:intent.generation_id,
     authority_committed:intent.authority_committed,replica_complete:intent.replica_complete,published:intent.state==='published',purge_complete:intent.purge_complete});
 }
@@ -603,6 +603,67 @@ export class QdrantPublicationManager {
           const completed=await this.#await(complete_security_replica(writer,verifier,receipt,lease),lease);
           return result(ref.intent_id,'converge_security',completed);
         }finally{await Promise.allSettled([...this.#pending].filter(pending=>pending!==finalization));}
+      },lease);
+      return this.#await(finalization,lease);
+    });
+  }
+
+  async purge(input:unknown,inputScope:unknown,ledger:ExecutionLedger,retention_policy:unknown,rawOptions:unknown):Promise<Result>{
+    if(typeof retention_policy!=='string')throw new InvalidRequest();
+    if(retention_policy!==PURGE_RETENTION_POLICY)throw new UnsupportedCapability();
+    this.#admit();
+    if(is_worker_controller(this.#supervisor)||this.#authority.recovery===null||this.#securityVerifier===null)throw new UnsupportedCapability();
+    const writer=this.#authority.writer,recovery=this.#authority.recovery,verifier=this.#securityVerifier;
+    require_security_owner_writer(writer);recovery_components(recovery,writer,this.#supervisor,this.#config);
+    const scope=parse_scope(inputScope),options=this.#ledger(ledger,rawOptions),ownerToken=randomUUID();
+    const operation=parse_operation(input,scope,ownerToken,true),record=operation.record;
+    const lookup=parse_context({scope,collection:record.collection,document_id:record.document_id,intent_id:record.intent_id,owner_token:ownerToken});
+    return this.#attempt(ledger,options,async lease=>{
+      const budget=new SecurityReadbackBudget();await this.#authorize(lookup,lease);
+      const historical=await this.#await(writer.inspect(lookup,lease),lease);
+      if(historical&&historical.payload_sha256!==operation.encoded.sha256)throw new IntegrityViolation();
+      if(historical?.state==='complete')return result(lookup.intent_id,'purge',await this.#await(writer.confirm_purge(lookup,retention_policy,lease),lease));
+      const intent=await this.#await(writer.bind_purge(input,scope,{...lease,owner_token:ownerToken}),lease);
+      if(intent.state==='complete')return result(lookup.intent_id,'purge',await this.#await(writer.confirm_purge(lookup,retention_policy,lease),lease));
+      if(!intent.authority_committed||intent.replica_complete||intent.purge_complete)throw new IntegrityViolation();
+      let snapshot=await this.#await(writer.manager_snapshot(lookup,lease),lease);
+      let context=parse_context({...lookup,owner_token:snapshot.owner?.intent_id===lookup.intent_id?snapshot.owner.owner_token:ownerToken});
+      let projection=await this.#await(writer.project_purge(context,retention_policy,lease),lease);
+      const resumed=snapshot.owner?.intent_id===context.intent_id;
+      if(resumed){
+        if(snapshot.backend.state!=='open'||snapshot.pending||snapshot.owner!.backend_epoch!==snapshot.backend.epoch)throw new ProviderUnavailable();
+      }else{
+        if(!snapshot.owner){
+          if(snapshot.backend.state!=='open'||snapshot.pending)throw new ProviderUnavailable();
+          await this.#authorize(context,lease);await this.#await(writer.admit_purge_tombstone(projection,lease),lease);
+          snapshot=await this.#await(writer.manager_snapshot(context,lease),lease);
+        }
+        const owner=snapshot.owner;if(!owner||owner.instance_id!==snapshot.backend.instance_id)throw new ProviderUnavailable();
+        const ownerContext=parse_context({...context,intent_id:owner.intent_id,owner_token:owner.owner_token});
+        const id=snapshot.backend.recovery_id??'g3-'+createHash('sha256').update(JSON.stringify([
+          'cragkit.qdrant.purge-recovery.v1',snapshot.backend.instance_id,String(snapshot.backend.epoch)])).digest('hex');
+        await this.#authorize(context,lease);
+        const proof=await this.#await(recovery.recover(id,lease),lease);
+        await this.#await(recovery.advance_owner(proof,ownerContext,lease),lease);
+        const authorize=async(selected:TrustedScope,collection:string,document_id:string):Promise<boolean>=>{
+          if(!same(selected,context.scope)||collection!==context.collection||document_id!==context.document_id)throw new InvalidRequest();
+          await this.#authorize(context,lease);return true;
+        };
+        await this.#await(dispatch_purge_recovery(recovery,proof,ownerContext,projection,authorize,lease,budget),lease);
+        await this.#authorize(context,lease);
+        await this.#await(settle_purge_guarded(recovery,verifier,proof,ownerContext,projection,lease,budget),lease);
+        await this.#await(recovery.reopen(proof,lease),lease);
+      }
+      await this.#authorize(context,lease);
+      const admitted=await this.#await(writer.acquire_owner(context,lease),lease);
+      projection=await this.#await(writer.project_purge(context,retention_policy,lease),lease);
+      const session=await this.#session(context,admitted.backend_epoch,'purge-completion-'+randomUUID(),lease);
+      await this.#closeHandle(session);
+      const receipt=await this.#await(verify_purge_ordinary(verifier,session.attempt,context,projection,lease,budget),lease);
+      let finalization!:Promise<Result>;
+      finalization=publication_finalization(this.#supervisor,session.attempt,async()=>{
+        try{await this.#authorize(context,lease);return result(context.intent_id,'purge',await this.#await(writer.complete_purge(verifier,receipt,lease),lease));}
+        finally{await Promise.allSettled([...this.#pending].filter(pending=>pending!==finalization));}
       },lease);
       return this.#await(finalization,lease);
     });

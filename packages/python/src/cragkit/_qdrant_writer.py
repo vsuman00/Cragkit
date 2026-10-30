@@ -105,6 +105,56 @@ _SECURITY_RECOVERY_SOURCES: WeakKeyDictionary[object, Callable[..., Awaitable[Se
 _SECURITY_OWNERS: WeakKeyDictionary[object, Callable[..., Awaitable[Mapping[str, Any]]]] = WeakKeyDictionary()
 _SECURITY_COMPLETERS: WeakKeyDictionary[object, Callable[..., Awaitable[Mapping[str, Any]]]] = WeakKeyDictionary()
 
+PURGE_POLICY = 'erase_managed_source_and_replay_v1'
+
+
+class PurgeProjection:
+    __slots__ = ('__weakref__',)
+
+    def __reduce__(self) -> Any:
+        raise TypeError('Purge projections cannot be serialized')
+
+
+_PURGE_PROJECTIONS: WeakKeyDictionary[PurgeProjection, tuple[object, Mapping[str, Any]]] = WeakKeyDictionary()
+
+
+def purge_projection_data(projection: object, writer: object) -> Mapping[str, Any]:
+    writer_binding(writer)
+    if type(projection) is not PurgeProjection or projection not in _PURGE_PROJECTIONS:
+        raise InvalidRequest()
+    issuer, data = _PURGE_PROJECTIONS[projection]
+    if issuer is not writer:
+        raise InvalidRequest()
+    return data
+
+
+async def validate_guarded_purge_projection(writer: object, guard: object, projection: object,
+                                            receipt_projection: object, *, deadline: float) -> None:
+    if type(writer) is not PostgresQdrantWriter:
+        raise InvalidRequest()
+    await PostgresQdrantWriter._validate_guarded_purge(writer,guard,projection,receipt_projection,deadline=deadline)
+
+
+class _PurgeDispatchPlan:
+    __slots__ = ('__weakref__',)
+
+    def __reduce__(self) -> Any:
+        raise TypeError('Purge dispatch plans cannot be serialized')
+
+
+_PURGE_DISPATCH_PLANS: WeakKeyDictionary[object, tuple[object, object, Mapping[str,Any]]] = WeakKeyDictionary()
+
+
+def purge_dispatch_plan_data(plan: object, authorization: object, writer: object, *, deadline: float) -> Mapping[str,Any]:
+    from ._qdrant_recovery import purge_dispatch_authorization
+    purge_dispatch_authorization(authorization,writer,deadline=deadline)
+    if type(plan) is not _PurgeDispatchPlan or plan not in _PURGE_DISPATCH_PLANS:
+        raise InvalidRequest()
+    issuer,auth,data = _PURGE_DISPATCH_PLANS[plan]
+    if issuer is not writer or auth is not authorization:
+        raise InvalidRequest()
+    return data
+
 
 async def admit_security_owner(writer: object, value: object, *, deadline: float) -> Mapping[str, Any]:
     writer_binding(writer)
@@ -2452,6 +2502,15 @@ class PostgresQdrantWriter:
         if ctx.scope.tenant_id != intent.tenant_id:
             raise UnauthorizedScope()
         async def bind(connection: SessionConnection) -> Mapping[str, Any]:
+            existing = await self._inspect(connection,ctx)
+            if existing is not None and (existing['action'] != 'purge' or existing['payload_sha256'] != encoded.sha256):
+                raise IntegrityViolation()
+            availability = (await self._query(connection,'SELECT content_unavailable FROM cragkit_qdrant.documents WHERE '+_DOC,_doc(ctx))
+                            if self._schema_profile == 5 else [])
+            if availability == [(True,)]:
+                if existing is None or not existing['purge_complete']:
+                    raise IntegrityViolation()
+                return existing
             await self._ensure(connection,'publication_intents',{**dict(zip(('tenant_id','collection','document_id'),_doc(ctx),strict=True)),
                 'intent_id':ctx.intent_id,'instance_id':self.instance_id,'action':'purge','payload_bytes':encoded.encoded_bytes,
                 'payload_sha256':encoded.sha256,'expected_authorization_revision':intent.expected_authorization_revision,
@@ -2472,3 +2531,367 @@ class PostgresQdrantWriter:
             assert result is not None
             return result
         return await self._run(ctx,deadline,bind)
+
+    async def _purge_bounds(self, connection: SessionConnection, ctx: WriterContext,
+                            reserve: int = 0) -> None:
+        headers = await self._query(connection,
+            'SELECT request_original_bytes FROM cragkit_qdrant.dispatch_journal WHERE '+_DOC+' LIMIT 4097',_doc(ctx))
+        if len(headers) + reserve > 4096:
+            raise UnsupportedCapability()
+        if any(len(row) != 1 or type(row[0]) is not int or not 1 <= row[0] <= 1048576 for row in headers):
+            raise IntegrityViolation()
+        if sum(row[0] for row in headers) > 64*1024*1024:
+            raise UnsupportedCapability()
+        revisions = await self._query(connection,
+            'SELECT DISTINCT ON (revision_id) intent_id,revision_id FROM cragkit_qdrant.publication_intents WHERE '+_DOC+
+            " AND action='stage' ORDER BY revision_id,intent_id LIMIT 65",_doc(ctx))
+        if len(revisions) > 64:
+            raise UnsupportedCapability()
+        source = 0
+        try:
+            for row in revisions:
+                if len(row) != 2:
+                    raise IntegrityViolation()
+                await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(row[0],))
+                counts = await self._query(connection,
+                    'SELECT canonical_original_bytes FROM cragkit_qdrant.document_revisions WHERE '+_DOC+' AND revision_id=%s',(*_doc(ctx),row[1]))
+                if len(counts) != 1 or len(counts[0]) != 1 or type(counts[0][0]) is not int or not 1 <= counts[0][0] <= 16777216:
+                    raise IntegrityViolation()
+                source += counts[0][0]
+        finally:
+            await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(ctx.intent_id,))
+        counts = await self._query(connection,
+            'SELECT (SELECT COALESCE(sum(octet_length(manifest_bytes)),0)::bigint FROM cragkit_qdrant.publication_intents WHERE '+_DOC+'),'
+            '(SELECT COALESCE(sum(dense_original_bytes+COALESCE(sparse_original_bytes,0)),0)::bigint FROM cragkit_qdrant.vector_replays WHERE '+_DOC+')',
+            (*_doc(ctx),*_doc(ctx)))
+        if len(counts) != 1 or len(counts[0]) != 2 or any(type(value) is not int or value < 0 for value in counts[0]):
+            raise IntegrityViolation()
+        manifest,replay = counts[0]
+        if source+manifest > 64*1024*1024 or replay > 32*1024*1024:
+            raise UnsupportedCapability()
+
+    async def _purge_graph(self, connection: SessionConnection, ctx: WriterContext,
+                           policy: str, *, document: dict[str, Any] | None = None) -> Mapping[str, Any]:
+        if self._schema_profile != 5 or policy != PURGE_POLICY:
+            raise UnsupportedCapability()
+        if document is None:
+            document = await self._document(connection,ctx)
+        rows = await self._query(connection,
+            'SELECT payload_bytes,payload_sha256,authority_committed FROM cragkit_qdrant.publication_intents WHERE '+_INTENT+" AND action='purge'",_key(ctx))
+        if len(rows) != 1 or len(rows[0]) != 3 or rows[0][2] is not True:
+            raise UnauthorizedScope()
+        raw,digest,_ = rows[0]
+        try:
+            payload = json.loads(raw.decode('utf-8',errors='strict'))
+            if type(payload) is not list or len(payload) != 9 or payload[:2] != ['cragkit.qdrant.intent.v1','purge']:
+                raise ValueError()
+            record = dict(intent_id=payload[2],tenant_id=payload[3],collection=payload[4],document_id=payload[5],
+                expected_authorization_revision=payload[7],expected_mutation_epoch=int(payload[8]),
+                tombstone_intent_payload_sha256=payload[6])
+            encoded = encode_purge_intent(record)
+            intent = _parse(_Purge,record)
+            if (encoded.encoded_bytes != raw or encoded.sha256 != digest
+                    or (intent.tenant_id,intent.collection,intent.document_id,intent.intent_id) != (*_doc(ctx),ctx.intent_id)
+                    or intent.expected_authorization_revision != document['authorization_revision']
+                    or intent.expected_mutation_epoch != document['mutation_epoch'] or not document['tombstoned']):
+                raise ValueError()
+        except (ValueError,TypeError,KeyError,IndexError,AttributeError,UnicodeError,InvalidRequest):
+            raise IntegrityViolation() from None
+        tombstones = await self._query(connection,
+            'SELECT intent_id FROM cragkit_qdrant.publication_intents WHERE '+_DOC+
+            " AND action='tombstone' AND payload_sha256=%s AND authority_committed LIMIT 2",
+            (*_doc(ctx),intent.tombstone_intent_payload_sha256))
+        if len(tombstones) != 1 or len(tombstones[0]) != 1:
+            raise IntegrityViolation()
+        tombstone = context(dict(scope=ctx.scope,collection=ctx.collection,document_id=ctx.document_id,
+            intent_id=_stored_identity(tombstones[0][0]),owner_token=ctx.owner_token))
+        await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(tombstone.intent_id,))
+        try:
+            graph = await self._security_graph(connection,tombstone,document)
+        finally:
+            await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(ctx.intent_id,))
+        if graph['intent_sha256'] != intent.tombstone_intent_payload_sha256 or not graph['tombstoned']:
+            raise IntegrityViolation()
+        inventory = _json(['cragkit.qdrant.security-inventory.v1',self.config.backend_namespace,
+            self.config.physical_collection,self.config.collection_incarnation,*_doc(ctx),self.instance_id,
+            [[group['revision_id'],group['generation_id'],group['manifest_sha256'],list(group['point_ids'])]
+             for group in graph['generations']]]).encode('utf-8')
+        await self._purge_bounds(connection,ctx)
+        security = SecurityProjection()
+        _SECURITY_PROJECTIONS[security] = (self,graph)
+        return MappingProxyType(dict(context=ctx,tombstone_context=tombstone,purge_payload_sha256=digest,
+            tombstone_payload_sha256=graph['intent_sha256'],policy_id=policy,projection=security,
+            inventory_bytes=inventory,inventory_sha256=hashlib.sha256(inventory).hexdigest()))
+
+    async def project_purge(self, value: object, retention_policy: str = PURGE_POLICY, *,
+                            deadline: float) -> PurgeProjection:
+        ctx = context(value)
+        async def project(connection: SessionConnection) -> PurgeProjection:
+            data = await self._purge_graph(connection,ctx,retention_policy)
+            token = PurgeProjection()
+            _PURGE_PROJECTIONS[token] = (self,data)
+            return token
+        return await self._run(ctx,deadline,project)
+
+    async def validate_purge_projection(self, projection: object, *, deadline: float) -> None:
+        original = purge_projection_data(projection,self)
+        fresh = purge_projection_data(await self.project_purge(original['context'],original['policy_id'],deadline=deadline),self)
+        if any(original[key] != fresh[key] for key in original if key != 'projection'):
+            raise UnauthorizedScope()
+        left,right = security_projection_data(original['projection'],self),security_projection_data(fresh['projection'],self)
+        if any(left[key] != right[key] for key in left if key != 'points'):
+            raise UnauthorizedScope()
+
+    async def admit_purge_tombstone_owner(self, projection: object, *, deadline: float) -> Mapping[str, Any]:
+        original = purge_projection_data(projection,self)
+        ctx = original['tombstone_context']
+        async def admit(connection: SessionConnection) -> Mapping[str, Any]:
+            backend = await self._manager_backend(connection,lock=True)
+            owner = await self._manager_owner(connection,ctx,lock=True)
+            if backend['state'] != 'open' or owner is not None:
+                raise ProviderUnavailable()
+            await self._require_settled(connection,ctx)
+            fresh = await self._purge_graph(connection,original['context'],original['policy_id'])
+            if any(fresh[key] != original[key] for key in original if key != 'projection'):
+                raise UnauthorizedScope()
+            await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(ctx.intent_id,))
+            intent = await self._manager_intent(connection,ctx)
+            if intent is None or intent['state'] != 'authority_committed' or intent['action'] != 'tombstone':
+                raise UnauthorizedScope()
+            await connection.execute("UPDATE cragkit_qdrant.publication_intents SET state='writing' WHERE "+_INTENT,_key(ctx))
+            await connection.execute('INSERT INTO cragkit_qdrant.document_owners '
+                '(tenant_id,collection,document_id,instance_id,intent_id,owner_token,backend_epoch) VALUES (%s,%s,%s,%s,%s,%s,%s)',
+                (*_doc(ctx),self.instance_id,ctx.intent_id,ctx.owner_token,backend['epoch']))
+            return MappingProxyType(dict(owner_token=ctx.owner_token,backend_epoch=backend['epoch']))
+        return await self._run(ctx,deadline,admit)
+
+    async def _validate_guarded_purge(self, guard: object, projection: object,
+                                      receipt_projection: object, *, deadline: float) -> None:
+        from ._qdrant_recovery import security_guard_binding
+        original = purge_projection_data(projection,self)
+        def check() -> Mapping[str,Any]:
+            return security_guard_binding(guard,self,receipt_projection,deadline=deadline)
+        bound = check()
+        if bound['context'] != original['tombstone_context']:
+            raise InvalidRequest()
+        async def validate(connection: SessionConnection) -> None:
+            check()
+            document = await self._document(connection,original['context'],lock=False)
+            check()
+            observed = {key: tuple(value) if key in ('principal_ids', 'grant_ids') else value
+                        for key, value in document.items()}
+            if observed != dict(bound['document']):
+                raise UnauthorizedScope()
+            fresh = await self._purge_graph(connection,original['context'],original['policy_id'],document=document)
+            check()
+            if any(original[key] != fresh[key] for key in original if key != 'projection'):
+                raise UnauthorizedScope()
+            old = security_projection_data(original['projection'],self)
+            received = security_projection_data(receipt_projection,self)
+            new = security_projection_data(fresh['projection'],self)
+            if any(old[key] != new[key] or old[key] != received[key] for key in old if key != 'points'):
+                raise UnauthorizedScope()
+        await self._run(original['context'],deadline,validate,guarded_check=check)
+
+    async def project_purge_dispatch(self, authorization: object, point_ids: object, *,
+                                      deadline: float) -> _PurgeDispatchPlan:
+        from ._qdrant_recovery import purge_dispatch_authorization
+        def check() -> Mapping[str,Any]:
+            return purge_dispatch_authorization(authorization,self,deadline=deadline)
+        auth = check()
+        original = purge_projection_data(auth['projection'],self)
+        owner,current = auth['context'],original['context']
+        source = security_projection_data(original['projection'],self)
+        ids = tuple(sorted(sequence(point_ids,8)))
+        if not ids or len(set(ids)) != len(ids) or any(identity not in source['point_ids'] for identity in ids):
+            raise InvalidRequest()
+        physical = auth['physical_binding']
+        async def project(connection: SessionConnection) -> Mapping[str,Any]:
+            backend = await self._manager_backend(connection,lock=True)
+            if ((backend['storage_identity'],backend['supervisor_id'],backend['epoch'],backend['state'],backend['recovery_id'])
+                    != (physical['storage_identity'],physical['supervisor_id'],physical['new_epoch'],'recovery_blocked',physical['recovery_id'])):
+                raise ProviderUnavailable()
+            actual = await self._manager_owner(connection,owner,lock=True)
+            if actual is None or (actual['instance_id'],actual['intent_id'],actual['owner_token'],actual['backend_epoch']) != (self.instance_id,owner.intent_id,owner.owner_token,physical['new_epoch']):
+                raise ProviderUnavailable()
+            fresh = await self._purge_graph(connection,current,original['policy_id'])
+            if any(original[key] != fresh[key] for key in original if key != 'projection'):
+                raise UnauthorizedScope()
+            graph = security_projection_data(fresh['projection'],self)
+            if any(source[key] != graph[key] for key in source if key != 'points'):
+                raise UnauthorizedScope()
+            await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(owner.intent_id,))
+            try:
+                rows = await self._query(connection,'SELECT '+_SECURITY_OWNER_COLUMNS+' FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_key(owner))
+                if len(rows) != 1:
+                    raise IntegrityViolation()
+                row = rows[0]
+                if row[1] == 'stage':
+                    if row[0] != self.instance_id or not any((group['manifest_sha256'],group['revision_id'],group['generation_id']) == row[8:11] for group in graph['generations']):
+                        raise IntegrityViolation()
+                    stage = row[8:11]
+                else:
+                    security_owner_intent(owner,row,self.instance_id,graph)
+                    stage = (None,None,None)
+            finally:
+                await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(current.intent_id,))
+            body = _json(dict(points=list(ids))).encode('utf-8')
+            return MappingProxyType({**dict(auth),'owner_action':row[1],'owner_payload_sha256':row[3],
+                'manifest_sha256':stage[0],'revision_id':stage[1],'generation_id':stage[2],
+                'point_ids':ids,'request_bytes':body,'request_sha256':hashlib.sha256(body).hexdigest(),
+                **{key:graph[key] for key in ('intent_sha256','inventory_sha256','authorization_revision','mutation_epoch','active_generation_id')}})
+        data = await self._run(current,deadline,project,guarded_check=check)
+        check()
+        plan = _PurgeDispatchPlan()
+        _PURGE_DISPATCH_PLANS[plan] = (self,authorization,data)
+        return plan
+
+    async def validate_purge_dispatch(self, plan: object, authorization: object, *, deadline: float) -> None:
+        original = purge_dispatch_plan_data(plan,authorization,self,deadline=deadline)
+        fresh = await self.project_purge_dispatch(authorization,original['point_ids'],deadline=deadline)
+        if dict(purge_dispatch_plan_data(fresh,authorization,self,deadline=deadline)) != dict(original):
+            raise UnauthorizedScope()
+
+    async def _purge_retained(self, connection: SessionConnection, ctx: WriterContext) -> Mapping[str,Any]:
+        intent = await self._manager_intent(connection,ctx)
+        if (intent is None or intent['action'] != 'purge' or intent['state'] != 'complete'
+                or not all(intent[key] for key in ('authority_committed','replica_complete','purge_complete'))):
+            raise ProviderUnavailable()
+        erasures = await self._query(connection,
+            'SELECT instance_id,backend_namespace,storage_identity,supervisor_id,backend_epoch,physical_collection,'
+            'collection_incarnation,owner_token::text,purge_payload_sha256,tombstone_payload_sha256,'
+            'authorization_revision,mutation_epoch,inventory_sha256,policy_id,absence_sha256,erasure_sha256 '
+            'FROM cragkit_qdrant.purge_erasures WHERE '+_DOC+' AND purge_intent_id=%s',_key(ctx))
+        if len(erasures) != 1 or len(erasures[0]) != 16:
+            raise ProviderUnavailable()
+        erasure = erasures[0]
+        if (erasure[0:2] != (self.instance_id,self.config.backend_namespace)
+                or erasure[5:7] != (self.config.physical_collection,self.config.collection_incarnation)
+                or erasure[8] != intent['payload_sha256'] or erasure[13] != PURGE_POLICY):
+            raise IntegrityViolation()
+        for index in (8,9,12,14,15):
+            try:
+                _digest(erasure[index])
+            except InvalidRequest:
+                raise IntegrityViolation() from None
+        claims = await self._query(connection,
+            'SELECT revision_id,generation_id,chunk_id,point_id::text,instance_id,backend_namespace,physical_collection,collection_incarnation '
+            'FROM cragkit_qdrant.point_claims WHERE '+_DOC+
+            " ORDER BY convert_to(revision_id,'UTF8'),convert_to(generation_id,'UTF8'),point_id::text LIMIT 2049",_doc(ctx))
+        stages = await self._query(connection,
+            'SELECT intent_id,payload_sha256,manifest_sha256,revision_id,generation_id FROM cragkit_qdrant.publication_intents WHERE '+_DOC+
+            " AND action='stage' ORDER BY convert_to(intent_id,'UTF8') LIMIT 4097",_doc(ctx))
+        if len(claims) > 2048 or len(stages) > 4096:
+            raise IntegrityViolation()
+        groups: dict[tuple[str,str],set[str]] = {}
+        for row in claims:
+            if len(row) != 8 or row[4:] != (self.instance_id,self.config.backend_namespace,self.config.physical_collection,self.config.collection_incarnation):
+                raise IntegrityViolation()
+            for value in row[:3]:
+                _stored_identity(value)
+            _stored_uuid(row[3])
+            groups.setdefault(row[:2],set()).add(row[3])
+        inventory = []
+        for (revision,generation),ids in sorted(groups.items(),key=lambda item:tuple(value.encode('utf-8') for value in item[0])):
+            matching = {row[2] for row in stages if row[3:] == (revision,generation)}
+            if len(matching) != 1:
+                raise IntegrityViolation()
+            inventory.append([revision,generation,matching.pop(),sorted(ids)])
+        encoded = _json(['cragkit.qdrant.security-inventory.v1',self.config.backend_namespace,
+            self.config.physical_collection,self.config.collection_incarnation,*_doc(ctx),self.instance_id,inventory]).encode('utf-8')
+        if hashlib.sha256(encoded).hexdigest() != erasure[12]:
+            raise IntegrityViolation()
+        markers = await self._query(connection,
+            'SELECT content_unavailable FROM cragkit_qdrant.documents WHERE '+_DOC,_doc(ctx))
+        if markers != [(True,)]:
+            raise ProviderUnavailable()
+        retained: list[tuple[Any,...]] = []
+        original_revisions: set[tuple[Any,...]] = set()
+        original_members: set[tuple[Any,...]] = set()
+        try:
+            for revision,generation in groups:
+                stage = next(row for row in stages if row[3:] == (revision,generation))
+                await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(stage[0],))
+                revisions = await self._query(connection,
+                    'SELECT revision_id,source_sha256,canonical_original_bytes,content_erased,(canonical_utf8 IS NOT NULL) '
+                    'FROM cragkit_qdrant.document_revisions WHERE '+_DOC+' AND revision_id=%s',(*_doc(ctx),revision))
+                members = await self._query(connection,
+                    'SELECT revision_id,generation_id,chunk_id,text_sha256,excerpt_original_bytes,content_erased,(excerpt_utf8 IS NOT NULL) '
+                    'FROM cragkit_qdrant.members WHERE '+_DOC+' AND revision_id=%s AND generation_id=%s LIMIT 65',(*_doc(ctx),revision,generation))
+                expected = {row[:3] for row in claims if row[:2] == (revision,generation)}
+                if (len(revisions) != 1 or revisions[0][-2:] != (True,False) or len(members) != len(expected)
+                        or {row[:3] for row in members} != expected or any(row[-2:] != (True,False) for row in members)):
+                    raise ProviderUnavailable()
+                original_revisions.update(revisions)
+                original_members.update(members)
+        finally:
+            await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(ctx.intent_id,))
+        retained.extend((tuple(sorted(original_revisions,key=repr)),tuple(sorted(original_members,key=repr))))
+        for table,columns,bodies in (
+            ('vector_replays','revision_id,generation_id,chunk_id,dense_blob_sha256,sparse_blob_sha256,dense_original_bytes,sparse_original_bytes','dense_blob IS NOT NULL OR sparse_blob IS NOT NULL'),
+            ('dispatch_journal','intent_id,dispatch_id,request_sha256,request_original_bytes','request_bytes IS NOT NULL')):
+            rows = await self._query(connection,'SELECT '+columns+',content_erased,('+bodies+') FROM cragkit_qdrant.'+table+
+                ' WHERE '+_DOC+' LIMIT 4097',_doc(ctx))
+            if len(rows) > 4096 or any(row[-2:] != (True,False) for row in rows):
+                raise ProviderUnavailable()
+            retained.append(tuple(sorted(rows,key=repr)))
+        return MappingProxyType(dict(intent=dict(intent),erasure=erasure,claims=tuple(claims),stages=tuple(stages),
+            inventory_bytes=encoded,markers=tuple(retained)))
+
+    async def historical_purge(self, value: object, *, deadline: float) -> Mapping[str,Any]:
+        ctx = context(value)
+        if self._schema_profile != 5:
+            raise UnsupportedCapability()
+        async def confirm(connection: SessionConnection) -> Mapping[str,Any]:
+            return cast(Mapping[str,Any],(await self._purge_retained(connection,ctx))['intent'])
+        return await self._run(ctx,deadline,confirm,read_only=True)
+
+    async def complete_purge(self, verifier: object, receipt: object, *, deadline: float) -> Mapping[str,Any]:
+        from ._qdrant_security_verification import purge_absence_receipt_data,security_verifier_supervisor
+        supervisor = security_verifier_supervisor(verifier,self)
+        data = purge_absence_receipt_data(receipt,verifier,deadline=deadline)
+        original = purge_projection_data(data['projection'],self)
+        ctx = data['context']
+        if self._schema_profile != 5:
+            raise UnsupportedCapability()
+        intended: dict[str,Any] = {}
+        def check() -> None:
+            require_publication_finalization(supervisor,deadline=deadline)
+            purge_absence_receipt_data(receipt,verifier,deadline=deadline)
+        async def complete(connection: SessionConnection) -> Mapping[str,Any]:
+            backend = await self._manager_backend(connection,lock=True)
+            owner = await self._manager_owner(connection,ctx,lock=True)
+            if backend['state'] != 'open' or any(backend[key] != data['attempt_binding'][key] for key in ('instance_id','storage_identity','supervisor_id','epoch')):
+                raise ProviderUnavailable()
+            if owner is None or (owner['instance_id'],owner['intent_id'],owner['owner_token'],owner['backend_epoch']) != (self.instance_id,ctx.intent_id,ctx.owner_token,backend['epoch']):
+                raise UnauthorizedScope()
+            fresh = await self._purge_graph(connection,ctx,original['policy_id'])
+            if any(original[key] != fresh[key] for key in original if key != 'projection'):
+                raise UnauthorizedScope()
+            left,right = security_projection_data(original['projection'],self),security_projection_data(fresh['projection'],self)
+            if any(left[key] != right[key] for key in left if key != 'points'):
+                raise UnauthorizedScope()
+            await self._require_settled(connection,ctx)
+            args = (self.instance_id,self.config.backend_namespace,backend['storage_identity'],backend['supervisor_id'],backend['epoch'],
+                self.config.physical_collection,self.config.collection_incarnation,*_doc(ctx),ctx.intent_id,
+                original['purge_payload_sha256'],ctx.owner_token,original['tombstone_payload_sha256'],
+                left['authorization_revision'],left['mutation_epoch'],original['inventory_bytes'],original['inventory_sha256'],
+                original['policy_id'],data['absence_sha256'])
+            rows = await self._query(connection,'SELECT cragkit_qdrant.erase_purged_document('+','.join(['%s']*20)+')',args)
+            if rows != [(True,)]:
+                raise IntegrityViolation()
+            captured = await self._purge_retained(connection,ctx)
+            if (captured['inventory_bytes'] != original['inventory_bytes']
+                    or captured['erasure'][14] != data['absence_sha256']):
+                raise IntegrityViolation()
+            intended.update(captured)
+            return cast(Mapping[str,Any],captured['intent'])
+        try:
+            return await self._run(ctx,deadline,complete,guarded_check=check,detect_commit_unknown=True)
+        except _CommitUnknown:
+            async def confirm(connection: SessionConnection) -> Mapping[str,Any]:
+                retained = await self._purge_retained(connection,ctx)
+                if not intended or dict(retained) != intended:
+                    raise ProviderUnavailable()
+                return cast(Mapping[str,Any],retained['intent'])
+            return await self._run(ctx,deadline,confirm,guarded_check=check,read_only=True)

@@ -15,7 +15,8 @@ from ._qdrant_security_readback import (SecurityReadbackBudget, security_readbac
                                        verify_security_readback)
 from ._qdrant_supervisor import ManagedQdrantSupervisor, _ControlSession, control_session_binding
 from ._qdrant_transport import deadline_value
-from ._qdrant_writer import PostgresQdrantWriter, security_projection_data, writer_binding, security_recovery_projection
+from ._qdrant_writer import (PostgresQdrantWriter, security_projection_data, writer_binding,
+    security_recovery_projection, purge_projection_data)
 from ._qdrant_writer_contract import WriterContext, context
 from .errors import (DeadlineExceeded, IndexNotReady, IntegrityViolation, InvalidRequest,
                      ProviderUnavailable, UnauthorizedScope, UnsupportedCapability)
@@ -37,6 +38,36 @@ _VERIFIERS: WeakKeyDictionary[QdrantSecurityVerifier, tuple[PostgresQdrantWriter
 _RECEIPTS: WeakKeyDictionary[SecurityReceipt, tuple[QdrantSecurityVerifier, dict[str, Any], Mapping[str, Any]]] = WeakKeyDictionary()
 _ORDINARY_VERIFIERS: WeakKeyDictionary[object, Any] = WeakKeyDictionary()
 _ORDINARY_RECEIPTS: WeakKeyDictionary[object, tuple[Any, dict[str,Any], Mapping[str,Any]]] = WeakKeyDictionary()
+_PURGE_VERIFIERS: WeakKeyDictionary[object, Any] = WeakKeyDictionary()
+_PURGE_RECEIPTS: WeakKeyDictionary[object, tuple[Any, dict[str,Any], Mapping[str,Any]]] = WeakKeyDictionary()
+
+
+class PurgeAbsenceReceipt:
+    __slots__ = ('__weakref__',)
+
+    def __reduce__(self) -> Any:
+        raise TypeError('Purge receipts cannot be serialized')
+
+
+async def verify_purge_ordinary(verifier: object, attempt: object, value: object, projection: object, *,
+                                deadline: float, budget: SecurityReadbackBudget | None = None) -> PurgeAbsenceReceipt:
+    _origin(verifier)
+    if verifier not in _PURGE_VERIFIERS:
+        raise InvalidRequest()
+    return cast(PurgeAbsenceReceipt,await _PURGE_VERIFIERS[verifier](attempt,value,projection,deadline=deadline,budget=budget))
+
+
+def purge_absence_receipt_data(receipt: object, verifier: object, *, deadline: float) -> Mapping[str,Any]:
+    from ._qdrant_publication_worker import require_publication_finalization
+    _,supervisor = _origin(verifier)
+    if type(receipt) is not PurgeAbsenceReceipt or receipt not in _PURGE_RECEIPTS:
+        raise InvalidRequest()
+    issuer,record,data = _PURGE_RECEIPTS[receipt]
+    if issuer is not verifier:
+        raise InvalidRequest()
+    _ordinary_check(cast(QdrantSecurityVerifier,verifier),record,deadline)
+    require_publication_finalization(supervisor,deadline=deadline)
+    return data
 
 
 class OrdinarySecurityReceipt:
@@ -190,6 +221,98 @@ class QdrantSecurityVerifier:
             if verifier is None:raise InvalidRequest()
             return await fixed(verifier,attempt,value,deadline=deadline,budget=budget)
         _ORDINARY_VERIFIERS[self]=ordinary
+        purge_fixed = QdrantSecurityVerifier._verify_purge_ordinary
+        async def purge(attempt: object, value: object, projection: object, *, deadline: float,
+                        budget: SecurityReadbackBudget | None = None) -> PurgeAbsenceReceipt:
+            verifier = original()
+            if verifier is None:
+                raise InvalidRequest()
+            return await purge_fixed(verifier,attempt,value,projection,deadline=deadline,budget=budget)
+        _PURGE_VERIFIERS[self] = purge
+
+    async def _verify_purge_ordinary(self, attempt: object, value: object, projection: object, *,
+                                     deadline: float, budget: SecurityReadbackBudget | None = None) -> PurgeAbsenceReceipt:
+        writer,supervisor = _origin(self)
+        current = context(value)
+        deadline = deadline_value(deadline)
+        allowance = security_readback_budget(budget)
+        if writer._schema_profile != 5:
+            raise UnsupportedCapability()
+        if self._closed or self._active is not None:
+            raise ProviderUnavailable()
+        projected = purge_projection_data(projection,writer)
+        if projected['context'] != current:
+            raise InvalidRequest()
+        binding = MappingProxyType(dict(supervisor.attempt_binding(attempt)))
+        if ('recovery_id' in binding or binding['intent_id'] != current.intent_id
+                or binding['owner_token'] != current.owner_token
+                or binding['instance_id'] != writer_binding(writer)['instance_id']):
+            raise InvalidRequest()
+        caller = asyncio.current_task()
+        if caller is None:
+            raise InvalidRequest()
+        record = dict(caller=ref(caller),deadline=deadline,cancelled=False,attempt=attempt,attempt_binding=binding)
+        async def work() -> PurgeAbsenceReceipt:
+            handle = None
+            try:
+                _ordinary_check(self,record,deadline)
+                await writer.validate_purge_projection(projection,deadline=deadline)
+                _ordinary_check(self,record,deadline)
+                source = security_projection_data(projected['projection'],writer)
+                if not source['tombstoned']:
+                    raise UnauthorizedScope()
+                handle = supervisor.transport_for(attempt)
+                await verify_security_readback(handle,writer.config,source,deadline=deadline,budget=allowance)
+                _ordinary_check(self,record,deadline)
+                await handle.close()
+                handle = None
+                await writer.validate_purge_projection(projection,deadline=deadline)
+                _ordinary_check(self,record,deadline)
+                readback = hashlib.sha256(json.dumps([
+                    'cragkit.qdrant.purge-strict-absence.v1',projected['inventory_sha256'],
+                    source['point_ids'],binding['dispatch_id']],ensure_ascii=False,separators=(',',':')).encode('utf-8')).hexdigest()
+                witness = ('cragkit.qdrant.purge-ordinary-absence.v1',binding['instance_id'],
+                    binding['storage_identity'],binding['supervisor_id'],binding['credential_generation'],
+                    str(binding['epoch']),current.intent_id,current.owner_token,projected['tombstone_context'].intent_id,
+                    projected['purge_payload_sha256'],projected['tombstone_payload_sha256'],
+                    projected['inventory_sha256'],projected['policy_id'],readback)
+                encoded = json.dumps(witness,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode('utf-8')
+                digest = hashlib.sha256(encoded).hexdigest()
+                data = MappingProxyType(dict(context=current,tombstone_context=projected['tombstone_context'],
+                    projection=projection,attempt_binding=binding,purge_payload_sha256=projected['purge_payload_sha256'],
+                    inventory_sha256=projected['inventory_sha256'],absence_sha256=digest,witness=witness,
+                    encoded_bytes=encoded,sha256=digest))
+                receipt = PurgeAbsenceReceipt()
+                _PURGE_RECEIPTS[receipt] = (self,record,data)
+                return receipt
+            finally:
+                if handle is not None:
+                    async with asyncio.timeout(_CLEANUP_SECONDS):
+                        await handle.close()
+        task = asyncio.create_task(work())
+        self._active,self._operation = task,record
+        def finished(done: asyncio.Task[Any]) -> None:
+            if self._active is done:
+                self._active,self._operation = None,None
+            if not done.cancelled():
+                done.exception()
+        task.add_done_callback(finished)
+        try:
+            done,_ = await asyncio.wait({task},timeout=max(0,deadline-asyncio.get_running_loop().time()))
+            if not done:
+                raise TimeoutError()
+            return task.result()
+        except (asyncio.CancelledError,TimeoutError) as error:
+            record['cancelled'] = True
+            task.cancel()
+            done,_ = await asyncio.wait({task},timeout=_CLEANUP_SECONDS)
+            if not done:
+                self._closed = True
+            if isinstance(error,asyncio.CancelledError):
+                raise
+            raise DeadlineExceeded() from None
+        except Exception as error:
+            raise _safe(error) from None
 
     async def _verify_ordinary(self, attempt: object, value: object, *, deadline: float,
                                budget: SecurityReadbackBudget | None=None) -> OrdinarySecurityReceipt:

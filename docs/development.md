@@ -1346,3 +1346,23 @@ Run one language suite at a time. The [MCP implementation report](../evaluation/
 records 36 tests in each runtime and the remaining process-level check. The
 core package installs without these optional SDKs. No live model call is part
 of these checks.
+
+## V5-04G3 managed purge runtime
+
+The optional public publication managers implement the profile-5 purge protocol
+in [QP-r1](../contracts/QDRANT_PURGE_V5.md). Its native acceptance is still in
+progress; passing the implemented scenarios does not complete G3 or V5.
+Build Node first, then run the disposable fixtures serially with a fresh output
+directory. This command requires the already verified local server binary and
+makes no embedding or reranker call:
+
+```bash
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_purge.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-04G3/a-new-native-run
+```
+
+Each runtime exercises eight public scenario groups, followed by independent
+read-only PostgreSQL checks for six documents. The SQL observer compares
+original identities and digests and checks every managed body and erasure
+marker. A completed retry must avoid HTTP, DML and body loading. Native results
+and remaining acceptance gaps belong in the G3 report and tracker; this command
+does not establish the complete H fault matrix or production readiness.

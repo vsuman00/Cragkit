@@ -303,7 +303,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
             - [x] D5b: Initial security-owner handoff and genuine ordinary current-security completion. [Evidence](../evaluation/reports/V5/V5-04G2b2d5b.md).
             - [x] D5c: Repeated-update recovery anchored to a previous/current security owner and ownerless bootstrap; [evidence](../evaluation/reports/V5/V5-04G2b2d5c.md).
       - [x] G2c: Journaled full-point replica convergence and actual native failure/source acceptance; [evidence](../evaluation/reports/V5/V5-04G2c.md).
-    - [ ] V5-04G3: Tombstone-bound scoped purge, late-write safety, cleanup and native acceptance.
+    - [ ] V5-04G3: Tombstone-bound scoped purge, late-write safety, cleanup and native acceptance. IMPLEMENTED_UNVALIDATED at the full gate; [runtime checkpoint](../evaluation/reports/V5/V5-04G3.md) records passing end-to-end scenarios and remaining native faults.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
@@ -1792,3 +1792,84 @@ No model/provider/hosted run or release. Learning practice remains pending.
 Root owns final prose/link/staged review and commit/push/sync. Next: G3
 tombstone-bound exact-ID deletion, authenticated absence and managed body
 erasure under QP-r1; H and remaining V5 gates remain open.
+
+### G3 full runtime assignment
+
+G2c commit `4ce97b7` is pushed; exact remote head and zero ahead/behind verified.
+Shared outcome: implement the complete G3-r1 runtime addendum in QP-r1, from
+bounded exact-ID deletion through genuine absence, atomic managed body erasure
+and public idempotent purge. Sol `g3_python` owns Python writer, recovery,
+security-verification and publication modules plus new `test_qdrant_purge.py`;
+it assembles. Sol `g3_node` owns the corresponding four Node modules plus new
+`qdrant-purge.test.mjs`. Each language has one writer for dependent work. Root
+owns shared contracts/schema/native tools, all execution/services, docs/tracker,
+Git and final integration. Migrations, grants, existing tests and source/store
+contracts are protected; required changes come to root before edits. Peers
+coordinate concrete nominal plan/receipt/erasure interfaces directly; unresolved
+outcome/boundary decisions go root/Astra. No peer tests/processes/network/DB/
+installs/Git. Preserve existing G2 upsert-only behavior. Acceptance requires
+focused/strict checks, actual serial native end-to-end failures and the final
+regression checkpoint; no G3 acceptance yet.
+
+G3 Python split adjustment: before any recovery edits, Python assembler
+transfers only `_qdrant_recovery.py` to Sol `g3_python_recovery`, with new
+`test_qdrant_purge_recovery.py` for that child's focused coverage. Assembler
+retains writer, security-verification, publication and main purge test. The
+helper coordinates exact nominal projection/plan interfaces directly with
+the assembler and Node peer; no concurrent writer on any file. Root owns
+native acceptance and serial execution. This splits dependent implementation
+within the authorized subsystem; the full G3 outcome and protected boundaries
+are unchanged.
+
+G3 native acceptance pair: Sol `g3_native_python` owns
+`tools/qdrant_purge_cases.py` after root freezes its pure producer/header and
+assembles; Sol `g3_native_node` owns new
+`tools/check_typescript_qdrant_purge.mjs`. Shared eight-group protocol is
+`artifacts/V5/V5-04G3/native-protocol.md`; root owns new parent checker and
+independent actual read-only SQL body/metadata assertions, all execution and
+Git. No worker tests/process/network/DB/install/Git. Public/native sources are
+transferred; initial Python new21/strict49 and Node new2/strictbuild passed.
+Those local checks do not validate the full physical/SQL purge path.
+
+G3 final review pair: Sol `purge_review_python` owns only ignored
+`artifacts/V5/V5-04G3/python-final-review.md` and assembles; Sol
+`purge_review_node` owns only ignored `node-final-review.md` in that folder.
+Shared outcome: identify concrete authority, lifetime, retained-history and
+cross-runtime defects in the current G3 implementation against the frozen
+runtime addendum. Product files are read-only; no peer execution, services,
+network, database, installs or Git. Peers coordinate concrete parity findings
+directly and escalate protected/outcome changes to root, then Astra if unresolved.
+Root owns all implementation/native tools, serial execution and final integration.
+
+G3 cancellation regression split: the final-review pair now owns substantive
+native consumer additions within the existing handoff case. Python owns only
+the consumer body in `tools/qdrant_purge_cases.py` (header/producer protected),
+Node owns `tools/check_typescript_qdrant_purge.mjs`; Python assembles. Root stops
+writing these paths until transfer. Shared outcome: actual caller cancellation
+after genuine purge receipt/finalization entry, callback custody and controller
+exclusion while held, no late erasure, drain, then successful explicit retry.
+Use observed checkpoints rather than sleeps; preserve fixture/check/witness
+shape. No peer execution or services. Root retains all other paths and execution.
+
+G3 runtime checkpoint handoff: all peer paths transferred to root; no active
+worker writes remain. Public purge, nominal DELETE plans/absence receipts,
+guarded settlement, owner handoff, managed erasure and retained historical
+confirmation are implemented in both languages. Root fixed the Python
+competing document lock under the actual supervisor guard and added a native
+spy that rejects recurrence. Full Python/tool suite 3,067 passed (four existing
+serializer warnings), Node 1,517 passed with strict build, Python strict49
+passed, final tool fixture checks7 passed, 16 seals unchanged. Actual final
+native traces passed eight public scenario groups plus six independent SQL
+checks per runtime, including cancellation suppression/callback custody,
+rollback after real erasure, actual lost-COMMIT reply and exact read-only
+confirmation. Both witnesses match; successful owned processes/listeners/pools
+closed. [Checkpoint report](../evaluation/reports/V5/V5-04G3.md) names exact
+private evidence paths and limitations. Disk28GiB observed; no installs/model/
+provider/hosted operations. User audits and README unchanged. G3 remains
+IMPLEMENTED_UNVALIDATED at full acceptance: next smallest action is actual
+current-key/foreign-target pending refusal and changed authority/owner during
+purge guard or finalization. H and later V5 gates remain open. No production
+readiness claim. Learning practice pending: explain why physical absence cannot
+settle a write whose still-valid credential can mutate the same point later.
+Root owns prose/link/staged review, focused checkpoint commit/immediate push
+and remote synchronization, then the remaining G3 acceptance cases.

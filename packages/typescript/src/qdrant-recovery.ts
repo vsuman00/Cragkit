@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 import { PoolResource, bounded, now, type LeaseOptions, type PgClient } from './postgres-pool.js';
 import { ManagedQdrantSupervisor,control_session_binding, type SupervisorControlSession } from './qdrant-supervisor.js';
 import { QdrantReconciliationVerifier, receipt_data, verifier_authority, inspect_missing_readback, verification_budget, type VerificationBudget } from './qdrant-reconciliation.js';
-import { projection_data, writer_binding, recovery_dispatch_plan_data,security_projection_data,security_recovery_projection,security_dispatch_plan_data,validate_guarded_security_projection,require_security_guard_writer, type SecurityProjection, type SecurityProjectionData, type SecurityDispatchPlanData, type RecoveryDispatchPlanData, type PostgresQdrantWriter } from './qdrant-writer.js';
+import { projection_data, writer_binding, recovery_dispatch_plan_data,security_projection_data,security_recovery_projection,security_dispatch_plan_data,purge_projection_data,purge_dispatch_plan_data,require_security_owner_writer, type PurgeProjection,type PurgeDispatchPlanData,validate_guarded_security_projection,require_security_guard_writer, type SecurityProjection, type SecurityProjectionData, type SecurityDispatchPlanData, type RecoveryDispatchPlanData, type PostgresQdrantWriter } from './qdrant-writer.js';
 import {QdrantSecurityVerifier,security_verifier_binding,security_receipt_data} from './qdrant-security-verification.js';
 import {security_readback_budget,inspect_security_readback,security_storage_request,type SecurityReadbackBudget} from './qdrant-security-readback.js';
 import { AUTHORITY_HISTORY_SQL, AUTHORITY_PUBLICATION_HISTORY, AUTHORITY_PUBLICATION_CATALOG_SQL,
@@ -47,6 +47,30 @@ export function security_dispatch_authorization(input:unknown,writer:PostgresQdr
   if(!issued||!original||original.writer!==writer||issued.writer!==writer||options.signal!==issued.options.signal||options.deadline>issued.options.deadline)throw new InvalidRequest();
   issued.check();return issued.data;
 }
+export type PurgeDispatchAuthorizationData=Readonly<SecurityDispatchAuthorizationData&{purge_projection:PurgeProjection}>;
+const purgeDispatchAuthorizations=new WeakMap<object,Readonly<{issuer:PostgresQdrantRecovery;writer:PostgresQdrantWriter;options:LeaseOptions;data:PurgeDispatchAuthorizationData;check:()=>void}>>();
+const purgeDispatchers=new WeakMap<object,(proof:unknown,owner:WriterContext,projection:PurgeProjection,authorize:SecurityAuthorizer,options:LeaseOptions,budget:SecurityReadbackBudget)=>Promise<SecurityDispatchCounts>>();
+const purgeSettlers=new WeakMap<object,(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,projection:PurgeProjection,options:LeaseOptions,budget:SecurityReadbackBudget)=>Promise<SecuritySettlement>>();
+export function purge_dispatch_authorization(input:unknown,writer:PostgresQdrantWriter,rawOptions:unknown):PurgeDispatchAuthorizationData{
+  writer_binding(writer);const options=parse_options(rawOptions);
+  if(typeof input!=='object'||input===null||types.isProxy(input))throw new InvalidRequest();
+  const issued=purgeDispatchAuthorizations.get(input),original=issued?recoveryRegistrations.get(issued.issuer):undefined;
+  if(!issued||!original||original.writer!==writer||issued.writer!==writer||options.signal!==issued.options.signal||options.deadline>issued.options.deadline)throw new InvalidRequest();
+  issued.check();return issued.data;
+}
+export async function dispatch_purge_recovery(recovery:unknown,proof:unknown,rawOwner:unknown,projection:unknown,authorize:unknown,rawOptions:unknown,inputBudget?:SecurityReadbackBudget):Promise<SecurityDispatchCounts>{
+  const owner=parse_context(rawOwner),options=parse_options(rawOptions),budget=security_readback_budget(inputBudget);
+  if(typeof recovery!=='object'||recovery===null||types.isProxy(recovery)||Object.getPrototypeOf(recovery)!==PostgresQdrantRecovery.prototype||typeof authorize!=='function'||types.isProxy(authorize))throw new InvalidRequest();
+  const original=recoveryRegistrations.get(recovery);if(!original)throw new InvalidRequest();purge_projection_data(projection,original.writer);
+  const dispatch=purgeDispatchers.get(recovery);if(!dispatch)throw new InvalidRequest();
+  return dispatch(proof,owner,projection as PurgeProjection,authorize as SecurityAuthorizer,options,budget);
+}
+export async function settle_purge_guarded(recovery:unknown,verifier:QdrantSecurityVerifier,proof:unknown,rawOwner:unknown,projection:unknown,rawOptions:unknown,inputBudget?:SecurityReadbackBudget):Promise<SecuritySettlement>{
+  const owner=parse_context(rawOwner),options=parse_options(rawOptions),budget=security_readback_budget(inputBudget);
+  if(typeof recovery!=='object'||recovery===null||types.isProxy(recovery)||Object.getPrototypeOf(recovery)!==PostgresQdrantRecovery.prototype)throw new InvalidRequest();
+  const original=recoveryRegistrations.get(recovery);if(!original)throw new InvalidRequest();purge_projection_data(projection,original.writer);
+  const settle=purgeSettlers.get(recovery);if(!settle)throw new InvalidRequest();return settle(verifier,proof,owner,projection as PurgeProjection,options,budget);
+}
 export async function dispatch_security_recovery(recovery:unknown,proof:unknown,rawOwner:unknown,rawSecurity:unknown,authorize:unknown,rawOptions:unknown,inputBudget?:SecurityReadbackBudget):Promise<SecurityDispatchCounts>{
   const owner=parse_context(rawOwner),security=parse_context(rawSecurity),options=parse_options(rawOptions),budget=security_readback_budget(inputBudget);
   if(typeof recovery!=='object'||recovery===null||types.isProxy(recovery)||Object.getPrototypeOf(recovery)!==PostgresQdrantRecovery.prototype
@@ -55,7 +79,7 @@ export async function dispatch_security_recovery(recovery:unknown,proof:unknown,
   if(owner.collection!==security.collection||owner.document_id!==security.document_id||!same(owner.scope,security.scope))throw new InvalidRequest();
   return dispatch(proof,owner,security,authorize as SecurityAuthorizer,options,budget);
 }
-type DispatchPlanData=RecoveryDispatchPlanData|SecurityDispatchPlanData;
+type DispatchPlanData=RecoveryDispatchPlanData|SecurityDispatchPlanData|PurgeDispatchPlanData;
 type SecurityAttempt=Readonly<{headers:readonly (readonly unknown[])[];members:readonly (readonly unknown[])[];completion:string}>;
 type GuardMetadata=Readonly<{context:WriterContext;owner_context:WriterContext;document:Readonly<Data>}>;
 type GuardRecord=Readonly<{writer:PostgresQdrantWriter;projection:unknown;options:LeaseOptions;data:GuardMetadata;check:()=>void}>;
@@ -264,6 +288,11 @@ export class PostgresQdrantRecovery {
     recoveryRegistrations.set(this,Object.freeze({resource:this.#resource,config:this.#config,writer:this.#writer,
       supervisor:this.#supervisor,verifier:this.#verifier}));
     guardedDrivers.set(this,async(securityVerifier,proof,owner,security,options,budget)=>{await this.#securityGuarded(securityVerifier,proof,owner,security,options,budget,'validate');});
+    purgeDispatchers.set(this,(proof,owner,projection,authorize,options,budget)=>this.#dispatchPurge(proof,owner,projection,authorize,options,budget));
+    purgeSettlers.set(this,(verifier,proof,owner,projection,options,budget)=>{
+      const purge=purge_projection_data(projection,this.#writer);require_security_owner_writer(this.#writer);
+      return this.#securityGuarded(verifier,proof,owner,purge.tombstone_context,options,budget,'settle',projection);
+    });
     securitySettlers.set(this,(securityVerifier,proof,owner,security,options,budget)=>this.#securityGuarded(securityVerifier,proof,owner,security,options,budget,'settle'));
     securityDispatchers.set(this,(proof,owner,security,authorize,options,budget)=>this.#dispatchSecurity(proof,owner,security,authorize,options,budget));
   }
@@ -290,8 +319,9 @@ export class PostgresQdrantRecovery {
       finish();
     }
   }
-  async #securityGuarded(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,security:WriterContext,caller:LeaseOptions,budget:SecurityReadbackBudget,mode:'validate'|'settle'):Promise<SecuritySettlement>{
+  async #securityGuarded(verifier:QdrantSecurityVerifier,proof:unknown,owner:WriterContext,security:WriterContext,caller:LeaseOptions,budget:SecurityReadbackBudget,mode:'validate'|'settle',purgeProjection?:PurgeProjection):Promise<SecuritySettlement>{
     security_verifier_binding(verifier,this.#writer,this.#supervisor);
+    if(purgeProjection){require_security_owner_writer(this.#writer);if(this.#profile!=='purge')throw new UnsupportedCapability();}
     if(owner.intent_id===security.intent_id&&this.#profile!=='purge')throw new InvalidRequest();
     this.#admit();if(this.#profile!=='security_guard'&&this.#profile!=='purge')throw new UnsupportedCapability();
     require_security_guard_writer(this.#writer);
@@ -307,11 +337,16 @@ export class PostgresQdrantRecovery {
         parse_options(options);
         const binding=physical(this.#supervisor.recovery_binding(proof));
         if(binding.instance_id!==writer_binding(this.#writer).instance_id)throw new UnsupportedCapability();
+        if(purgeProjection)await this.#writer.validate_purge_projection(purgeProjection,options);
         const receipt=await QdrantSecurityVerifier.prototype.verify.call(verifier,proof,session,owner,security,options,budget);
         const receiptData=security_receipt_data(receipt,verifier,session,options);
         if(!same(receiptData.owner_context,owner)||!same(receiptData.security_context,security)
           ||!same(receiptData.physical_binding,binding))throw new IntegrityViolation();
         const projection=receiptData.projection,source=security_projection_data(projection,this.#writer);
+        if(purgeProjection){
+          const purge=purge_projection_data(purgeProjection,this.#writer);
+          if(!source.tombstoned||!same(source,security_projection_data(purge.projection,this.#writer)))throw new UnauthorizedScope();
+        }
         const document=Object.freeze({active_generation_id:source.active_generation_id,principal_ids:source.principal_ids,
           grant_ids:source.grant_ids,authorization_revision:source.authorization_revision,mutation_epoch:source.mutation_epoch,
           language:source.language,kind:source.kind,tag:source.tag,tombstoned:source.tombstoned});
@@ -355,7 +390,7 @@ export class PostgresQdrantRecovery {
           catch(error){invalidate();throw error;}
           finally{tokenLive=false;}
           if(mode==='validate')return Object.freeze({settled_count:0});
-          attempted=await this.#securitySettlementAttempt(tx,binding,owner,source,receiptData.readback_sha256);
+          attempted=await this.#securitySettlementAttempt(tx,binding,owner,source,receiptData.readback_sha256,purgeProjection!==undefined);
           check();
           for(const row of attempted.headers){
             const id=row[0];
@@ -424,7 +459,7 @@ export class PostgresQdrantRecovery {
     // Security owners never issue ordinary physical writes.
     return Object.freeze([]);
   }
-  async #securitySettlementAttempt(tx:Tx,binding:Binding,owner:WriterContext,source:SecurityProjectionData,completion:string):Promise<SecurityAttempt>{
+  async #securitySettlementAttempt(tx:Tx,binding:Binding,owner:WriterContext,source:SecurityProjectionData,completion:string,purge=false):Promise<SecurityAttempt>{
     const target=[owner.scope.tenant_id,owner.collection,owner.document_id,owner.intent_id];
     const ordinaryIds=await this.#securityOwnerMembers(tx,binding,owner,source);
     const foreign=await tx.query("SELECT intent_id FROM cragkit_qdrant.dispatch_journal WHERE (tenant_id,collection,document_id)=($1,$2,$3) AND intent_id<>$4 AND state<>'settled' LIMIT 1",target,1);
@@ -445,7 +480,7 @@ export class PostgresQdrantRecovery {
           ||row[1]!==binding.instance_id||row[3]!==owner.owner_token||typeof row[7]!=='boolean')throw new IntegrityViolation();
         text(row[5]);digest(row[8]);
         if(typeof row[9]!=='string'||!/^[1-9][0-9]{0,19}$/.test(row[9])||BigInt(row[9])>18446744073709551615n)throw new IntegrityViolation();
-        if(row[6]!=='complete_point_upsert')throw new UnsupportedCapability();
+        if(row[6]!=='complete_point_upsert'&&!(purge&&row[6]==='delete_points'&&row[7]===true))throw new UnsupportedCapability();
         if(row[7]===false&&ordinaryIds.length===0)throw new IntegrityViolation();
         if(row[10]==='settled')digest(row[11]);
         else{
@@ -754,7 +789,7 @@ export class PostgresQdrantRecovery {
       plan.expected_authorization_revision,plan.expected_mutation_epoch]))throw new IntegrityViolation();
     return intent;
   }
-  async #dispatchRows(tx:Tx,binding:Binding,context:WriterContext,expected:ReadonlySet<string>,ordinary:ReadonlySet<string>=expected):Promise<number> {
+  async #dispatchRows(tx:Tx,binding:Binding,context:WriterContext,expected:ReadonlySet<string>,ordinary:ReadonlySet<string>=expected,purge=false):Promise<number> {
     const target=[context.scope.tenant_id,context.collection,context.document_id,context.intent_id];
     const rows=await tx.query('SELECT dispatch_id,instance_id,sequence,owner_token::text,backend_epoch,credential_generation,operation,recovery,state,completion_sha256,request_sha256 FROM cragkit_qdrant.dispatch_journal WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4) ORDER BY sequence LIMIT 257',target,257);
     if(rows.length>256)throw new IntegrityViolation();
@@ -763,7 +798,7 @@ export class PostgresQdrantRecovery {
       if(row.length!==11)throw new IntegrityViolation();
       const id=text(row[0]),sequence=db_count(row[2]),epoch=db_count(row[4]);text(row[5]);digest(row[10]);
       if(ids.has(id)||sequences.has(sequence)||sequence<1||sequence>256||epoch<1||epoch>Number(binding.new_epoch)
-        ||row[1]!==binding.instance_id||row[3]!==context.owner_token||row[6]!=='complete_point_upsert'||typeof row[7]!=='boolean')throw new IntegrityViolation();
+        ||row[1]!==binding.instance_id||row[3]!==context.owner_token||(row[6]!=='complete_point_upsert'&&!(purge&&row[6]==='delete_points'&&row[7]===true))||typeof row[7]!=='boolean')throw new IntegrityViolation();
       if(row[8]==='settled'){digest(row[9]);}else{
         if(!['reserved','dispatched','unknown'].includes(String(row[8]))||row[9]!==null)throw new IntegrityViolation();
         if(row[5]===binding.credential_generation)throw new ProviderUnavailable();
@@ -797,7 +832,7 @@ export class PostgresQdrantRecovery {
     if(rows.length===0)return null;if(rows.length!==1||rows[0].length!==10)throw new IntegrityViolation();
     const row=rows[0];
     if(!same([row[0],db_count(row[1]),row[2],db_count(row[3]),...row.slice(4,8)],[binding.instance_id,plan.sequence,context.owner_token,binding.new_epoch,
-      plan.attempt_binding.credential_generation,'complete_point_upsert',true,plan.request_sha256]))throw new IntegrityViolation();
+      plan.attempt_binding.credential_generation,'operation' in plan?plan.operation:'complete_point_upsert',true,plan.request_sha256]))throw new IntegrityViolation();
     const points=await tx.query('SELECT backend_namespace,physical_collection,collection_incarnation,point_id::text FROM cragkit_qdrant.dispatch_points WHERE (tenant_id,collection,document_id,intent_id,dispatch_id)=($1,$2,$3,$4,$5) LIMIT 9',target,9);
     if(points.length!==plan.point_ids.length||new Set(points.map(row=>row[3])).size!==points.length)throw new IntegrityViolation();
     for(const point of points)if(point.length!==4||point[0]!==this.#config.backend_namespace||point[1]!==this.#config.physical_collection
@@ -815,7 +850,7 @@ export class PostgresQdrantRecovery {
       if('security_context'in plan){
         const source=security_projection_data(plan.projection,this.#writer);
         const ordinary=await this.#securityOwnerMembers(tx,binding,ctx,source);
-        const maximum=await this.#dispatchRows(tx,binding,ctx,new Set(source.point_ids),new Set(ordinary));
+        const maximum=await this.#dispatchRows(tx,binding,ctx,new Set(source.point_ids),new Set(ordinary),'operation' in plan&&plan.operation==='delete_points');
         if(maximum+1!==plan.sequence)throw new ProviderUnavailable();
       }
       const claims=await tx.query('SELECT backend_namespace,physical_collection,collection_incarnation,point_id::text,instance_id,revision_id,generation_id FROM cragkit_qdrant.point_claims WHERE (tenant_id,collection,document_id)=($1,$2,$3) AND point_id=ANY($4::uuid[]) LIMIT 9',
@@ -828,7 +863,7 @@ export class PostgresQdrantRecovery {
           ||row[5]!==('security_context'in plan?point?.payload.revision_id:plan.revision_id)||row[6]!==('security_context'in plan?point?.payload.generation_id:plan.generation_id))throw new IntegrityViolation();
       }
       const values=[ctx.scope.tenant_id,ctx.collection,ctx.document_id,ctx.intent_id,plan.attempt_binding.dispatch_id,
-        instance,plan.sequence,ctx.owner_token,binding.new_epoch,plan.attempt_binding.credential_generation,'complete_point_upsert',true,Buffer.from(plan.request_bytes),plan.request_sha256];
+        instance,plan.sequence,ctx.owner_token,binding.new_epoch,plan.attempt_binding.credential_generation,'operation' in plan?plan.operation:'complete_point_upsert',true,Buffer.from(plan.request_bytes),plan.request_sha256];
       await tx.query('INSERT INTO cragkit_qdrant.dispatch_journal (tenant_id,collection,document_id,intent_id,dispatch_id,instance_id,sequence,owner_token,backend_epoch,credential_generation,operation,recovery,request_bytes,request_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9,$10,$11,$12,$13,$14)',values,0);
       for(const id of plan.point_ids)await tx.query('INSERT INTO cragkit_qdrant.dispatch_points (tenant_id,collection,document_id,intent_id,dispatch_id,backend_namespace,physical_collection,collection_incarnation,point_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid)',
         [ctx.scope.tenant_id,ctx.collection,ctx.document_id,ctx.intent_id,plan.attempt_binding.dispatch_id,this.#config.backend_namespace,this.#config.physical_collection,this.#config.collection_incarnation,id],0);
@@ -937,6 +972,100 @@ export class PostgresQdrantRecovery {
             }finally{authorized=false;}
           }
           await security_recovery_projection(this.#writer,security,options,projection);check();
+          return Object.freeze({batches:completed,points:selected.length});
+        }finally{live=false;if(inspection)await bounded(inspection.close(),{deadline:now()+this.#resource.config.release_timeout});}
+      });}
+      finally{caller.signal?.removeEventListener('abort',relay);this.#active=undefined;finish();}
+    })();void inner.catch(()=>{});
+    try{return await bounded(inner,caller);}catch(error){controller.abort();try{await bounded(Promise.allSettled([inner]),{deadline:now()+this.#resource.config.release_timeout});}catch{this.#closed=true;}throw safe(error,caller.deadline);}
+  }
+  async #dispatchPurge(proof:unknown,owner:WriterContext,purgeProjection:PurgeProjection,authorize:SecurityAuthorizer,caller:LeaseOptions,budget:SecurityReadbackBudget):Promise<SecurityDispatchCounts>{
+    const purge=purge_projection_data(purgeProjection,this.#writer),security=purge.tombstone_context;
+    if(!same(owner.scope,security.scope)||owner.collection!==security.collection||owner.document_id!==security.document_id)throw new InvalidRequest();
+    require_security_owner_writer(this.#writer);
+    if(owner.intent_id===security.intent_id&&this.#profile!=='purge')throw new InvalidRequest();
+    this.#admit();if(this.#profile!=='purge')throw new UnsupportedCapability();require_security_owner_writer(this.#writer);
+    const controller=new AbortController(),relay=()=>controller.abort();caller.signal?.addEventListener('abort',relay,{once:true});
+    if(caller.signal?.aborted)controller.abort();const options={deadline:caller.deadline,signal:controller.signal};
+    let finish!:()=>void;const done=new Promise<void>(resolve=>{finish=resolve;}),operation={controller,done};this.#active=operation;
+    const inner=(async()=>{
+      try{return await this.#supervisor.control_session(async session=>{
+        const binding=physical(control_session_binding(session,this.#supervisor,proof).physical_binding);
+        if(binding.instance_id!==writer_binding(this.#writer).instance_id)throw new UnsupportedCapability();
+        let live=true;
+        const check=()=>{parse_options(options);if(!live||this.#closed||this.#active!==operation)throw new ProviderUnavailable();
+          if(!same(control_session_binding(session,this.#supervisor,proof).physical_binding,binding))throw new UnsupportedCapability();};
+        const custody=():GuardedTransaction=>{
+          let active=true,client:PgClient|undefined,signal:AbortSignal|undefined;
+          const scope=()=>{check();if(signal)parse_options({deadline:options.deadline,signal});if(!active)throw new ProviderUnavailable();};
+          const current=()=>{scope();if(!client||client.getTransactionStatus()!=='T')throw new ProviderUnavailable();};
+          return {preflight:(actual,derived)=>{client=actual;signal=derived;scope();},attach:(actual,derived)=>{client=actual;signal=derived;},
+            check:current,commit:()=>{current();active=false;},invalidate:()=>{active=false;}};
+        };
+        const authorizeCurrent=async()=>{
+          check();let pending:Promise<boolean>;
+          try{pending=authorize(owner.scope,owner.collection,owner.document_id);}catch{throw new ProviderUnavailable();}
+          if(!(pending instanceof Promise))throw new InvalidRequest();
+          const allowed=await bounded(pending,options);check();if(typeof allowed!=='boolean')throw new InvalidRequest();if(!allowed)throw new UnauthorizedScope();
+        };
+        let inspection:ReturnType<SupervisorControlSession['recovery_transport_for']>|undefined;
+        try{
+          await authorizeCurrent();
+          await this.#writer.validate_purge_projection(purgeProjection,options);check();
+          const projection=purge.projection;
+          const source=security_projection_data(projection,this.#writer);if(!source.tombstoned)throw new UnsupportedCapability();
+          // Metadata owner admission precedes physical inspection; it never
+          // reuses the historical stage's now-conflicting security fences.
+          const preflight=async()=>this.#tx(String(binding.instance_id),options,async tx=>{
+            this.#blocked((await this.#backend(tx,String(binding.instance_id),'SHARE'))!,binding);await this.#owner(tx,binding,owner);
+            const ordinary=await this.#securityOwnerMembers(tx,binding,owner,source);
+            return this.#dispatchRows(tx,binding,owner,new Set(source.point_ids),new Set(ordinary),true);
+          },false,undefined,custody());
+          await preflight();check();
+          const selected=[...source.point_ids].sort();
+          await this.#writer.validate_purge_projection(purgeProjection,options);check();
+          const maximum=await preflight();check();
+          if(!selected.length)return Object.freeze({batches:0,points:0});
+          const batches=Math.ceil(selected.length/8);if(maximum+batches>256)throw new ProviderUnavailable();
+          await this.#writer.reserve_purge_capacity(purgeProjection,batches,options);check();
+          let completed=0;
+          for(let start=0;start<selected.length;start+=8){
+            if(budget.remaining_bytes<=0||budget.remaining_calls<=0)throw new ProviderUnavailable();await authorizeCurrent();
+            const attempt=session.issue_recovery_attempt(proof,{intent_id:owner.intent_id,owner_token:owner.owner_token,
+              epoch:binding.new_epoch,recovery_id:binding.recovery_id,dispatch_id:'security-dispatch-'+randomUUID()},options);
+            const attemptBinding=metadata(this.#supervisor.attempt_binding(attempt)),authorization=Object.freeze({});
+            const authData=Object.freeze({purge_projection:purgeProjection,context:owner,security_context:security,projection,physical_binding:binding,attempt_binding:attemptBinding,sequence:maximum+completed+1});
+            let authorized=true;
+            purgeDispatchAuthorizations.set(authorization,{issuer:this,writer:this.#writer,options,data:authData,check:()=>{
+              if(!authorized)throw new InvalidRequest();check();
+              if(!same(metadata(this.#supervisor.attempt_binding(attempt)),attemptBinding))throw new UnsupportedCapability();
+            }});
+            try{
+              const plan=await this.#writer.project_purge_dispatch(authorization,selected.slice(start,start+8),options);check();
+              const data=purge_dispatch_plan_data(plan,authorization,this.#writer,options);
+              const beforeRetry=async()=>{await authorizeCurrent();await this.#writer.validate_purge_dispatch(plan,authorization,options);check();};
+              await beforeRetry();await this.#reserveRecovery(data,options,beforeRetry,custody);check();
+              await beforeRetry();await this.#markRecovery(data,'dispatched',options,null,beforeRetry,custody);check();
+              await beforeRetry();purge_dispatch_authorization(authorization,this.#writer,options);
+              const handle=session.recovery_transport_for(attempt);
+              try{
+                let raw:readonly number[];
+                try{raw=await security_storage_request(handle,'POST','/collections/'+this.#config.physical_collection+'/points/delete?wait=true&ordering=strong',data.request_bytes,options,budget);check();}
+                catch(error){try{check();await beforeRetry();await this.#markRecovery(data,'unknown',options,null,beforeRetry,custody);}catch{/* Durable dispatched uncertainty remains. */}throw error;}
+                let bytes:Buffer;try{bytes=Buffer.from(native_array(raw,1,1048576).map(value=>count(value,0,255)));}catch{throw new IntegrityViolation();}
+                const response=parse_response(bytes);
+                if(typeof response!=='object'||response===null||Array.isArray(response))throw new IntegrityViolation();
+                const result=(response as Data).result;
+                if((response as Data).status!=='ok'||typeof result!=='object'||result===null||Array.isArray(result))throw new IntegrityViolation();
+                const ack=result as Data;
+                if(ack.status!=='completed'||Object.keys(ack).some(key=>!['status','operation_id'].includes(key)))throw new IntegrityViolation();
+                if(Object.hasOwn(ack,'operation_id'))count(ack.operation_id);
+                await handle.close();check();await beforeRetry();
+                await this.#markRecovery(data,'settled',options,hash(bytes),beforeRetry,custody);check();completed++;
+              }finally{await bounded(handle.close(),{deadline:now()+this.#resource.config.release_timeout});}
+            }finally{authorized=false;}
+          }
+          await this.#writer.validate_purge_projection(purgeProjection,options);check();
           return Object.freeze({batches:completed,points:selected.length});
         }finally{live=false;if(inspection)await bounded(inspection.close(),{deadline:now()+this.#resource.config.release_timeout});}
       });}

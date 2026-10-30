@@ -1,7 +1,7 @@
 /** Same-session security evidence only; settlement belongs to the coordinator. */
 import {randomUUID} from 'node:crypto';
 import {types} from 'node:util';
-import {PostgresQdrantWriter,writer_binding,require_security_guard_writer,security_recovery_projection,security_projection_data,type SecurityProjection,type SecurityProjectionData} from './qdrant-writer.js';
+import {PostgresQdrantWriter,writer_binding,require_security_guard_writer,security_recovery_projection,security_projection_data,purge_projection_data,PURGE_RETENTION_POLICY,type PurgeProjection,type SecurityProjection,type SecurityProjectionData} from './qdrant-writer.js';
 import {require_publication_finalization} from './qdrant-publication-worker.js';
 import {ManagedQdrantSupervisor,control_session_binding,type SupervisorControlSession,type SupervisorTransport} from './qdrant-supervisor.js';
 import {verify_security_readback,security_readback_budget,type SecurityReadbackBudget} from './qdrant-security-readback.js';
@@ -22,6 +22,26 @@ const receipts=new WeakMap<object,Issued>();
 export type OrdinarySecurityReceipt=Readonly<Record<never,never>>;
 export type OrdinarySecurityReceiptData=Readonly<{context:WriterContext;projection:SecurityProjection;attempt_binding:Readonly<Data>;
   intent_sha256:string;inventory_sha256:string;readback_sha256:string;witness:readonly unknown[];encoded_bytes:readonly number[];sha256:string}>;
+export type PurgeAbsenceReceipt=Readonly<Record<never,never>>;
+export type PurgeAbsenceReceiptData=Readonly<{context:WriterContext;tombstone_context:WriterContext;projection:PurgeProjection;
+  attempt_binding:Readonly<Data>;purge_payload_sha256:string;inventory_sha256:string;absence_sha256:string;
+  witness:readonly unknown[];encoded_bytes:readonly number[];sha256:string}>;
+const purgeReceipts=new WeakMap<object,Readonly<{issuer:QdrantSecurityVerifier;attempt:unknown;options:LeaseOptions;data:PurgeAbsenceReceiptData}>>();
+const purgeVerifiers=new WeakMap<object,(attempt:unknown,context:WriterContext,projection:PurgeProjection,options:LeaseOptions,budget:SecurityReadbackBudget)=>Promise<PurgeAbsenceReceipt>>();
+export async function verify_purge_ordinary(verifier:unknown,attempt:unknown,rawContext:unknown,projection:unknown,rawOptions:unknown,inputBudget?:SecurityReadbackBudget):Promise<PurgeAbsenceReceipt>{
+  const original=registration(verifier),context=parse_context(rawContext),options=parse_options(rawOptions),budget=security_readback_budget(inputBudget);
+  purge_projection_data(projection,original.writer);const verify=purgeVerifiers.get(verifier as object);
+  if(!verify)throw new InvalidRequest();return verify(attempt,context,projection as PurgeProjection,options,budget);
+}
+export function purge_absence_receipt_data(receipt:unknown,verifier:QdrantSecurityVerifier,rawOptions:unknown):PurgeAbsenceReceiptData{
+  const original=registration(verifier),options=parse_options(rawOptions);
+  if(typeof receipt!=='object'||receipt===null||types.isProxy(receipt))throw new InvalidRequest();
+  const issued=purgeReceipts.get(receipt);
+  if(!issued||issued.issuer!==verifier||original.closed||options.deadline>issued.options.deadline||options.signal!==issued.options.signal)throw new InvalidRequest();
+  parse_options(issued.options);require_publication_finalization(original.supervisor,options);
+  if(!same(ordinaryBinding(original,issued.attempt,issued.data.context),issued.data.attempt_binding))throw new UnsupportedCapability();
+  return issued.data;
+}
 const ordinaryReceipts=new WeakMap<object,Readonly<{issuer:QdrantSecurityVerifier;attempt:unknown;options:LeaseOptions;data:OrdinarySecurityReceiptData}>>();
 const ordinaryVerifiers=new WeakMap<object,(attempt:unknown,context:WriterContext,options:LeaseOptions,budget:SecurityReadbackBudget)=>Promise<OrdinarySecurityReceipt>>();
 function exact(value:unknown,prototype:object):boolean{return typeof value==='object'&&value!==null&&!types.isProxy(value)&&Object.getPrototypeOf(value)===prototype;}
@@ -117,6 +137,7 @@ export class QdrantSecurityVerifier {
     if(new.target!==QdrantSecurityVerifier)throw new InvalidRequest();
     writer_binding(writer);if(!exact(supervisor,ManagedQdrantSupervisor.prototype))throw new InvalidRequest();
     this.#original={writer,supervisor,closed:false};verifiers.set(this,this.#original);
+    purgeVerifiers.set(this,(attempt,context,projection,options,budget)=>this.#verifyPurge(attempt,context,projection,options,budget));
     ordinaryVerifiers.set(this,(attempt,context,options,budget)=>this.#verifyOrdinary(attempt,context,options,budget));
   }
   async #await<T>(work:Promise<T>,options:LeaseOptions):Promise<T>{
@@ -147,6 +168,42 @@ export class QdrantSecurityVerifier {
       const data=Object.freeze({context,projection,attempt_binding:binding,intent_sha256:source.intent_sha256,inventory_sha256:source.inventory_sha256,
         readback_sha256:sha256,witness:value,encoded_bytes:encoded,sha256});const receipt=Object.freeze({});
       ordinaryReceipts.set(receipt,{issuer:this,attempt,options:caller,data});return receipt;
+    }catch(error){throw safe(error);}
+    finally{
+      controller.abort();caller.signal?.removeEventListener('abort',relay);let failed=false;
+      if(handle){const closing=handle.close();this.#pending.add(closing);void closing.then(()=>this.#pending.delete(closing),()=>this.#pending.delete(closing));try{await bounded(closing,{deadline:now()+2});}catch{failed=true;}}
+      const drain=Promise.allSettled([...this.#pending]);
+      try{await bounded(drain,{deadline:now()+2});}catch{this.#original.closed=true;void drain.then(()=>{this.#active=undefined;finish();});}
+      if(!this.#pending.size){this.#active=undefined;finish();}if(failed)throw new ProviderUnavailable();
+    }
+  }
+  async #verifyPurge(attempt:unknown,context:WriterContext,purgeProjection:PurgeProjection,caller:LeaseOptions,budget:SecurityReadbackBudget):Promise<PurgeAbsenceReceipt>{
+    if(this.#original.closed||this.#active)throw new ProviderUnavailable();const {writer,supervisor}=this.#original;
+    require_security_guard_writer(writer);const binding=ordinaryBinding(this.#original,attempt,context);
+    const controller=new AbortController(),relay=()=>controller.abort();caller.signal?.addEventListener('abort',relay,{once:true});if(caller.signal?.aborted)controller.abort();
+    let finish!:()=>void;const done=new Promise<void>(resolve=>{finish=resolve;});this.#active={controller,done};
+    const options={deadline:caller.deadline,signal:controller.signal};let handle:SupervisorTransport|undefined;
+    const check=()=>{parse_options(options);if(this.#original.closed||!same(ordinaryBinding(this.#original,attempt,context),binding))throw new UnsupportedCapability();};
+    try{
+      const purge=purge_projection_data(purgeProjection,writer);
+      if(!same(purge.context,context)||purge.policy_id!==PURGE_RETENTION_POLICY)throw new InvalidRequest();
+      await this.#await(writer.validate_purge_projection(purgeProjection,options),options);check();
+      const source=security_projection_data(purge.projection,writer);if(!source.tombstoned)throw new UnsupportedCapability();
+      handle=supervisor.transport_for(attempt);
+      await this.#await(verify_security_readback(handle,writer_binding(writer).config,source,options,budget),options);check();
+      await this.#await(handle.close(),options);handle=undefined;check();
+      await this.#await(writer.validate_purge_projection(purgeProjection,options),options);check();
+      // This hash is issued only after strict point reads and scoped EOF succeeded.
+      const readback=hash(JSON.stringify(['cragkit.qdrant.purge-strict-absence.v1',source.inventory_sha256,source.point_ids,binding.dispatch_id]));
+      const value=freeze(['cragkit.qdrant.purge-ordinary-absence.v1',binding.instance_id,binding.storage_identity,
+        binding.supervisor_id,binding.credential_generation,String(binding.epoch),context.intent_id,context.owner_token,
+        purge.tombstone_context.intent_id,purge.purge_payload_sha256,purge.tombstone_payload_sha256,purge.inventory_sha256,
+        purge.policy_id,readback]) as readonly unknown[];
+      const encoded=Object.freeze(Array.from(Buffer.from(JSON.stringify(value)))),sha256=hash(Buffer.from(encoded));
+      const data:PurgeAbsenceReceiptData=Object.freeze({context,tombstone_context:purge.tombstone_context,projection:purgeProjection,
+        attempt_binding:binding,purge_payload_sha256:purge.purge_payload_sha256,inventory_sha256:purge.inventory_sha256,
+        absence_sha256:sha256,witness:value,encoded_bytes:encoded,sha256});
+      const receipt=Object.freeze({});purgeReceipts.set(receipt,{issuer:this,attempt,options:caller,data});return receipt;
     }catch(error){throw safe(error);}
     finally{
       controller.abort();caller.signal?.removeEventListener('abort',relay);let failed=false;
