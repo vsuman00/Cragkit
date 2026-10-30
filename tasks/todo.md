@@ -2267,3 +2267,48 @@ or unrelated edit. Learning practice unassessed. Sixteen exact H IDs now
 have accepted native evidence; H and V5 remain open. Next smallest action:
 strengthen ID 10 same-intent identity assertions in the existing Python and
 TypeScript partial-repair consumers, then rerun both native runtimes.
+
+H-S11 assignment (V5-04H matrix ID `partial_qdrant_write`): two Sol peers
+share one outcome: prove that the existing real nine-point 8+1 split-batch
+fault preserves the previous pointer and resumes the exact original
+intent/revision/generation after missing-only repair. This adapts the frozen
+two-chunk illustration without changing its failure boundary; the completed
+first batch loses its reply and the second batch is not sent. Python peer
+`h_partial_python` owns only `tools/qdrant_partial_repair_cases.py` and is
+assembler. Node peer `h_partial_node` owns only
+`tools/check_typescript_qdrant_partial_repair.mjs`. Each strengthens the
+same-trace returned and staged identity assertions in its own consumer and
+checks prior pointer and one repair attempt without changing output shape or
+check order. They coordinate assertion parity directly. Root owns shared
+fixture/contract, report/tracker, serial native parent, final acceptance and
+Git. Protected: product code, schema, migrations, locks, seals, other native
+consumers and user edits. No peer tests/processes/services/network/DB/Git;
+root alone runs serial PostgreSQL 17/Qdrant 1.20.0 native integration with
+one test process at a time and synthetic vectors. Escalate changed outcome,
+protected boundary or other-lane ownership to root; unresolved design goes
+to Astra. State: assigned; H and V5 open.
+
+H-S12 assignment (V5-04H matrix ID `managed_recovery_old_key_rejected`):
+root owns an independent evidence-only registration while H-S11 peers edit
+their separate consumers. Reinspect E1/E2b current source and rerun their
+existing native parents serially in fresh ignored H artifacts. Require real
+lost-ack HTTP writes, durable SQL block before physical fence, same-storage
+restart with old-key HTTP 401, new-key readback and scoped settlement before
+private reopen. Map frozen illustrative epochs 7-to-8 to native 1-to-2
+explicitly. Root alone owns report/tracker, services, final integration and
+Git. No product/fixture/schema/migration/lock/seal changes; one test process,
+synthetic vectors, no provider/hosted action. State: assigned; H/V5 open.
+
+H-S12 final handoff: root inspected E1/E2b consumers and ran both native
+parents serially on fresh private fixtures. E1 passed nine checks per runtime;
+E2b passed eight SQL permission checks and 21 recovery checks per runtime.
+Both reported verified cleanup. The combined trace covers actual lost-reply
+writes and unknown journals, committed block before fencing, old-key HTTP
+401 after same-storage restart, new-key readback, scoped settlement and
+private ordinary reopen. Frozen epoch 7-to-8 is an illustrative value;
+native fixtures assert 1-to-2. [Checkpoint report](../evaluation/reports/V5/V5-04H-managed-recovery.md).
+Changed files: tracker and report only. No product/schema/fixture/lock/seal,
+provider, hosted or model action. Task-owned services closed; unrelated
+user edits and H-S11 peer files remain outside this registration. Learning
+practice unassessed. Seventeen exact H IDs have accepted native evidence;
+H and V5 remain open. Next: integrate H-S11 exact partial-repair identity.
