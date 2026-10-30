@@ -3143,3 +3143,42 @@ remain open. Handoff: changed new `tools/qdrant_old_acl_late_cases.py`, new
 no owned process remains. Learning practice unassessed. Next smallest action:
 prove `tombstone_during_repair`, `global_uuid_collision`,
 `lease_expiry_not_fencing` or `supervisor_crash_blocks`.
+
+H-S32 assignment (V5-04H exact ID `tombstone_during_repair`): audit real
+repair admission/publication boundaries and the profile-5 security/purge
+fixtures for an independent irreversible tombstone interleaving. Frozen
+ignored protocol: `artifacts/V5/V5-04H/tombstone-during-repair-r1-protocol.md`;
+contract QW-r1. Sol `h_paused_worker_python` owns a read-only Python audit and
+assembles; Sol `h_paused_worker_node` owns the TypeScript audit. Only separate
+`/tmp` notes are writable by peers. They coordinate concrete dependencies
+directly. Root owns protocol/parent, serial native verification,
+report/tracker/Git and escalation. Product, schema/migrations, QSC/QW
+contracts, sealed/shared fixtures, locks and user files are protected; peers
+run no tests/processes/services/network/DB/Git. State: assigned; H/V5 open.
+
+H-S32 audit found a real repair publication boundary and profile-5 tombstone
+path. Root froze the full pending-through-recovery outcome in ignored
+`artifacts/V5/V5-04H/tombstone-during-repair-r2-protocol.md`. Sol Python owns
+only new `tools/qdrant_tombstone_repair_cases.py` and assembles; Sol Node owns
+only new `tools/check_typescript_qdrant_tombstone_repair.mjs`. They coordinate
+labels/witness and the exact owner-gate refusal directly. Root owns parent
+scenario/result closure, focused tests, native runs, report/tracker/Git.
+Product/schema/contracts/shared fixtures/locks, existing G2c/H-S31/G3
+consumers and user files remain protected. Peers run no tests/processes/
+services/network/DB/Git. State: running; H/V5 open.
+
+H-S32 accepted for exact `tombstone_during_repair` only. The two native
+consumers prove an admitted repair write, independent irreversible tombstone,
+denied source release, retained claims/pointer, HTTP-200/lost-ACK uncertainty,
+managed fence and purge, and repeated pre-completion and final scoped absence
+while preserving an outside document. Python-only and TypeScript-only each
+passed seven checks; the combined run passed 14 with matching witness
+`3ce3a9052cc5121af6241037fe98978c1fd38e9905f719af489f3007db088d08`
+and verified cleanup. Thirteen focused parent tests, syntax/compilation and
+16 seals passed. [Checkpoint report](../evaluation/reports/V5/V5-04H-tombstone-during-repair.md).
+Changed files: two new native consumers, parent router/result closure,
+focused parent test, this tracker and report. Ignored native result:
+`artifacts/V5/V5-04H/tombstone-repair-both-01/results.json`. No task-owned
+process remains; no live provider call. Full package regressions last passed
+at H-S30. Learning practice unassessed. Next smallest action: exact H fault
+`global_uuid_collision`. H/V5 remain open.

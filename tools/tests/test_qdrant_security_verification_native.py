@@ -109,6 +109,24 @@ def test_public_security_failure_step_accepts_its_ten_native_checks():
         failure_observation(dict(value,step=len(PUBLIC_CHECKS)+1),max_checks=len(PUBLIC_CHECKS))
 
 
+def test_tombstone_repair_result_cannot_claim_other_security_scenarios():
+    from qdrant_tombstone_repair_cases import CHECKS as TOMBSTONE_REPAIR_CHECKS
+    value=dict(runtime='python',checks=list(TOMBSTONE_REPAIR_CHECKS),
+        proof_scope='native_tombstone_during_repair_only',semantic_witness_sha256='b'*64)
+    assert validate_result(value,'python',security_guard=True,tombstone_repair=True)==value
+    for changed in (dict(value,checks=list(TOMBSTONE_REPAIR_CHECKS[:-1])),
+                    dict(value,proof_scope='native_old_acl_late_upsert_only'),
+                    dict(value,private_source='secret'),dict(value,semantic_witness_sha256='bad')):
+        with pytest.raises(RuntimeError,match='tombstone_repair_native_result_shape'):
+            validate_result(changed,'python',security_guard=True,tombstone_repair=True)
+    for options in ({'tombstone_repair':True},
+                    {'security_guard':True,'tombstone_repair':True,'old_acl_late':True}):
+        with pytest.raises(RuntimeError,match='tombstone_repair_native_result_shape'):
+            validate_result(value,'python',**options)
+    assert failure_observation(dict(ok=False,step=len(TOMBSTONE_REPAIR_CHECKS),error='ProviderUnavailable'),
+        max_checks=len(TOMBSTONE_REPAIR_CHECKS))['step']==len(TOMBSTONE_REPAIR_CHECKS)
+
+
 def test_guard_mode_evidence_requires_its_closed_checks_without_claiming_settlement():
     from qdrant_security_verification_cases import GUARD_CHECKS
     baseline=dict(runtime='python',checks=list(CHECKS),proof_scope='native_security_receipt_only',semantic_witness_sha256='a'*64)
