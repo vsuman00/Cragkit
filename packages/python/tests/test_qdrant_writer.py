@@ -1538,6 +1538,16 @@ class AttestationConnection(ManagerConnection):
                     raise
         return Transaction()
     async def execute(self,sql,params=None):
+        if sql.startswith('SELECT instance_id,action,payload_bytes,payload_sha256,manifest_bytes'):
+            self.calls.append((sql,params))
+            rows=self.state.get('publication_confirmation_rows')
+            if rows is not None:return Cursor(rows)
+            graph=stage_data(prepare_stage(stage_input()))
+            return Cursor([('instance-1','stage',graph.intent_encoding.encoded_bytes,
+                graph.intent_encoding.sha256,graph.manifest_encoding.encoded_bytes,
+                graph.manifest_encoding.sha256,graph.manifest.revision_id,
+                graph.manifest.generation_id,graph.intent.expected_active_generation_id,
+                graph.intent.expected_authorization_revision,graph.intent.expected_mutation_epoch)])
         if sql.startswith('SELECT instance_id,owner_token::text,backend_epoch,authorization_revision'):
             self.calls.append((sql,params))
             return Cursor([('instance-1',*row) for row in self.state['preparations']])
@@ -1556,7 +1566,9 @@ class AttestationConnection(ManagerConnection):
         if sql.startswith('UPDATE cragkit_qdrant.generations') or sql.startswith('UPDATE cragkit_qdrant.documents'):
             self.calls.append((sql,params));self.state.setdefault('publication_updates',[]).append(sql);return Cursor([])
         if sql.startswith("UPDATE cragkit_qdrant.publication_intents SET state='published'"):
-            self.calls.append((sql,params));self.state['intent']['state']='published';return Cursor([])
+            self.calls.append((sql,params))
+            self.state['intent'].update(state='published',authority_committed=True,replica_complete=True)
+            return Cursor([])
         return await super().execute(sql,params)
 
 
@@ -1611,6 +1623,55 @@ def attestation_writer(monkeypatch):
     monkeypatch.setattr(implementation,'require_publication_finalization',guard)
     monkeypatch.setattr(writer,'validate_publication_projection',validate)
     return writer,state,connections,loads,receipt,verifier,data
+
+
+@pytest.mark.parametrize('fault',[None,'missing','identity','flags','nonterminal'])
+@run_async
+async def test_publication_commit_loss_uses_one_exact_read_only_confirmation(monkeypatch,fault):
+    writer,state,connections,_,_,_,_=attestation_writer(monkeypatch)
+    writer._schema_profile=2
+    state['schema_profile']=2
+    # Match the prepared original owner so this test needs no attestation.
+    async def fences(connection,selected):
+        graph=stage_data(prepare_stage(stage_input()))
+        return 1,state['document'],(graph.intent.expected_authorization_revision,
+            graph.intent.expected_mutation_epoch,graph.intent.expected_active_generation_id,
+            graph.manifest_encoding.sha256,graph.manifest.generation_id,
+            graph.manifest.revision_id,'prepared'),None
+    monkeypatch.setattr(writer,'_fences',fences)
+    class LostReply(AttestationConnection):
+        def transaction(self):
+            transaction=super().transaction()
+            owner=self
+            class Transaction:
+                async def __aenter__(self):return await transaction.__aenter__()
+                async def __aexit__(self,*args):
+                    result=await transaction.__aexit__(*args)
+                    if args[0] is None and state.pop('lose_publication_reply',False):
+                        # Later publication/authority changes cannot invalidate history.
+                        state['document'].update(active_generation_id='later',mutation_epoch=99)
+                        if fault=='missing':state['publication_confirmation_rows']=[]
+                        elif fault=='identity':state['publication_confirmation_rows']=[('changed',)]
+                        elif fault=='flags':state['intent']['replica_complete']=False
+                        elif fault=='nonterminal':state['intent']['state']='prepared'
+                        raise ConnectionError('PRIVATE_PUBLICATION_ACK_LOST')
+                    return result
+            return Transaction()
+    @asynccontextmanager
+    async def lease(self,*,deadline):
+        connection=LostReply(state);connections.append(connection);yield connection
+    monkeypatch.setattr(PoolResource,'lease',lease)
+    state['lose_publication_reply']=True
+    if fault is None:
+        result=await writer.publish(ctx(),deadline=asyncio.get_running_loop().time()+5)
+        assert result['state']=='published' and result['authority_committed'] and result['replica_complete']
+    else:
+        with pytest.raises(ProviderUnavailable if fault in ('missing','nonterminal') else IntegrityViolation):
+            await writer.publish(ctx(),deadline=asyncio.get_running_loop().time()+5)
+    assert len(connections)==2 and connections[0].closed
+    assert ('SET TRANSACTION READ ONLY',None) in connections[1].calls
+    assert not any(sql.startswith(('INSERT','UPDATE','DELETE')) for sql,_ in connections[1].calls)
+    assert len(state['publication_updates'])==3
 
 
 @run_async

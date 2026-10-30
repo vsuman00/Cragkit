@@ -2427,3 +2427,73 @@ test('writer profile4 reinitialization cannot adopt profile5',async()=>{
  try{await f.writer.initialize(opts());purgeWriterProfile(f);await assert.rejects(f.writer.initialize(opts()),UnsupportedCapability);}
  finally{await f.writer.close();await f.resource.close();}
 });
+
+async function preparedPublicationWriter(){
+  const f=setup();await f.writer.initialize(opts());
+  await f.writer.stage(prepare_stage(input()),scope,stageOpts());
+  await f.writer.acquire_owner(context,opts());await f.writer.prepare(context,'c'.repeat(64),opts());
+  return f;
+}
+
+test('publication lost CAS COMMIT confirms exact history once in SQL READ ONLY after supersession',async()=>{
+  const f=await preparedPublicationWriter();
+  try{
+    const start=f.state.queries.length,clients=f.state.clients.length;
+    f.state.commitLost=true;f.state.onLostCommit=()=>{
+      f.state.tables.documents[0].active_generation_id='successor-generation';
+      f.state.tables.generations[0].published=false;
+    };
+    const result=await f.writer.publish(context,opts());
+    assert.equal(result.state,'published');assert.equal(result.authority_committed,true);
+    assert.equal(result.replica_complete,true);assert.equal(result.purge_complete,false);
+    const confirmation=confirmationQueries(f.state,start).map(query=>query.text);
+    assert.ok(confirmation.includes('SET TRANSACTION READ ONLY'));
+    assert.equal(confirmation.filter(sql=>sql.startsWith('BEGIN')).length,1);
+    assert.equal(confirmation.filter(sql=>sql.startsWith('SELECT ')&&sql.includes('FROM cragkit_qdrant.publication_intents')).length,1);
+    assert.equal(confirmation.some(sql=>/^(INSERT|UPDATE|DELETE)/.test(sql)||/FOR (UPDATE|SHARE)/.test(sql)),false);
+    assert.equal(confirmation.some(sql=>sql.includes('FROM cragkit_qdrant.documents')||sql.includes('FROM cragkit_qdrant.vector_replays')),false);
+    assert.ok(f.state.clients[clients].releases.includes(true));
+    assert.equal(f.state.tables.documents[0].active_generation_id,'successor-generation');
+    const replay=f.state.queries.length;assert.deepEqual(await f.writer.publish(context,opts()),result);
+    assert.equal(f.state.queries.slice(replay).some(query=>/^(INSERT|UPDATE|DELETE)/.test(query.text)),false);
+  }finally{await f.writer.close();await f.resource.close();}
+});
+
+for(const fault of ['missing','payload','manifest','revision','generation','fence','action','authority','replica','purge','nonterminal'])
+ test(`publication lost COMMIT rejects ${fault} history without mutation replay`,async()=>{
+  const f=await preparedPublicationWriter();
+  try{
+    const start=f.state.queries.length;f.state.commitLost=true;f.state.onLostCommit=()=>{
+      const row=f.state.tables.publication_intents[0];
+      if(fault==='missing')f.state.tables.publication_intents=[];
+      if(fault==='payload')row.payload_bytes=Buffer.from('wrong');
+      if(fault==='manifest')row.manifest_bytes=Buffer.from('wrong');
+      if(fault==='revision')row.revision_id='wrong';
+      if(fault==='generation')row.generation_id='wrong';
+      if(fault==='fence')row.expected_mutation_epoch=2;
+      if(fault==='action')row.action='tombstone';
+      if(fault==='authority')row.authority_committed=false;
+      if(fault==='replica')row.replica_complete=false;
+      if(fault==='purge')row.purge_complete=true;
+      if(fault==='nonterminal')row.state='prepared';
+    };
+    await assert.rejects(f.writer.publish(context,opts()),['missing','nonterminal'].includes(fault)?ProviderUnavailable:IntegrityViolation);
+    const confirmation=confirmationQueries(f.state,start).map(query=>query.text);
+    assert.ok(confirmation.includes('SET TRANSACTION READ ONLY'));
+    assert.equal(confirmation.some(sql=>/^(INSERT|UPDATE|DELETE)/.test(sql)),false);
+  }finally{await f.writer.close();await f.resource.close();}
+ });
+
+for(const boundary of ['deadline','abort','statement_cancel','known_rollback'])
+ test(`publication COMMIT ${boundary} never starts confirmation`,async()=>{
+  const f=await preparedPublicationWriter();
+  try{
+    const start=f.state.queries.length;
+    f.state.commitError=boundary==='deadline'?new DeadlineExceeded():boundary==='abort'?new DOMException('aborted','AbortError'):
+      Object.assign(Error('private driver failure'),{code:boundary==='statement_cancel'?'57014':'40001'});
+    await assert.rejects(f.writer.publish(context,opts()),error=>boundary==='deadline'?error instanceof DeadlineExceeded:
+      boundary==='abort'?error.name==='AbortError':error instanceof ProviderUnavailable);
+    assert.equal(confirmationQueries(f.state,start).length,0);
+    assert.equal(f.state.tables.publication_intents[0].state,'prepared');
+  }finally{await f.writer.close();await f.resource.close();}
+ });

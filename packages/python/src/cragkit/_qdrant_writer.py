@@ -2317,7 +2317,10 @@ class PostgresQdrantWriter:
 
     async def publish(self, value: object, *, deadline: float) -> Mapping[str, Any]:
         ctx = context(value)
+        committed_intent_facts: tuple[Any, ...] | None = None
+        published: Mapping[str, Any] | None = None
         async def publish(connection: SessionConnection) -> Mapping[str, Any]:
+            nonlocal committed_intent_facts, published
             existing = await self._inspect(connection,ctx)
             if existing is None or existing['action']!='stage':
                 raise InvalidRequest()
@@ -2331,6 +2334,12 @@ class PostgresQdrantWriter:
             await self._require_settled(connection,ctx)
             plan = await self._load_stage(connection,ctx)
             self._attestation_intent(plan, intent, existing)
+            graph = stage_data(plan)
+            committed_intent_facts = (self.instance_id, 'stage', graph.intent_encoding.encoded_bytes,
+                graph.intent_encoding.sha256, graph.manifest_encoding.encoded_bytes,
+                graph.manifest_encoding.sha256, graph.manifest.revision_id,
+                graph.manifest.generation_id, graph.intent.expected_active_generation_id,
+                graph.intent.expected_authorization_revision, graph.intent.expected_mutation_epoch)
             if self._schema_profile in (3, 4, 5):
                 preparation, attestation = await self._attestation_material(connection,ctx,epoch,document,intent)
                 current = (preparation['owner_token'] == ctx.owner_token and preparation['backend_epoch'] == epoch)
@@ -2360,8 +2369,32 @@ class PostgresQdrantWriter:
             await connection.execute("UPDATE cragkit_qdrant.publication_intents SET state='published',authority_committed=true,replica_complete=true WHERE "+_INTENT,_key(ctx))
             result = await self._inspect(connection,ctx)
             assert result is not None
+            published = MappingProxyType(dict(result))
             return result
-        return await self._run(ctx,deadline,publish)
+        try:
+            return await self._run(ctx,deadline,publish,detect_commit_unknown=True)
+        except _CommitUnknown:
+            if committed_intent_facts is None or published is None:
+                raise ProviderUnavailable() from None
+            async def confirm(connection: SessionConnection) -> Mapping[str, Any]:
+                columns = ('instance_id','action','payload_bytes','payload_sha256',
+                    'manifest_bytes','manifest_sha256','revision_id','generation_id',
+                    'expected_active_generation_id','expected_authorization_revision','expected_mutation_epoch')
+                rows = await self._query(connection, 'SELECT '+','.join(columns)
+                    +' FROM cragkit_qdrant.publication_intents WHERE '+_INTENT, _key(ctx))
+                if not rows:
+                    raise ProviderUnavailable()
+                if len(rows) != 1 or rows[0] != committed_intent_facts:
+                    raise IntegrityViolation()
+                result = await self._manager_intent(connection, ctx)
+                if result is None or result['state'] not in ('published','conflict','denied'):
+                    raise ProviderUnavailable()
+                if (dict(result) != dict(published) or result['state'] != 'published'
+                        or not result['authority_committed'] or not result['replica_complete']
+                        or result['purge_complete']):
+                    raise IntegrityViolation()
+                return result
+            return await self._run(ctx,deadline,confirm,read_only=True)
 
     async def _admit_security_owner(self, value: object, *, deadline: float) -> Mapping[str, Any]:
         ctx=context(value)

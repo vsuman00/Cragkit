@@ -90,6 +90,13 @@ The application binds the existing `authorize_write(scope, collection, document_
 
 Stable intent lookup is fully scoped. Reusing an intent ID with a different action or immutable payload digest is `IntegrityViolation`; do not allocate another revision or silently adopt the new input. A matching completed retry resolves its durable outcome after fresh write authorization. A lost SQL acknowledgment is reconciled by reading that same identity, not by assuming rollback or issuing an alternate operation.
 
+A lost final publication CAS COMMIT reply follows the same rule. Confirm the
+original immutable stage intent and exact terminal published outcome in one
+fresh scoped SQL READ ONLY transaction. The current active pointer may have
+advanced again; historical success does not move it back. Missing history is
+unavailable, contradictory history is an integrity failure, and confirmation
+never resends points or replays the CAS.
+
 Results contain the scoped intent ID, operation, durable state, revision/generation identity where relevant, and explicit `authority_committed`, `replica_complete`, `published` and `purge_complete` booleans. An authority change with replica pending is not reported as a failed revocation or a completed replica mutation. Do not expose source bytes, keys, owner capabilities, raw SQL/HTTP bodies or exception text. These are write diagnostics, not retrieval coverage estimates.
 
 ### G1a: Native managed repair

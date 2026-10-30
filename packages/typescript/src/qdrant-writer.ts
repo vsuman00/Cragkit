@@ -2171,9 +2171,12 @@ export class PostgresQdrantWriter {
   }
   async publish(input:unknown,rawOptions:unknown):Promise<IntentView>{
     const context=parseContext(input),options=parseOptions(rawOptions);
-    const verify=async(tx:Tx)=>{
-      const intent=await this.#intent(tx,context);
+    let immutable:Readonly<Data>|undefined,expected:IntentView|undefined;
+    const verify=async(tx:Tx,stored?:Data)=>{
+      const intent=stored??await this.#intent(tx,context);
       if(!intent||!['published','conflict','denied'].includes(String(intent.state)))throw new ProviderUnavailable();
+      if(intent.action!=='stage'||intent.purge_complete!==false
+        ||intent.authority_committed!==(intent.state==='published')||intent.replica_complete!==(intent.state==='published'))throw new IntegrityViolation();
       if(intent.state==='published'){
         // The durable intent records this operation's committed outcome. A
         // later generation may now be active; replay never republishes it.
@@ -2181,9 +2184,10 @@ export class PostgresQdrantWriter {
       }
       return intent_view(intent);
     };
-    return this.#mutation(context,options,async tx=>{
+    const mutate=async(tx:Tx):Promise<IntentView>=>{
       const intent=await this.#intent(tx,context);
       if(!intent||intent.action!=='stage')throw new InvalidRequest();
+      immutable=this.#securityIntentFacts(intent);
       if(['published','conflict','denied'].includes(String(intent.state)))return verify(tx);
       if(intent.state!=='prepared')throw new InvalidRequest();
       const preliminary=await this.#fence(tx,context,intent,false);
@@ -2212,7 +2216,21 @@ export class PostgresQdrantWriter {
       if(changed.length!==1)throw new IntegrityViolation();
       await this.#updateIntent(tx,context,'published',true);
       return verify(tx);
-    },verify);
+    };
+    return this.#work(options,async lease=>{
+      try{return await this.#tx(context,lease,async tx=>{expected=await mutate(tx);return expected;},true);}
+      catch(error){
+        if(!(error instanceof CommitUnknown))throw error;
+        return this.#tx(context,lease,async tx=>{
+          const intent=await this.#intent(tx,context);
+          if(!intent)throw new ProviderUnavailable();
+          if(!immutable||!expected||!this.#sameSecurityIntent(intent,immutable))throw new IntegrityViolation();
+          const result=await verify(tx,intent);
+          if(!same(result,expected))throw new IntegrityViolation();
+          return result;
+        },true,false,{readOnly:true,check:()=>{parseOptions(lease);},invalidate:()=>{}});
+      }
+    });
   }
   async apply_security(input:unknown,inputScope:unknown,rawOptions:unknown):Promise<IntentView>{
     const options=parseOptions(rawOptions,true),change=parseOperation(input,inputScope,options.owner_token);

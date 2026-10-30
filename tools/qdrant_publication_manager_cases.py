@@ -23,6 +23,7 @@ CHECKS = (
     'manager_close_preserves_borrowed_dependencies',
     'actual_atomic_stage_rollback_preserves_pointer_and_no_rows',
     'actual_stage_commit_ack_loss_resumes_exact_graph_without_http',
+    'actual_publication_cas_commit_ack_loss_resolves_exactly_once',
 )
 ERRORS = frozenset(('IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability',
     'InvalidRequest', 'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady',
@@ -62,12 +63,21 @@ def publication_manager_input():
 class _PreparationAckConnection:
     def __init__(self, connection, observations):
         self.connection, self.observations = connection, observations
-        self.preparing = False
+        self.preparing = self.publishing = False
 
     def __getattr__(self, key):
         return getattr(self.connection, key)
 
     async def execute(self, statement, params=()):
+        publication = self.observations['publication']
+        if (publication['track'] and type(statement) is str
+                and statement.startswith(('INSERT INTO cragkit_qdrant.',
+                    'UPDATE cragkit_qdrant.', 'DELETE FROM cragkit_qdrant.'))):
+            publication['dml'] += 1
+        if (publication['armed'] and type(statement) is str
+                and statement.startswith('UPDATE cragkit_qdrant.documents SET active_generation_id=')):
+            self.publishing = True
+            publication['cas_writes'] += 1
         stage = self.observations.get('stage')
         if (stage is not None and type(statement) is str
                 and statement.startswith(('INSERT INTO cragkit_qdrant.',
@@ -94,7 +104,7 @@ class _PreparationAckConnection:
         owner, transaction = self, self.connection.transaction()
         class Transaction:
             async def __aenter__(self):
-                owner.preparing = False
+                owner.preparing = owner.publishing = False
                 owner.staging = False
                 await transaction.__aenter__()
                 return self
@@ -107,6 +117,12 @@ class _PreparationAckConnection:
                         retired_connection=owner.connection)
                     await owner.connection.close()
                     raise ConnectionError('injected_stage_commit_ack_loss')
+                publication = owner.observations['publication']
+                if kind is None and owner.publishing and publication['armed']:
+                    publication.update(armed=False, fired=publication['fired']+1,
+                        retired_connection=owner.connection)
+                    await owner.connection.close()
+                    raise ConnectionError('injected_publication_commit_ack_loss')
                 if kind is None and owner.preparing and owner.observations['armed']:
                     owner.observations.update(armed=False, fired=owner.observations['fired'] + 1,
                         retired_connection=owner.connection)
@@ -162,7 +178,8 @@ async def python_publication_manager_cases(value):
     writer_config, supervisor_config = pool_config(value['writer_config']), pool_config(value['supervisor_config'])
     if writer_config.max_size != 1 or supervisor_config.max_size != 1:
         raise RuntimeError('manager_fixture_two_client_ceiling')
-    acknowledgment = dict(armed=False, fired=0)
+    acknowledgment = dict(armed=False, fired=0,
+        publication=dict(armed=False,track=False,fired=0,cas_writes=0,dml=0))
     resource = PoolResource(writer_config, factory=lambda cfg: _PreparationAckPool(cfg, acknowledgment))
     supervisor_resource = PoolResource(supervisor_config)
     supervisor = ManagedQdrantSupervisor(Path(value['binary']), Path(value['work_dir']),
@@ -460,7 +477,29 @@ async def python_publication_manager_cases(value):
         acknowledgment['stage'] = None
         save(await stage_call(manager, stages['loser']))
         save(await stage_call(manager, stages['winner']))
-        save(await publish_call(manager, stages['winner']))
+        publication = acknowledgment['publication']
+        publication.update(armed=True,track=True)
+        winner = save(await publish_call(manager, stages['winner']))
+        winner_graph = await stage_graph(stages['winner'])
+        import json
+        intent_row = json.loads(winner_graph['publication_intents'][0][0])
+        generation_row = json.loads(winner_graph['generations'][0][0])
+        if (not winner['published'] or winner['state'] != 'published'
+                or publication['armed'] or publication['fired'] != 1 or publication['cas_writes'] != 1
+                or not publication['retired_connection'].closed
+                or winner_graph['pointer'] != [(stages['winner']['manifest']['generation_id'],)]
+                or intent_row['state'] != 'published' or not intent_row['replica_complete']
+                or not generation_row['published'] or not generation_row['ever_published']):
+            raise RuntimeError('manager_publication_commit_not_exact')
+        after_commit = (publication['dml'],network['requests'])
+        retry_manager = await new_manager()
+        historical = plain(await publish_call(retry_manager, stages['winner']))
+        if (historical != winner or (publication['dml'],network['requests']) != after_commit
+                or await stage_graph(stages['winner']) != winner_graph):
+            raise RuntimeError('manager_publication_commit_retry_mutated')
+        await retry_manager.close()
+        managers.remove(retry_manager)
+        publication['track'] = False
         writes = network['mutations']
         loser = save(await publish_call(manager, stages['loser']))
         if (loser['state'] != 'conflict' or network['mutations'] != writes

@@ -1967,3 +1967,35 @@ closed. User audit and unrelated retrieval/adapters/README edits remain
 outside scope. Learning practice unassessed. V5-04H and V5 parent remain open;
 next smallest H action is genuine final publication CAS COMMIT reply loss
 (fixture ID `publication_ack_lost`), then the remaining 43-ID matrix.
+
+H-S2 assignment: shared outcome is genuine successful final publication CAS
+COMMIT with its acknowledgment withheld, exact read-only historical
+confirmation and zero mutation replay, mapping frozen matrix ID 19. Frozen
+ignored protocol: `artifacts/V5/V5-04H/publication-commit-protocol.md`.
+Sol `h_publish_python` owns only Python `_qdrant_writer.py` and writer tests,
+assembler; Sol `h_publish_node` owns only Node `qdrant-writer.ts` and writer
+tests. Root owns the disjoint native public-manager consumers, shared contract,
+serial PostgreSQL/Qdrant integration, report/tracker and Git. Peers message
+each other directly for concrete dependencies. No schema/grant/migration/
+lockfile/public API change or peer tests/services/network/DB/install/Git.
+State: assigned; H and V5 parent acceptance remain open.
+
+H-S2 final handoff: both Sol peers transferred the writer and focused-test
+files; Python assembled the cross-runtime source review. Root integrated the
+native public-manager fault consumers and corrected an observed Python capture
+collision before final validation. The final serial PostgreSQL 17/Qdrant 1.20
+parent passed 34 checks (17 per runtime), with matching public snapshot hashes
+and task-owned cleanup. Frozen matrix ID `publication_ack_lost` now has native
+evidence: the actual final CAS commits, its reply is withheld, the retired
+connection is not reused, an independent read-only observer sees the exact
+terminal graph, and a fresh same-intent retry performs no mutation. [Checkpoint
+report](../evaluation/reports/V5/V5-04H-publication-commit.md). Focused Python
+writer/tool 265 and Node writer 248 passed; full Python/tool 3,093 (four
+existing warnings), full Node 1,546, strict mypy 49 files and TypeScript build
+passed. Sixteen sealed inputs matched. The owned change is the contract,
+Python/Node writers and tests, native consumers, report and tracker. No schema,
+grant, migration, dependency, lockfile, hosted provider or release change.
+Disk headroom 28 GiB and system memory free 51%; task-owned services closed.
+Unrelated retrieval/adapters/README and user audit edits remain outside scope.
+Learning practice is unassessed. V5-04H and V5 remain open; next smallest action
+is to freeze and exercise the next uncovered transaction-boundary matrix rows.

@@ -30,6 +30,7 @@ const CHECKS = Object.freeze([
   'manager_close_preserves_borrowed_dependencies',
   'actual_atomic_stage_rollback_preserves_pointer_and_no_rows',
   'actual_stage_commit_ack_loss_resumes_exact_graph_without_http',
+  'actual_publication_cas_commit_ack_loss_resolves_exactly_once',
 ]);
 const ERRORS = new Set(['IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability', 'InvalidRequest',
   'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady', 'BudgetExhausted', 'CancelledError', 'AbortError']);
@@ -107,6 +108,7 @@ async function cases(value) {
   const checks = [], snapshots = [], managers = new Set(), handles = new Set();
   const injection = {armed: false, fired: 0, destroyed: 0};
   const stageFault = {kind: null, target: null, fired: 0, destroyed: 0, inserts: 0, dml: 0};
+  const publicationFault = {armed:false,track:false,fired:0,destroyed:0,casWrites:0,dml:0};
   const http = {requests: 0, puts: 0, drop: false, dropped: 0};
   let address, primary, manager, callbackMode = null, supervisorLeases = 0;
   const target = '/collections/' + inputs.config.physical_collection;
@@ -206,12 +208,17 @@ async function cases(value) {
   }
   const realLease = resource.withLease.bind(resource);
   resource.withLease = (opts, operation) => realLease(opts, (client, signal) => {
-    let preparation = false, unknown = false, targetStage = false, stageUnknown = false;
+    let preparation = false, unknown = false, targetStage = false, stageUnknown = false,
+      publicationCas = false, publicationUnknown = false;
     return operation({
       async query(query) {
         if (stageFault.target && /^(?:INSERT INTO|UPDATE|DELETE FROM) cragkit_qdrant\./.test(query.text)) stageFault.dml++;
+        if (publicationFault.track && /^(?:INSERT INTO|UPDATE|DELETE FROM) cragkit_qdrant\./.test(query.text)) publicationFault.dml++;
         const result = await client.query(query);
-        if (/^BEGIN\b/.test(query.text)) { preparation = false; targetStage = false; }
+        if (/^BEGIN\b/.test(query.text)) { preparation = publicationCas = false; targetStage = false; }
+        if (publicationFault.armed && query.text.startsWith('UPDATE cragkit_qdrant.documents SET active_generation_id=')) {
+          publicationCas = true;publicationFault.casWrites++;
+        }
         if (stageFault.target && /^INSERT INTO cragkit_qdrant\.publication_intents\b/.test(query.text)
           && query.values?.includes(stageFault.target)) {
           targetStage = true; stageFault.inserts++;
@@ -223,6 +230,10 @@ async function cases(value) {
           stageFault.kind = null; stageFault.fired++; stageUnknown = true;
           throw Object.assign(new Error('closed_stage_commit_fault'), {code: '08006'});
         }
+        if(query.text==='COMMIT'&&publicationCas&&publicationFault.armed){
+          publicationFault.armed=false;publicationFault.fired++;publicationUnknown=true;
+          throw Object.assign(new Error('closed_publication_commit_fault'),{code:'08006'});
+        }
         if (/^INSERT INTO cragkit_qdrant\.preparations\b/.test(query.text)) preparation = true;
         if (query.text === 'COMMIT' && preparation && injection.armed) {
           injection.armed = false; injection.fired++; unknown = true;
@@ -232,6 +243,10 @@ async function cases(value) {
       },
       getTransactionStatus: () => client.getTransactionStatus(),
       release(destroy) {
+        if(publicationUnknown){
+          if(destroy!==true)throw new Error('publication_unknown_client_reused');
+          publicationFault.destroyed++;publicationUnknown=false;
+        }
         if (stageUnknown) {
           if (destroy !== true) throw new Error('stage_unknown_client_reused');
           stageFault.destroyed++; stageUnknown = false;
@@ -374,7 +389,25 @@ async function cases(value) {
     }
 
     save(await stageCall(inputs.stages.loser)); save(await stageCall(inputs.stages.winner));
-    save(await publishCall(inputs.stages.winner)); const winnerPuts = http.puts;
+    publicationFault.armed=publicationFault.track=true;
+    const winner=save(await publishCall(inputs.stages.winner));
+    const winnerGraph=await observeStage(inputs.stages.winner);
+    if(!winner.published||winner.state!=='published'||publicationFault.armed||publicationFault.fired!==1
+      ||publicationFault.destroyed!==1||publicationFault.casWrites!==1
+      ||!isDeepStrictEqual(winnerGraph.pointer,[[inputs.stages.winner.manifest.generation_id]])
+      ||winnerGraph.publication_intents[0]?.[0]?.state!=='published'
+      ||winnerGraph.publication_intents[0]?.[0]?.replica_complete!==true
+      ||winnerGraph.generations[0]?.[0]?.published!==true
+      ||winnerGraph.generations[0]?.[0]?.ever_published!==true)throw new Error('publication_commit_not_exact');
+    const publicationAfter={dml:publicationFault.dml,requests:http.requests};
+    const publicationRetry=await createManager();
+    try{
+      const historical=await publishCall(inputs.stages.winner,inputs.scope,publicationRetry);
+      if(!isDeepStrictEqual(historical,winner)||!isDeepStrictEqual(publicationAfter,{dml:publicationFault.dml,requests:http.requests})
+        ||!isDeepStrictEqual(await observeStage(inputs.stages.winner),winnerGraph))throw new Error('publication_commit_retry_mutated');
+    }finally{await publicationRetry.close();managers.delete(publicationRetry);}
+    publicationFault.track=false;
+    const winnerPuts = http.puts;
     const conflict = save(await publishCall(inputs.stages.loser));
     if (conflict.state !== 'conflict' || conflict.published || http.puts !== winnerPuts) throw new Error('manager_cas_conflict');
     await active(inputs.stages.winner.manifest.generation_id);
@@ -445,7 +478,7 @@ async function cases(value) {
     await writer.manager_snapshot(context(inputs.stages.lost_ack, freshScope), options);
     await recovery.initialize(options); await backend();
     if (http.puts !== lostPuts + 1 || handles.size !== 0 || snapshots.length !== 19) throw new Error('borrowed_dependency_or_snapshot_count');
-    checks.push(CHECKS[13], CHECKS[14], CHECKS[15]); step = checks.length;
+    checks.push(CHECKS[13], CHECKS[14], CHECKS[15], CHECKS[16]); step = checks.length;
     return {runtime: 'typescript', checks, proof_scope: 'public_stage_publish_only', public_snapshots_sha256: hash(bytes(snapshots))};
   } catch (error) { primary = error; throw error; }
   finally {
