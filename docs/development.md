@@ -1343,8 +1343,9 @@ The Python test command includes four bounded child-process stdio checks in
 official SDK client; it does not substitute for the V5-08 wheel installation.
 
 Run one language suite at a time. The [MCP implementation report](../evaluation/reports/V5/V5-06-implementation.md)
-records 36 tests in each runtime and the remaining process-level check. The
-core package installs without these optional SDKs. No live model call is part
+records 40 Python tests, including four bounded child-process stdio checks,
+and 36 Node tests. The core package installs without these optional SDKs.
+No live model call is part
 of these checks.
 
 ## V5-04G3 managed purge runtime

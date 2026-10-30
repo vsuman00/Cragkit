@@ -65,7 +65,7 @@ async function input() {
   }
   const value = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(chunks)));
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set', 'invalid_input'].includes(value.scenario) ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
+    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set', 'invalid_input', 'cancel_after_dispatch'].includes(value.scenario) ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
     || typeof value.binary !== 'string' || typeof value.work_dir !== 'string' || !value.inputs?.stages) throw new Error('input_shape');
   return value;
 }
@@ -113,6 +113,7 @@ async function cases(value) {
   const stageFault = {kind: null, target: null, fired: 0, destroyed: 0, inserts: 0, dml: 0};
   const publicationFault = {armed:false,track:false,fired:0,destroyed:0,casWrites:0,dml:0};
   const http = {requests: 0, puts: 0, drop: false, dropped: 0};
+  const dispatchCancel = {armed: false, fired: 0, stage: null, controller: null, points: null};
   const wrongDense = {armed: false, fired: 0, observed: null};
   const corruptionScenario = ['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse'].includes(value.scenario) ? value.scenario : null;
   const repairWrites = {active: false, bodies: [], completed: 0, fixture: 0};
@@ -286,6 +287,15 @@ async function cases(value) {
           if (upsert) http.puts++;
           if (upsert && repairWrites.active) repairWrites.bodies.push(JSON.parse(Buffer.from(requestOptions.body).toString('utf8')));
           const response = await actual.request(method, path, requestOptions);
+          if (upsert && dispatchCancel.armed) {
+            const body = JSON.parse(Buffer.from(requestOptions.body).toString('utf8'));
+            if (!isDeepStrictEqual(body.points?.map(point => point.id).sort(),
+              dispatchCancel.stage.manifest.members.map(member => member.point_id).sort())) throw new Error('cancel_dispatch_members');
+            completed(response);
+            dispatchCancel.armed = false; dispatchCancel.fired++; dispatchCancel.points = body.points;
+            dispatchCancel.controller.abort();
+            throw new DOMException('Operation aborted.', 'AbortError');
+          }
           if (wrongSet.watching && method === 'POST' && [target + '/points', target + '/points/scroll'].includes(path)) {
             wrongSet.reads.push({path, body: JSON.parse(Buffer.from(requestOptions.body).toString('utf8')),
               maximum: requestOptions.max_response_bytes, response: JSON.parse(Buffer.from(response).toString('utf8'))});
@@ -358,6 +368,71 @@ async function cases(value) {
     const identity = supervisor.identity();
     if (!isDeepStrictEqual(await backend(), [[inputs.instance_id, inputs.config.backend_namespace,
       identity.storage_identity, identity.supervisor_id, '1', 'open', null]])) throw new Error('public_manager_registration');
+    if (value.scenario === 'cancel_after_dispatch') {
+      const staged = save(await stageCall(inputs.stage));
+      const published = save(await publishCall(inputs.stage));
+      const successor = inputs.stages.cancel_after_dispatch;
+      const successorStaged = save(await stageCall(successor));
+      if (staged.state !== 'staged' || !published.published || !published.replica_complete || http.puts !== 1
+        || successorStaged.state !== 'staged' || successorStaged.published || successorStaged.replica_complete
+        || successor.manifest.generation_id === inputs.stage.manifest.generation_id
+        || successor.manifest.revision_id === inputs.stage.manifest.revision_id
+        || successor.intent.intent_id === inputs.stage.intent.intent_id
+        || successor.manifest.document_id !== inputs.stage.manifest.document_id) throw new Error('cancel_dispatch_stage_identity');
+      const before = await observeStage(successor), baseBefore = await observeStage(inputs.stage);
+      const controller = new AbortController();
+      Object.assign(dispatchCancel, {armed: true, stage: successor, controller});
+      await expectedAbort(() => publishCall(successor, inputs.scope, manager, {...options, signal: controller.signal}));
+      const after = await observeStage(successor), baseAfter = await observeStage(inputs.stage);
+      const dispatches = (await journal()).filter(row => row[0] === successor.intent.intent_id);
+      const baseFields = ['publication_intents', 'document_revisions', 'generations', 'members',
+        'vector_replays', 'point_claims', 'pointer'];
+      if (dispatchCancel.armed || dispatchCancel.fired !== 1) throw new Error('cancel_dispatch_barrier_count');
+      if (!controller.signal.aborted) throw new Error('cancel_dispatch_signal_missing');
+      if (http.puts !== 2) throw new Error('cancel_dispatch_put_count');
+      for (const field of baseFields) {
+        if (!isDeepStrictEqual(baseBefore[field], baseAfter[field])) throw new Error('cancel_dispatch_base_' + field);
+      }
+      if (!isDeepStrictEqual(after.pointer, [[inputs.stage.manifest.generation_id]])) throw new Error('cancel_dispatch_active_pointer');
+      if (after.publication_intents.length !== 1) throw new Error('cancel_dispatch_intent_count');
+      if (after.publication_intents[0][0].state !== 'writing') throw new Error('cancel_dispatch_intent_state');
+      if (after.publication_intents[0][0].replica_complete !== false) throw new Error('cancel_dispatch_replica_complete');
+      if (after.publication_intents[0][0].authority_committed !== false) throw new Error('cancel_dispatch_authority_committed');
+      if (dispatches.length !== 1) throw new Error('cancel_dispatch_journal_count');
+      if (dispatches[0][2] !== 'unknown') throw new Error('cancel_dispatch_journal_state');
+      if (dispatches[0][3] !== null) throw new Error('cancel_dispatch_completion_digest');
+      if (await writer.publication_preparation(context(successor), options) !== null) throw new Error('cancel_dispatch_preparation_created');
+      for (const field of ['document_revisions', 'generations', 'members', 'point_claims', 'vector_replays']) {
+        if (!isDeepStrictEqual(before[field], after[field])) throw new Error('cancel_dispatch_immutable_graph');
+      }
+      const current = await writer.manager_snapshot(context(successor), options);
+      if (current.pending !== true || current.owner?.intent_id !== successor.intent.intent_id
+        || current.intent?.revision_id !== successor.manifest.revision_id
+        || current.intent?.generation_id !== successor.manifest.generation_id) throw new Error('cancel_dispatch_snapshot_identity');
+      const attempt = supervisor.issue_attempt({intent_id: successor.intent.intent_id,
+        owner_token: current.owner.owner_token, epoch: current.backend.epoch,
+        dispatch_id: 'manager-cancel-after-dispatch-readback'}, options);
+      const probe = realTransportFor(attempt);
+      try {
+        const physical = JSON.parse(Buffer.from(await probe.request('POST', target + '/points',
+          {...options, body: bytes({ids: successor.manifest.members.map(member => member.point_id), with_payload: true, with_vector: true}),
+            max_response_bytes: 1048576})).toString('utf8'));
+        const byId = points => points.map(({id, vector, payload}) => ({id, vector, payload})).sort((a, b) => a.id.localeCompare(b.id));
+        if (physical.status !== 'ok' || !isDeepStrictEqual(byId(physical.result ?? []), byId(dispatchCancel.points))) throw new Error('cancel_dispatch_physical_write_missing');
+      } finally { await probe.close(); }
+      await manager.close(); managers.delete(manager); manager = await createManager();
+      const retryCounts = [http.requests, http.puts];
+      await expected(ProviderUnavailable, () => publishCall(successor));
+      const baseRetried = await observeStage(inputs.stage);
+      if (!isDeepStrictEqual([http.requests, http.puts], retryCounts)
+        || !isDeepStrictEqual(await observeStage(successor), after)
+        || baseFields.some(field => !isDeepStrictEqual(baseBefore[field], baseRetried[field]))
+        || !isDeepStrictEqual((await journal()).filter(row => row[0] === successor.intent.intent_id), dispatches)) throw new Error('cancel_dispatch_retry_changed_identity');
+      snapshots.push(['cancelled', 'completed', 'unknown', successor.intent.intent_id,
+        successor.manifest.revision_id, successor.manifest.generation_id, inputs.stage.manifest.generation_id, '1', 'true']);
+      checks.push('cancellation_after_dispatch_preserves_durable_uncertainty'); step = checks.length;
+      return {runtime: 'typescript', checks, proof_scope: 'public_cancel_after_dispatch_only', public_snapshots_sha256: hash(bytes(snapshots))};
+    }
     if (value.scenario === 'invalid_input') {
       const staged = save(await stageCall(inputs.stage));
       const published = save(await publishCall(inputs.stage));

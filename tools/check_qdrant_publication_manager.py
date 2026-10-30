@@ -33,6 +33,7 @@ CORRUPTION_CHECKS = {
     'invalid-input': ('mixed_revision_member_rejected_before_write',
         'malformed_utf8_span_rejected_before_write',
         'unsupported_sparse_encoder_rejected_before_write'),
+    'cancel-after-dispatch': ('cancellation_after_dispatch_preserves_durable_uncertainty',),
 }
 
 
@@ -45,6 +46,8 @@ def proof_scope_for(scenario):
         return 'public_wrong_set_only'
     if scenario == 'invalid-input':
         return 'public_invalid_input_only'
+    if scenario == 'cancel-after-dispatch':
+        return 'public_cancel_after_dispatch_only'
     return 'public_corruption_only'
 
 

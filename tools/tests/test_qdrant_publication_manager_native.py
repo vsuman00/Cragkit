@@ -128,6 +128,21 @@ def test_invalid_input_requires_all_typed_refusals_in_order():
         failure_observation(dict(ok=False, step=4, error='internal'), 'invalid-input')
 
 
+def test_cancel_after_dispatch_has_a_closed_native_evidence_scope():
+    label = 'cancellation_after_dispatch_preserves_durable_uncertainty'
+    value = dict(runtime='python', checks=[label],
+        proof_scope='public_cancel_after_dispatch_only', public_snapshots_sha256='a' * 64)
+    assert validate_result(value, 'python', 'cancel-after-dispatch') == value
+    for changed in (dict(value, checks=[]), dict(value, proof_scope='public_stage_publish_only'),
+            dict(value, runtime='typescript')):
+        with pytest.raises(RuntimeError, match='publication_manager_native_result_shape'):
+            validate_result(changed, 'python', 'cancel-after-dispatch')
+    with pytest.raises(RuntimeError, match='publication_manager_native_result_shape'):
+        validate_result(value, 'python')
+    with pytest.raises(RuntimeError, match='publication_manager_native_failure_shape'):
+        failure_observation(dict(ok=False, step=2, error='internal'), 'cancel-after-dispatch')
+
+
 def test_closed_failure_protocol_preserves_primary_and_cleanup_without_error_text():
     value = dict(ok=False, step=9, error='cleanup_failed', primary='ProviderUnavailable',
         cleanup=[dict(operation='manager_close', outcome='DeadlineExceeded'),

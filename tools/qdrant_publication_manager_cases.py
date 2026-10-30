@@ -55,6 +55,7 @@ def publication_manager_input():
     stages['missing_sparse'] = successor_stage(inputs, 'manager-missing-sparse', base)
     stages['equal_set'] = successor_stage(inputs, 'manager-equal-set', base)
     stages['equal_extra'] = successor_stage(inputs, 'manager-equal-extra', base)
+    stages['cancel_after_dispatch'] = successor_stage(inputs, 'manager-cancel-after-dispatch', base)
     for key in ('mixed_revision_member', 'malformed_utf8_span', 'unsupported_sparse_encoder'):
         stages[key] = successor_stage(inputs, 'manager-' + key.replace('_', '-'), base)
     previous = stages['winner']['manifest']['generation_id']
@@ -183,7 +184,7 @@ async def python_publication_manager_cases(value):
 
     inputs = value['inputs']
     scenario = value.get('scenario', 'default')
-    if scenario not in ('default', 'wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set', 'invalid_input'):
+    if scenario not in ('default', 'wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set', 'invalid_input', 'cancel_after_dispatch'):
         raise RuntimeError('manager_fixture_scenario')
     def pool_config(raw):
         raw = dict(raw)
@@ -213,6 +214,7 @@ async def python_publication_manager_cases(value):
     managers, handles, checks, snapshots = [], [], [], []
     mode = dict(action=None, intent_id=None, fired=False)
     network = dict(mutations=0, requests=0, drop=False, completed_drop=False)
+    cancellation = dict(armed=False, completed=False, points=None)
     dense_fault = dict(armed=False, fired=0, point=None, points=None, originals=None,
         fixture_puts=0, repairing=False, repair_bodies=[], repair_completed=0)
     set_fault = dict(armed=False, watching=False, stage=None, extra=False, fired=0,
@@ -282,6 +284,17 @@ async def python_publication_manager_cases(value):
                     raise RuntimeError('manager_missing_sparse_repair_body_incomplete')
                 dense_fault['repair_bodies'].append(deepcopy(points))
             raw = await self.handle.request(method, path, **options)
+            if (mutation and cancellation['armed']
+                    and path == target + '/points?wait=true&ordering=strong'):
+                body = json.loads(bytes(options['body']))
+                members = inputs['stages']['cancel_after_dispatch']['manifest']['members']
+                if (sorted(point['id'] for point in body.get('points', []))
+                        == sorted(member['point_id'] for member in members)):
+                    completed(raw)
+                    cancellation.update(armed=False, completed=True, points=deepcopy(body['points']))
+                    asyncio.current_task().cancel()
+                    await asyncio.sleep(0)
+                    raise RuntimeError('manager_dispatch_cancellation_not_delivered')
             if (set_fault['watching'] and method == 'POST'
                     and path in (target + '/points', target + '/points/scroll')):
                 set_fault['reads'].append(dict(path=path, body=json.loads(bytes(options['body'])),
@@ -494,6 +507,79 @@ async def python_publication_manager_cases(value):
         await resource.open()
         await supervisor_resource.open()
         manager = await new_manager()
+        if scenario == 'cancel_after_dispatch':
+            base = inputs['stage']
+            successor = inputs['stages']['cancel_after_dispatch']
+            save(await stage_call(manager, base))
+            published = save(await publish_call(manager, base))
+            if not published['published'] or network['mutations'] != 1:
+                raise RuntimeError('manager_cancel_base_unpublished')
+            save(await stage_call(manager, successor))
+            base_graph = await stage_graph(base)
+            before = await stage_graph(successor)
+            writes = network['mutations']
+            cancellation['armed'] = True
+            await expect(asyncio.CancelledError, lambda: asyncio.create_task(publish_call(manager, successor)))
+            after = await stage_graph(successor)
+            state = await current(successor)
+            immutable = ('document_revisions', 'generations', 'members', 'point_claims', 'vector_replays')
+            base_fields = (*immutable, 'publication_intents', 'preparations', 'dispatches', 'pointer')
+            def same_base(graph):
+                return all(graph[field] == base_graph[field] for field in base_fields)
+            if cancellation['armed'] or not cancellation['completed']:
+                raise RuntimeError('manager_cancel_barrier_not_completed')
+            if network['mutations'] != writes + 1:
+                raise RuntimeError('manager_cancel_dispatch_count')
+            if any(before[table] != after[table] for table in immutable):
+                raise RuntimeError('manager_cancel_immutable_graph')
+            if after['pointer'] != [(base['manifest']['generation_id'],)]:
+                raise RuntimeError('manager_cancel_active_pointer')
+            if after['preparations']:
+                raise RuntimeError('manager_cancel_preparation_present')
+            if after['dispatches'] != [('unknown', None)]:
+                raise RuntimeError('manager_cancel_dispatch_not_unknown')
+            if state['intent']['state'] != 'writing':
+                raise RuntimeError('manager_cancel_intent_not_writing')
+            if state['intent']['replica_complete'] or state['intent']['authority_committed']:
+                raise RuntimeError('manager_cancel_completion_flags')
+            if not state['pending']:
+                raise RuntimeError('manager_cancel_pending_missing')
+            if state['owner']['intent_id'] != successor['intent']['intent_id']:
+                raise RuntimeError('manager_cancel_owner_identity')
+            if any(state['intent'][key] != successor['manifest'][key]
+                    for key in ('revision_id', 'generation_id')):
+                raise RuntimeError('manager_cancel_generation_identity')
+            if not same_base(await stage_graph(base)):
+                raise RuntimeError('manager_cancel_base_graph_changed')
+            attempt = supervisor.issue_attempt(dict(intent_id=successor['intent']['intent_id'],
+                owner_token=state['owner']['owner_token'], epoch=state['backend']['epoch'],
+                dispatch_id='manager-cancel-after-dispatch-readback'), deadline=deadline)
+            probe = supervisor.transport_for(attempt)
+            try:
+                expected = {point['id']: point for point in cancellation['points']}
+                physical = json.loads(bytes(await probe.request('POST', target + '/points',
+                    body=request_bytes(dict(ids=sorted(expected), with_payload=True, with_vector=True)),
+                    deadline=deadline, max_response_bytes=1048576)))
+                rows = physical.get('result', [])
+                if (physical.get('status') != 'ok' or sorted(row['id'] for row in rows) != sorted(expected)
+                        or any(any(row.get(key) != expected[row['id']][key]
+                            for key in ('id', 'vector', 'payload')) for row in rows)):
+                    raise RuntimeError('manager_cancel_completed_write_missing')
+            finally:
+                await probe.close()
+            await manager.close()
+            manager = await new_manager()
+            activity = (network['requests'], network['mutations'])
+            await expect(ProviderUnavailable, lambda: publish_call(manager, successor))
+            if ((network['requests'], network['mutations']) != activity
+                    or await stage_graph(successor) != after or not same_base(await stage_graph(base))):
+                raise RuntimeError('manager_cancel_retry_replaced_or_resent')
+            manifest = successor['manifest']
+            snapshots.append(['cancelled', 'completed', 'unknown', successor['intent']['intent_id'],
+                manifest['revision_id'], manifest['generation_id'], base['manifest']['generation_id'], '1', 'true'])
+            return dict(runtime='python', checks=['cancellation_after_dispatch_preserves_durable_uncertainty'],
+                proof_scope='public_cancel_after_dispatch_only',
+                public_snapshots_sha256=sha256(request_bytes(snapshots)).hexdigest())
         if scenario == 'invalid_input':
             base = inputs['stage']
             save(await stage_call(manager, base))

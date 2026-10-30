@@ -347,10 +347,12 @@ export class QdrantPublicationManager {
     }
   }
 
-  async #unknown(context:WriterContext,id:string,options:LeaseOptions):Promise<void> {
+  async #unknown(context:WriterContext,id:string):Promise<void> {
     try {
-      parse_options(options);
-      await this.#await(this.#authority.writer.mark_unknown(context,id,options),options);
+      // This conservative journal update is cleanup, so it must remain possible
+      // after the caller's signal or deadline has stopped the physical request.
+      const cleanup={deadline:now()+2};
+      await this.#await(this.#authority.writer.mark_unknown(context,id,cleanup),cleanup);
     } catch { /* The immutable reserved/dispatched journal still blocks successors. */ }
   }
 
@@ -370,7 +372,7 @@ export class QdrantPublicationManager {
         await this.#closeHandle(session);
         closed=true;
       } catch(error) {
-        await this.#unknown(context,id,options);
+        await this.#unknown(context,id);
         throw error;
       }
       await this.#settle(context,session,sequence,ids,ack,options);

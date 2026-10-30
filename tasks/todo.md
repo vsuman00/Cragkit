@@ -2625,3 +2625,47 @@ in `docs/development.md`, a duplicate Python `_SafeWrite.aclose()` delegation
 and incomplete MCP docstring examples for root review. Root has not treated
 the audit as acceptance. Next downstream action after H: run V5-05/06 focused
 suites serially, fix confirmed issues, then complete C2.
+
+H-S21 assignment (V5-04H exact ID `cancellation_after_dispatch`): shared
+outcome is a real completed Qdrant point PUT followed by caller cancellation
+before ordinary acknowledgment, with durable uncertainty and the previous
+active generation preserved. The frozen ignored protocol is
+`artifacts/V5/V5-04H/cancel-after-dispatch-r1-protocol.md`. Sol
+`h_cancel_python` owns only `tools/qdrant_publication_manager_cases.py` and
+assembles; Sol `h_cancel_node` owns only
+`tools/check_typescript_qdrant_publication_manager.mjs`. Both perform
+substantive native consumer work, coordinate the cancellation barrier and
+result shape directly, and may adjust their split only after explicit transfer
+and notice to root. Root owns parent CLI/tests, report/tracker, serial native
+integration, Git and escalation. QW-r1, source authority, product modules,
+schema/migrations, sealed/shared fixtures, lockfiles and user edits are
+protected. Peers run no tests/processes/services/network/DB/Git; root runs one
+local suite at a time on small synthetic fixtures. Outcome or protected
+boundary changes return to root; unresolved material decisions go to Astra.
+State: assigned; H/V5 open. Verification: focused parent protocol test,
+serial actual PostgreSQL 17 and pinned Qdrant 1.20 per runtime, exact state
+and cleanup, seals, then scoped commit/push after review.
+
+H-S21 final handoff: the exact `cancellation_after_dispatch` case passed on
+disposable PostgreSQL 17 and pinned Qdrant 1.20 in Python and Node, with
+identical public snapshot SHA-256 and verified cleanup. A real completed
+successor point PUT was cancelled before manager acknowledgment; both runtimes
+retained one `unknown` journal, the previous active pointer, exact physical
+points and original intent identity. A new manager could not resend. The
+first Python diagnostic isolated an early fixture control and expected
+document-owner transfer; Node diagnostics identified a cancelled cleanup
+signal that left `dispatched`. Root changed only the Node manager's bounded
+conservative journal cleanup, then reran both. [Checkpoint report](../evaluation/reports/V5/V5-04H-cancel-after-dispatch.md).
+Changed paths: two native consumers, parent CLI/protocol test, Node product
+manager, report and tracker; the stale MCP test-count sentence was corrected
+in `docs/development.md`. Node build and 25 focused publication regressions,
+11 Python protocol tests, native parity and all 16 seals passed. Earlier
+failed runs are diagnostic only. No model/provider/hosted call, migration,
+shared fixture or lockfile changed. No owned service remains; disk headroom
+was 28 GiB before the final native run. V5-05 focused tests/demos passed
+(10 Python, 8 Node), and V5-06 focused tests/types passed (40 Python, 36 Node);
+their final acceptance remains gated by V5-04 and V5-C2. User-owned dirty
+files, including MCP sources, remain untouched. Learning practice is
+unassessed. Twenty-nine of 43 exact H IDs now have accepted native evidence;
+next smallest H action is one unresolved fault ID after reviewing the frozen
+matrix and current native harnesses. H, V5-05/06, C2 and full V5 stay open.
