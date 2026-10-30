@@ -2500,3 +2500,39 @@ Unrelated user edits remain outside scope. Learning practice unassessed.
 Twenty-three exact H IDs have accepted native evidence; H and V5 remain
 open. Next smallest action: isolated `equal_count_wrong_set` public refusal,
 including the required third-point sentinel and bounded enumeration check.
+
+H-S18 assignment (V5-04H matrix ID `equal_count_wrong_set`): shared outcome
+is two actual public-manager refusals, one equal-count replacement and one
+third extra scoped point with observed bounded scroll. Contract `equal-set-r1`
+is frozen in ignored `artifacts/V5/V5-04H/equal-set-r1-protocol.md`. Sol
+`h_sparse_python` owns only `tools/qdrant_publication_manager_cases.py` and
+assembles; Sol `h_sparse_node` owns only
+`tools/check_typescript_qdrant_publication_manager.mjs`. Both do substantive
+native-consumer work and resolve dependencies directly. Root owns parent
+CLI/protocol, serial native/checkpoint verification, report/tracker, Git and
+final integration. Existing manager API, acceptance row and fixture are
+read-only dependencies. Product/schema/migrations/locks/seals/shared
+fixture/other consumers/user edits are protected. One test process, small
+synthetic points, serial runtimes, no worker processes, provider, hosted
+action or download. Escalate outcome/protected/other ownership changes to
+root and unresolved material decisions to Astra. State: assigned; H/V5 open.
+
+H-S18 final handoff: Sol Python and Node peers implemented separate native
+public-manager equal-set consumers, coordinated direct dependency details,
+and Python assembled before both stopped. Root inspected the diffs and ran
+nine focused parent guards and syntax checks. The first combined run failed
+at Node's overly broad base-graph assertion; root used the failure location
+and Python diagnostic to narrow it to immutable records and publication
+fences. The accepted native parent passed equal-count replacement and
+third-point bounded-scroll refusal in both runtimes (four checks), matched
+snapshot hash and verified cleanup. Default manager passed 40 checks and
+missing-sparse repair passed four, each with its prior hash and cleanup. All
+16 seals matched. [Checkpoint report](../evaluation/reports/V5/V5-04H-equal-set.md).
+Changed files: parent, two consumers, protocol guard, report and tracker.
+No product/schema/shared fixture/migration/lockfile/provider/hosted action.
+Disk headroom 31 GiB, system memory free 62%; no task-owned service remains.
+Failed and diagnostic directories stay ignored. Unrelated user edits remain
+outside scope. Learning practice unassessed. Twenty-four exact H IDs have
+accepted native evidence; H and V5 remain open. Next smallest action: inspect
+the remaining frozen matrix IDs and take one independent native fault whose
+dependencies are already satisfied.

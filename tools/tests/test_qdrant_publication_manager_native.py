@@ -95,6 +95,22 @@ def test_missing_sparse_repair_requires_both_ordered_checks_and_its_own_scope():
         failure_observation(dict(ok=False, step=3, error='internal'), 'missing-sparse')
 
 
+def test_equal_set_requires_both_refusals_and_bounded_scroll_scope():
+    value = dict(runtime='python', checks=[
+        'equal_count_wrong_set_public_publish_rejected',
+        'third_extra_point_scroll_sentinel_rejected'],
+        proof_scope='public_wrong_set_only', public_snapshots_sha256='a' * 64)
+    assert validate_result(value, 'python', 'equal-set') == value
+    for changed in (dict(value, checks=value['checks'][:1]),
+            dict(value, checks=list(reversed(value['checks']))),
+            dict(value, proof_scope='public_corruption_only'),
+            dict(value, runtime='typescript')):
+        with pytest.raises(RuntimeError, match='publication_manager_native_result_shape'):
+            validate_result(changed, 'python', 'equal-set')
+    with pytest.raises(RuntimeError, match='publication_manager_native_failure_shape'):
+        failure_observation(dict(ok=False, step=3, error='internal'), 'equal-set')
+
+
 def test_closed_failure_protocol_preserves_primary_and_cleanup_without_error_text():
     value = dict(ok=False, step=9, error='cleanup_failed', primary='ProviderUnavailable',
         cleanup=[dict(operation='manager_close', outcome='DeadlineExceeded'),

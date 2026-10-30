@@ -28,6 +28,8 @@ CORRUPTION_CHECKS = {
     'wrong-profile': ('wrong_full_profile_public_publish_rejected',),
     'missing-sparse': ('missing_sparse_vector_public_publish_rejected',
         'missing_sparse_vector_complete_repair_published'),
+    'equal-set': ('equal_count_wrong_set_public_publish_rejected',
+        'third_extra_point_scroll_sentinel_rejected'),
 }
 
 
@@ -36,6 +38,8 @@ def proof_scope_for(scenario):
         return 'public_stage_publish_only'
     if scenario == 'missing-sparse':
         return 'public_corruption_repair_only'
+    if scenario == 'equal-set':
+        return 'public_wrong_set_only'
     return 'public_corruption_only'
 
 

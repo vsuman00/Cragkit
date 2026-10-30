@@ -65,7 +65,7 @@ async function input() {
   }
   const value = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(chunks)));
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse'].includes(value.scenario) ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
+    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set'].includes(value.scenario) ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
     || typeof value.binary !== 'string' || typeof value.work_dir !== 'string' || !value.inputs?.stages) throw new Error('input_shape');
   return value;
 }
@@ -116,6 +116,8 @@ async function cases(value) {
   const wrongDense = {armed: false, fired: 0, observed: null};
   const corruptionScenario = ['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse'].includes(value.scenario) ? value.scenario : null;
   const repairWrites = {active: false, bodies: [], completed: 0, fixture: 0};
+  const wrongSet = {stage: null, extra: null, replace: false, armed: false, fired: 0,
+    fixturePuts: 0, fixtureDeletes: 0, watching: false, reads: [], points: null};
   let address, primary, manager, callbackMode = null, supervisorLeases = 0;
   const target = '/collections/' + inputs.config.physical_collection;
   const context = (stage, scope = inputs.scope) => ({scope, collection: stage.manifest.collection,
@@ -280,6 +282,30 @@ async function cases(value) {
           if (upsert) http.puts++;
           if (upsert && repairWrites.active) repairWrites.bodies.push(JSON.parse(Buffer.from(requestOptions.body).toString('utf8')));
           const response = await actual.request(method, path, requestOptions);
+          if (wrongSet.watching && method === 'POST' && [target + '/points', target + '/points/scroll'].includes(path)) {
+            wrongSet.reads.push({path, body: JSON.parse(Buffer.from(requestOptions.body).toString('utf8')),
+              maximum: requestOptions.max_response_bytes, response: JSON.parse(Buffer.from(response).toString('utf8'))});
+          }
+          if (upsert && wrongSet.armed) {
+            const body = JSON.parse(Buffer.from(requestOptions.body).toString('utf8'));
+            const ids = wrongSet.stage.manifest.members.map(member => member.point_id).sort();
+            if (isDeepStrictEqual(body.points?.map(point => point.id).sort(), ids)) {
+              completed(response); wrongSet.armed = false; wrongSet.fired++;
+              const basis = body.points.filter(point => point.vector?.dense?.[0] === 1
+                && point.vector.dense.slice(1).every(value => value === 0));
+              if (basis.length !== 1) throw new Error('wrong_set_basis_input');
+              const point = structuredClone(basis[0]);
+              if (wrongSet.replace) {
+                completed(await actual.request('POST', target + '/points/delete?wait=true&ordering=strong',
+                  {...requestOptions, body: bytes({points: [point.id]})}));
+                wrongSet.fixtureDeletes++;
+              }
+              point.id = wrongSet.extra;
+              completed(await actual.request('PUT', path, {...requestOptions, body: bytes({points: [point]})}));
+              wrongSet.fixturePuts++;
+              wrongSet.points = [...body.points.filter(original => !wrongSet.replace || original.id !== basis[0].id), point];
+            }
+          }
           if (upsert && repairWrites.active) { completed(response); repairWrites.completed++; }
           if (upsert && wrongDense.armed) {
             const body = JSON.parse(Buffer.from(requestOptions.body).toString('utf8'));
@@ -328,6 +354,75 @@ async function cases(value) {
     const identity = supervisor.identity();
     if (!isDeepStrictEqual(await backend(), [[inputs.instance_id, inputs.config.backend_namespace,
       identity.storage_identity, identity.supervisor_id, '1', 'open', null]])) throw new Error('public_manager_registration');
+    if (value.scenario === 'equal_set') {
+      const staged = save(await stageCall(inputs.stage));
+      const published = save(await publishCall(inputs.stage));
+      if (staged.state !== 'staged' || !published.published || !published.replica_complete || http.puts !== 1) throw new Error('wrong_set_base_publication');
+      const byId = points => points.map(({id, vector, payload}) => ({id, vector, payload})).sort((a, b) => a.id.localeCompare(b.id));
+      for (const [key, extra, replace, label] of [
+        ['equal_set', '00000000-0000-4000-8000-000000000099', true, 'equal_count_wrong_set_public_publish_rejected'],
+        ['equal_extra', '00000000-0000-4000-8000-000000000098', false, 'third_extra_point_scroll_sentinel_rejected'],
+      ]) {
+        const successor = inputs.stages[key];
+        const stagedTarget = save(await stageCall(successor));
+        if (successor.manifest.members.length !== 2 || stagedTarget.state !== 'staged'
+          || stagedTarget.published || stagedTarget.replica_complete) throw new Error('wrong_set_target_stage');
+        const before = await observeStage(successor), baseBefore = await observeStage(inputs.stage);
+        Object.assign(wrongSet, {stage: successor, extra, replace, armed: true, watching: true, reads: [], points: null});
+        try { await expected(IntegrityViolation, () => publishCall(successor)); }
+        finally { wrongSet.watching = false; }
+        const after = await observeStage(successor), baseAfter = await observeStage(inputs.stage);
+        const current = await writer.manager_snapshot(context(successor), options);
+        const dispatches = (await journal()).filter(row => row[0] === successor.intent.intent_id);
+        if (wrongSet.armed || wrongSet.fired !== checks.length + 1 || !wrongSet.points
+          || http.puts !== checks.length + 2 || !isDeepStrictEqual(after.pointer, [[inputs.stage.manifest.generation_id]])
+          || ['document_revisions', 'generations', 'members', 'point_claims', 'vector_replays',
+            'publication_intents', 'pointer', 'preparations'].some(key => !isDeepStrictEqual(baseBefore[key], baseAfter[key]))
+          || after.generations[0]?.[0]?.published !== false || after.generations[0]?.[0]?.ever_published !== false
+          || after.publication_intents[0]?.[0]?.state !== 'writing'
+          || after.publication_intents[0]?.[0]?.replica_complete !== false
+          || after.publication_intents[0]?.[0]?.authority_committed !== false || current.pending !== false
+          || dispatches.length !== 1 || dispatches[0][2] !== 'settled' || !/^[0-9a-f]{64}$/.test(dispatches[0][3])
+          || await writer.publication_preparation(context(successor), options) !== null) throw new Error('wrong_set_publication_fence_changed');
+        for (const field of ['document_revisions', 'generations', 'members', 'point_claims', 'vector_replays']) {
+          if (!isDeepStrictEqual(before[field], after[field])) throw new Error('wrong_set_immutable_graph_changed');
+        }
+        const payload = wrongSet.points[0].payload;
+        const filterKeys = ['backend_namespace', 'physical_collection', 'collection_incarnation',
+          'tenant_id', 'collection', 'document_id', 'revision_id', 'generation_id'];
+        const filter = {must: filterKeys.map(key => ({key, match: {value: payload[key]}}))};
+        if (!replace) {
+          const scrolls = wrongSet.reads.filter(read => read.path === target + '/points/scroll');
+          const scroll = scrolls[0];
+          if (wrongSet.reads.length !== 2 || scrolls.length !== 1
+            || !isDeepStrictEqual(scroll.body, {filter, limit: 8, with_payload: true, with_vector: true})
+            || !Number.isInteger(scroll.maximum) || scroll.maximum < 1 || scroll.maximum > 1048576
+            || scroll.response.status !== 'ok' || scroll.response.result?.next_page_offset !== null
+            || !isDeepStrictEqual(byId(scroll.response.result?.points ?? []), byId(wrongSet.points))) throw new Error('wrong_set_bounded_scroll_not_observed');
+        }
+        const attempt = supervisor.issue_attempt({intent_id: successor.intent.intent_id,
+          owner_token: current.owner.owner_token, epoch: current.backend.epoch,
+          dispatch_id: 'manager-' + key.replaceAll('_', '-') + '-readback'}, options);
+        const probe = realTransportFor(attempt);
+        try {
+          const ids = [...successor.manifest.members.map(member => member.point_id), extra];
+          const physical = JSON.parse(Buffer.from(await probe.request('POST', target + '/points',
+            {...options, body: bytes({ids, with_payload: true, with_vector: true}), max_response_bytes: 1048576})).toString('utf8'));
+          const scoped = JSON.parse(Buffer.from(await probe.request('POST', target + '/points/scroll',
+            {...options, body: bytes({filter, limit: 8, with_payload: true, with_vector: true}), max_response_bytes: 1048576})).toString('utf8'));
+          if (physical.status !== 'ok' || scoped.status !== 'ok' || scoped.result?.next_page_offset !== null
+            || !isDeepStrictEqual(byId(physical.result ?? []), byId(wrongSet.points))
+            || !isDeepStrictEqual(byId(scoped.result?.points ?? []), byId(wrongSet.points))) throw new Error('wrong_set_physical_readback_changed');
+          completed(await probe.request('POST', target + '/points/delete?wait=true&ordering=strong',
+            {...options, body: bytes({points: [extra]}), max_response_bytes: 1048576}));
+          wrongSet.fixtureDeletes++;
+        } finally { await probe.close(); }
+        await active(inputs.stage.manifest.generation_id);
+        checks.push(label); step = checks.length;
+      }
+      if (wrongSet.fixturePuts !== 2 || wrongSet.fixtureDeletes !== 3 || http.puts !== 3 || snapshots.length !== 4) throw new Error('wrong_set_fixture_counts_changed');
+      return {runtime: 'typescript', checks, proof_scope: 'public_wrong_set_only', public_snapshots_sha256: hash(bytes(snapshots))};
+    }
     if (corruptionScenario !== null) {
       const staged = save(await stageCall(inputs.stage));
       const published = save(await publishCall(inputs.stage));

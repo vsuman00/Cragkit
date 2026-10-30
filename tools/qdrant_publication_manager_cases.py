@@ -53,6 +53,8 @@ def publication_manager_input():
     stages['wrong_sparse'] = successor_stage(inputs, 'manager-wrong-sparse', base)
     stages['wrong_profile'] = successor_stage(inputs, 'manager-wrong-profile', base)
     stages['missing_sparse'] = successor_stage(inputs, 'manager-missing-sparse', base)
+    stages['equal_set'] = successor_stage(inputs, 'manager-equal-set', base)
+    stages['equal_extra'] = successor_stage(inputs, 'manager-equal-extra', base)
     previous = stages['winner']['manifest']['generation_id']
     for key, suffix in (('prepared', 'manager-prepared'), ('commit', 'manager-commit'),
             ('session', 'manager-final-session'), ('revoked', 'manager-revoked')):
@@ -178,7 +180,7 @@ async def python_publication_manager_cases(value):
 
     inputs = value['inputs']
     scenario = value.get('scenario', 'default')
-    if scenario not in ('default', 'wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse'):
+    if scenario not in ('default', 'wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set'):
         raise RuntimeError('manager_fixture_scenario')
     def pool_config(raw):
         raw = dict(raw)
@@ -210,6 +212,8 @@ async def python_publication_manager_cases(value):
     network = dict(mutations=0, requests=0, drop=False, completed_drop=False)
     dense_fault = dict(armed=False, fired=0, point=None, points=None, originals=None,
         fixture_puts=0, repairing=False, repair_bodies=[], repair_completed=0)
+    set_fault = dict(armed=False, watching=False, stage=None, extra=False, fired=0,
+        puts=0, deletes=0, reads=[], points=None, originals=None, unexpected=None)
     endpoint = primary = manager = None
     supervisor_leases = 0
     original_supervisor_lease = supervisor_resource.lease
@@ -275,6 +279,35 @@ async def python_publication_manager_cases(value):
                     raise RuntimeError('manager_missing_sparse_repair_body_incomplete')
                 dense_fault['repair_bodies'].append(deepcopy(points))
             raw = await self.handle.request(method, path, **options)
+            if (set_fault['watching'] and method == 'POST'
+                    and path in (target + '/points', target + '/points/scroll')):
+                set_fault['reads'].append(dict(path=path, body=json.loads(bytes(options['body'])),
+                    allowance=options.get('max_response_bytes'), response=json.loads(bytes(raw))))
+            if mutation and set_fault['armed'] and path == target + '/points?wait=true&ordering=strong':
+                body = json.loads(bytes(options['body']))
+                ids = sorted(member['point_id'] for member in set_fault['stage']['manifest']['members'])
+                if sorted(point['id'] for point in body.get('points', [])) == ids:
+                    completed(raw)
+                    selected = [point for point in body['points']
+                        if point['vector']['dense'] == [1.0] + [0.0] * (len(point['vector']['dense']) - 1)]
+                    if len(selected) != 1:
+                        raise RuntimeError('manager_equal_set_fixture_basis')
+                    copied = deepcopy(selected[0])
+                    copied['id'] = ('00000000-0000-4000-8000-000000000098' if set_fault['extra']
+                        else '00000000-0000-4000-8000-000000000099')
+                    set_fault['armed'] = False
+                    if not set_fault['extra']:
+                        completed(await self.handle.request('POST', target + '/points/delete?wait=true&ordering=strong',
+                            body=request_bytes(dict(points=[selected[0]['id']])), deadline=deadline))
+                        set_fault['deletes'] += 1
+                    completed(await self.handle.request('PUT', path,
+                        body=request_bytes(dict(points=[copied])), deadline=deadline))
+                    set_fault['puts'] += 1
+                    set_fault['fired'] += 1
+                    set_fault['originals'] = deepcopy(body['points'])
+                    set_fault['points'] = [deepcopy(point) for point in body['points']
+                        if set_fault['extra'] or point['id'] != selected[0]['id']] + [copied]
+                    set_fault['unexpected'] = copied['id']
             if mutation and dense_fault['repairing']:
                 completed(raw)
                 dense_fault['repair_completed'] += 1
@@ -458,6 +491,97 @@ async def python_publication_manager_cases(value):
         await resource.open()
         await supervisor_resource.open()
         manager = await new_manager()
+        if scenario == 'equal_set':
+            base = inputs['stage']
+            save(await stage_call(manager, base))
+            published = save(await publish_call(manager, base))
+            if not published['published'] or network['mutations'] != 1:
+                raise RuntimeError('manager_equal_set_base_unpublished')
+            base_graph = await stage_graph(base)
+            immutable = ('document_revisions', 'generations', 'members', 'point_claims', 'vector_replays')
+            fields = ('backend_namespace', 'physical_collection', 'collection_incarnation', 'tenant_id',
+                'collection', 'document_id', 'revision_id', 'generation_id')
+            for key, extra, label in (
+                    ('equal_set', False, 'equal_count_wrong_set_public_publish_rejected'),
+                    ('equal_extra', True, 'third_extra_point_scroll_sentinel_rejected')):
+                successor = inputs['stages'][key]
+                staged = save(await stage_call(manager, successor))
+                before = await stage_graph(successor)
+                if staged['state'] != 'staged' or staged['published'] or before['preparations']:
+                    raise RuntimeError('manager_equal_set_stage_flags')
+                writes = network['mutations']
+                set_fault.update(armed=True, watching=True, stage=successor, extra=extra, reads=[])
+                try:
+                    await expect(IntegrityViolation, lambda: publish_call(manager, successor))
+                finally:
+                    set_fault['watching'] = False
+                after = await stage_graph(successor)
+                state = await current(successor)
+                generation = [json.loads(row[0]) for row in after['generations']]
+                if (set_fault['armed'] or set_fault['fired'] != (2 if extra else 1)
+                        or network['mutations'] != writes + 1
+                        or any(before[table] != after[table] for table in immutable)
+                        or after['pointer'] != [(base['manifest']['generation_id'],)] or after['preparations']
+                        or len(generation) != 1 or generation[0]['published'] is not False
+                        or generation[0]['ever_published'] is not False
+                        or state['intent']['state'] != 'writing' or state['intent']['replica_complete'] is not False
+                        or state['intent']['authority_committed'] is not False or state['pending']
+                        or len(after['dispatches']) != 1 or after['dispatches'][0][0] != 'settled'
+                        or not isinstance(after['dispatches'][0][1], str)
+                        or len(after['dispatches'][0][1]) != 64
+                        or any(char not in '0123456789abcdef' for char in after['dispatches'][0][1])
+                        or set(await journal_states()) != {'settled'}
+                        or any(set_fault['unexpected'] in row[0] for row in after['point_claims'])):
+                    raise RuntimeError('manager_equal_set_publication_boundary')
+                expected = {point['id']: point for point in set_fault['points']}
+                filters = dict(must=[dict(key=field, match=dict(value=successor['manifest'][field])) for field in fields])
+                if extra:
+                    reads = set_fault['reads']
+                    scrolls = [read for read in reads if read['path'] == target + '/points/scroll']
+                    if (len(reads) != 2 or len(scrolls) != 1
+                            or reads[0]['path'] != target + '/points' or scrolls[0] is not reads[1]
+                            or scrolls[0]['body'] != dict(filter=filters, limit=8, with_payload=True, with_vector=True)
+                            or any(type(read['allowance']) is not int or not 0 < read['allowance'] <= 1048576 for read in reads)
+                            or scrolls[0]['response'].get('status') != 'ok'
+                            or sorted(point['id'] for point in scrolls[0]['response']['result']['points']) != sorted(expected)
+                            or any(any(point.get(field) != expected[point['id']][field]
+                                for field in ('id', 'vector', 'payload'))
+                                for point in scrolls[0]['response']['result']['points'])
+                            or scrolls[0]['response']['result']['next_page_offset'] is not None):
+                        raise RuntimeError('manager_equal_set_bounded_scroll_missing')
+                probe_attempt = supervisor.issue_attempt(dict(intent_id=successor['intent']['intent_id'],
+                    owner_token=state['owner']['owner_token'], epoch=state['backend']['epoch'],
+                    dispatch_id='manager-' + key.replace('_', '-') + '-readback'), deadline=deadline)
+                probe = supervisor.transport_for(probe_attempt)
+                try:
+                    all_ids = sorted({point['id'] for point in set_fault['originals']} | set(expected))
+                    physical = json.loads(bytes(await probe.request('POST', target + '/points',
+                        body=request_bytes(dict(ids=all_ids, with_payload=True, with_vector=True)), deadline=deadline)))
+                    scoped = json.loads(bytes(await probe.request('POST', target + '/points/scroll',
+                        body=request_bytes(dict(filter=filters, limit=8, with_payload=True, with_vector=True)), deadline=deadline)))
+                    for response, rows in ((physical, physical.get('result', [])),
+                            (scoped, scoped.get('result', {}).get('points', []))):
+                        if (response.get('status') != 'ok' or sorted(row['id'] for row in rows) != sorted(expected)
+                                or any(any(row.get(field) != expected[row['id']][field]
+                                    for field in ('id', 'vector', 'payload')) for row in rows)):
+                            raise RuntimeError('manager_equal_set_physical_observation')
+                    if scoped['result']['next_page_offset'] is not None:
+                        raise RuntimeError('manager_equal_set_diagnostic_continuation')
+                    completed(await probe.handle.request('POST', target + '/points/delete?wait=true&ordering=strong',
+                        body=request_bytes(dict(points=[set_fault['unexpected']])), deadline=deadline))
+                    set_fault['deletes'] += 1
+                finally:
+                    await probe.close()
+                base_after = await stage_graph(base)
+                if any(base_after[table] != base_graph[table] for table in
+                        (*immutable, 'publication_intents', 'pointer', 'preparations')):
+                    raise RuntimeError('manager_equal_set_base_changed')
+                checks.append(label)
+            if (len(snapshots) != 4 or network['mutations'] != 3
+                    or set_fault['puts'] != 2 or set_fault['deletes'] != 3):
+                raise RuntimeError('manager_equal_set_inventory')
+            return dict(runtime='python', checks=checks, proof_scope='public_wrong_set_only',
+                public_snapshots_sha256=sha256(request_bytes(snapshots)).hexdigest())
         if scenario != 'default':
             base, successor = inputs['stage'], inputs['stages'][scenario]
             save(await stage_call(manager, base))
