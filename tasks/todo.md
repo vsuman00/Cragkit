@@ -1999,3 +1999,36 @@ Disk headroom 28 GiB and system memory free 51%; task-owned services closed.
 Unrelated retrieval/adapters/README and user audit edits remain outside scope.
 Learning practice is unassessed. V5-04H and V5 remain open; next smallest action
 is to freeze and exercise the next uncovered transaction-boundary matrix rows.
+
+H-S3 assignment (V5-04H matrix ID `bootstrap_acl_changed`): shared outcome is
+an actual native manager replay of the same published stage after a later
+security change, with changed initial grants/metadata rejected as
+`IntegrityViolation`, no new SQL/HTTP mutation, and current ACL/pointer
+preserved. Sol `h_bootstrap_python` owns only
+`tools/qdrant_publication_manager_cases.py` and is assembler; Sol
+`h_bootstrap_node` owns only
+`tools/check_typescript_qdrant_publication_manager.mjs`. Both do substantive
+work under the frozen existing fixture and public-manager contract; peers
+coordinate concrete interfaces directly. Root owns shared contract, parent,
+serial native runs, report/tracker and Git. No product/schema/fixture/migration/
+lockfile/public API changes or peer tests/processes/services/network/DB/install/
+Git. Outcome, protected-boundary or other-lane ownership changes return to
+root before dependent edits; unresolved design goes to Astra. State: assigned;
+H and V5 parent acceptance remain open.
+
+H-S3 final handoff: Python and Node Sol peers transferred their separate
+native consumer files; Python assembled their matching grant/tag change,
+checks and result order. Root found one harness order mismatch in the first
+local parent run, corrected the emitted label positions, and reran the native
+parent serially. The final PostgreSQL 17/Qdrant 1.20 run passed 36 checks
+(18 per runtime), matching public snapshot hashes and task-owned cleanup.
+Exact frozen ID `bootstrap_acl_changed` now has native evidence for rejection
+after a later security update, unchanged ACL/pointer/terminal graph and zero
+SQL/HTTP mutation. [Checkpoint report](../evaluation/reports/V5/V5-04H-bootstrap-acl.md).
+Four focused parent validation tests and all 16 seals passed. Changed files:
+the two native consumers, this report and tracker. No product/schema/grant/
+fixture/dependency/lockfile/hosted/release change. Disk headroom 28 GiB,
+system memory free 51%; task-owned processes closed. Unrelated user edits
+remain outside scope. Learning practice unassessed. H and V5 remain open;
+next smallest action is the committed partial-member graph corruption case
+(matrix ID `partial_member_stage`), distinct from atomic stage rollback.

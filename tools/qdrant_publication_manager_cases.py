@@ -24,6 +24,7 @@ CHECKS = (
     'actual_atomic_stage_rollback_preserves_pointer_and_no_rows',
     'actual_stage_commit_ack_loss_resumes_exact_graph_without_http',
     'actual_publication_cas_commit_ack_loss_resolves_exactly_once',
+    'bootstrap_acl_changed_rejected_without_sql_http_mutation',
 )
 ERRORS = frozenset(('IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability',
     'InvalidRequest', 'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady',
@@ -561,6 +562,22 @@ async def python_publication_manager_cases(value):
                 [([], [], 'auth-manager-2', 2, stages['session']['manifest']['generation_id'])]):
             raise RuntimeError('manager_historical_retry_restored_authority')
         checks.append(CHECKS[11])
+        bootstrap_graph = await stage_graph(base)
+        bootstrap_acl = await document_acl(fresh_scope)
+        bootstrap_activity = (publication['dml'], network['requests'], network['mutations'])
+        changed_bootstrap = deepcopy(base)
+        changed_bootstrap['intent']['initial_authorization'].update(
+            grant_ids=['grant-manager-bootstrap-changed'],
+            tag='changed-manager-bootstrap-after-security')
+        publication['track'] = True
+        try:
+            await expect(IntegrityViolation, lambda: stage_call(manager, changed_bootstrap, fresh_scope))
+        finally:
+            publication['track'] = False
+        if ((publication['dml'], network['requests'], network['mutations']) != bootstrap_activity
+                or await stage_graph(base) != bootstrap_graph
+                or await document_acl(fresh_scope) != bootstrap_acl):
+            raise RuntimeError('manager_changed_bootstrap_after_security_mutated')
         save(await stage_call(manager, stages['lost_ack'], fresh_scope))
         network['drop'] = True
         await expect(ProviderUnavailable, lambda: publish_call(manager, stages['lost_ack'], fresh_scope))
@@ -583,7 +600,8 @@ async def python_publication_manager_cases(value):
         if 'unknown' not in await journal_states():
             raise RuntimeError('manager_borrowed_recovery_changed_unknown')
         checks.append(CHECKS[13])
-        checks.extend(CHECKS[14:])
+        checks.extend(CHECKS[14:17])
+        checks.append(CHECKS[17])
         if len(snapshots) != 19:
             raise RuntimeError('manager_public_snapshot_inventory')
         return dict(runtime='python', checks=checks, proof_scope='public_stage_publish_only',

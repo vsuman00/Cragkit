@@ -31,6 +31,7 @@ const CHECKS = Object.freeze([
   'actual_atomic_stage_rollback_preserves_pointer_and_no_rows',
   'actual_stage_commit_ack_loss_resumes_exact_graph_without_http',
   'actual_publication_cas_commit_ack_loss_resolves_exactly_once',
+  'bootstrap_acl_changed_rejected_without_sql_http_mutation',
 ]);
 const ERRORS = new Set(['IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability', 'InvalidRequest',
   'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady', 'BudgetExhausted', 'CancelledError', 'AbortError']);
@@ -459,6 +460,21 @@ async function cases(value) {
       || !isDeepStrictEqual(acl, [['auth-manager-2', '2', [], []]]) || http.puts !== freshPuts) throw new Error('historical_replay_replaced_acl');
     checks.push(CHECKS[11]); step = checks.length;
 
+    const bootstrapGraph = await observeStage(inputs.stage);
+    const bootstrapAcl = await transaction(resource, query => query('SELECT authorization_revision,mutation_epoch::text,principal_ids,grant_ids FROM cragkit_qdrant.documents WHERE (tenant_id,collection,document_id)=($1,$2,$3)',
+      [freshScope.tenant_id, inputs.stage.manifest.collection, inputs.stage.manifest.document_id]), context(inputs.stage, freshScope));
+    const bootstrapCounts = [publicationFault.dml, http.requests, http.puts];
+    const changedBootstrap = structuredClone(inputs.stage);
+    changedBootstrap.intent.initial_authorization.grant_ids = ['grant-manager-bootstrap-changed'];
+    changedBootstrap.intent.initial_authorization.tag = 'changed-manager-bootstrap-after-security';
+    publicationFault.track = true;
+    try { await expected(IntegrityViolation, () => stageCall(changedBootstrap, freshScope)); }
+    finally { publicationFault.track = false; }
+    const bootstrapAfter = await observeStage(inputs.stage);
+    const bootstrapAclAfter = await transaction(resource, query => query('SELECT authorization_revision,mutation_epoch::text,principal_ids,grant_ids FROM cragkit_qdrant.documents WHERE (tenant_id,collection,document_id)=($1,$2,$3)',
+      [freshScope.tenant_id, inputs.stage.manifest.collection, inputs.stage.manifest.document_id]), context(inputs.stage, freshScope));
+    if (!isDeepStrictEqual(bootstrapAfter, bootstrapGraph) || !isDeepStrictEqual(bootstrapAclAfter, bootstrapAcl)
+      || !isDeepStrictEqual([publicationFault.dml, http.requests, http.puts], bootstrapCounts)) throw new Error('changed_bootstrap_mutated_current_authority');
     save(await stageCall(inputs.stages.lost_ack, freshScope)); http.drop = true;
     const lostPuts = http.puts;
     await expected(ProviderUnavailable, () => publishCall(inputs.stages.lost_ack, freshScope));
@@ -478,7 +494,7 @@ async function cases(value) {
     await writer.manager_snapshot(context(inputs.stages.lost_ack, freshScope), options);
     await recovery.initialize(options); await backend();
     if (http.puts !== lostPuts + 1 || handles.size !== 0 || snapshots.length !== 19) throw new Error('borrowed_dependency_or_snapshot_count');
-    checks.push(CHECKS[13], CHECKS[14], CHECKS[15], CHECKS[16]); step = checks.length;
+    checks.push(CHECKS[13], CHECKS[14], CHECKS[15], CHECKS[16], CHECKS[17]); step = checks.length;
     return {runtime: 'typescript', checks, proof_scope: 'public_stage_publish_only', public_snapshots_sha256: hash(bytes(snapshots))};
   } catch (error) { primary = error; throw error; }
   finally {
