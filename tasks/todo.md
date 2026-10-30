@@ -2312,3 +2312,21 @@ provider, hosted or model action. Task-owned services closed; unrelated
 user edits and H-S11 peer files remain outside this registration. Learning
 practice unassessed. Seventeen exact H IDs have accepted native evidence;
 H and V5 remain open. Next: integrate H-S11 exact partial-repair identity.
+
+H-S11 final handoff: Sol Python and Node peers completed separate native
+consumer assertions and coordinated the cumulative 8,8,1 ordinary trace;
+Python assembled and both writers stopped before root verification. Root
+inspected both diffs, added the Python actual `completed` response check,
+then ran five focused parent protocol guards and a fresh serial native
+PostgreSQL 17/Qdrant 1.20 parent. Eight checks per runtime passed with
+verified cleanup; all 16 seals matched. The same original intent, revision,
+generation and seals remain through uncertainty, denied recovery and
+missing-only repair; the previous pointer holds until final publication.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-partial-write.md).
+Changed files: two native consumers, report and tracker. No product/schema/
+fixture/migration/lockfile/provider/hosted change. Resource headroom:
+28 GiB disk and 54 percent system memory free; task-owned services closed.
+Unrelated user edits remain outside scope. Learning practice unassessed.
+Eighteen exact H IDs have accepted native evidence; H and V5 remain open.
+Next smallest action: add same-trace public manager publication refusal for
+the existing F1 wrong-membership/vector/profile native mutations.

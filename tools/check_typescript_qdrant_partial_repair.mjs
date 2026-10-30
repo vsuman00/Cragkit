@@ -65,9 +65,9 @@ async function cases(value){
   const reconciliation=new QdrantReconciliationVerifier(writer,supervisor);
   const recovery=new PostgresQdrantRecovery(supervisorResource,inputs.config,supervisor,reconciliation);
   const authority=new PostgresQdrantPublicationAuthority(writer,recovery),transport=new ManagedQdrantPublicationTransport(supervisor);
-  const checks=[],handles=new Set(),recoveryBodies=[],recoveryBindings=[],ack={armed:false,reserve:0,dispatched:0,settled:0,destroyed:0};
+  const checks=[],handles=new Set(),ordinaryBodies=[],recoveryBodies=[],recoveryBindings=[],ack={armed:false,reserve:0,dispatched:0,settled:0,destroyed:0};
   let manager,address,primary,ordinaryPuts=0,recoveryPuts=0,dropOrdinary=false,dropRecovery=false;
-  let denyAfterReservation=false,denialFired=false,lastProof,retiredKey;
+  let denyAfterReservation=false,denialFired=false,lastProof,retiredKey,lostOrdinaryIds;
   const target='/collections/'+inputs.config.physical_collection;
   const reference=stage=>({collection:stage.manifest.collection,document_id:stage.manifest.document_id,intent_id:stage.intent.intent_id});
   const context=(stage,scope=inputs.scope,token=OWNER)=>({...reference(stage),scope,owner_token:token});
@@ -173,9 +173,10 @@ async function cases(value){
     supervisor.transport_for=attempt=>{
       const actual=actualTransport(attempt);
       const handle={async request(method,path,requestOptions){
-        const mutation=method==='PUT'&&path===target+'/points?wait=true&ordering=strong';if(mutation)ordinaryPuts++;
+        const mutation=method==='PUT'&&path===target+'/points?wait=true&ordering=strong';
+        if(mutation){ordinaryPuts++;ordinaryBodies.push(JSON.parse(Buffer.from(requestOptions.body)).points.map(point=>point.id).sort());}
         const raw=await actual.request(method,path,requestOptions);
-        if(mutation&&dropOrdinary){completed(raw);dropOrdinary=false;throw new ProviderUnavailable();}return raw;
+        if(mutation&&dropOrdinary){completed(raw);lostOrdinaryIds=JSON.parse(Buffer.from(requestOptions.body)).points.map(point=>point.id).sort();dropOrdinary=false;throw new ProviderUnavailable();}return raw;
       },async close(){await actual.close();handles.delete(handle);}};handles.add(handle);return handle;
     };
     await resource.open();await supervisorResource.open();
@@ -190,15 +191,36 @@ async function cases(value){
     await manager.stage(inputs.stage,inputs.scope,ledger(),options);
     if(!(await manager.publish(reference(inputs.stage),inputs.scope,ledger(),options)).published)throw new Error('base_publish');
     const partial=inputs.stages.partial;
-    await lost(partial);const ordinaryBeforePartial=ordinaryPuts;await active(inputs.stage.manifest.generation_id);mark();
+    const originalIdentity=[partial.intent.intent_id,partial.manifest.revision_id,partial.manifest.generation_id];
+    const partialIds=points(partial).map(point=>point.id).sort(),beforePartial=ordinaryPuts;
+    if(partialIds.length!==9||new Set(partialIds).size!==9)throw new Error('partial_nine_point_fixture');
+    await lost(partial);const ordinaryBeforePartial=ordinaryPuts,partialState=await snapshot(partial);
+    const originalIntent=partialState.intent;
+    if(ordinaryBeforePartial!==beforePartial+1||!same(lostOrdinaryIds,partialIds.slice(0,8))
+      ||partialState.owner?.intent_id!==originalIdentity[0]
+      ||!originalIntent||!same([originalIntent.revision_id,originalIntent.generation_id],originalIdentity.slice(1))
+      ||originalIntent.manifest_sha256!==partial.intent.manifest_sha256
+      ||originalIntent.state==='published')throw new Error('partial_original_identity');
+    const sameOriginalIntent=state=>state.owner?.intent_id===originalIdentity[0]&&state.intent&&same(
+      [state.intent.revision_id,state.intent.generation_id,state.intent.manifest_sha256,state.intent.payload_sha256],
+      [originalIntent.revision_id,originalIntent.generation_id,originalIntent.manifest_sha256,originalIntent.payload_sha256]);
+    await active(inputs.stage.manifest.generation_id);mark();
     ack.armed=true;denyAfterReservation=true;
     await refuses(()=>repair(partial),UnauthorizedScope);denyAfterReservation=false;
-    if(!denialFired||recoveryPuts!==0||(await snapshot(partial)).backend.state!=='recovery_blocked')throw new Error('reservation_denial');
+    const deniedState=await snapshot(partial);
+    if(!denialFired||recoveryPuts!==0||deniedState.backend.state!=='recovery_blocked'||!sameOriginalIntent(deniedState)
+      ||deniedState.owner?.intent_id!==originalIdentity[0]
+      ||deniedState.intent.state==='published')throw new Error('reservation_denial');
     await active(inputs.stage.manifest.generation_id);mark();
     const result=await repair(partial);
     if(!same([ack.reserve,ack.dispatched,ack.settled],[1,1,1])||ack.destroyed!==3||recoveryPuts!==1||!same(recoveryBodies[0],[points(partial).map(point=>point.id).sort()[8]]))throw new Error('recovery_ack_reconciliation');
     mark();
-    if(ordinaryPuts!==ordinaryBeforePartial+2||!result.published||result.intent_id!==partial.intent.intent_id||result.generation_id!==partial.manifest.generation_id||(await journal()).some(row=>row[4]!=='settled'))throw new Error('partial_publication');
+    const publishedState=await snapshot(partial);
+    if(ordinaryPuts!==ordinaryBeforePartial+2||!same(ordinaryBodies.slice(ordinaryBeforePartial),[partialIds.slice(0,8),partialIds.slice(8)])
+      ||!result.published||!result.replica_complete
+      ||!same([result.intent_id,result.revision_id,result.generation_id],originalIdentity)
+      ||!sameOriginalIntent(publishedState)||publishedState.intent.state!=='published'||!publishedState.intent.replica_complete
+      ||(await journal()).some(row=>row[4]!=='settled'))throw new Error('partial_publication');
     await active(partial.manifest.generation_id);mark();ack.armed=false;
     const unknown=inputs.stages.unknown,unknownCtx=await lost(unknown),beforeUnknown=recoveryPuts;
     dropRecovery=true;

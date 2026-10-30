@@ -134,7 +134,7 @@ async def python_partial_repair_cases(value):
     checks,handles=[],[]
     mode=dict(drop_ordinary=False,drop_recovery=False,deny_reserved=False)
     network=dict(ordinary=0,recovery=0)
-    recovery_members=[]
+    recovery_members=[];ordinary_members=[]
     captured=dict(proof=None,key=None)
     manager=endpoint=primary=None
     target='/collections/'+inputs['config']['physical_collection']
@@ -205,8 +205,13 @@ async def python_partial_repair_cases(value):
                 network[self.kind]+=1
                 if self.kind=='recovery':
                     recovery_members.append(sorted(point['id'] for point in json.loads(bytes(options['body']))['points']))
+                else:
+                    ordinary_members.append(sorted(point['id'] for point in json.loads(bytes(options['body']))['points']))
             response=await self.actual.request(method,path,**options)
             if mutation and mode['drop_'+self.kind]:
+                completed=json.loads(bytes(response))
+                if completed.get('status')!='ok' or completed.get('result',{}).get('status')!='completed':
+                    raise RuntimeError('partial_repair_injected_ack_not_completed')
                 mode['drop_'+self.kind]=False
                 if self.kind=='recovery':captured['key']=private_key()
                 raise ProviderUnavailable()
@@ -253,15 +258,27 @@ async def python_partial_repair_cases(value):
         await manager.stage(base,scope,book(),deadline=deadline)
         await manager.publish(reference(base),scope,book(),deadline=deadline)
         ordinary_before_partial=network['ordinary']
+        ordinary_batches_before_partial=len(ordinary_members)
+        original_identity=(partial['intent']['intent_id'],partial['manifest']['revision_id'],partial['manifest']['generation_id'])
+        point_ids=[point['id'] for point in stage_points(partial)]
         await lose_ordinary(partial)
         state=await snapshot(partial)
-        if state['document']['active_generation_id']!=base['manifest']['generation_id']:raise RuntimeError('partial_repair_lost_prior')
+        original_seals=(state['intent']['payload_sha256'],state['intent']['manifest_sha256'])
+        def same_stage_identity(state):
+            return ((state['owner']['intent_id'],state['intent']['revision_id'],state['intent']['generation_id'])==original_identity
+                and (state['intent']['payload_sha256'],state['intent']['manifest_sha256'])==original_seals)
+        if (state['document']['active_generation_id']!=base['manifest']['generation_id']
+                or not same_stage_identity(state) or len(point_ids)!=9 or len(set(point_ids))!=9
+                or state['intent']['manifest_sha256']!=partial['intent']['manifest_sha256']
+                or network['ordinary']!=ordinary_before_partial+1
+                or ordinary_members[ordinary_batches_before_partial:]!=[point_ids[:8]]):raise RuntimeError('partial_repair_lost_prior')
         checks.append(CHECKS[0])
         faults['armed']={'reserve','dispatched','settled'}
         before=network['recovery'];mode['deny_reserved']=True
         await expect(UnauthorizedScope,lambda:repair(partial));mode['deny_reserved']=False
         state=await snapshot(partial)
-        if state['backend']['state']!='recovery_blocked' or network['recovery']!=before or state['document']['active_generation_id']!=base['manifest']['generation_id']:
+        if (state['backend']['state']!='recovery_blocked' or network['recovery']!=before
+                or state['document']['active_generation_id']!=base['manifest']['generation_id'] or not same_stage_identity(state)):
             raise RuntimeError('partial_repair_denial_did_not_preserve')
         checks.append(CHECKS[1])
         result=await repair(partial)
@@ -269,7 +286,13 @@ async def python_partial_repair_cases(value):
             raise RuntimeError('partial_repair_sql_ack_replay')
         checks.append(CHECKS[2])
         state=await snapshot(partial)
-        if result['state']!='published' or result['generation_id']!=partial['manifest']['generation_id'] or state['pending'] or network['ordinary']!=ordinary_before_partial+3:
+        if (result['state']!='published'
+                or (result['intent_id'],result['revision_id'],result['generation_id'])!=original_identity
+                or not result['published'] or not result['replica_complete']
+                or not same_stage_identity(state) or state['intent']['state']!='published' or not state['intent']['replica_complete']
+                or state['document']['active_generation_id']!=original_identity[2]
+                or state['pending'] or network['ordinary']!=ordinary_before_partial+3
+                or ordinary_members[ordinary_batches_before_partial:]!=[point_ids[:8],point_ids[:8],point_ids[8:]]):
             raise RuntimeError('partial_repair_same_identity_failed')
         checks.append(CHECKS[3])
         await lose_ordinary(unknown);mode['drop_recovery']=True
