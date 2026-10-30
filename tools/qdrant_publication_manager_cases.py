@@ -25,6 +25,7 @@ CHECKS = (
     'actual_stage_commit_ack_loss_resumes_exact_graph_without_http',
     'actual_publication_cas_commit_ack_loss_resolves_exactly_once',
     'bootstrap_acl_changed_rejected_without_sql_http_mutation',
+    'partial_member_stage_rejected_before_http_preserves_pointer',
 )
 ERRORS = frozenset(('IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability',
     'InvalidRequest', 'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady',
@@ -356,6 +357,24 @@ async def python_publication_manager_cases(value):
         finally:
             await asyncio.wait_for(connection.close(), 3)
 
+    async def corrupt_one_member(stage):
+        from qdrant_publication_native import PublicationDatabase
+        connection = await PublicationDatabase._connect(value['observer_config'])
+        try:
+            async with connection.transaction():
+                await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
+                await connection.execute("SET LOCAL statement_timeout='5000ms'")
+                manifest = stage['manifest']
+                chunk_id = manifest['members'][0]['chunk_id']
+                cursor = await connection.execute('DELETE FROM cragkit_qdrant.members '
+                    'WHERE tenant_id=%s AND collection=%s AND document_id=%s '
+                    'AND generation_id=%s AND chunk_id=%s RETURNING chunk_id',
+                    (scope.tenant_id, collection, document_id, manifest['generation_id'], chunk_id))
+                if await cursor.fetchall() != [(chunk_id,)]:
+                    raise RuntimeError('manager_partial_member_corruption_target')
+        finally:
+            await asyncio.wait_for(connection.close(), 3)
+
     try:
         await supervisor.initialize(deadline=deadline, provision=provision)
         endpoint = supervisor.identity()['endpoint']
@@ -476,6 +495,23 @@ async def python_publication_manager_cases(value):
             await resumed_recovery.close()
             await resumed_writer.close()
         acknowledgment['stage'] = None
+        # Fixture-admin corruption after a complete committed stage, not a public half-commit.
+        await corrupt_one_member(ack_stage)
+        partial_graph = await stage_graph(ack_stage)
+        partial_generation = json.loads(partial_graph['generations'][0][0])
+        if (len(ack_stage['manifest']['members']) != 2
+                or partial_generation['expected_member_count'] != 2 or partial_generation['published']
+                or json.loads(partial_graph['publication_intents'][0][0])['state'] != 'staged'
+                or len(partial_graph['members']) != 1
+                or partial_graph['point_claims'] != committed['point_claims']
+                or partial_graph['vector_replays'] != committed['vector_replays']
+                or partial_graph['pointer'] != [(base['manifest']['generation_id'],)]):
+            raise RuntimeError('manager_partial_member_fixture_missing')
+        partial_activity = (network['requests'], network['mutations'])
+        await expect(IntegrityViolation, lambda: publish_call(manager, ack_stage))
+        if ((network['requests'], network['mutations']) != partial_activity
+                or await stage_graph(ack_stage) != partial_graph):
+            raise RuntimeError('manager_partial_member_publication_mutated')
         save(await stage_call(manager, stages['loser']))
         save(await stage_call(manager, stages['winner']))
         publication = acknowledgment['publication']
@@ -602,6 +638,7 @@ async def python_publication_manager_cases(value):
         checks.append(CHECKS[13])
         checks.extend(CHECKS[14:17])
         checks.append(CHECKS[17])
+        checks.append(CHECKS[18])
         if len(snapshots) != 19:
             raise RuntimeError('manager_public_snapshot_inventory')
         return dict(runtime='python', checks=checks, proof_scope='public_stage_publish_only',

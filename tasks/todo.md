@@ -2032,3 +2032,39 @@ system memory free 51%; task-owned processes closed. Unrelated user edits
 remain outside scope. Learning practice unassessed. H and V5 remain open;
 next smallest action is the committed partial-member graph corruption case
 (matrix ID `partial_member_stage`), distinct from atomic stage rollback.
+
+H-S4 assignment (V5-04H matrix ID `partial_member_stage`): shared outcome is
+fixture-admin deletion of exactly one member from an already committed,
+unpublished two-member stage, followed by actual manager publication refusal
+before HTTP mutation. Preserve the prior active pointer and assert the
+persisted generation still declares two expected members while only one member
+row remains. This is a deliberate corrupted-graph fixture, not a public
+half-commit path. Sol `h_bootstrap_python` owns only
+`tools/qdrant_publication_manager_cases.py` and is assembler; Sol
+`h_bootstrap_node` owns only
+`tools/check_typescript_qdrant_publication_manager.mjs`. They coordinate the
+exact stage target, admin SQL, check label/order and failure assertions
+directly. Root owns contract, parent, serial native runs, report/tracker and
+Git. No product/schema/fixture/migration/lockfile/public API changes; no peer
+tests/processes/services/network/DB/install/Git. Fixture-admin corruption
+uses the disposable local authority only. Changes to outcome, protected
+boundaries or another lane return to root first; unresolved decision to
+Astra. State: assigned; H and V5 remain open.
+
+H-S4 final handoff: Python and Node Sol peers transferred their separate
+native consumer files; Python assembled the exact one-member deletion,
+persisted-graph assertions and matching check order. Root inspected both
+diffs and ran the real parent serially. PostgreSQL 17/Qdrant 1.20 passed 38
+checks (19 per runtime), matching public snapshot hashes and verified
+task-owned cleanup. Exact frozen ID `partial_member_stage` has native evidence:
+admin corruption leaves one of two declared members, real publication rejects
+before HTTP, and the prior active pointer and graph remain unchanged.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-partial-member.md). Four
+focused parent tests and all 16 seals passed. Changed files are the two
+native consumers, this report and tracker. No product/schema/grant/fixture/
+dependency/lockfile/hosted/release change. Disk headroom 28 GiB, system
+memory free 47%; task-owned processes closed. Unrelated user edits remain
+outside scope. Learning practice unassessed. H and V5 remain open; next
+smallest action is to map already executed native fault evidence to exact H
+IDs where the mechanism and assertions match, then implement the next missing
+native boundary without relabeling adjacent evidence.

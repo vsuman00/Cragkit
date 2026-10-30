@@ -32,6 +32,7 @@ const CHECKS = Object.freeze([
   'actual_stage_commit_ack_loss_resumes_exact_graph_without_http',
   'actual_publication_cas_commit_ack_loss_resolves_exactly_once',
   'bootstrap_acl_changed_rejected_without_sql_http_mutation',
+  'partial_member_stage_rejected_before_http_preserves_pointer',
 ]);
 const ERRORS = new Set(['IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability', 'InvalidRequest',
   'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady', 'BudgetExhausted', 'CancelledError', 'AbortError']);
@@ -389,6 +390,29 @@ async function cases(value) {
       await freshRecovery.close(); await freshVerifier.close(); await freshWriter.close();
     }
 
+    // Fixture-admin corruption of a committed stage, not a public half-commit.
+    const partialStage = inputs.stages.stage_ack_loss;
+    const missingChunk = partialStage.manifest.members[0].chunk_id;
+    const fixtureAdmin = new PoolResource(parse_pool_config({...value.observer_config, max_size: 1}));
+    try {
+      await fixtureAdmin.open();
+      const removed = await transaction(fixtureAdmin, query => query('DELETE FROM cragkit_qdrant.members WHERE (tenant_id,collection,document_id,generation_id,chunk_id)=($1,$2,$3,$4,$5) RETURNING chunk_id',
+        [partialStage.manifest.tenant_id, partialStage.manifest.collection, partialStage.manifest.document_id,
+          partialStage.manifest.generation_id, missingChunk]));
+      if (!isDeepStrictEqual(removed, [[missingChunk]])) throw new Error('partial_member_fixture_delete_not_exact');
+    } finally { await fixtureAdmin.close(); }
+    const partialGraph = await observeStage(partialStage);
+    if (memberCount !== 2 || partialGraph.generations.length !== 1
+      || partialGraph.generations[0][0].expected_member_count !== 2 || partialGraph.generations[0][0].published !== false
+      || partialGraph.members.length !== 1 || partialGraph.publication_intents[0]?.[0]?.state !== 'staged'
+      || !isDeepStrictEqual(partialGraph.point_claims, committedStage.point_claims)
+      || !isDeepStrictEqual(partialGraph.vector_replays, committedStage.vector_replays)
+      || !isDeepStrictEqual(partialGraph.pointer, [[inputs.stage.manifest.generation_id]])) throw new Error('partial_member_fixture_not_observed');
+    const partialCounts = [http.requests, http.puts];
+    await expected(IntegrityViolation, () => publishCall(partialStage));
+    if (!isDeepStrictEqual([http.requests, http.puts], partialCounts)
+      || !isDeepStrictEqual(await observeStage(partialStage), partialGraph)) throw new Error('partial_member_publication_mutated_graph');
+
     save(await stageCall(inputs.stages.loser)); save(await stageCall(inputs.stages.winner));
     publicationFault.armed=publicationFault.track=true;
     const winner=save(await publishCall(inputs.stages.winner));
@@ -494,7 +518,7 @@ async function cases(value) {
     await writer.manager_snapshot(context(inputs.stages.lost_ack, freshScope), options);
     await recovery.initialize(options); await backend();
     if (http.puts !== lostPuts + 1 || handles.size !== 0 || snapshots.length !== 19) throw new Error('borrowed_dependency_or_snapshot_count');
-    checks.push(CHECKS[13], CHECKS[14], CHECKS[15], CHECKS[16], CHECKS[17]); step = checks.length;
+    checks.push(CHECKS[13], CHECKS[14], CHECKS[15], CHECKS[16], CHECKS[17], CHECKS[18]); step = checks.length;
     return {runtime: 'typescript', checks, proof_scope: 'public_stage_publish_only', public_snapshots_sha256: hash(bytes(snapshots))};
   } catch (error) { primary = error; throw error; }
   finally {
