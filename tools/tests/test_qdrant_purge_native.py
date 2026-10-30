@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from check_qdrant_purge import validate_result
-from qdrant_purge_cases import CHECKS, COMPLETED, purge_input, loads_managed_bodies
+from qdrant_purge_cases import CHECKS, FAULT_CHECKS, COMPLETED, purge_input, loads_managed_bodies
 
 
 def test_purge_fixture_binds_distinct_documents_complete_graphs_and_exact_tombstones():
@@ -30,6 +30,13 @@ def test_purge_fixture_binds_distinct_documents_complete_graphs_and_exact_tombst
         assert item['purge']['tombstone_intent_payload_sha256'] == encode_security_intent(item['tombstone']).sha256
         encode_purge_intent(item['purge'])
         assert item['tombstone']['authorization']['tombstoned'] is True
+        if 'followup_purge' in item:
+            followup = item['followup_purge']
+            assert followup['intent_id'] != item['purge']['intent_id']
+            assert followup['expected_mutation_epoch'] == 3
+            assert followup['expected_authorization_revision'] == 'auth-3'
+            assert followup['tombstone_intent_payload_sha256'] == encode_security_intent(item['followup_tombstone']).sha256
+            encode_purge_intent(followup)
     changed = deepcopy(value)
     changed['documents']['base']['stage']['dense_vectors'][0][0] = 99
     assert purge_input()['documents']['base']['stage']['dense_vectors'][0][0] != 99
@@ -38,10 +45,11 @@ def test_purge_fixture_binds_distinct_documents_complete_graphs_and_exact_tombst
 def test_purge_native_evidence_cannot_substitute_partial_or_physical_only_results():
     assert len(CHECKS) == len(set(CHECKS)) == 8
     for runtime in ('python', 'typescript'):
-        value = dict(runtime=runtime, checks=list(CHECKS), proof_scope='native_managed_purge_only',
+        value = dict(runtime=runtime, checks=list(CHECKS), fault_checks=list(FAULT_CHECKS), proof_scope='native_managed_purge_only',
             semantic_witness_sha256='a'*64)
         assert validate_result(value, runtime) == value
-        for changed in (dict(value, checks=[]), dict(value, proof_scope='physical_absence'),
+        for changed in (dict(value, checks=[]), dict(value, fault_checks=[]),
+                {key:item for key,item in value.items() if key != 'fault_checks'}, dict(value, proof_scope='physical_absence'),
                 dict(value, semantic_witness_sha256=True), dict(value, private='source')):
             with pytest.raises(RuntimeError):
                 validate_result(changed, runtime)

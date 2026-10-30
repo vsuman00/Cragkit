@@ -224,6 +224,10 @@ caller deadline, cancellation and actual callback custody throughout. Return
 the existing nine manager fields with operation `purge`. Only atomic managed
 body erasure may return complete/replica_complete/purge_complete true.
 
+If the current owner token changes before completion while trusted
+authorization remains unchanged, return `ProviderUnavailable` in both runtimes.
+Changed current authorization remains a separate `UnauthorizedScope` refusal.
+
 Bind or confirm the exact purge record first. A completed exact retry reads
 retained identity/erasure metadata and returns its historical flags without
 loading erased graphs, issuing HTTP or replaying DML. A changed same-key record
@@ -281,6 +285,25 @@ ordinary purge owner. An explicit retry after handoff may resume ordinary
 absence verification when this same purge owner/backend is open and no target
 journal is pending; it need not manufacture a forbidden purge recovery owner.
 A blocked instance or contradictory pending purge-owner journal refuses.
+
+If a later authority change leaves a different incomplete purge as the ordinary
+owner, a new valid purge may use the private `admit_purge_successor` handoff.
+The manager supplies the genuine new projection, exact predecessor owner
+snapshot and actual controller identity (`instance_id`, `storage_identity`,
+`supervisor_id`, `epoch`). In one writer transaction, lock backend, owner and
+document in the established order. Require the open exact backend, the complete
+unchanged predecessor tuple and its epoch, canonical predecessor purge payload
+and target, committed authority, `writing` state and false replica/purge flags.
+The predecessor's historical authority is not restored or compared to current
+authority. Refuse every unsettled target journal. Rebuild and compare the new
+current purge projection and complete graph, including bounds and tombstone.
+Only then transfer ownership through the existing triggers and mark the new
+intent writing. Preserve predecessor history. Changed owner or backend refuses
+without a takeover or recovery fallback. Lost handoff COMMIT returns unavailable
+unless exact read-only confirmation proves it; an explicit retry observes the
+actual owner. A new ordinary attempt and authenticated absence are mandatory
+before erasure. This handoff issues no mutation, recovery guard or credential
+rotation, since the previous ordinary purge owner could only observe absence.
 
 Add a separate opaque PurgeAbsenceReceipt, issued only by
 `verify_purge_ordinary` on the registered QdrantSecurityVerifier. It binds a

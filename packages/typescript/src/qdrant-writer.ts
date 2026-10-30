@@ -15,7 +15,7 @@ import { encode_manifest, encode_stage_intent, restore_dense_replay, restore_spa
 import { same, point_id, parse_response, type QdrantConfig } from './qdrant-contract.js';
 import { type TrustedScope } from './requests.js';
 import { config as parseConfig, context as parseContext, options as parseOptions, scope as parseScope,
-  stage_data, issue_verified_stage, operation as parseOperation, metadata, native_array, db_bytes, db_count, db_json,
+  stage_data, issue_verified_stage, operation as parseOperation, fields, metadata, native_array, db_bytes, db_count, db_json,
   digest, count, text, uuid, hash, DispatchOptionsSchema, type Data, type WriterContext, type StagePlan, type StageData } from './qdrant-writer-contract.js';
 export { prepare_stage } from './qdrant-writer-contract.js';
 
@@ -1302,6 +1302,50 @@ export class PostgresQdrantWriter {
           },true,false,{readOnly:true,check,invalidate:()=>{valid=false;}});
         }
       }finally{valid=false;writerOptions.signal?.removeEventListener('abort',abort);}
+    });
+  }
+  async admit_purge_successor(input:unknown,rawPredecessor:unknown,rawIdentity:unknown,rawOptions:unknown):Promise<Readonly<{owner_token:string;backend_epoch:number}>>{
+    const original=purge_projection_data(input,this),context=original.context,options=parseOptions(rawOptions);
+    const predecessor=fields(rawPredecessor,['instance_id','intent_id','owner_token','backend_epoch']);
+    const prior=Object.freeze({instance_id:text(predecessor.instance_id),intent_id:text(predecessor.intent_id),
+      owner_token:uuid(predecessor.owner_token),backend_epoch:count(predecessor.backend_epoch,1)});
+    const identity=fields(rawIdentity,['instance_id','storage_identity','supervisor_id','epoch']);
+    const expected=Object.freeze({instance_id:text(identity.instance_id),storage_identity:text(identity.storage_identity),
+      supervisor_id:text(identity.supervisor_id),epoch:count(identity.epoch,1)});
+    if(prior.intent_id===context.intent_id)throw new InvalidRequest();
+    require_security_owner_writer(this);
+    return this.#work(options,async lease=>{
+      const check=()=>{parseOptions(options);parseOptions(lease);};
+      try{return await this.#tx(context,lease,async tx=>{
+        check();const backend=await this.#managerBackend(tx,true),owner=await this.#managerOwner(tx,context,true);
+        await this.#document(tx,context,true);
+        if(backend.state!=='open'||!same(owner,prior)||prior.instance_id!==this.#instance||prior.backend_epoch!==backend.epoch
+          ||!same({instance_id:backend.instance_id,storage_identity:backend.storage_identity,supervisor_id:backend.supervisor_id,epoch:backend.epoch},expected))throw new ProviderUnavailable();
+        const oldContext=parseContext({...context,intent_id:prior.intent_id,owner_token:prior.owner_token});
+        let old:Data|null;
+        await tx.query("SELECT set_config('cragkit_qdrant.writer_intent_id',$1,true)",[prior.intent_id],1);
+        try{old=await this.#intent(tx,oldContext);}
+        finally{await tx.query("SELECT set_config('cragkit_qdrant.writer_intent_id',$1,true)",[context.intent_id],1);}
+        if(!old||old.action!=='purge'||old.state!=='writing'||old.authority_committed!==true||old.replica_complete!==false||old.purge_complete!==false
+          ||old.instance_id!==this.#instance||['manifest_sha256','manifest_bytes','revision_id','generation_id','expected_active_generation_id'].some(key=>old[key]!==null))throw new IntegrityViolation();
+        const tuple=this.#payloadTuple(old);if(tuple.length!==9)throw new IntegrityViolation();
+        let canonical:ReturnType<typeof parseOperation>;
+        try{canonical=parseOperation({intent_id:prior.intent_id,tenant_id:context.scope.tenant_id,collection:context.collection,document_id:context.document_id,
+          tombstone_intent_payload_sha256:tuple[6],expected_authorization_revision:old.expected_authorization_revision,
+          expected_mutation_epoch:db_count(old.expected_mutation_epoch)},context.scope,prior.owner_token,true);}
+        catch(error){if(error instanceof InvalidRequest)throw new IntegrityViolation();throw error;}
+        if(canonical.encoded.sha256!==old.payload_sha256||!Buffer.from(canonical.encoded.encoded_bytes).equals(db_bytes(old.payload_bytes,1048576)))throw new IntegrityViolation();
+        if(await this.#managerPending(tx,context))throw new ProviderUnavailable();
+        const current=await this.#projectPurge(tx,context,original.policy_id);check();
+        if(!same({...current,projection:security_projection_data(current.projection,this)},{...original,projection:security_projection_data(original.projection,this)}))throw new UnauthorizedScope();
+        const intent=await this.#intent(tx,context);
+        if(!intent||intent.action!=='purge'||intent.state!=='authority_committed'||intent.authority_committed!==true||intent.replica_complete!==false||intent.purge_complete!==false)throw new IntegrityViolation();
+        await tx.query('UPDATE cragkit_qdrant.document_owners SET instance_id=$4,intent_id=$5,owner_token=$6::uuid,backend_epoch=$7 WHERE (tenant_id,collection,document_id)=($1,$2,$3)',
+          [...this.#key(context),this.#instance,context.intent_id,context.owner_token,backend.epoch],0);
+        await this.#updateIntent(tx,context,'writing');check();
+        return Object.freeze({owner_token:context.owner_token,backend_epoch:backend.epoch});
+      },true,false,{check,invalidate:()=>{}});}
+      catch(error){if(error instanceof CommitUnknown)throw new ProviderUnavailable();throw error;}
     });
   }
   async admit_purge_tombstone(input:unknown,rawOptions:unknown):Promise<SecurityOwner>{

@@ -843,6 +843,23 @@ class QdrantPublicationManager:
                 backend,owner = snapshot['backend'],snapshot['owner']
             if owner is None:
                 raise ProviderUnavailable()
+            if owner['intent_id']!=current.intent_id and backend['state']=='open' and not snapshot['pending']:
+                prior = context({**target,'scope':trusted,'intent_id':owner['intent_id'],'owner_token':owner['owner_token']})
+                retained = await self._writer.inspect(prior,deadline=limit)
+                self._check(limit)
+                if retained is not None and retained['action']=='purge':
+                    await self._authorize(current,limit)
+                    native = await self._controller(snapshot,limit)
+                    self._check(limit)
+                    controller_identity = {key:native[key] for key in ('instance_id','storage_identity','supervisor_id','epoch')}
+                    await self._writer.admit_purge_successor(projection,owner,controller_identity,deadline=limit)
+                    self._check(limit)
+                    await self._authorize(current,limit)
+                    snapshot = await self._writer.manager_snapshot(current,deadline=limit)
+                    self._check(limit)
+                    backend,owner = snapshot['backend'],snapshot['owner']
+                    if owner is None:
+                        raise ProviderUnavailable()
             resumed = owner['intent_id'] == current.intent_id
             if resumed:
                 if backend['state'] != 'open' or snapshot['pending'] or owner['backend_epoch'] != backend['epoch']:

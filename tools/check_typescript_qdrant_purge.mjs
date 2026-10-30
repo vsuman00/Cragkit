@@ -11,6 +11,8 @@ import {parse_request} from '../packages/typescript/dist/requests.js';
 import {QdrantPublicationManager, PostgresQdrantPublicationAuthority, ManagedQdrantPublicationTransport, PostgresQdrantWriter, PostgresQdrantRecovery, ManagedQdrantSupervisor, QdrantReconciliationVerifier} from '../packages/typescript/dist/qdrant-publication.js';
 import {QdrantSecurityManager} from '../packages/typescript/dist/qdrant-security.js';
 import {PostgresQdrantSourceStore} from '../packages/typescript/dist/qdrant-source.js';
+import {settle_purge_guarded} from '../packages/typescript/dist/qdrant-recovery.js';
+import {QdrantSecurityVerifier} from '../packages/typescript/dist/qdrant-security-verification.js';
 import {security_projection_data, purge_projection_data} from '../packages/typescript/dist/qdrant-writer.js';
 import {ProviderUnavailable, UnauthorizedScope, InvalidRequest, IntegrityViolation, UnsupportedCapability} from '../packages/typescript/dist/errors.js';
 const POLICY = 'erase_managed_source_and_replay_v1';
@@ -24,6 +26,7 @@ const CHECKS = [
   'ownerless_tombstone_bootstrap_and_forged_receipt_refusal',
   'unknown_extra_or_foreign_scope_cannot_authorize_erasure'
 ];
+const FAULT_CHECKS = ['current_credential_pending_delete_refused','administrative_foreign_intent_pending_refused_and_restored','replaced_owner_refused_before_erasure','changed_authority_refused_before_erasure','superseded_purge_handoff_commit_loss_resumes_without_mutation'];
 const ERRORS = new Set([
   'InvalidRequest',
   'IntegrityViolation',
@@ -62,7 +65,7 @@ async function input() {
   }
   const value = decode(Buffer.concat(chunks));
   assert(value
-    && same(Object.keys(value).sort(), ['binary','inputs','reader_config','supervisor_config','work_dir','writer_config'])
+    && same(Object.keys(value).sort(), ['admin_config','binary','inputs','reader_config','supervisor_config','work_dir','writer_config'])
     && typeof value.binary === 'string'
     && typeof value.work_dir === 'string');
   return value;
@@ -100,7 +103,8 @@ async function cases(value) {
   const options = {deadline: now()+180, signal: controller.signal};
   const sql = {dml: 0, bodies: 0, rollbackArmed: false, rollback: 0,
     commitArmed: false, drops: 0, functions: 0, confirming: false,
-    confirmations: 0, readonly: 0, confirmationWrites: 0, confirmationBodies: 0};
+    confirmations: 0, readonly: 0, confirmationWrites: 0, confirmationBodies: 0,
+    handoffArmed: false, handoffDrops: 0};
   const dml = text => /^\s*(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE)\b/i.test(text)
     || text.startsWith('SELECT cragkit_qdrant.erase_purged_document(');
   const bodies = text => {
@@ -117,12 +121,12 @@ async function cases(value) {
     return {
       async connect() {
         const client = await actual.connect();
-        let erased = false;
+        let erased = false, handed = false;
         return {
           async query(query) {
             const text = query.text;
             if (text.startsWith('BEGIN')) {
-              erased = false;
+              erased = handed = false;
               if (sql.confirming) sql.confirmations++;
             }
             if (dml(text)) sql.dml++;
@@ -133,6 +137,7 @@ async function cases(value) {
               if (bodies(text)) sql.confirmationBodies++;
             }
             const result = await client.query(query);
+            if(sql.handoffArmed && text.startsWith('UPDATE cragkit_qdrant.document_owners SET '))handed=true;
             if (text.startsWith('SELECT cragkit_qdrant.erase_purged_document(')) {
               sql.functions++;
               erased = true;
@@ -149,6 +154,10 @@ async function cases(value) {
               sql.httpAtConfirmation = httpCount;
               throw Object.assign(new Error('commit_reply_withheld'), {code:'08006'});
             }
+            if(text==='COMMIT'&&handed&&sql.handoffArmed){
+              sql.handoffArmed=false;sql.handoffDrops++;
+              throw Object.assign(new Error('handoff_commit_reply_withheld'),{code:'08006'});
+            }
             if (text === 'COMMIT' && sql.confirming) {
               assert(httpCount === sql.httpAtConfirmation);
               sql.confirming = false;
@@ -162,7 +171,21 @@ async function cases(value) {
       end() { return actual.end(); }
     };
   }});
-  const pools = [writerPool, new PoolResource(configs[1]), new PoolResource(configs[2])];
+  const fault = {mode:null,owned:0,current:0,foreign:0,settlements:0};
+  const supervisorPool = new PoolResource(configs[1], {factory:async config=>{
+    const actual=await nativeFactory(config);
+    return {async connect(){const client=await actual.connect();return {
+      async query(query){const result=await client.query(query);
+        if(query.text.startsWith("UPDATE cragkit_qdrant.dispatch_journal SET state='settled'"))fault.settlements++;
+        if(fault.mode&&query.text.startsWith('SELECT dispatch_id,instance_id,sequence,owner_token::text,backend_epoch,credential_generation,operation,recovery,request_sha256,created_xid::text,state,completion_sha256')){
+          fault.owned++;if(result.rows.some(row=>row[5]===generation()&&row[10]==='unknown'))fault.current++;
+        }
+        if(fault.mode&&query.text.startsWith('SELECT intent_id FROM cragkit_qdrant.dispatch_journal')&&result.rows.length)fault.foreign++;
+        return result;
+      },getTransactionStatus(){return client.getTransactionStatus();},release(destroy){client.release(destroy);}
+    };},end(){return actual.end();}};
+  }});
+  const pools = [writerPool, supervisorPool, new PoolResource(configs[2])];
   const writer = new PostgresQdrantWriter(pools[0], inputs.config, inputs.instance_id);
   const supervisor = new ManagedQdrantSupervisor(value.binary, value.work_dir, inputs.instance_id, inputs.config);
   const verifier = new QdrantReconciliationVerifier(writer, supervisor);
@@ -175,7 +198,11 @@ async function cases(value) {
   const security = new QdrantSecurityManager(writer, allowed);
   const manager = new QdrantPublicationManager(authority, transport, inputs.config, supervisor, allowed);
   const store = new PostgresQdrantSourceStore(pools[2], inputs.config);
-  const handles = new Set(), observations = [];
+  const handles = new Set(), observations = [], faultChecks = [];
+  const faultVerifier=new QdrantSecurityVerifier(writer,supervisor);
+  let capturedProof;
+  const originalRecover=recovery.recover;
+  recovery.recover=async function(...args){capturedProof=await originalRecover.apply(this,args);return capturedProof;};
   let address, httpCount = 0, armed = null, putDrops = 0, deleteDrops = 0;
   const deleteBodies = [];
   const nativeRequest = http.request;
@@ -204,6 +231,10 @@ async function cases(value) {
       const result = await call(book => manager.publish(ref(item.stage.intent),inputs.scope,book,options));
       assert(result.published);
       await stage(item.second_stage);
+      if(item.published_second){
+        const second=await call(book=>manager.publish(ref(item.second_stage.intent),inputs.scope,book,options));
+        assert(second.published);
+      }
     }
   }
   const row = result => [result.intent_id,result.operation,result.state,result.authority_committed,result.replica_complete,result.purge_complete];
@@ -327,6 +358,48 @@ async function cases(value) {
     await refuses(ProviderUnavailable,() => purge(loss));
     const pending = await snapshot(loss), fenced = generation();
     assert(deleteDrops === 1 && pending.pending && pending.backend.state === 'recovery_blocked' && !pending.intent.purge_complete);
+    const lossOwner=context({...loss.purge,intent_id:pending.owner.intent_id},'auth-2',pending.owner.owner_token);
+    const lossProjection=await project(loss,OWNER);
+    const probeBefore={functions:sql.functions,settlements:fault.settlements,graph:graph(lossProjection)};
+    fault.mode='current';
+    try{await refuses(ProviderUnavailable,()=>settle_purge_guarded(recovery,faultVerifier,capturedProof,lossOwner,lossProjection,options));}
+    finally{fault.mode=null;}
+    assert(fault.owned>0&&fault.current>0&&fault.foreign===0&&generation()===fenced&&sql.functions===probeBefore.functions&&fault.settlements===probeBefore.settlements
+      &&(await snapshot(loss)).pending&&same(graph(await project(loss,OWNER)),probeBefore.graph));
+    faultChecks.push(FAULT_CHECKS[0]);
+    const manifest=loss.stage.manifest;
+    const key=[manifest.tenant_id,manifest.collection,manifest.document_id,loss.stage.intent.intent_id];
+    const fixed=inputs.foreign_fault_sql;
+    const adminConfig=parse_pool_config(value.admin_config);assert(adminConfig.max_size===1);
+    async function adminWork(work,restoring=false){
+      const resource=new PoolResource(adminConfig);await resource.open();
+      try{return await resource.withLease(restoring?{deadline:now()+8}:options,async client=>{
+        const run=async(name,values=[])=>{let index=0;const text=fixed[name].replace(/\?/g,()=>'$'+(++index));
+          return (await client.query({text,values,rowMode:'array'})).rows;};
+        await client.query({text:'BEGIN',rowMode:'array'});
+        try{await client.query({text:'SET LOCAL statement_timeout=8000',rowMode:'array'});const result=await work(run);await client.query({text:'COMMIT',rowMode:'array'});return result;}
+        catch(error){await client.query({text:'ROLLBACK',rowMode:'array'});throw error;}
+      });}finally{await resource.close();}
+    }
+    let originalForeign,foreignInjected=false;
+    try{
+      originalForeign=await adminWork(async run=>{
+        const rows=await run('select',key);assert(rows.length>=1&&rows.length<=256&&rows.every(row=>row.length===4&&row[1]==='settled'&&/^[0-9a-f]{64}$/.test(row[2])));
+        await run('disable');assert(same(await run('inject',[...key,rows[0][0],rows[0][2]]),[[rows[0][0]]]));
+        await run('enable');assert(same(await run('trigger'),[['O']]));return rows;
+      });foreignInjected=true;
+      fault.mode='foreign';fault.owned=0;fault.foreign=0;
+      try{await refuses(ProviderUnavailable,()=>settle_purge_guarded(recovery,faultVerifier,capturedProof,lossOwner,lossProjection,options));}
+      finally{fault.mode=null;}
+      assert(fault.foreign>0&&fault.owned===0&&sql.functions===probeBefore.functions&&fault.settlements===probeBefore.settlements&&(await snapshot(loss)).pending
+        &&same(graph(await project(loss,OWNER)),probeBefore.graph));
+    }finally{
+      if(foreignInjected)await adminWork(async run=>{
+        await run('disable');assert(same(await run('restore',[originalForeign[0][2],...key,originalForeign[0][0]]),[[originalForeign[0][0]]]));
+        await run('enable');assert(same(await run('select',key),originalForeign)&&same(await run('trigger'),[['O']]));
+      },true);
+    }
+    faultChecks.push(FAULT_CHECKS[1]);
     const recovered = await purge(loss);
     assert(deleteDrops === 1 && generation() !== fenced); mark(recovered);
 
@@ -393,6 +466,25 @@ async function cases(value) {
         await bounded(canceledPurge,options);
       } finally { writer.complete_purge = originalComplete; }
     }
+    const replacedToken='00000000-0000-4000-8000-000000000002';
+    let ownerChanged=false;
+    writer.complete_purge=async function(...args){
+      const state=await snapshot(handoff),originalContext=context(handoff.purge,'auth-2',state.owner.owner_token);
+      const alternate={...originalContext,owner_token:replacedToken};
+      const beforeFunctions=sql.functions;
+      try{
+        await writer.acquire_owner(alternate,options);ownerChanged=true;
+        assert((await snapshot(handoff)).owner.owner_token===replacedToken);
+        await refuses(ProviderUnavailable,()=>originalComplete.call(this,...args));
+        assert(sql.functions===beforeFunctions&&!(await snapshot(handoff)).intent.purge_complete
+          &&same(graph(await project(handoff,originalContext.owner_token)),originalGraph));
+      }finally{if(ownerChanged)await writer.acquire_owner(originalContext,options);}
+      throw new ProviderUnavailable();
+    };
+    try{await refuses(ProviderUnavailable,()=>purge(handoff));}
+    finally{writer.complete_purge=originalComplete;}
+    assert(ownerChanged&&(await snapshot(handoff)).owner.owner_token===handed.owner.owner_token);
+    faultChecks.push(FAULT_CHECKS[2]);
     const handedResult = await purge(handoff);
     assert(generation() === handoffGeneration && deleteBodies.length === deletesBefore); mark(handedResult);
 
@@ -422,6 +514,35 @@ async function cases(value) {
     assert(admission.intent.state === 'denied' && admission.owner === null);
     mark(await purge(ownerless));
 
+    const authorityChange=inputs.documents.authority_change;
+    await setup(authorityChange);await tombstone(authorityChange);
+    let authorityChanged=false;
+    writer.complete_purge=async function(...args){
+      const beforeFunctions=sql.functions;
+      await call(book=>security.tombstone(authorityChange.followup_tombstone,scope('auth-2'),book,options));authorityChanged=true;
+      try{await originalComplete.call(this,...args);throw new Error('stale_authority_accepted');}
+      catch(error){if(!(error instanceof UnauthorizedScope||error instanceof IntegrityViolation))throw error;}
+      const state=await writer.manager_snapshot(context(authorityChange.purge,'auth-3'),options);
+      assert(sql.functions===beforeFunctions&&!state.intent.replica_complete&&!state.intent.purge_complete&&state.document.authorization_revision==='auth-3');
+      throw new UnauthorizedScope();
+    };
+    try{await refuses(UnauthorizedScope,()=>purge(authorityChange));}
+    finally{writer.complete_purge=originalComplete;}
+    assert(authorityChanged);
+    const handoffBefore={functions:sql.functions,deletes:deleteBodies.length};
+    sql.handoffArmed=true;
+    await refuses(ProviderUnavailable,()=>call(book=>manager.purge(authorityChange.followup_purge,scope('auth-3'),book,POLICY,options)));
+    const successor=await writer.manager_snapshot(context(authorityChange.followup_purge,'auth-3'),options);
+    assert(sql.handoffDrops===1&&!sql.handoffArmed&&successor.owner.intent_id===authorityChange.followup_purge.intent_id
+      &&successor.intent.state==='writing'&&!successor.intent.purge_complete
+      &&same(handoffBefore,{functions:sql.functions,deletes:deleteBodies.length}));
+    complete(await call(book=>manager.purge(authorityChange.followup_purge,scope('auth-3'),book,POLICY,options)));
+    assert(deleteBodies.length===handoffBefore.deletes&&sql.functions===handoffBefore.functions+1);
+    const stale=await writer.manager_snapshot(context(authorityChange.purge,'auth-3'),options);
+    assert(!stale.intent.replica_complete&&!stale.intent.purge_complete);
+    faultChecks.push(FAULT_CHECKS[3]);
+    faultChecks.push(FAULT_CHECKS[4]);
+
     const extra = inputs.documents.extra;
     await setup(extra);
     const unknownId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
@@ -444,13 +565,14 @@ async function cases(value) {
     await refuses(UnsupportedCapability,() => call(book => manager.purge(extra.purge,scope('auth-2'),book,'unsupported-policy',options),0));
     assert(same(before,{http:httpCount,dml:sql.dml}));
     observations.push(['refusals','integrity_violation','unauthorized_scope','unsupported_capability']); step++;
-    return {runtime:'typescript',checks:CHECKS,proof_scope:'native_managed_purge_only',
-      semantic_witness_sha256:hash(Buffer.from(JSON.stringify(['cragkit.qdrant.managed-purge.v1',observations]),'utf8'))};
+    assert(same(faultChecks,FAULT_CHECKS));
+    return {runtime:'typescript',checks:CHECKS,fault_checks:faultChecks,proof_scope:'native_managed_purge_only',
+      semantic_witness_sha256:hash(Buffer.from(JSON.stringify(['cragkit.qdrant.managed-purge.v2',observations,faultChecks]),'utf8'))};
   } finally {
     http.request = nativeRequest;
     let failed = false;
     const deadline = now()+12;
-    for (const owner of [...handles,store,manager,security,transport,recovery,verifier,writer,...pools,vanilla,supervisor]) {
+    for (const owner of [...handles,faultVerifier,store,manager,security,transport,recovery,verifier,writer,...pools,vanilla,supervisor]) {
       try {
         if (typeof owner.close === 'function') await bounded(Promise.resolve().then(() => owner.close()),{deadline});
       } catch { failed = true; }

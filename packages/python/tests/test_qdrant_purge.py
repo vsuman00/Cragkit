@@ -15,7 +15,7 @@ from cragkit._qdrant_security_verification import (
 )
 from cragkit._qdrant_writer import PURGE_POLICY, PurgeProjection, purge_projection_data
 from cragkit._qdrant_writer_contract import context
-from cragkit.errors import IntegrityViolation, InvalidRequest, UnauthorizedScope, UnsupportedCapability
+from cragkit.errors import IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability
 from cragkit.qdrant_publication import QdrantPublicationManager
 from test_qdrant_security_verification import ordinary_setup
 from test_qdrant_writer import run_async
@@ -122,3 +122,71 @@ async def test_purge_policy_is_rejected_before_dependency_access():
 def test_unissued_purge_projection_is_not_authority():
     with pytest.raises(TypeError):
         pickle.dumps(PurgeProjection())
+
+
+@pytest.mark.parametrize('fault',['none','owner','backend','pending','canonical','complete','projection','commit'])
+@run_async
+async def test_successor_handoff_revalidates_predecessor_before_transfer(monkeypatch,tmp_path,fault):
+    verifier,writer,_,current,projection,_,_,_ = await setup(monkeypatch,tmp_path)
+    predecessor = dict(instance_id='instance-1',intent_id='purge-previous',
+        owner_token=current.owner_token,backend_epoch=2)
+    identity = dict(instance_id='instance-1',storage_identity='storage-1',supervisor_id='supervisor-1',epoch=2)
+    original = purge_projection_data(projection,writer)
+    record = dict(intent_id='purge-previous',tenant_id=current.scope.tenant_id,collection=current.collection,
+        document_id=current.document_id,tombstone_intent_payload_sha256='b'*64,
+        expected_authorization_revision='historical-auth',expected_mutation_epoch=1)
+    encoded = writer_module.encode_purge_intent(record)
+    row = ['instance-1','purge',encoded.encoded_bytes,encoded.sha256,'historical-auth',1,
+        'writing',True,False,False,None,None,None,None,None]
+    if fault=='canonical': row[2]=b'[]'
+    if fault=='complete': row[9]=True
+    calls = []
+    class Connection:
+        async def execute(self,sql,params=()): calls.append((sql,params))
+    async def run(ctx,limit,action,**options):
+        assert options['detect_commit_unknown']
+        result = await action(Connection())
+        if fault=='commit': raise writer_module._CommitUnknown()
+        return result
+    async def backend(*args,**kwargs):
+        return dict(identity,state='open',recovery_id=None,epoch=3 if fault=='backend' else 2)
+    async def owner(*args,**kwargs):
+        return dict(predecessor,intent_id='changed' if fault=='owner' else predecessor['intent_id'])
+    async def document(*args,**kwargs): return {}
+    async def query(*args,**kwargs): return [tuple(row)]
+    async def settled(*args,**kwargs):
+        if fault=='pending': raise ProviderUnavailable()
+    async def graph(*args,**kwargs):
+        return dict(original,inventory_sha256='c'*64) if fault=='projection' else original
+    async def intent(*args,**kwargs):
+        return dict(action='purge',state='authority_committed',authority_committed=True,
+            replica_complete=False,purge_complete=False)
+    for name,function in (('_run',run),('_manager_backend',backend),('_manager_owner',owner),
+            ('_document',document),('_query',query),('_require_settled',settled),('_purge_graph',graph),('_manager_intent',intent)):
+        monkeypatch.setattr(writer,name,function)
+    expected = (ProviderUnavailable if fault in ('owner','backend','pending','commit') else
+        IntegrityViolation if fault in ('canonical','complete') else UnauthorizedScope)
+    try:
+        if fault=='none':
+            result = await writer.admit_purge_successor(projection,predecessor,identity,deadline=deadline())
+            assert dict(result)==dict(owner_token=current.owner_token,backend_epoch=2)
+        else:
+            with pytest.raises(expected):
+                await writer.admit_purge_successor(projection,predecessor,identity,deadline=deadline())
+        writes = [sql for sql,_ in calls if sql.startswith('UPDATE ')]
+        assert len(writes)==(2 if fault in ('none','commit') else 0)
+    finally:
+        await verifier.close()
+
+
+@pytest.mark.parametrize('fake',[PurgeProjection(),{},object()])
+@run_async
+async def test_successor_requires_writer_issued_projection_before_storage(monkeypatch,tmp_path,fake):
+    verifier,writer,_,_,_,_,_,_ = await setup(monkeypatch,tmp_path)
+    async def forbidden(*args,**kwargs): raise AssertionError('storage entered for forged projection')
+    monkeypatch.setattr(writer,'_run',forbidden)
+    try:
+        with pytest.raises(InvalidRequest):
+            await writer.admit_purge_successor(fake,{}, {},deadline=deadline())
+    finally:
+        await verifier.close()

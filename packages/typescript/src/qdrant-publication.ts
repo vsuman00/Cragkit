@@ -629,6 +629,18 @@ export class QdrantPublicationManager {
       let snapshot=await this.#await(writer.manager_snapshot(lookup,lease),lease);
       let context=parse_context({...lookup,owner_token:snapshot.owner?.intent_id===lookup.intent_id?snapshot.owner.owner_token:ownerToken});
       let projection=await this.#await(writer.project_purge(context,retention_policy,lease),lease);
+      if(snapshot.owner&&snapshot.owner.intent_id!==context.intent_id&&snapshot.backend.state==='open'&&!snapshot.pending){
+        const previous=await this.#await(writer.inspect(parse_context({...context,intent_id:snapshot.owner.intent_id,owner_token:snapshot.owner.owner_token}),lease),lease);
+        if(previous?.action==='purge'){
+          const profile=await this.#profile(lease,true);
+          const identity={instance_id:profile.instance_id,storage_identity:profile.storage_identity,supervisor_id:profile.supervisor_id,epoch:profile.epoch};
+          if(!same(identity,{instance_id:snapshot.backend.instance_id,storage_identity:snapshot.backend.storage_identity,
+            supervisor_id:snapshot.backend.supervisor_id,epoch:snapshot.backend.epoch}))throw new ProviderUnavailable();
+          await this.#authorize(context,lease);
+          await this.#await(writer.admit_purge_successor(projection,snapshot.owner,identity,lease),lease);
+          snapshot=await this.#await(writer.manager_snapshot(context,lease),lease);
+        }
+      }
       const resumed=snapshot.owner?.intent_id===context.intent_id;
       if(resumed){
         if(snapshot.backend.state!=='open'||snapshot.pending||snapshot.owner!.backend_epoch!==snapshot.backend.epoch)throw new ProviderUnavailable();

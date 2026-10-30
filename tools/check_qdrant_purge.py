@@ -15,7 +15,7 @@ import traceback
 
 from check_qdrant_writer import read_bounded
 from qdrant_native import REFERENCE_BINARY_SHA256
-from qdrant_purge_cases import CHECKS, COMPLETED, POLICY, NativePurgeFailure, purge_input
+from qdrant_purge_cases import CHECKS, FAULT_CHECKS, COMPLETED, POLICY, NativePurgeFailure, purge_input
 from qdrant_purge_native import install
 from qdrant_security_guard_native import SecurityGuardDatabase, install_guard
 from qdrant_source_native import PostgresSourceFixture
@@ -27,8 +27,9 @@ ERRORS = frozenset(('InvalidRequest', 'IntegrityViolation', 'ProviderUnavailable
 
 
 def validate_result(value, runtime):
-    if (type(value) is not dict or set(value) != {'runtime', 'checks', 'proof_scope', 'semantic_witness_sha256'}
+    if (type(value) is not dict or set(value) != {'runtime', 'checks', 'fault_checks', 'proof_scope', 'semantic_witness_sha256'}
             or value['runtime'] != runtime or value['checks'] != list(CHECKS)
+            or value['fault_checks'] != list(FAULT_CHECKS)
             or value['proof_scope'] != 'native_managed_purge_only'
             or type(value['semantic_witness_sha256']) is not str
             or re.fullmatch('[0-9a-f]{64}', value['semantic_witness_sha256']) is None):
@@ -139,11 +140,14 @@ async def storage_checks(database, inputs):
                     raise RuntimeError('purge_native_request_erasure')
                 actual = await rows('SELECT content_unavailable,tombstoned,active_generation_id '
                     'FROM cragkit_qdrant.documents WHERE '+where, key)
-                if actual != [(erased, True, None if name == 'ownerless' else first['generation_id'])]:
+                active = None if name == 'ownerless' else (fixture['second_stage']['manifest']['generation_id']
+                    if fixture.get('published_second') else first['generation_id'])
+                if actual != [(erased, True, active)]:
                     raise RuntimeError('purge_native_document_barrier')
+                terminal = fixture.get('followup_purge', fixture['purge'])
                 actual = await rows('SELECT state,authority_committed,replica_complete,purge_complete,payload_sha256 '
-                    'FROM cragkit_qdrant.publication_intents WHERE '+where+' AND intent_id=%s', (*key, fixture['purge']['intent_id']))
-                digest = encode_purge_intent(fixture['purge']).sha256
+                    'FROM cragkit_qdrant.publication_intents WHERE '+where+' AND intent_id=%s', (*key, terminal['intent_id']))
+                digest = encode_purge_intent(terminal).sha256
                 if erased and actual != [('complete', True, True, True, digest)]:
                     raise RuntimeError('purge_native_terminal_flags')
                 if not erased and (len(actual) != 1 or actual[0][2:4] != (False, False)):
@@ -156,11 +160,16 @@ async def storage_checks(database, inputs):
                         inputs['instance_id'], sorted(groups)]
                     inventory_hash = sha256(json.dumps(inventory, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
                     if (len(records) != 1 or records[0][:4] != (POLICY, digest,
-                            fixture['purge']['tombstone_intent_payload_sha256'], inventory_hash)
+                            terminal['tombstone_intent_payload_sha256'], inventory_hash)
                             or any(re.fullmatch('[0-9a-f]{64}', item) is None for item in records[0][4:])):
                         raise RuntimeError('purge_native_erasure_record')
                 elif records:
                     raise RuntimeError('purge_native_refusal_erasure_record')
+                if 'followup_purge' in fixture:
+                    original = await rows('SELECT replica_complete,purge_complete FROM cragkit_qdrant.publication_intents WHERE '+where+' AND intent_id=%s',
+                        (*key, fixture['purge']['intent_id']))
+                    if original != [(False, False)]:
+                        raise RuntimeError('purge_native_stale_authority_completed')
                 checks.append(name+'_original_identity_and_managed_body_state')
         return checks
     finally:
@@ -174,7 +183,7 @@ async def check(fixture, runtime, binary, work_dir):
         inputs = purge_input()
         value = dict(binary=str(binary), work_dir=str(work_dir), inputs=inputs,
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'),
-            reader_config=database.config('reader'))
+            reader_config=database.config('reader'), admin_config=database.fixture.config)
         await database.release_admin()
         if runtime == 'python':
             from qdrant_purge_cases import python_purge_cases
@@ -216,7 +225,7 @@ def main(argv=None):
             raise RuntimeError('purge_native_semantic_parity')
         result = dict(ok=True, observations=observations, cleanup_verified=True)
         (args.artifacts_dir/'results.json').write_text(json.dumps(result, indent=2)+'\n')
-        print(json.dumps(dict(ok=True, checks=sum(len(item['result']['checks'])+len(item['storage_checks'])
+        print(json.dumps(dict(ok=True, checks=sum(len(item['result']['checks'])+len(item['result']['fault_checks'])+len(item['storage_checks'])
             for item in observations), cleanup_verified=True)))
         return 0
     except Exception as error:

@@ -303,7 +303,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
             - [x] D5b: Initial security-owner handoff and genuine ordinary current-security completion. [Evidence](../evaluation/reports/V5/V5-04G2b2d5b.md).
             - [x] D5c: Repeated-update recovery anchored to a previous/current security owner and ownerless bootstrap; [evidence](../evaluation/reports/V5/V5-04G2b2d5c.md).
       - [x] G2c: Journaled full-point replica convergence and actual native failure/source acceptance; [evidence](../evaluation/reports/V5/V5-04G2c.md).
-    - [ ] V5-04G3: Tombstone-bound scoped purge, late-write safety, cleanup and native acceptance. IMPLEMENTED_UNVALIDATED at the full gate; [runtime checkpoint](../evaluation/reports/V5/V5-04G3.md) records passing end-to-end scenarios and remaining native faults.
+    - [x] V5-04G3: Tombstone-bound scoped purge, late-write safety, cleanup and native acceptance. COMPLETE for the supported native single-node profile; [evidence](../evaluation/reports/V5/V5-04G3.md) records both runtimes, fault refusals and limits.
   - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
@@ -1873,3 +1873,49 @@ readiness claim. Learning practice pending: explain why physical absence cannot
 settle a write whose still-valid credential can mutate the same point later.
 Root owns prose/link/staged review, focused checkpoint commit/immediate push
 and remote synchronization, then the remaining G3 acceptance cases.
+
+### G3 remaining native faults assignment
+
+Previous goal turn made concrete progress: commit `f8ecbb9` implements managed
+purge and records 28 native checks; full G3 and V5 acceptance remain open.
+Sol `g3_fault_python` owns only ignored `fault-python-proposal.md` in
+`artifacts/V5/V5-04G3` and assembles; Sol `g3_fault_node` owns only ignored
+`fault-node-proposal.md` there. Shared outcome: runnable matching native
+current-key/foreign-target pending refusal and authority/owner change during
+purge guard or finalization. Initial mode read-only analysis plus owned
+proposal; consumer implementation ownership follows root's shared protocol
+freeze. Peers coordinate directly, distinguish actual HTTP from deliberately
+malformed SQL fixture state and escalate protected/outcome decisions to root,
+then Astra if unresolved. No peer execution/services/network/DB/install/Git.
+Root owns all product/shared fixtures/parent/tracker, serial checks and Git.
+
+G3 fault protocol r1 frozen in ignored
+`artifacts/V5/V5-04G3/fault-protocol.md`. Root extended pure fixture/header and
+parent with four exact fault labels, a monotonic authority-change document,
+followup purge and independent terminal/erasure checks. Python now owns only
+`python_purge_cases` consumer body; Node owns its existing native consumer;
+Python assembles. Actual current-key refusal uses the same genuine proof
+following a completed DELETE reply loss. Foreign-intent refusal deliberately
+injects one malformed historical SQL state in the isolated fixture, observes
+the exact refusal branch and restores the full row/trigger before continuing;
+it is not evidence of a new uncertain HTTP effect. Root authorizes only this
+fixed fixture-admin fault, no product privilege or catalog changes. Owner and
+authority replacement use actual writer/security APIs. Root owns shared files,
+all serial execution and final integration; no peer test/process/service runs.
+
+G3 final handoff: Python and Node Sol peers transferred their successor helper,
+manager route and focused tests to root; Python assembled the cross-runtime
+source review. Root integrated five native fault checks, including an actual
+committed successor-handoff reply loss. The final serial PostgreSQL 17/Qdrant
+1.20 parent run passed 40 checks (20 per runtime), equal semantic hashes and
+task-owned cleanup. Focused Python/tool 24, full Python/tool 3,078 (four
+existing warnings), Node full 1,517, strict TypeScript build and Python mypy
+49 files passed. The 16 input seals matched. Changed G3 paths: contract,
+Python/Node writer and publication managers, focused tests, pure/native purge
+checkers and this report/tracker. No schema/grant/lockfile, live provider,
+hosted database or publication change. Disk headroom 30 GiB and system memory
+free 59%; owned processes and listeners closed. Unrelated retrieval/LangChain
+and user audit edits remain outside this G3 scope. Learning practice remains
+unassessed. Next smallest action: freeze and execute V5-04H's exact 43-case
+matrix against the final source, starting with atomic stage and publication
+COMMIT boundaries, then continue V5-05/06 acceptance and C2.

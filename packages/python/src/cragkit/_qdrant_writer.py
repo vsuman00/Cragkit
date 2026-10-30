@@ -2665,6 +2665,92 @@ class PostgresQdrantWriter:
             return MappingProxyType(dict(owner_token=ctx.owner_token,backend_epoch=backend['epoch']))
         return await self._run(ctx,deadline,admit)
 
+    async def admit_purge_successor(self, projection: object, predecessor: object,
+                                    identity: object, *, deadline: float) -> Mapping[str, Any]:
+        original = purge_projection_data(projection,self)
+        ctx = original['context']
+        if self._schema_profile!=5:
+            raise UnsupportedCapability()
+        owner_fields = ('instance_id','intent_id','owner_token','backend_epoch')
+        identity_fields = ('instance_id','storage_identity','supervisor_id','epoch')
+        if (not isinstance(predecessor,Mapping) or set(predecessor)!=set(owner_fields)
+                or not isinstance(identity,Mapping) or set(identity)!=set(identity_fields)):
+            raise InvalidRequest()
+        previous, expected = dict(predecessor),dict(identity)
+        for value in (previous['backend_epoch'],expected['epoch']):
+            if type(value) is not int or not 1<=value<=9007199254740991:
+                raise InvalidRequest()
+        for value in (previous['instance_id'],previous['intent_id'],expected['instance_id'],
+                      expected['storage_identity'],expected['supervisor_id']):
+            _identity(value)
+        old = context(dict(scope=ctx.scope,collection=ctx.collection,document_id=ctx.document_id,
+            intent_id=previous['intent_id'],owner_token=previous['owner_token']))
+        if previous['intent_id']==ctx.intent_id:
+            raise InvalidRequest()
+        async def admit(connection: SessionConnection) -> Mapping[str, Any]:
+            backend = await self._manager_backend(connection,lock=True)
+            owner = await self._manager_owner(connection,ctx,lock=True)
+            document = await self._document(connection,ctx)
+            if (backend['state']!='open' or backend['recovery_id'] is not None
+                    or any(backend[key]!=expected[key] for key in identity_fields)
+                    or expected['instance_id']!=self.instance_id
+                    or owner is None or dict(owner)!=previous
+                    or previous['instance_id']!=self.instance_id
+                    or previous['backend_epoch']!=backend['epoch']):
+                raise ProviderUnavailable()
+            await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(old.intent_id,))
+            try:
+                rows = await self._query(connection,
+                    'SELECT instance_id,action,payload_bytes,payload_sha256,expected_authorization_revision,'
+                    'expected_mutation_epoch,state,authority_committed,replica_complete,purge_complete,'
+                    'manifest_bytes,manifest_sha256,revision_id,generation_id,expected_active_generation_id '
+                    'FROM cragkit_qdrant.publication_intents WHERE '+_INTENT,_key(old))
+            finally:
+                await connection.execute("SELECT set_config('cragkit_qdrant.writer_intent_id',%s,true)",(ctx.intent_id,))
+            if len(rows)!=1 or len(rows[0])!=15:
+                raise IntegrityViolation()
+            row = rows[0]
+            try:
+                raw = row[2]
+                if type(raw) is not bytes or not 1<=len(raw)<=1048576:
+                    raise ValueError()
+                payload = json.loads(raw.decode('utf-8',errors='strict'))
+                if type(payload) is not list or len(payload)!=9 or payload[:2]!=['cragkit.qdrant.intent.v1','purge']:
+                    raise ValueError()
+                retained = dict(intent_id=payload[2],tenant_id=payload[3],collection=payload[4],document_id=payload[5],
+                    tombstone_intent_payload_sha256=payload[6],expected_authorization_revision=payload[7],
+                    expected_mutation_epoch=int(payload[8]))
+                encoded = encode_purge_intent(retained)
+                if (encoded.encoded_bytes!=raw or encoded.sha256!=row[3]
+                        or (retained['tenant_id'],retained['collection'],retained['document_id'],retained['intent_id'])!=(*_doc(ctx),old.intent_id)
+                        or row[:2]!=(self.instance_id,'purge')
+                        or (row[4],row[5])!=(retained['expected_authorization_revision'],retained['expected_mutation_epoch'])
+                        or row[6:10]!=('writing',True,False,False) or any(value is not None for value in row[10:])):
+                    raise ValueError()
+            except (ValueError,TypeError,KeyError,IndexError,UnicodeError,InvalidRequest):
+                raise IntegrityViolation() from None
+            await self._require_settled(connection,ctx)
+            fresh = await self._purge_graph(connection,ctx,original['policy_id'],document=document)
+            if any(fresh[key]!=original[key] for key in original if key!='projection'):
+                raise UnauthorizedScope()
+            left,right = security_projection_data(original['projection'],self),security_projection_data(fresh['projection'],self)
+            if any(left[key]!=right[key] for key in left if key!='points'):
+                raise UnauthorizedScope()
+            current = await self._manager_intent(connection,ctx)
+            if (current is None or current['action']!='purge' or current['state']!='authority_committed'
+                    or current['authority_committed'] is not True or current['replica_complete'] is not False
+                    or current['purge_complete'] is not False):
+                raise IntegrityViolation()
+            await connection.execute('UPDATE cragkit_qdrant.document_owners SET intent_id=%s,owner_token=%s,backend_epoch=%s WHERE '+_DOC,
+                (ctx.intent_id,ctx.owner_token,backend['epoch'],*_doc(ctx)))
+            await connection.execute("UPDATE cragkit_qdrant.publication_intents SET state='writing' WHERE "+_INTENT+
+                " AND state='authority_committed'",_key(ctx))
+            return MappingProxyType(dict(owner_token=ctx.owner_token,backend_epoch=backend['epoch']))
+        try:
+            return await self._run(ctx,deadline,admit,detect_commit_unknown=True)
+        except _CommitUnknown:
+            raise ProviderUnavailable() from None
+
     async def _validate_guarded_purge(self, guard: object, projection: object,
                                       receipt_projection: object, *, deadline: float) -> None:
         from ._qdrant_recovery import security_guard_binding
@@ -2864,7 +2950,7 @@ class PostgresQdrantWriter:
             if backend['state'] != 'open' or any(backend[key] != data['attempt_binding'][key] for key in ('instance_id','storage_identity','supervisor_id','epoch')):
                 raise ProviderUnavailable()
             if owner is None or (owner['instance_id'],owner['intent_id'],owner['owner_token'],owner['backend_epoch']) != (self.instance_id,ctx.intent_id,ctx.owner_token,backend['epoch']):
-                raise UnauthorizedScope()
+                raise ProviderUnavailable()
             fresh = await self._purge_graph(connection,ctx,original['policy_id'])
             if any(original[key] != fresh[key] for key in original if key != 'projection'):
                 raise UnauthorizedScope()

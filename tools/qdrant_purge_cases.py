@@ -16,7 +16,28 @@ CHECKS = (
 )
 
 POLICY = 'erase_managed_source_and_replay_v1'
-COMPLETED = ('base', 'delete_loss', 'handoff', 'commit_loss', 'ownerless')
+COMPLETED = ('base', 'delete_loss', 'handoff', 'commit_loss', 'ownerless', 'authority_change')
+FAULT_CHECKS = (
+    'current_credential_pending_delete_refused',
+    'administrative_foreign_intent_pending_refused_and_restored',
+    'replaced_owner_refused_before_erasure',
+    'changed_authority_refused_before_erasure',
+    'superseded_purge_handoff_commit_loss_resumes_without_mutation',
+)
+
+# This fixed, fixture-only SQL is never accepted by a product API. A temporary
+# fourth client changes one already settled historical row, then restores it.
+FOREIGN_FAULT_SQL = dict(
+    select="SELECT dispatch_id,state,completion_sha256,encode(sha256(convert_to(row_to_json(j)::text,'UTF8')),'hex') "
+        'FROM cragkit_qdrant.dispatch_journal j WHERE (tenant_id,collection,document_id,intent_id)=(?,?,?,?) ORDER BY sequence LIMIT 257',
+    disable='ALTER TABLE cragkit_qdrant.dispatch_journal DISABLE TRIGGER publication_dispatch_guard',
+    enable='ALTER TABLE cragkit_qdrant.dispatch_journal ENABLE TRIGGER publication_dispatch_guard',
+    inject="UPDATE cragkit_qdrant.dispatch_journal SET state='unknown',completion_sha256=NULL "
+        "WHERE (tenant_id,collection,document_id,intent_id,dispatch_id)=(?,?,?,?,?) AND state='settled' AND completion_sha256=? RETURNING dispatch_id",
+    restore="UPDATE cragkit_qdrant.dispatch_journal SET state='settled',completion_sha256=? "
+        "WHERE (tenant_id,collection,document_id,intent_id,dispatch_id)=(?,?,?,?,?) AND state='unknown' AND completion_sha256 IS NULL RETURNING dispatch_id",
+    trigger="SELECT tgenabled FROM pg_catalog.pg_trigger WHERE tgrelid='cragkit_qdrant.dispatch_journal'::regclass AND tgname='publication_dispatch_guard'",
+)
 
 
 def loads_managed_bodies(sql):
@@ -59,8 +80,19 @@ def purge_input():
         documents[name] = dict(stage=stage,
             second_stage=successor_stage(seed, 'purge-' + name + '-retained', stage['manifest']['generation_id']),
             expected_points=seed['expected_points'], tombstone=tombstone, purge=purge)
+        if name == 'delete_loss':
+            documents[name]['published_second'] = True
+        if name == 'authority_change':
+            changed = deepcopy(tombstone)
+            changed.update(intent_id=tombstone['intent_id']+'-auth3',
+                expected_authorization_revision='auth-2', expected_mutation_epoch=2)
+            changed['authorization']['authorization_revision'] = 'auth-3'
+            documents[name].update(followup_tombstone=changed, followup_purge=dict(purge,
+                intent_id=purge['intent_id']+'-auth3', expected_authorization_revision='auth-3',
+                expected_mutation_epoch=3, tombstone_intent_payload_sha256=encode_security_intent(changed).sha256))
     return dict(config=seed['config'], instance_id=seed['instance_id'], scope=seed['scope'],
-        collection_config=supervisor_input()['collection_config'], documents=documents)
+        collection_config=supervisor_input()['collection_config'], documents=documents,
+        foreign_fault_sql=deepcopy(FOREIGN_FAULT_SQL))
 
 
 async def python_purge_cases(value):
@@ -76,7 +108,9 @@ async def python_purge_cases(value):
     from cragkit.qdrant import QdrantNomination
     from cragkit.qdrant_source import PostgresQdrantSourceStore
     from cragkit._qdrant_writer import purge_projection_data, security_projection_data
-    from cragkit._qdrant_security_verification import PurgeAbsenceReceipt, purge_absence_receipt_data
+    from cragkit._qdrant_security_verification import (PurgeAbsenceReceipt, purge_absence_receipt_data,
+        QdrantSecurityVerifier)
+    from cragkit._qdrant_recovery import settle_purge_guarded, _SECURITY_JOURNAL_COLUMNS
     from cragkit.qdrant_publication import (QdrantPublicationManager, QdrantSecurityManager,
         PostgresQdrantPublicationAuthority, ManagedQdrantPublicationTransport,
         PostgresQdrantWriter, PostgresQdrantRecovery, ManagedQdrantSupervisor,
@@ -87,10 +121,12 @@ async def python_purge_cases(value):
     inputs = value['inputs']
     deadline = asyncio.get_running_loop().time() + 180
     checks, observations, requests, stores = [], [], [], []
+    fault_checks, extra_verifiers = [], []
+    settlement_probe = dict(active=False, foreign=[], owned=[], updates=0)
     network = dict(count=0, mode=None, put_drops=0, delete_drops=0, deletes=[])
     database = dict(writes=0, bodies=0, mode=None, rollbacks=0, lost=0,
         confirming=False, confirmations=0, confirm_queries=0, confirm_http=0,
-        confirm_bodies=0, confirm_writes=0, functions=0, guard_active=False)
+        confirm_bodies=0, confirm_writes=0, functions=0, guard_active=False, handoff_lost=0)
     def configuration(raw):
         raw = dict(raw)
         for key in ('sslrootcert', 'passfile'):
@@ -101,7 +137,7 @@ async def python_purge_cases(value):
         return config
     class SettlementConnection:
         def __init__(self, actual):
-            self.actual, self.erased, self.readonly = actual, False, False
+            self.actual, self.erased, self.readonly, self.handoff = actual, False, False, False
         def __getattr__(self, name):
             return getattr(self.actual, name)
         def transaction(self, *args, **kwargs):
@@ -109,10 +145,15 @@ async def python_purge_cases(value):
             connection = self
             class Transaction:
                 async def __aenter__(self):
-                    connection.erased = connection.readonly = False
+                    connection.erased = connection.readonly = connection.handoff = False
                     return await transaction.__aenter__()
                 async def __aexit__(self, kind, error, traceback):
                     result = await transaction.__aexit__(kind, error, traceback)
+                    if connection.handoff and kind is None and database['mode'] == 'handoff_commit':
+                        database.update(mode=None, handoff_lost=database['handoff_lost']+1)
+                        lost = ConnectionError('native_purge_handoff_commit_reply_withheld')
+                        lost.sqlstate = '08006'
+                        raise lost
                     if connection.erased and kind is None and database['mode'] == 'commit':
                         database.update(mode=None, lost=database['lost'] + 1, confirming=True)
                         lost = ConnectionError('native_purge_commit_reply_withheld')
@@ -141,6 +182,9 @@ async def python_purge_cases(value):
                 if database['confirming']:
                     database['confirmations'] += 1
             cursor = await self.actual.execute(statement, params, **options)
+            if database['mode']=='handoff_commit' and sql.startswith(('UPDATE cragkit_qdrant.document_owners ',
+                    'INSERT INTO cragkit_qdrant.document_owners ')):
+                self.handoff = True
             if erase:
                 database['functions'] += 1
                 self.erased = True
@@ -167,9 +211,22 @@ async def python_purge_cases(value):
                     finally: database['guard_active'] = False
             return Transaction()
         async def execute(self, statement, params=None, **options):
+            if type(statement) is str and statement.startswith('UPDATE cragkit_qdrant.dispatch_journal'):
+                settlement_probe['updates'] += 1
             cursor = await self.actual.execute(statement, params, **options)
             if type(statement) is str and statement.startswith('SELECT true FROM cragkit_qdrant.lock_current_security('):
                 database['guard_active'] = True
+            if settlement_probe['active'] and type(statement) is str:
+                kind = ('foreign' if statement.startswith('SELECT 1 FROM cragkit_qdrant.dispatch_journal')
+                    and 'intent_id<>' in statement else 'owned' if statement.startswith('SELECT '+_SECURITY_JOURNAL_COLUMNS) else None)
+                if kind is not None:
+                    actual = cursor
+                    class ObservedCursor:
+                        async def fetchall(self):
+                            rows = await actual.fetchall()
+                            settlement_probe[kind].append(rows)
+                            return rows
+                    return ObservedCursor()
             return cursor
 
     class GuardPool(SettlementPool):
@@ -195,6 +252,13 @@ async def python_purge_cases(value):
     manager = security_manager = endpoint = primary = None
     original_http = supervisor._http
     original_complete = writer.complete_purge
+    original_recover = recovery.recover
+    recovered = {}
+    async def captured_recover(*args, **options):
+        proof = await original_recover(*args, **options)
+        recovered['proof'] = proof
+        return proof
+    recovery.recover = captured_recover
     token = '00000000-0000-4000-8000-000000000099'
     def reference(item):
         if 'manifest' in item:
@@ -239,6 +303,9 @@ async def python_purge_cases(value):
             published = plain(await call(manager.publish, reference(item['stage'])))
             if not published['published']: raise RuntimeError('purge_setup_publish')
             await call(manager.stage, item['second_stage'])
+            if item.get('published_second'):
+                result = plain(await call(manager.publish, reference(item['second_stage'])))
+                if not result['published']: raise RuntimeError('purge_setup_second_publish')
         return item
     async def observed_http(*args, **kwargs):
         network['count'] += 1
@@ -313,6 +380,41 @@ async def python_purge_cases(value):
             if rows not in ([(True,)], [(False,)]): raise RuntimeError('purge_marker_shape')
             return rows[0][0]
         return await writer._run(ctx, deadline, read, read_only=True)
+    async def foreign_fault(key, saved=None):
+        pool = _owned_pool(configuration(value['admin_config']))
+        connection = None
+        sql = inputs['foreign_fault_sql']
+        def statement(name): return sql[name].replace('?', '%s')
+        async def rows(name, params=()):
+            return await (await connection.execute(statement(name), params)).fetchall()
+        try:
+            operation_deadline = asyncio.get_running_loop().time()+8 if saved is not None else deadline
+            await pool.open(wait=True, timeout=max(.001, operation_deadline-asyncio.get_running_loop().time()))
+            connection = await pool.getconn(timeout=max(.001, operation_deadline-asyncio.get_running_loop().time()))
+            async with connection.transaction():
+                await connection.execute('SET LOCAL statement_timeout=8000')
+                current = await rows('select', key)
+                if saved is None:
+                    if not 1 <= len(current) <= 256 or any(row[1]!='settled' or not row[2] for row in current):
+                        raise RuntimeError('purge_foreign_fixture_shape')
+                    saved = current
+                    params = (*key,saved[0][0],saved[0][2])
+                    operation = 'inject'
+                else:
+                    params = (saved[0][2],*key,saved[0][0])
+                    operation = 'restore'
+                await connection.execute(statement('disable'))
+                if await rows(operation,params) != [(saved[0][0],)]:
+                    raise RuntimeError('purge_foreign_fixture_update')
+                await connection.execute(statement('enable'))
+                if await rows('trigger') != [('O',)]:
+                    raise RuntimeError('purge_foreign_trigger_not_restored')
+                if operation=='restore' and await rows('select',key) != saved:
+                    raise RuntimeError('purge_foreign_history_not_restored')
+            return saved
+        finally:
+            if connection is not None: await pool.putconn(connection)
+            await pool.close(timeout=3)
     try:
         supervisor._http = observed_http
         await supervisor.initialize(deadline=deadline, provision=provision)
@@ -361,6 +463,49 @@ async def python_purge_cases(value):
         credential = supervisor.control_binding()['credential_generation']
         if not pending['pending'] or pending['backend']['state'] != 'recovery_blocked' or pending['intent']['purge_complete']:
             raise RuntimeError('purge_delete_unknown_not_preserved')
+        old_owner = dict(context(item['purge']), intent_id=pending['owner']['intent_id'],
+            owner_token=pending['owner']['owner_token'])
+        projection = await writer.project_purge(context(item['purge']), POLICY, deadline=deadline)
+        fault_verifier = QdrantSecurityVerifier(writer,supervisor)
+        extra_verifiers.append(fault_verifier)
+        async def refused_settlement():
+            return await settle_purge_guarded(recovery,fault_verifier,recovered['proof'],old_owner,
+                projection,deadline=deadline)
+        functions = database['functions']
+        before_graph, updates = graph(projection), settlement_probe['updates']
+        settlement_probe.update(active=True,foreign=[],owned=[])
+        await expect(ProviderUnavailable,refused_settlement)
+        settlement_probe['active'] = False
+        if (not settlement_probe['owned'] or not any(row[5]==credential and row[10]!='settled'
+                for group in settlement_probe['owned'] for row in group)
+                or await snapshot(item['purge']) != pending or database['functions']!=functions
+                or await content_unavailable(item['purge'])
+                or supervisor.control_binding()['credential_generation']!=credential
+                or settlement_probe['updates']!=updates
+                or graph(await writer.project_purge(context(item['purge']),POLICY,deadline=deadline))!=before_graph):
+            raise RuntimeError('purge_current_credential_refusal_missing')
+        fault_checks.append(FAULT_CHECKS[0])
+        manifest = item['stage']['manifest']
+        key = tuple(manifest[field] for field in ('tenant_id','collection','document_id'))+(item['stage']['intent']['intent_id'],)
+        saved = await foreign_fault(key)
+        try:
+            corrupted = await snapshot(item['purge'])
+            settlement_probe.update(active=True,foreign=[],owned=[])
+            await expect(ProviderUnavailable,refused_settlement)
+            settlement_probe['active'] = False
+            if (not any(settlement_probe['foreign']) or settlement_probe['owned']
+                    or await snapshot(item['purge'])!=corrupted or database['functions']!=functions
+                    or await content_unavailable(item['purge'])
+                    or supervisor.control_binding()['credential_generation']!=credential
+                    or settlement_probe['updates']!=updates
+                    or graph(await writer.project_purge(context(item['purge']),POLICY,deadline=deadline))!=before_graph):
+                raise RuntimeError('purge_foreign_pending_refusal_missing')
+        finally:
+            settlement_probe['active'] = False
+            await foreign_fault(key,saved)
+        if await snapshot(item['purge'])!=pending:
+            raise RuntimeError('purge_foreign_pending_not_restored')
+        fault_checks.append(FAULT_CHECKS[1])
         result = await purge(item['purge'])
         if supervisor.control_binding()['credential_generation'] == credential or network['delete_drops'] != 1:
             raise RuntimeError('purge_delete_retry_not_refenced')
@@ -431,6 +576,35 @@ async def python_purge_cases(value):
             release.set()
             await asyncio.gather(cancelled, *(() if inner is None else (inner,)), return_exceptions=True)
             writer.complete_purge = original_complete
+        owner_changed = False
+        async def changed_owner(verifier, receipt, **options):
+            nonlocal owner_changed
+            data = purge_absence_receipt_data(receipt,verifier,deadline=deadline)
+            original_context = dict(context(item['purge']),owner_token=data['context'].owner_token)
+            replacement = dict(original_context,owner_token='00000000-0000-4000-8000-000000000077')
+            functions = database['functions']
+            before_graph = graph(data['projection'])
+            await writer.acquire_owner(replacement,deadline=deadline)
+            owner_changed = True
+            try:
+                changed = await snapshot(item['purge'])
+                if changed['owner']['owner_token']!=replacement['owner_token']:
+                    raise RuntimeError('purge_owner_not_replaced')
+                await expect(ProviderUnavailable,lambda: original_complete(verifier,receipt,**options))
+                if (database['functions']!=functions or await content_unavailable(item['purge'])
+                        or graph(await writer.project_purge(original_context,POLICY,deadline=deadline))!=before_graph):
+                    raise RuntimeError('purge_changed_owner_erased')
+            finally:
+                await writer.acquire_owner(original_context,deadline=deadline)
+            raise ProviderUnavailable()
+        writer.complete_purge = changed_owner
+        try:
+            await expect(ProviderUnavailable,lambda: purge(item['purge']))
+        finally:
+            writer.complete_purge = original_complete
+        if not owner_changed or (await snapshot(item['purge']))['owner']['owner_token']!=current['owner_token']:
+            raise RuntimeError('purge_changed_owner_not_restored')
+        fault_checks.append(FAULT_CHECKS[2])
         result = await purge(item['purge'])
         if counts != (supervisor.control_binding()['credential_generation'], len(network['deletes'])):
             raise RuntimeError('purge_handoff_repeated_delete')
@@ -463,6 +637,40 @@ async def python_purge_cases(value):
             raise RuntimeError('purge_ownerless_prerequisite')
         result = await purge(item['purge'])
         checks.append(CHECKS[6]); observations.append(row(result))
+        item = await setup('authority_change'); await commit(item['tombstone'])
+        functions = database['functions']
+        async def changed_authority(verifier,receipt,**options):
+            await commit(item['followup_tombstone'],auth2)
+            return await original_complete(verifier,receipt,**options)
+        writer.complete_purge = changed_authority
+        try:
+            await expect(UnauthorizedScope,lambda: purge(item['purge']))
+        finally:
+            writer.complete_purge = original_complete
+        stale = await snapshot(item['purge'],auth3)
+        if (stale['document']['authorization_revision']!='auth-3'
+                or stale['intent']['replica_complete'] or stale['intent']['purge_complete']
+                or database['functions']!=functions or await content_unavailable(item['purge'])):
+            raise RuntimeError('purge_changed_authority_erased')
+        before_handoff = (database['functions'],len(network['deletes']))
+        database['mode'] = 'handoff_commit'
+        await expect(ProviderUnavailable,lambda: purge(item['followup_purge'],auth3))
+        after_handoff = await snapshot(item['followup_purge'],auth3)
+        if (database['handoff_lost']!=1 or database['mode'] is not None
+                or after_handoff['owner']['intent_id']!=item['followup_purge']['intent_id']
+                or after_handoff['intent']['state']!='writing'
+                or after_handoff['intent']['purge_complete']
+                or before_handoff!=(database['functions'],len(network['deletes']))
+                or await content_unavailable(item['purge'])):
+            raise RuntimeError('purge_handoff_lost_reply_mutated')
+        await purge(item['followup_purge'],auth3)
+        if len(network['deletes'])!=before_handoff[1] or database['functions']!=before_handoff[0]+1:
+            raise RuntimeError('purge_handoff_retry_repeated_delete')
+        stale = await snapshot(item['purge'],auth3)
+        if stale['intent']['replica_complete'] or stale['intent']['purge_complete']:
+            raise RuntimeError('purge_stale_authority_completed')
+        fault_checks.append(FAULT_CHECKS[3])
+        fault_checks.append(FAULT_CHECKS[4])
         item = await setup('extra')
         extra = deepcopy(item['expected_points'][0]); extra['id'] = '00000000-0000-4000-8000-000000000088'
         capability = supervisor.issue_attempt(dict(intent_id='native-extra-point', owner_token=token,
@@ -483,14 +691,18 @@ async def python_purge_cases(value):
             ExecutionLedger(Limits(max_provider_calls=0), deadline=deadline), retention_policy='unsupported', deadline=deadline))
         if counts != (network['count'], database['writes']): raise RuntimeError('purge_refusal_mutated')
         checks.append(CHECKS[7]); observations.append(['refusals', 'integrity_violation', 'unauthorized_scope', 'unsupported_capability'])
-        witness = json.dumps(['cragkit.qdrant.managed-purge.v1', observations], ensure_ascii=False, separators=(',', ':')).encode('utf-8')
-        return dict(runtime='python', checks=checks, proof_scope='native_managed_purge_only', semantic_witness_sha256=hashlib.sha256(witness).hexdigest())
+        if tuple(fault_checks)!=FAULT_CHECKS:
+            raise RuntimeError('purge_fault_checks_missing')
+        witness = json.dumps(['cragkit.qdrant.managed-purge.v2', observations, fault_checks], ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        return dict(runtime='python', checks=checks, fault_checks=fault_checks,
+            proof_scope='native_managed_purge_only', semantic_witness_sha256=hashlib.sha256(witness).hexdigest())
     except BaseException as error:
         primary = error
         name = type(error).__name__
         raise NativePurgeFailure(dict(ok=False, step=len(checks), error=name if name in ERRORS else 'internal'), primary=error) from None
     finally:
         writer.complete_purge = original_complete
+        recovery.recover = original_recover
         supervisor._http = original_http
         failures = []
         cleanup_deadline = asyncio.get_running_loop().time() + 12
@@ -499,6 +711,7 @@ async def python_purge_cases(value):
             except BaseException: failures.append(operation)
         owned = [('source_request', item) for item in requests] + [('source_store', item) for item in stores]
         owned += [('manager', item) for item in (manager, security_manager) if item is not None]
+        owned += [('fault_verifier',item) for item in extra_verifiers]
         owned += [('transport', transport), ('authority', authority), ('recovery', recovery), ('verifier', verifier),
             ('writer', writer), ('reader_pool', reader), ('writer_pool', resource), ('supervisor_pool', supervisor_resource), ('supervisor', supervisor)]
         for operation, item in owned:

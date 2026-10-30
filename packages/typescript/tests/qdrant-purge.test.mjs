@@ -56,6 +56,9 @@ test('serialized, copied and proxy purge capabilities cannot authorize work',asy
   try{
     for(const forged of [{},Object.freeze({}),JSON.parse(JSON.stringify({context})),new Proxy({},{})]){
       assert.throws(()=>purge_projection_data(forged,f.writer),InvalidRequest);
+      await assert.rejects(f.writer.admit_purge_successor(forged,
+        {instance_id:'instance-fixture',intent_id:'purge-previous',owner_token:context.owner_token,backend_epoch:1},
+        {instance_id:'instance-fixture',storage_identity:'storage-fixture',supervisor_id:'supervisor-fixture',epoch:1},options()),InvalidRequest);
       assert.throws(()=>purge_dispatch_authorization(forged,f.writer,options()),InvalidRequest);
       assert.throws(()=>purge_dispatch_plan_data(forged,{},f.writer,options()),InvalidRequest);
       assert.throws(()=>purge_absence_receipt_data(forged,f.verifier,options()),InvalidRequest);
