@@ -65,7 +65,7 @@ async function input() {
   }
   const value = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(chunks)));
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', 'supervisor_config', 'work_dir', 'writer_config'])
+    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(value.scenario === 'wrong_dense' ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
     || typeof value.binary !== 'string' || typeof value.work_dir !== 'string' || !value.inputs?.stages) throw new Error('input_shape');
   return value;
 }
@@ -113,6 +113,7 @@ async function cases(value) {
   const stageFault = {kind: null, target: null, fired: 0, destroyed: 0, inserts: 0, dml: 0};
   const publicationFault = {armed:false,track:false,fired:0,destroyed:0,casWrites:0,dml:0};
   const http = {requests: 0, puts: 0, drop: false, dropped: 0};
+  const wrongDense = {armed: false, fired: 0, observed: null};
   let address, primary, manager, callbackMode = null, supervisorLeases = 0;
   const target = '/collections/' + inputs.config.physical_collection;
   const context = (stage, scope = inputs.scope) => ({scope, collection: stage.manifest.collection,
@@ -276,6 +277,24 @@ async function cases(value) {
           const upsert = method === 'PUT' && path === target + '/points?wait=true&ordering=strong';
           if (upsert) http.puts++;
           const response = await actual.request(method, path, requestOptions);
+          if (upsert && wrongDense.armed) {
+            const body = JSON.parse(Buffer.from(requestOptions.body).toString('utf8'));
+            const ids = inputs.stages.wrong_dense.manifest.members.map(member => member.point_id).sort();
+            if (isDeepStrictEqual(body.points?.map(point => point.id).sort(), ids)) {
+              completed(response);
+              wrongDense.armed = false; wrongDense.fired++;
+              const basis = body.points.filter(point => point.vector?.dense?.[0] === 1
+                && point.vector.dense.slice(1).every(value => value === 0));
+              if (basis.length !== 1) throw new Error('wrong_dense_basis_input');
+              const point = structuredClone(basis[0]);
+              const dense = point.vector?.dense;
+              if (!Array.isArray(dense) || dense.length < 2 || dense[0] !== 1
+                || dense.slice(1).some(value => value !== 0)) throw new Error('wrong_dense_basis_input');
+              point.vector.dense = dense.map((_, index) => index === 1 ? 1 : 0);
+              completed(await actual.request('PUT', path, {...requestOptions, body: bytes({points: [point]})}));
+              wrongDense.observed = {point, ids};
+            }
+          }
           if (upsert && http.drop) {
             completed(response); http.drop = false; http.dropped++;
             throw new ProviderUnavailable();
@@ -290,6 +309,58 @@ async function cases(value) {
     const identity = supervisor.identity();
     if (!isDeepStrictEqual(await backend(), [[inputs.instance_id, inputs.config.backend_namespace,
       identity.storage_identity, identity.supervisor_id, '1', 'open', null]])) throw new Error('public_manager_registration');
+    if (value.scenario === 'wrong_dense') {
+      const staged = save(await stageCall(inputs.stage));
+      const published = save(await publishCall(inputs.stage));
+      if (staged.state !== 'staged' || !published.published || !published.replica_complete
+        || http.puts !== 1) throw new Error('wrong_dense_base_publication');
+      const successor = inputs.stages.wrong_dense;
+      const successorStaged = save(await stageCall(successor));
+      if (successor.manifest.members.length !== 2 || successorStaged.state !== 'staged'
+        || successorStaged.published || successorStaged.replica_complete) throw new Error('wrong_dense_successor_stage');
+      const before = await observeStage(successor);
+      const baseBefore = await observeStage(inputs.stage);
+      wrongDense.armed = true;
+      await expected(IntegrityViolation, () => publishCall(successor));
+      const after = await observeStage(successor);
+      const baseAfter = await observeStage(inputs.stage);
+      const stored = wrongDense.observed;
+      if (wrongDense.armed || wrongDense.fired !== 1 || !stored || http.puts !== 2) throw new Error('wrong_dense_fault_not_exact');
+      const current = await writer.manager_snapshot(context(successor), options);
+      const probeAttempt = supervisor.issue_attempt({intent_id: successor.intent.intent_id,
+        owner_token: current.owner.owner_token, epoch: current.backend.epoch,
+        dispatch_id: 'manager-wrong-dense-readback'}, options);
+      const probe = supervisor.transport_for(probeAttempt);
+      let physical;
+      try {
+        physical = JSON.parse(Buffer.from(await probe.request('POST', target + '/points',
+          {...options, body: bytes({ids: stored.ids, with_payload: true, with_vector: true})})).toString('utf8'));
+      } finally { await probe.close(); }
+      const corrupted = physical.result?.find(point => point.id === stored.point.id);
+      if (physical.status !== 'ok' || !isDeepStrictEqual(physical.result?.map(point => point.id).sort(), stored.ids)
+        || !isDeepStrictEqual(corrupted?.vector, stored.point.vector)
+        || !isDeepStrictEqual(corrupted?.payload, stored.point.payload)) throw new Error('wrong_dense_physical_fault_missing');
+      for (const key of ['document_revisions', 'generations', 'members', 'point_claims', 'vector_replays']) {
+        if (!isDeepStrictEqual(before[key], after[key]) || !isDeepStrictEqual(baseBefore[key], baseAfter[key])) throw new Error('wrong_dense_immutable_graph_changed');
+      }
+      const dispatches = (await journal()).filter(row => row[0] === successor.intent.intent_id);
+      if (!isDeepStrictEqual(after.pointer, [[inputs.stage.manifest.generation_id]])
+        || !isDeepStrictEqual(baseBefore.publication_intents, baseAfter.publication_intents)
+        || !isDeepStrictEqual(baseBefore.pointer, baseAfter.pointer)
+        || after.generations.length !== 1 || after.generations[0][0].published !== false
+        || after.generations[0][0].ever_published !== false || after.publication_intents.length !== 1
+        || after.publication_intents[0][0].state !== 'writing'
+        || after.publication_intents[0][0].authority_committed !== false
+        || after.publication_intents[0][0].replica_complete !== false
+        || current.pending !== false || current.intent?.state !== 'writing'
+        || current.intent?.authority_committed !== false || current.intent?.replica_complete !== false
+        || dispatches.length !== 1 || dispatches[0][2] !== 'settled' || !/^[0-9a-f]{64}$/.test(dispatches[0][3])
+        || await writer.publication_preparation(context(successor), options) !== null
+        || snapshots.length !== 3) throw new Error('wrong_dense_publication_fence_changed');
+      await active(inputs.stage.manifest.generation_id);
+      checks.push('wrong_dense_vector_public_publish_rejected'); step = checks.length;
+      return {runtime: 'typescript', checks, proof_scope: 'public_corruption_only', public_snapshots_sha256: hash(bytes(snapshots))};
+    }
     checks.push(CHECKS[0]); step = checks.length;
 
     const baseBook = ledger(); const baseStaged = save(await stageCall(inputs.stage, inputs.scope, manager, baseBook)); accounting(baseBook, true);

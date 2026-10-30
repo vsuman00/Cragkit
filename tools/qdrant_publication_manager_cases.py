@@ -49,6 +49,7 @@ def publication_manager_input():
     stages['loser'] = successor_stage(inputs, 'manager-loser', base)
     stages['winner'] = successor_stage(inputs, 'manager-winner', base)
     stages['denied_input'] = successor_stage(inputs, 'manager-denied-input', base)
+    stages['wrong_dense'] = successor_stage(inputs, 'manager-wrong-dense', base)
     previous = stages['winner']['manifest']['generation_id']
     for key, suffix in (('prepared', 'manager-prepared'), ('commit', 'manager-commit'),
             ('session', 'manager-final-session'), ('revoked', 'manager-revoked')):
@@ -173,6 +174,9 @@ async def python_publication_manager_cases(value):
     from runtime_diagnostics import CleanupFailure
 
     inputs = value['inputs']
+    scenario = value.get('scenario', 'default')
+    if scenario not in ('default', 'wrong_dense'):
+        raise RuntimeError('manager_fixture_scenario')
     def pool_config(raw):
         raw = dict(raw)
         for key in ('sslrootcert', 'passfile'):
@@ -201,6 +205,7 @@ async def python_publication_manager_cases(value):
     managers, handles, checks, snapshots = [], [], [], []
     mode = dict(action=None, intent_id=None, fired=False)
     network = dict(mutations=0, requests=0, drop=False, completed_drop=False)
+    dense_fault = dict(armed=False, fired=0, point=None)
     endpoint = primary = manager = None
     supervisor_leases = 0
     original_supervisor_lease = supervisor_resource.lease
@@ -257,6 +262,26 @@ async def python_publication_manager_cases(value):
             if mutation:
                 network['mutations'] += 1
             raw = await self.handle.request(method, path, **options)
+            if (mutation and dense_fault['armed']
+                    and path == target + '/points?wait=true&ordering=strong'):
+                body = json.loads(bytes(options['body']))
+                members = inputs['stages']['wrong_dense']['manifest']['members']
+                if (sorted(point['id'] for point in body.get('points', []))
+                        == sorted(member['point_id'] for member in members)):
+                    completed(raw)
+                    matching = [point for point in body['points']
+                        if point['vector']['dense'] == [1.0] + [0.0] * (len(point['vector']['dense']) - 1)]
+                    if len(matching) != 1:
+                        raise RuntimeError('manager_wrong_dense_fixture_basis')
+                    point = deepcopy(matching[0])
+                    dense = point['vector']['dense']
+                    if len(dense) < 2 or dense != [1.0] + [0.0] * (len(dense) - 1):
+                        raise RuntimeError('manager_wrong_dense_fixture_basis')
+                    point['vector']['dense'] = [0.0, 1.0] + [0.0] * (len(dense) - 2)
+                    dense_fault['armed'] = False
+                    completed(await self.handle.request('PUT', path,
+                        body=request_bytes({'points': [point]}), deadline=deadline))
+                    dense_fault.update(fired=dense_fault['fired'] + 1, point=point)
             if mutation and network['drop']:
                 completed(raw)
                 network.update(drop=False, completed_drop=True)
@@ -354,6 +379,17 @@ async def python_publication_manager_cases(value):
                 cursor = await connection.execute('SELECT active_generation_id FROM cragkit_qdrant.documents '
                     'WHERE tenant_id=%s AND collection=%s AND document_id=%s', prefix)
                 graph['pointer'] = await cursor.fetchall()
+                if scenario == 'wrong_dense':
+                    cursor = await connection.execute('SELECT to_jsonb(t)::text FROM '
+                        'cragkit_qdrant.preparations t WHERE tenant_id=%s AND collection=%s '
+                        'AND document_id=%s AND intent_id=%s ORDER BY to_jsonb(t)::text',
+                        (*prefix, stage['intent']['intent_id']))
+                    graph['preparations'] = await cursor.fetchall()
+                    cursor = await connection.execute('SELECT state,completion_sha256 FROM '
+                        'cragkit_qdrant.dispatch_journal WHERE tenant_id=%s AND collection=%s '
+                        'AND document_id=%s AND intent_id=%s ORDER BY sequence',
+                        (*prefix, stage['intent']['intent_id']))
+                    graph['dispatches'] = await cursor.fetchall()
                 return graph
         finally:
             await asyncio.wait_for(connection.close(), 3)
@@ -389,6 +425,65 @@ async def python_publication_manager_cases(value):
         await resource.open()
         await supervisor_resource.open()
         manager = await new_manager()
+        if scenario == 'wrong_dense':
+            base, successor = inputs['stage'], inputs['stages']['wrong_dense']
+            save(await stage_call(manager, base))
+            published = save(await publish_call(manager, base))
+            if published['state'] != 'published' or not published['published']:
+                raise RuntimeError('manager_wrong_dense_base_unpublished')
+            staged = save(await stage_call(manager, successor))
+            before = await stage_graph(successor)
+            base_graph = await stage_graph(base)
+            if (len(successor['manifest']['members']) != 2 or staged['state'] != 'staged'
+                    or staged['published'] or staged['replica_complete'] or before['preparations']):
+                raise RuntimeError('manager_wrong_dense_stage_flags')
+            writes = network['mutations']
+            dense_fault['armed'] = True
+            await expect(IntegrityViolation, lambda: publish_call(manager, successor))
+            after = await stage_graph(successor)
+            state = await current(successor)
+            intent = state['intent']
+            generation = [json.loads(row[0]) for row in after['generations']]
+            immutable = ('document_revisions', 'generations', 'members', 'point_claims', 'vector_replays')
+            base_after = await stage_graph(base)
+            if (dense_fault['fired'] != 1 or dense_fault['armed'] or network['mutations'] != writes + 1
+                    or any(before[table] != after[table] for table in immutable)
+                    or any(base_after[table] != base_graph[table]
+                        for table in (*immutable, 'publication_intents', 'pointer', 'preparations'))
+                    or before['pointer'] != [(base['manifest']['generation_id'],)]
+                    or after['pointer'] != before['pointer'] or after['preparations']
+                    or len(generation) != 1 or generation[0]['published'] is not False
+                    or generation[0]['ever_published'] is not False
+                    or intent['state'] != 'writing' or intent['replica_complete'] is not False
+                    or intent['authority_committed'] is not False or state['pending']
+                    or len(after['dispatches']) != 1 or after['dispatches'][0][0] != 'settled'
+                    or not isinstance(after['dispatches'][0][1], str)
+                    or len(after['dispatches'][0][1]) != 64
+                    or any(char not in '0123456789abcdef' for char in after['dispatches'][0][1])
+                    or set(await journal_states()) != {'settled'}):
+                raise RuntimeError('manager_wrong_dense_publication_boundary')
+            point = dense_fault['point']
+            ids = sorted(member['point_id'] for member in successor['manifest']['members'])
+            probe_attempt = supervisor.issue_attempt(dict(intent_id=successor['intent']['intent_id'],
+                owner_token=state['owner']['owner_token'], epoch=state['backend']['epoch'],
+                dispatch_id='manager-wrong-dense-readback'), deadline=deadline)
+            probe = supervisor.transport_for(probe_attempt)
+            try:
+                physical = json.loads(bytes(await probe.request('POST', target + '/points',
+                    body=request_bytes(dict(ids=ids, with_payload=True, with_vector=True)),
+                    deadline=deadline)))
+            finally:
+                await probe.close()
+            rows = physical.get('result', [])
+            corrupted = next((row for row in rows if row.get('id') == point['id']), {})
+            if (physical.get('status') != 'ok' or sorted(row['id'] for row in rows) != ids
+                    or any(corrupted.get(key) != point[key] for key in ('id', 'vector', 'payload'))):
+                raise RuntimeError('manager_wrong_dense_physical_observation')
+            if len(snapshots) != 3:
+                raise RuntimeError('manager_wrong_dense_snapshot_inventory')
+            return dict(runtime='python', checks=['wrong_dense_vector_public_publish_rejected'],
+                proof_scope='public_corruption_only',
+                public_snapshots_sha256=sha256(request_bytes(snapshots)).hexdigest())
         checks.append(CHECKS[0])
         base = inputs['stage']
         stages = inputs['stages']

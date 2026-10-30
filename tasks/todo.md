@@ -2379,3 +2379,51 @@ remain outside scope. Learning practice unassessed. Nineteen exact H IDs
 have accepted native evidence; H and V5 remain open. Next: inspect H-S14
 read-only public corruption design, then implement one isolated public
 manager refusal fault before widening to the remaining related IDs.
+
+H-S14 design handoff: Sol `h_public_fault_design` wrote only ignored
+`artifacts/V5/V5-04H/public-corruption-design.md` after read-only source
+inspection. It found that public publish rewrites an unprepared stage before
+verification, so pre-seeded F1 corruption would be overwritten. A real
+post-forward completed PUT / pre-ACK fixture mutation is required. The
+existing default manager suite has fixed pointer/journal/snapshot history;
+use an exclusive fresh native mode. `wrong_dense_vector` is the smallest
+first case; other rows, equal-count sentinel and missing-sparse full-body
+repair remain open. No native acceptance follows from the design.
+
+H-S15 assignment (V5-04H matrix ID `wrong_dense_vector`): shared outcome
+is actual public manager refusal on one same-dimension wrong dense vector,
+with previous pointer and unpublished target flags preserved. Contract
+`public-wrong-dense-r1` is frozen in ignored
+`artifacts/V5/V5-04H/public-wrong-dense-protocol.md`. Sol
+`h_dense_python` owns only `tools/qdrant_publication_manager_cases.py` and
+assembles; Sol `h_dense_node` owns only
+`tools/check_typescript_qdrant_publication_manager.mjs`. Both implement
+the exclusive mode, exact physical post-forward fault, genuine public
+refusal and matching three-snapshot hash. Root owns parent CLI/protocol
+tests, reports/tracker, serial native and default regression, Git and final
+integration. Product/schema/migration/lock/seal/shared fixture/other
+consumer/user edits protected. Peers run no tests/processes/services/
+network/DB/Git; root uses one local test process and two synthetic points
+per runtime, no provider/hosted/model action. Directly resolve assertion
+parity; escalate outcome/protected/ownership changes to root and unresolved
+material issue to Astra. State: assigned; H and V5 open.
+
+H-S15 final handoff: Sol Python and Node peers wrote separate public-manager
+native consumer modes and coordinated e0-to-e1 same-ID fault, three public
+snapshots and exact output shape; Python assembled and both writers stopped.
+Root owned the parent CLI and five focused protocol guards, inspected both
+diffs, diagnosed the UUID-order fixture assumption and closed-handle probe,
+then corrected the consumers. The final isolated parent passed one actual
+public refusal check per runtime with identical snapshot hash and verified
+cleanup. The default parent passed 40 regression checks, retained its
+previous snapshot hash and verified cleanup. All 16 seals matched.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-wrong-dense.md).
+Changed files: parent, two native consumers, protocol guard, report and
+tracker. No product/schema/fixture/migration/lockfile/provider/hosted
+action. Disk headroom 28 GiB, system memory free 53%; task-owned services
+closed. Earlier failed private fixture directories remain ignored evidence.
+Unrelated user edits remain outside scope. Learning practice unassessed.
+Twenty exact H IDs have accepted native evidence; H and V5 remain open.
+Next smallest action: extend the isolated public corruption mode to one
+sparse-vector fault, preserving default regression and explicit physical
+readback/pointer checks.

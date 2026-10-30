@@ -22,20 +22,29 @@ from qdrant_publication_manager_cases import (CHECKS, ERRORS, NativePublicationM
 from qdrant_source_native import PostgresSourceFixture
 from runtime_diagnostics import CleanupFailure, describe_error
 
+WRONG_DENSE_CHECKS = ('wrong_dense_vector_public_publish_rejected',)
 
-def validate_result(value, runtime):
+
+def validate_result(value, runtime, scenario='default'):
+    if scenario not in ('default', 'wrong-dense'):
+        raise RuntimeError('publication_manager_native_scenario')
+    checks = CHECKS if scenario == 'default' else WRONG_DENSE_CHECKS
+    proof_scope = 'public_stage_publish_only' if scenario == 'default' else 'public_corruption_only'
     if (type(value) is not dict or set(value) != {'runtime', 'checks', 'proof_scope', 'public_snapshots_sha256'}
-            or value['runtime'] != runtime or value['checks'] != list(CHECKS)
+            or value['runtime'] != runtime or value['checks'] != list(checks)
             or type(value['public_snapshots_sha256']) is not str
             or re.fullmatch('[0-9a-f]{64}', value['public_snapshots_sha256']) is None
-            or value['proof_scope'] != 'public_stage_publish_only'):
+            or value['proof_scope'] != proof_scope):
         raise RuntimeError('publication_manager_native_result_shape')
     return value
 
 
-def failure_observation(value):
+def failure_observation(value, scenario='default'):
+    if scenario not in ('default', 'wrong-dense'):
+        raise RuntimeError('publication_manager_native_scenario')
+    checks = CHECKS if scenario == 'default' else WRONG_DENSE_CHECKS
     if (type(value) is not dict or value.get('ok') is not False or type(value.get('step')) is not int
-            or not 0 <= value['step'] <= len(CHECKS) or type(value.get('error')) is not str):
+            or not 0 <= value['step'] <= len(checks) or type(value.get('error')) is not str):
         raise RuntimeError('publication_manager_native_failure_shape')
     if value['error'] in ERRORS:
         if set(value) != {'ok', 'step', 'error'}:
@@ -57,6 +66,7 @@ def failure_observation(value):
 
 
 async def node_publication_manager_cases(value):
+    scenario = 'wrong-dense' if value.get('scenario') == 'wrong_dense' else 'default'
     environment = {key: val for key, val in os.environ.items() if not key.startswith(('PG', 'QDRANT__'))
         and key not in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'RUST_LOG')}
     process = await asyncio.create_subprocess_exec('node', str(ROOT / 'tools/check_typescript_qdrant_publication_manager.mjs'),
@@ -75,12 +85,12 @@ async def node_publication_manager_cases(value):
             stdout, stderr = await asyncio.gather(output, errors)
             code = await process.wait()
         if code != 0 and not stderr:
-            observation = failure_observation(json.loads(stdout))
+            observation = failure_observation(json.loads(stdout), scenario)
             failure = NativePublicationManagerFailure(observation)
             raise failure
         if code != 0 or stderr:
             raise RuntimeError('publication_manager_native_child_failed')
-        result = validate_result(json.loads(stdout), 'typescript')
+        result = validate_result(json.loads(stdout), 'typescript', scenario)
         success = True
         return result
     except BaseException as error:
@@ -114,14 +124,16 @@ async def node_publication_manager_cases(value):
             raise CleanupFailure(failures, primary=primary, stage='recovery') from None
 
 
-async def check(fixture, runtime, binary, work_dir):
+async def check(fixture, runtime, binary, work_dir, scenario='default'):
     async with PublicationDatabase(fixture) as database:
         value = dict(binary=str(binary), work_dir=str(work_dir), inputs=publication_manager_input(),
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'),
             observer_config=database.fixture.config)
+        if scenario == 'wrong-dense':
+            value['scenario'] = 'wrong_dense'
         await database.release_admin()
         runner = python_publication_manager_cases if runtime == 'python' else node_publication_manager_cases
-        return validate_result(await runner(value), runtime)
+        return validate_result(await runner(value), runtime, scenario)
 
 
 def main(argv=None):
@@ -131,6 +143,7 @@ def main(argv=None):
     parser.add_argument('--binary-sha256', required=True)
     parser.add_argument('--artifacts-dir', type=Path, required=True)
     parser.add_argument('--runtime', choices=('python', 'typescript', 'all'), default='all')
+    parser.add_argument('--scenario', choices=('default', 'wrong-dense'), default='default')
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
     try:
@@ -145,7 +158,8 @@ def main(argv=None):
         for runtime in ('python', 'typescript') if args.runtime == 'all' else (args.runtime,):
             private = Path(tempfile.mkdtemp(prefix=runtime + '-', dir=args.artifacts_dir)).resolve()
             with PostgresSourceFixture(args.postgres_bin, private / 'postgres') as fixture:
-                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed'), 120))
+                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary,
+                    private / 'managed', args.scenario), 120))
             shutil.rmtree(private)
             results.append(result)
         if len(results) == 2:

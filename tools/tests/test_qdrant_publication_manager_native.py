@@ -54,6 +54,22 @@ def test_success_requires_complete_public_cases_and_cannot_claim_process_recover
             validate_result(changed, 'python')
 
 
+def test_wrong_dense_mode_has_its_own_closed_evidence_scope():
+    value = dict(runtime='python', checks=['wrong_dense_vector_public_publish_rejected'],
+        proof_scope='public_corruption_only', public_snapshots_sha256='a' * 64)
+    assert validate_result(value, 'python', 'wrong-dense') == value
+    for changed in (dict(value, checks=[]), dict(value, proof_scope='public_stage_publish_only'),
+            dict(value, runtime='typescript')):
+        with pytest.raises(RuntimeError, match='publication_manager_native_result_shape'):
+            validate_result(changed, 'python', 'wrong-dense')
+    with pytest.raises(RuntimeError, match='publication_manager_native_result_shape'):
+        validate_result(value, 'python')
+    with pytest.raises(RuntimeError, match='publication_manager_native_scenario'):
+        validate_result(value, 'python', 'other')
+    with pytest.raises(RuntimeError, match='publication_manager_native_failure_shape'):
+        failure_observation(dict(ok=False, step=2, error='internal'), 'wrong-dense')
+
+
 def test_closed_failure_protocol_preserves_primary_and_cleanup_without_error_text():
     value = dict(ok=False, step=9, error='cleanup_failed', primary='ProviderUnavailable',
         cleanup=[dict(operation='manager_close', outcome='DeadlineExceeded'),
