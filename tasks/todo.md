@@ -2241,3 +2241,29 @@ fixture/grant/dependency/lockfile/provider/hosted change. Disk headroom
 edits remain outside scope. Learning practice unassessed. H and V5 remain
 open; next action is to inspect the independent H-S9 native-evidence audit
 and implement only the still-missing fault boundary.
+
+H-S9 audit handoff: Sol `h_available_audit` produced only ignored
+`artifacts/V5/V5-04H/available-native-audit-r2.md` and ran read-only source,
+fixture and accepted-evidence inspection. Root checked its exact-ID mapping
+against current consumers. ID 18 has an existing public source boundary;
+ID 10 needs a stronger identity assertion before registration; IDs 12-16
+need same-trace public manager refusal; ID 37 needs an actual unresolved
+journal under a forged physical proof. ID 38 has a combined managed recovery
+mechanism but still needs a fresh H run and explicit epoch adaptation.
+No worker-run native result is claimed by the audit.
+
+H-S10 final handoff (V5-04H matrix ID `prepared_not_published`): one root
+integrator owned the evidence registration and serial native rerun; no peer
+writer was needed for an existing scenario. The current F3 public manager
+was paused at trusted authorization after durable preparation. Native
+PostgreSQL 17/Qdrant 1.20 returned 16 checks (eight per runtime), identical
+source-observation hashes and verified cleanup. The prepared successor was
+physically searchable but could not release source; the previous active
+generation remained authorized until CAS publication. [Checkpoint report](../evaluation/reports/V5/V5-04H-prepared-source.md).
+Changed files: this tracker and the report only. Resource headroom: 28 GiB
+disk, 53 percent system memory free; all task-owned native services closed.
+No hosted/provider/model/installation action, product/schema/fixture change
+or unrelated edit. Learning practice unassessed. Sixteen exact H IDs now
+have accepted native evidence; H and V5 remain open. Next smallest action:
+strengthen ID 10 same-intent identity assertions in the existing Python and
+TypeScript partial-repair consumers, then rerun both native runtimes.
