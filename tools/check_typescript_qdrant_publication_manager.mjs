@@ -10,7 +10,7 @@ import {QdrantPublicationManager, PostgresQdrantPublicationAuthority, ManagedQdr
   PostgresQdrantWriter, PostgresQdrantRecovery, ManagedQdrantSupervisor,
   QdrantReconciliationVerifier} from '../packages/typescript/dist/qdrant-publication.js';
 import {prepare_stage, stage_data} from '../packages/typescript/dist/qdrant-writer-contract.js';
-import {IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope} from '../packages/typescript/dist/errors.js';
+import {IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability} from '../packages/typescript/dist/errors.js';
 
 const OWNER = '00000000-0000-4000-8000-000000000001';
 const CHECKS = Object.freeze([
@@ -65,7 +65,7 @@ async function input() {
   }
   const value = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(chunks)));
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set'].includes(value.scenario) ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
+    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set', 'invalid_input'].includes(value.scenario) ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
     || typeof value.binary !== 'string' || typeof value.work_dir !== 'string' || !value.inputs?.stages) throw new Error('input_shape');
   return value;
 }
@@ -116,6 +116,10 @@ async function cases(value) {
   const wrongDense = {armed: false, fired: 0, observed: null};
   const corruptionScenario = ['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse'].includes(value.scenario) ? value.scenario : null;
   const repairWrites = {active: false, bodies: [], completed: 0, fixture: 0};
+  let issuedAttempts = 0;
+  const realIssueAttempt = supervisor.issue_attempt.bind(supervisor);
+  if (value.scenario === 'invalid_input')
+    supervisor.issue_attempt = (...args) => { issuedAttempts++; return realIssueAttempt(...args); };
   const wrongSet = {stage: null, extra: null, replace: false, armed: false, fired: 0,
     fixturePuts: 0, fixtureDeletes: 0, watching: false, reads: [], points: null};
   let address, primary, manager, callbackMode = null, supervisorLeases = 0;
@@ -354,6 +358,65 @@ async function cases(value) {
     const identity = supervisor.identity();
     if (!isDeepStrictEqual(await backend(), [[inputs.instance_id, inputs.config.backend_namespace,
       identity.storage_identity, identity.supervisor_id, '1', 'open', null]])) throw new Error('public_manager_registration');
+    if (value.scenario === 'invalid_input') {
+      const staged = save(await stageCall(inputs.stage));
+      const published = save(await publishCall(inputs.stage));
+      if (staged.state !== 'staged' || !published.published || !published.replica_complete || http.puts !== 1) throw new Error('invalid_input_base_publication');
+      const baseGraph = await observeStage(inputs.stage);
+      for (const [key, Type] of [['mixed_revision_member', IntegrityViolation],
+        ['malformed_utf8_span', IntegrityViolation], ['unsupported_sparse_encoder', UnsupportedCapability]]) {
+        const valid = inputs.stages[key], invalid = structuredClone(valid);
+        if (valid.manifest.members.length !== 2) throw new Error('invalid_input_fixture_members');
+        if (key === 'mixed_revision_member') {
+          const member = invalid.manifest.members[0];
+          member.point_id = inputs.stage.manifest.members.find(base => base.chunk_id === member.chunk_id).point_id;
+        } else if (key === 'malformed_utf8_span') {
+          const member = invalid.manifest.members.find(member => member.chunk_id === 'chunk-1');
+          if (!member || member.end_byte !== 7) throw new Error('invalid_input_span_fixture');
+          member.end_byte = 6;
+        } else invalid.manifest.sparse_profile.encoder = 'bm25';
+        const counts = [http.requests, http.puts, issuedAttempts];
+        const journalBefore = await journal();
+        await expected(Type, () => stageCall(invalid));
+        if (!isDeepStrictEqual([http.requests, http.puts, issuedAttempts], counts)
+          || !isDeepStrictEqual(await journal(), journalBefore)
+          || !isDeepStrictEqual(await observeStage(inputs.stage), baseGraph)) throw new Error('invalid_input_admission_mutated_work');
+        const targetGraph = await observeStage(valid);
+        if (Object.entries(targetGraph).some(([field, rows]) => field !== 'pointer' && rows.length !== 0)
+          || !isDeepStrictEqual(targetGraph.pointer, [[inputs.stage.manifest.generation_id]])) throw new Error('invalid_input_target_rows_created');
+        const observer = new PoolResource(parse_pool_config({...value.observer_config, max_size: 1}));
+        try {
+          await observer.open();
+          const rows = await transaction(observer, async query => {
+            const values = [valid.manifest.tenant_id, valid.manifest.collection, valid.manifest.document_id, valid.intent.intent_id];
+            const output = [];
+            for (const table of ['preparations', 'dispatch_journal']) output.push(...await query(
+              `SELECT count(*)::text FROM cragkit_qdrant.${table} WHERE (tenant_id,collection,document_id,intent_id)=($1,$2,$3,$4)`, values));
+            return output;
+          });
+          if (!isDeepStrictEqual(rows, [['0'], ['0']])) throw new Error('invalid_input_preparation_or_dispatch_created');
+        } finally { await observer.close(); }
+        const filterKeys = ['backend_namespace', 'physical_collection', 'collection_incarnation',
+          'tenant_id', 'collection', 'document_id', 'revision_id', 'generation_id'];
+        const filter = {must: filterKeys.map(key => ({key, match: {value: valid.manifest[key]}}))};
+        const attempt = supervisor.issue_attempt({intent_id: valid.intent.intent_id, owner_token: OWNER,
+          epoch: supervisor.profile_binding(inputs.config).epoch, dispatch_id: 'manager-' + key.replaceAll('_', '-') + '-readback'}, options);
+        const probe = realTransportFor(attempt);
+        try {
+          const exact = JSON.parse(Buffer.from(await probe.request('POST', target + '/points',
+            {...options, body: bytes({ids: valid.manifest.members.map(member => member.point_id), with_payload: true, with_vector: true}),
+              max_response_bytes: 1048576})).toString('utf8'));
+          const scoped = JSON.parse(Buffer.from(await probe.request('POST', target + '/points/scroll',
+            {...options, body: bytes({filter, limit: 8, with_payload: true, with_vector: true}), max_response_bytes: 1048576})).toString('utf8'));
+          if (exact.status !== 'ok' || !isDeepStrictEqual(exact.result, []) || scoped.status !== 'ok'
+            || !isDeepStrictEqual(scoped.result?.points, []) || scoped.result?.next_page_offset !== null) throw new Error('invalid_input_target_points_created');
+        } finally { await probe.close(); }
+        await active(inputs.stage.manifest.generation_id);
+        checks.push(key + '_rejected_before_write'); step = checks.length;
+      }
+      if (snapshots.length !== 2 || http.puts !== 1) throw new Error('invalid_input_snapshots_or_puts_changed');
+      return {runtime: 'typescript', checks, proof_scope: 'public_invalid_input_only', public_snapshots_sha256: hash(bytes(snapshots))};
+    }
     if (value.scenario === 'equal_set') {
       const staged = save(await stageCall(inputs.stage));
       const published = save(await publishCall(inputs.stage));

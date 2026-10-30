@@ -30,6 +30,9 @@ CORRUPTION_CHECKS = {
         'missing_sparse_vector_complete_repair_published'),
     'equal-set': ('equal_count_wrong_set_public_publish_rejected',
         'third_extra_point_scroll_sentinel_rejected'),
+    'invalid-input': ('mixed_revision_member_rejected_before_write',
+        'malformed_utf8_span_rejected_before_write',
+        'unsupported_sparse_encoder_rejected_before_write'),
 }
 
 
@@ -40,6 +43,8 @@ def proof_scope_for(scenario):
         return 'public_corruption_repair_only'
     if scenario == 'equal-set':
         return 'public_wrong_set_only'
+    if scenario == 'invalid-input':
+        return 'public_invalid_input_only'
     return 'public_corruption_only'
 
 

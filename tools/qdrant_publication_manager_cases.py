@@ -55,6 +55,8 @@ def publication_manager_input():
     stages['missing_sparse'] = successor_stage(inputs, 'manager-missing-sparse', base)
     stages['equal_set'] = successor_stage(inputs, 'manager-equal-set', base)
     stages['equal_extra'] = successor_stage(inputs, 'manager-equal-extra', base)
+    for key in ('mixed_revision_member', 'malformed_utf8_span', 'unsupported_sparse_encoder'):
+        stages[key] = successor_stage(inputs, 'manager-' + key.replace('_', '-'), base)
     previous = stages['winner']['manifest']['generation_id']
     for key, suffix in (('prepared', 'manager-prepared'), ('commit', 'manager-commit'),
             ('session', 'manager-final-session'), ('revoked', 'manager-revoked')):
@@ -170,7 +172,8 @@ async def python_publication_manager_cases(value):
     from cragkit._qdrant_writer import _SCOPE_SQL
     from cragkit.contracts import Limits, TrustedScope
     from cragkit.execution import ExecutionLedger, BudgetExhausted
-    from cragkit.errors import IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope
+    from cragkit.errors import (IntegrityViolation, InvalidRequest, ProviderUnavailable,
+        UnauthorizedScope, UnsupportedCapability)
     from cragkit.qdrant_publication import (QdrantPublicationManager,
         PostgresQdrantPublicationAuthority, ManagedQdrantPublicationTransport,
         PostgresQdrantWriter, PostgresQdrantRecovery, ManagedQdrantSupervisor,
@@ -180,7 +183,7 @@ async def python_publication_manager_cases(value):
 
     inputs = value['inputs']
     scenario = value.get('scenario', 'default')
-    if scenario not in ('default', 'wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set'):
+    if scenario not in ('default', 'wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse', 'equal_set', 'invalid_input'):
         raise RuntimeError('manager_fixture_scenario')
     def pool_config(raw):
         raw = dict(raw)
@@ -491,6 +494,70 @@ async def python_publication_manager_cases(value):
         await resource.open()
         await supervisor_resource.open()
         manager = await new_manager()
+        if scenario == 'invalid_input':
+            base = inputs['stage']
+            save(await stage_call(manager, base))
+            published = save(await publish_call(manager, base))
+            if not published['published'] or network['mutations'] != 1:
+                raise RuntimeError('manager_invalid_input_base_unpublished')
+            base_graph = await stage_graph(base)
+            issued = 0
+            original_issue_attempt = supervisor.issue_attempt
+            def counted_issue_attempt(binding, **options):
+                nonlocal issued
+                issued += 1
+                return original_issue_attempt(binding, **options)
+            supervisor.issue_attempt = counted_issue_attempt
+            for key, kind in (('mixed_revision_member', IntegrityViolation),
+                    ('malformed_utf8_span', IntegrityViolation),
+                    ('unsupported_sparse_encoder', UnsupportedCapability)):
+                valid = inputs['stages'][key]
+                invalid = deepcopy(valid)
+                if key == 'mixed_revision_member':
+                    member = invalid['manifest']['members'][0]
+                    member['point_id'] = next(item['point_id'] for item in base['manifest']['members']
+                        if item['chunk_id'] == member['chunk_id'])
+                elif key == 'malformed_utf8_span':
+                    member = next(item for item in invalid['manifest']['members'] if item['chunk_id'] == 'chunk-1')
+                    if member['end_byte'] != 7:
+                        raise RuntimeError('manager_invalid_input_utf8_fixture')
+                    member['end_byte'] = 6
+                else:
+                    invalid['manifest']['sparse_profile']['encoder'] = 'bm25'
+                activity = (issued, network['requests'], network['mutations'])
+                journal = await journal_states()
+                await expect(kind, lambda: stage_call(manager, invalid))
+                graph = await stage_graph(valid)
+                if ((issued, network['requests'], network['mutations']) != activity
+                        or await journal_states() != journal or await stage_graph(base) != base_graph
+                        or graph['pointer'] != [(base['manifest']['generation_id'],)]
+                        or any(rows for table, rows in graph.items() if table != 'pointer')):
+                    raise RuntimeError('manager_invalid_input_admission_wrote')
+                attempt = original_issue_attempt(dict(intent_id=valid['intent']['intent_id'],
+                    owner_token=lookup_token, epoch=supervisor.profile_binding(inputs['config'])['epoch'],
+                    dispatch_id='manager-' + key.replace('_', '-') + '-absence'), deadline=deadline)
+                probe = original_transport_for(attempt)
+                fields = ('backend_namespace', 'physical_collection', 'collection_incarnation', 'tenant_id',
+                    'collection', 'document_id', 'revision_id', 'generation_id')
+                filters = dict(must=[dict(key=field, match=dict(value=valid['manifest'][field])) for field in fields])
+                try:
+                    physical = json.loads(bytes(await probe.request('POST', target + '/points',
+                        body=request_bytes(dict(ids=[member['point_id'] for member in valid['manifest']['members']],
+                            with_payload=True, with_vector=True)), deadline=deadline)))
+                    scoped = json.loads(bytes(await probe.request('POST', target + '/points/scroll',
+                        body=request_bytes(dict(filter=filters, limit=8, with_payload=True, with_vector=True)),
+                        deadline=deadline)))
+                    if (physical.get('status') != 'ok' or physical.get('result') != []
+                            or scoped.get('status') != 'ok' or scoped.get('result') !=
+                                dict(points=[], next_page_offset=None)):
+                        raise RuntimeError('manager_invalid_input_physical_target_present')
+                finally:
+                    await probe.close()
+                checks.append(key + '_rejected_before_write')
+            if len(snapshots) != 2 or network['mutations'] != 1 or issued:
+                raise RuntimeError('manager_invalid_input_inventory')
+            return dict(runtime='python', checks=checks, proof_scope='public_invalid_input_only',
+                public_snapshots_sha256=sha256(request_bytes(snapshots)).hexdigest())
         if scenario == 'equal_set':
             base = inputs['stage']
             save(await stage_call(manager, base))

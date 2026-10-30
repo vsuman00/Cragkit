@@ -2536,3 +2536,38 @@ outside scope. Learning practice unassessed. Twenty-four exact H IDs have
 accepted native evidence; H and V5 remain open. Next smallest action: inspect
 the remaining frozen matrix IDs and take one independent native fault whose
 dependencies are already satisfied.
+
+H-S19 assignment (V5-04H matrix IDs `mixed_revision_member`,
+`malformed_utf8_span`, `unsupported_sparse_encoder`): shared outcome is
+three native public-manager admission refusals with typed errors and zero
+target writes. Contract `invalid-input-r1` is frozen in ignored
+`artifacts/V5/V5-04H/invalid-input-r1-protocol.md`. Sol `h_sparse_python`
+owns only `tools/qdrant_publication_manager_cases.py` and assembles; Sol
+`h_sparse_node` owns only `tools/check_typescript_qdrant_publication_manager.mjs`.
+Both do substantive work and coordinate directly. Root owns parent
+CLI/protocol, serial native verification, report/tracker, Git and final
+integration. Existing manager/manifest validators, pinned fixture and
+acceptance rows are read-only dependencies. Product/schema/migrations/
+locks/seals/shared fixture/other consumers/user edits are protected.
+One test process, two-point fake vectors, serial runtimes, no worker
+processes, provider, hosted action or download. Escalate changed outcome,
+protected/other ownership to root and unresolved material decisions to
+Astra. State: assigned; H/V5 open.
+
+H-S19 final handoff: Sol Python and Node peers implemented separate native
+public-manager invalid-input modes, coordinated typed errors and absence
+assertions directly, and Python assembled before both stopped. Root inspected
+the diffs and ran ten focused parent guards and syntax checks. The first
+native run passed; root then limited Node's attempt observer to this mode
+and reran the accepted path. The final native parent passed three typed
+refusals per runtime (six checks), matching snapshot hash and verified
+cleanup. Default manager passed 40 checks with its previous hash and
+cleanup. All 16 seals matched. [Checkpoint report](../evaluation/reports/V5/V5-04H-invalid-input.md).
+Changed files: parent, two consumers, protocol guard, report and tracker.
+No product/schema/shared fixture/migration/lockfile/provider/hosted action.
+Disk headroom 32 GiB, system memory free 54%; no task-owned service remains.
+Unrelated user edits remain outside scope. Learning practice unassessed.
+Twenty-seven exact H IDs have accepted native evidence; H and V5 remain
+open. Next smallest action: select one unmet native matrix fault after
+checking its dependency and resource profile; retain final H integration
+and later V5 gates as open.
