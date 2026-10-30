@@ -10,6 +10,7 @@ CHECKS = (
     'source_denied_before_and_after_managed_erasure',
     'completed_purge_retry_is_metadata_only',
     'lost_delete_ack_requires_actual_refence_before_erasure',
+    'interrupted_delete_keeps_purge_pending_until_recovery',
     'ordinary_purge_owner_handoff_resumes_without_guard_bypass',
     'lost_erasure_commit_confirms_exact_retained_history',
     'ownerless_tombstone_bootstrap_and_forged_receipt_refusal',
@@ -17,7 +18,7 @@ CHECKS = (
 )
 
 POLICY = 'erase_managed_source_and_replay_v1'
-COMPLETED = ('base', 'delete_loss', 'handoff', 'commit_loss', 'ownerless', 'authority_change')
+COMPLETED = ('base', 'delete_loss', 'handoff', 'commit_loss', 'ownerless', 'authority_change', 'purge_interruption')
 FAULT_CHECKS = (
     'current_credential_pending_delete_refused',
     'administrative_foreign_intent_pending_refused_and_restored',
@@ -108,7 +109,7 @@ async def python_purge_cases(value):
         UnauthorizedScope, UnsupportedCapability)
     from cragkit.qdrant import QdrantNomination
     from cragkit.qdrant_source import PostgresQdrantSourceStore
-    from cragkit._qdrant_writer import purge_projection_data, security_projection_data
+    from cragkit._qdrant_writer import purge_projection_data, security_projection_data, purge_dispatch_plan_data
     from cragkit._qdrant_security_verification import (PurgeAbsenceReceipt, purge_absence_receipt_data,
         QdrantSecurityVerifier)
     from cragkit._qdrant_recovery import settle_purge_guarded, _SECURITY_JOURNAL_COLUMNS
@@ -125,6 +126,7 @@ async def python_purge_cases(value):
     fault_checks, extra_verifiers = [], []
     settlement_probe = dict(active=False, foreign=[], owned=[], updates=0)
     network = dict(count=0, mode=None, put_drops=0, delete_drops=0, deletes=[])
+    delete_interruption = dict(armed=False, entered=asyncio.Event(), cancelled=False)
     database = dict(writes=0, bodies=0, mode=None, rollbacks=0, lost=0,
         confirming=False, confirmations=0, confirm_queries=0, confirm_http=0,
         confirm_bodies=0, confirm_writes=0, functions=0, guard_active=False, handoff_lost=0)
@@ -318,6 +320,21 @@ async def python_purge_cases(value):
                 'delete' if method == 'POST' and path == target + '/points/delete?wait=true&ordering=strong' else None)
             if kind == 'delete':
                 network['deletes'].append(json.loads(body)['points'])
+                if delete_interruption['armed']:
+                    status, raw = result
+                    response = json.loads(raw)
+                    if (status != 200 or response.get('status') != 'ok'
+                            or response.get('result', {}).get('status') != 'completed'):
+                        raise RuntimeError('purge_interruption_not_dispatched')
+                    delete_interruption['armed'] = False
+                    delete_interruption['entered'].set()
+                    try:
+                        # The actual response exists, but no managed caller has
+                        # received it or settled this dispatched deletion.
+                        await asyncio.Event().wait()
+                    except asyncio.CancelledError:
+                        delete_interruption['cancelled'] = True
+                        raise
             if kind is not None and network['mode'] == kind:
                 status, raw = result
                 response = json.loads(raw)
@@ -334,9 +351,10 @@ async def python_purge_cases(value):
         await admin.request('PUT', path, body=request_bytes(probe['collection_config']), deadline=deadline)
         await admin.request('PUT', path + '/points?wait=true&ordering=strong',
             body=request_bytes(dict(points=[probe['point']])), deadline=deadline)
-    async def source(selected):
-        base = documents['base']['stage']
-        point = documents['base']['expected_points'][0]
+    async def source(selected, item=None):
+        item = documents['base'] if item is None else item
+        base = item['stage']
+        point = item['expected_points'][0]
         nomination = QdrantNomination.model_validate(dict(point_id=point['id'], branch='dense', score=1.0,
             score_kind='cosine_similarity', payload=point['payload']))
         store = PostgresQdrantSourceStore(reader, inputs['config']); stores.append(store)
@@ -547,6 +565,78 @@ async def python_purge_cases(value):
         if supervisor.control_binding()['credential_generation'] == credential or network['delete_drops'] != 1:
             raise RuntimeError('purge_delete_retry_not_refenced')
         checks.append(CHECKS[4]); observations.append(row(result))
+        item = await setup('purge_interruption'); await commit(item['tombstone'])
+        expected_ids = {member['point_id'] for stage in (item['stage'], item['second_stage'])
+            for member in stage['manifest']['members']}
+        original_plan = writer.project_purge_dispatch
+        interrupted_dispatch = {}
+        async def capture_plan(authorization, point_ids, **options):
+            plan = await original_plan(authorization, point_ids, **options)
+            data = purge_dispatch_plan_data(plan, authorization, writer, deadline=options['deadline'])
+            interrupted_dispatch.update(context=data['context'], dispatch_id=data['attempt_binding']['dispatch_id'],
+                purge_context=purge_projection_data(data['projection'], writer)['context'],
+                graph=graph(data['projection']))
+            return plan
+        writer.project_purge_dispatch = capture_plan
+        functions, deletes = database['functions'], len(network['deletes'])
+        delete_interruption['armed'] = True
+        interrupted = asyncio.create_task(purge(item['purge']))
+        try:
+            await asyncio.wait_for(delete_interruption['entered'].wait(),
+                max(.001, deadline-asyncio.get_running_loop().time()))
+            interrupted.cancel()
+            await expect(asyncio.CancelledError, lambda: interrupted)
+        finally:
+            delete_interruption['armed'] = False
+            if not interrupted.done(): interrupted.cancel()
+            await asyncio.gather(interrupted, return_exceptions=True)
+            writer.project_purge_dispatch = original_plan
+        pending = await snapshot(item['purge'])
+        credential = supervisor.control_binding()['credential_generation']
+        current = interrupted_dispatch['purge_context']
+        before_graph = interrupted_dispatch['graph']
+        journal = await writer.dispatch_status(interrupted_dispatch['context'],
+            interrupted_dispatch['dispatch_id'], deadline=deadline)
+        if (not delete_interruption['cancelled'] or manager._active is not None
+                or len(network['deletes']) != deletes+1
+                or not pending['pending'] or pending['backend']['state'] != 'recovery_blocked'
+                or not pending['document']['tombstoned']
+                or pending['intent']['purge_complete'] or pending['intent']['replica_complete']
+                or len(expected_ids) != 4 or set(before_graph['point_ids']) != expected_ids
+                or journal is None or journal['operation'] != 'delete_points'
+                or journal['state'] not in ('dispatched', 'unknown') or journal['completion_sha256'] is not None
+                or database['functions'] != functions or await content_unavailable(item['purge'])
+                or graph(await writer.project_purge(current, POLICY, deadline=deadline)) != before_graph):
+            raise RuntimeError('purge_interruption_uncertainty_lost')
+        replacement = dict(context(item['purge']), owner_token='00000000-0000-4000-8000-000000000003')
+        await expect(ProviderUnavailable, lambda: writer.acquire_owner(replacement, deadline=deadline))
+        if (await snapshot(item['purge']) != pending
+                or graph(await writer.project_purge(current, POLICY, deadline=deadline)) != before_graph):
+            raise RuntimeError('purge_interruption_early_claim_reuse')
+        _, denied = await source(auth2, item); unavailable(denied)
+        result = await purge(item['purge'])
+        completed = await snapshot(item['purge'])
+        if (supervisor.control_binding()['credential_generation'] == credential
+                or completed['pending'] or completed['backend']['state'] != 'open'
+                or not await content_unavailable(item['purge'])
+                or database['functions'] != functions+1):
+            raise RuntimeError('purge_interruption_recovery_missing')
+        manifest = item['stage']['manifest']
+        filters = dict(must=[dict(key=field, match=dict(value=manifest[field])) for field in fields])
+        capability = supervisor.issue_attempt(dict(intent_id='native-purge-interruption-absence', owner_token=token,
+            epoch=supervisor.control_binding()['epoch'], dispatch_id='native-purge-interruption-absence'), deadline=deadline)
+        probe = supervisor.transport_for(capability)
+        try:
+            physical = json.loads(bytes(await probe.request('POST', target + '/points/scroll',
+                body=request_bytes(dict(filter=filters, limit=8, with_payload=True, with_vector=False)), deadline=deadline)))
+            if (physical.get('status') != 'ok' or physical.get('result', {}).get('points') != []
+                    or physical.get('result', {}).get('next_page_offset', 'missing') is not None):
+                raise RuntimeError('purge_interruption_scoped_absence')
+        finally:
+            await probe.close()
+        _, denied = await source(auth2, item); unavailable(denied)
+        checks.append(CHECKS[5]); observations.append([
+            'purge_interruption', 'aborted', 'recovery_blocked', True, True, 'unavailable', True, 0, 'complete'])
         item = await setup('handoff'); await commit(item['tombstone'])
         captured = {}
         async def interrupt(verifier, receipt, **options):
@@ -645,7 +735,7 @@ async def python_purge_cases(value):
         result = await purge(item['purge'])
         if counts != (supervisor.control_binding()['credential_generation'], len(network['deletes'])):
             raise RuntimeError('purge_handoff_repeated_delete')
-        checks.append(CHECKS[5]); observations.append(row(result))
+        checks.append(CHECKS[6]); observations.append(row(result))
         item = await setup('commit_loss'); await commit(item['tombstone'])
         captured.clear()
         async def rollback_completion(verifier, receipt, **options):
@@ -666,14 +756,14 @@ async def python_purge_cases(value):
         if (database['lost'] != 1 or database['confirmations'] != 1 or not database['confirm_queries']
                 or database['confirm_http'] or database['confirm_bodies'] or database['confirm_writes'] or database['confirming']):
             raise RuntimeError('purge_commit_confirmation_not_readonly')
-        checks.append(CHECKS[6]); observations.append(row(result))
+        checks.append(CHECKS[7]); observations.append(row(result))
         item = await setup('ownerless'); await commit(item['tombstone'])
         denied = await writer.admit_publication(context(item['stage']), deadline=deadline)
         pending = await snapshot(item['stage'])
         if denied['intent']['state'] != 'denied' or pending['owner'] is not None:
             raise RuntimeError('purge_ownerless_prerequisite')
         result = await purge(item['purge'])
-        checks.append(CHECKS[7]); observations.append(row(result))
+        checks.append(CHECKS[8]); observations.append(row(result))
         item = await setup('authority_change'); await commit(item['tombstone'])
         functions = database['functions']
         async def changed_authority(verifier,receipt,**options):
@@ -727,7 +817,7 @@ async def python_purge_cases(value):
         await expect(UnsupportedCapability, lambda: manager.purge(item['purge'], auth2,
             ExecutionLedger(Limits(max_provider_calls=0), deadline=deadline), retention_policy='unsupported', deadline=deadline))
         if counts != (network['count'], database['writes']): raise RuntimeError('purge_refusal_mutated')
-        checks.append(CHECKS[8]); observations.append(['refusals', 'integrity_violation', 'unauthorized_scope', 'unsupported_capability'])
+        checks.append(CHECKS[9]); observations.append(['refusals', 'integrity_violation', 'unauthorized_scope', 'unsupported_capability'])
         if tuple(fault_checks)!=FAULT_CHECKS:
             raise RuntimeError('purge_fault_checks_missing')
         witness = json.dumps(['cragkit.qdrant.managed-purge.v2', observations, fault_checks], ensure_ascii=False, separators=(',', ':')).encode('utf-8')

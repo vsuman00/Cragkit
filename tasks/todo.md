@@ -2842,3 +2842,51 @@ report. Ignored native result:
 Disk headroom 28 GiB; no owned process remains. Learning practice unassessed.
 Next smallest action: bind a remaining H fault to an observable native
 interleaving, freeze the owned files, then verify both runtimes.
+
+H-S26 assignment (V5-04H exact ID `purge_interruption`): shared outcome is
+an actual Qdrant point-delete request interrupted after dispatch on a
+separate bounded tombstoned document. Purge stays incomplete and source
+denied through durable uncertainty and backend recovery block; native
+recovery fences the old transport, proves exact scoped absence and completes
+purge without early claim reuse. Frozen ignored protocol:
+`artifacts/V5/V5-04H/purge-interruption-r1-protocol.md`. Sol
+`h_purge_interrupt_python` owns only `tools/qdrant_purge_cases.py` and
+assembles; Sol `h_purge_interrupt_node` owns only
+`tools/check_typescript_qdrant_purge.mjs`. Both do substantive consumer work,
+coordinate actual fault timing, recovery and matching content-free witness
+directly, and transfer ownership only by explicit agreement and root notice.
+Root owns shared parent test, serial native checks, report/tracker, Git and
+escalation. Product, SQL/schema/migrations, QSC/QW contracts, sealed/shared
+fixtures, locks and user files are protected. Any product defect is reported
+to root before edits. Peers run no tests/processes/services/network/DB/Git;
+root uses one bounded test process at a time. Outcome/protected/ownership
+changes return to root; unresolved material issues go to Astra. State:
+assigned; H/V5 open.
+
+H-S26 accepted: on a separate published/tombstoned document, both native
+consumers cancelled after an actual strongly ordered Qdrant point delete
+returned completed but before its client could settle the receipt. Purge
+stayed incomplete, dispatch stayed unsettled with no completion digest, the
+backend remained recovery blocked, source remained unavailable, claims
+were retained and a replacement owner was refused. Managed retry fenced
+the uncertain transport and verified an exact scoped empty point scroll
+before completing purge; source remained denied. The earlier lost-delete-ACK
+case still passed. Root reviewed both consumer diffs and ran the serial
+native parent: 46 checks (ten scenarios, five faults and eight storage
+checks per runtime), matching witness
+`3e4f3644d6f3acfdfa9d6c83756e907c25ad7ebf113785880e44b30b87e62f7a`,
+with verified cleanup. Seven focused protocol tests, Node syntax, Python
+compilation and all 16 seals passed. Full Python/Node regressions from
+H-S22 were not rerun for this fixture-only change. No product, SQL/schema,
+migration, lockfile, shared sealed fixture, user edit, provider/hosted call
+or task-owned service remained.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-purge-interruption.md).
+State: COMPLETE for H-S26 only; 34 of 43 exact H IDs accepted. H and V5
+remain open. Handoff: changed `tools/qdrant_purge_cases.py`,
+`tools/check_typescript_qdrant_purge.mjs`,
+`tools/tests/test_qdrant_purge_native.py`, this tracker and checkpoint
+report. Ignored native result:
+`artifacts/V5/V5-04H/purge-interruption-both-01/results.json`. Disk
+headroom 28 GiB; no owned process remains. Learning practice unassessed.
+Next smallest action: isolate another unresolved H fault and prove its
+physical boundary in both native runtimes before acceptance.

@@ -13,7 +13,7 @@ import {QdrantSecurityManager} from '../packages/typescript/dist/qdrant-security
 import {PostgresQdrantSourceStore} from '../packages/typescript/dist/qdrant-source.js';
 import {settle_purge_guarded} from '../packages/typescript/dist/qdrant-recovery.js';
 import {QdrantSecurityVerifier} from '../packages/typescript/dist/qdrant-security-verification.js';
-import {security_projection_data, purge_projection_data} from '../packages/typescript/dist/qdrant-writer.js';
+import {security_projection_data, purge_projection_data, purge_dispatch_plan_data} from '../packages/typescript/dist/qdrant-writer.js';
 import {ProviderUnavailable, UnauthorizedScope, InvalidRequest, IntegrityViolation, UnsupportedCapability} from '../packages/typescript/dist/errors.js';
 const POLICY = 'erase_managed_source_and_replay_v1';
 const CHECKS = [
@@ -22,6 +22,7 @@ const CHECKS = [
   'source_denied_before_and_after_managed_erasure',
   'completed_purge_retry_is_metadata_only',
   'lost_delete_ack_requires_actual_refence_before_erasure',
+  'interrupted_delete_keeps_purge_pending_until_recovery',
   'ordinary_purge_owner_handoff_resumes_without_guard_bypass',
   'lost_erasure_commit_confirms_exact_retained_history',
   'ownerless_tombstone_bootstrap_and_forged_receipt_refusal',
@@ -205,6 +206,7 @@ async function cases(value) {
   const originalRecover=recovery.recover;
   recovery.recover=async function(...args){capturedProof=await originalRecover.apply(this,args);return capturedProof;};
   let address, httpCount = 0, armed = null, putDrops = 0, deleteDrops = 0;
+  let interruptDelete = null, interruptedDeletes = 0;
   const deleteBodies = [];
   const nativeRequest = http.request;
   const pointPath = '/collections/'+inputs.config.physical_collection+'/points';
@@ -274,9 +276,11 @@ async function cases(value) {
     const mode = requestOptions?.method === 'PUT' && requestOptions.path === pointPath+'?wait=true&ordering=strong' ? 'upsert'
       : requestOptions?.method === 'POST' && requestOptions.path === pointPath+'/delete?wait=true&ordering=strong' ? 'delete' : null;
     const drop = armed !== null && armed === mode;
+    const interrupt = mode === 'delete' ? interruptDelete : null;
+    if (interrupt) interruptDelete = null;
     if (drop) armed = null;
     const request = nativeRequest.call(this,requestOptions,incoming => {
-      if (!drop) return callback(incoming);
+      if (!drop && !interrupt) return callback(incoming);
       const chunks = [];
       let size = 0, suppressed = false;
       const originalOnce = incoming.once;
@@ -285,8 +289,9 @@ async function cases(value) {
         try {
           assert(suppressed && size <= 1048576 && incoming.statusCode === 200);
           completed(Buffer.concat(chunks));
+          if (interrupt) { interruptedDeletes++; interrupt.abort(); return; }
           if (mode === 'delete') deleteDrops++; else putDrops++;
-        } catch {}
+        } catch { if (interrupt) { interrupt.abort(); return; } }
         incoming.emit('error',new ProviderUnavailable());
       });
       incoming.once = function(event, listener) {
@@ -428,6 +433,59 @@ async function cases(value) {
     faultChecks.push(FAULT_CHECKS[1]);
     const recovered = await purge(loss);
     assert(deleteDrops === 1 && generation() !== fenced); mark(recovered);
+
+    const interrupted = inputs.documents.purge_interruption;
+    await setup(interrupted); await tombstone(interrupted);
+    const interruption = new AbortController();
+    const interruptionOptions = {...options,signal:AbortSignal.any([options.signal,interruption.signal])};
+    const interruptionErasureStart = sql.functions;
+    const originalPurgePlan = writer.project_purge_dispatch;
+    let interruptedDispatch, beforeInterruptedGraph;
+    writer.project_purge_dispatch = async function(...args) {
+      const plan = await originalPurgePlan.apply(this,args);
+      const data = purge_dispatch_plan_data(plan,args[0],writer,args[2]);
+      interruptedDispatch = {context:data.context,dispatch_id:data.attempt_binding.dispatch_id,
+        purge_context:purge_projection_data(data.purge_projection,writer).context};
+      beforeInterruptedGraph = graph(data.purge_projection);
+      return plan;
+    };
+    interruptDelete = interruption;
+    let interruptionError;
+    try {
+      await call(book => manager.purge(interrupted.purge,scope('auth-2'),book,POLICY,interruptionOptions));
+    } catch (error) { interruptionError = error; }
+    finally { interruptDelete = null; interruption.abort(); writer.project_purge_dispatch = originalPurgePlan; }
+    assert(interruptedDeletes === 1 && interruptionError?.name === 'AbortError' && sql.functions === interruptionErasureStart);
+    const interruptedState = await snapshot(interrupted), interruptedGeneration = generation();
+    const interruptedOwner = context({...interrupted.purge,intent_id:interruptedState.owner.intent_id},'auth-2',interruptedState.owner.owner_token);
+    const interruptedGraph = graph(await writer.project_purge(interruptedDispatch.purge_context,POLICY,options));
+    const interruptedIds = [...interrupted.stage.manifest.members,...interrupted.second_stage.manifest.members].map(member => member.point_id).sort();
+    const interruptedJournal = await writer.dispatch_status(interruptedDispatch.context,interruptedDispatch.dispatch_id,options);
+    assert(interruptedState.pending && interruptedState.backend.state === 'recovery_blocked'
+      && interruptedState.document.tombstoned && !interruptedState.intent.purge_complete
+      && interruptedIds.length === 4 && same([...interruptedGraph.point_ids].sort(),interruptedIds)
+      && same(interruptedGraph,beforeInterruptedGraph) && interruptedJournal?.operation === 'delete_points'
+      && ['dispatched','unknown'].includes(interruptedJournal.state) && interruptedJournal.completion_sha256 === null);
+    await refuses(ProviderUnavailable,() => writer.acquire_owner({...interruptedOwner,owner_token:'00000000-0000-4000-8000-000000000003'},options));
+    assert(same(graph(await writer.project_purge(interruptedDispatch.purge_context,POLICY,options)),interruptedGraph)
+      && (await snapshot(interrupted)).pending && sql.functions === interruptionErasureStart);
+    const interruptedSource = await source(interrupted,'auth-2'); unavailable(interruptedSource.result); await closeSource(interruptedSource);
+    const interruptedResult = await purge(interrupted); complete(interruptedResult);
+    assert(generation() !== interruptedGeneration && !(await snapshot(interrupted)).pending
+      && sql.functions === interruptionErasureStart+1);
+    const recoveredSource = await source(interrupted,'auth-2'); unavailable(recoveredSource.result); await closeSource(recoveredSource);
+    const interruptedManifest = interrupted.stage.manifest;
+    const absenceAttempt = supervisor.issue_attempt({intent_id:interrupted.purge.intent_id,owner_token:interruptedState.owner.owner_token,
+      epoch:supervisor.control_binding().epoch,dispatch_id:'native-interrupted-purge-absence'},options);
+    const absenceTransport = supervisor.transport_for(absenceAttempt);
+    try {
+      const physical = decode(await absenceTransport.request('POST',pointPath+'/scroll',
+        {...options,body:bytes({filter:{must:filterKeys.map(key => ({key,match:{value:interruptedManifest[key]}}))},
+          limit:8,with_payload:true,with_vector:true}),max_response_bytes:1048576}));
+      assert(physical.status === 'ok' && physical.result?.next_page_offset === null
+        && Array.isArray(physical.result.points) && physical.result.points.length === 0);
+    } finally { await absenceTransport.close(); }
+    observations.push(['purge_interruption','aborted','recovery_blocked',true,true,'unavailable',true,0,'complete']); step++;
 
     const handoff = inputs.documents.handoff;
     await setup(handoff); await tombstone(handoff);
