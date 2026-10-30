@@ -78,6 +78,37 @@ def test_native_receipt_failure_details_are_closed_and_copied():
         with pytest.raises(RuntimeError):failure_observation(deepcopy(change))
 
 
+def test_old_acl_late_result_is_closed_to_its_exact_native_scenario():
+    from qdrant_old_acl_late_cases import CHECKS as OLD_ACL_CHECKS
+    value=dict(runtime='python',checks=list(OLD_ACL_CHECKS),
+        proof_scope='native_old_acl_late_upsert_only',semantic_witness_sha256='a'*64)
+    assert validate_result(value,'python',security_guard=True,old_acl_late=True)==value
+    for changed in (dict(value,checks=list(OLD_ACL_CHECKS[:-1])),
+                    dict(value,proof_scope='native_public_security_convergence_only'),
+                    dict(value,private_credential='secret'),
+                    dict(value,semantic_witness_sha256='invalid')):
+        with pytest.raises(RuntimeError,match='old_acl_late_native_result_shape'):
+            validate_result(changed,'python',security_guard=True,old_acl_late=True)
+    for options in ({'old_acl_late':True},
+                    {'security_guard':True,'old_acl_late':True,'public_security':True}):
+        with pytest.raises(RuntimeError,match='old_acl_late_native_result_shape'):
+            validate_result(value,'python',**options)
+    assert failure_observation(dict(ok=False,step=len(OLD_ACL_CHECKS),error='ProviderUnavailable'),
+        max_checks=len(OLD_ACL_CHECKS))['step']==len(OLD_ACL_CHECKS)
+    with pytest.raises(RuntimeError,match='security_verification_native_failure_shape'):
+        failure_observation(dict(ok=False,step=len(OLD_ACL_CHECKS)+1,error='ProviderUnavailable'),
+            max_checks=len(OLD_ACL_CHECKS))
+
+
+def test_public_security_failure_step_accepts_its_ten_native_checks():
+    from qdrant_public_security_cases import CHECKS as PUBLIC_CHECKS
+    assert len(PUBLIC_CHECKS)==10
+    value=dict(ok=False,step=len(PUBLIC_CHECKS),error='ProviderUnavailable')
+    assert failure_observation(value,max_checks=len(PUBLIC_CHECKS))==value
+    with pytest.raises(RuntimeError,match='security_verification_native_failure_shape'):
+        failure_observation(dict(value,step=len(PUBLIC_CHECKS)+1),max_checks=len(PUBLIC_CHECKS))
+
+
 def test_guard_mode_evidence_requires_its_closed_checks_without_claiming_settlement():
     from qdrant_security_verification_cases import GUARD_CHECKS
     baseline=dict(runtime='python',checks=list(CHECKS),proof_scope='native_security_receipt_only',semantic_witness_sha256='a'*64)

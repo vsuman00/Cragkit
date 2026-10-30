@@ -3090,3 +3090,56 @@ Ignored native result:
 `artifacts/V5/V5-04H/reserved-owner-both-01/results.json`. Disk headroom
 27 GiB; no owned process remains. Learning practice unassessed. Next smallest
 action: an unresolved live-request, supervisor-loss or security-race fault.
+
+H-S31 assignment (V5-04H exact ID `old_acl_late_upsert`): audit existing G2c
+public-security and G3 old-write seams for a real held `auth-1` full-point
+upsert while independent `auth-2` authority commits, followed by fenced
+current-payload reconciliation. Frozen ignored protocol:
+`artifacts/V5/V5-04H/old-acl-late-upsert-r1-protocol.md`; contract QW-r1.
+Sol `h_paused_worker_python` owns a read-only Python path audit and assembles;
+Sol `h_paused_worker_node` owns the TypeScript path audit. Separate `/tmp`
+notes only. They coordinate concrete barrier/authority dependencies directly;
+root owns any protocol/parent changes, serial native verification,
+report/tracker/Git and escalation. Product, schema/migrations, QSC/QW
+contracts, shared fixtures, locks and user files are protected. Peers run no
+tests/processes/services/network/DB/Git. State: assigned; H/V5 open.
+
+H-S31 audit found no existing exact held auth-1/auth-2 native interleaving.
+The Sol pair agreed to reuse the current G2c profile-5 parent in an isolated
+scenario. Root froze `artifacts/V5/V5-04H/old-acl-late-upsert-r2-protocol.md`:
+Sol Python owns only new `tools/qdrant_old_acl_late_cases.py` and assembles;
+Sol Node owns only new `tools/check_typescript_qdrant_old_acl_late.mjs`.
+They prove real held full-point HTTP, independent auth-2 authority COMMIT,
+actual unsettled-journal replica-owner refusal, post-fence current payload
+and source, and zero provider text. Root owns parent scenario/result closure,
+focused tests, serial native runs and tracker/report/Git. Existing G2c/G3
+consumers, product/schema/contracts/shared fixtures/locks/user files remain
+protected. Peers run no tests/processes/services/network/DB/Git. State:
+running; H/V5 open.
+
+H-S31 accepted: both native consumers held a real managed auth-1 full-point
+HTTP request after durable dispatch. Independent auth-2 authority committed
+without waiting; old retained provider/final source release was unavailable
+with zero disclosed bytes. An independent native writer's actual replica-owner
+gate refused conflicting auth-2 admission while the old journal remained
+unsettled, with no new auth-2 journal or PUT. The old request then completed
+with its acknowledgment lost. Managed recovery fenced the old key,
+converged all four physical points to exact current auth-2 payload/vectors,
+settled journals and preserved the prior active pointer. Current reader-b
+source verified; old scopes stayed denied. Root ran Python-only, Node-only
+and combined native cases: 12 checks (six per runtime), matching witness
+`d8a52cd1542485eb925eab026b831893c46bfc5a33a687a799c6c66c19cd3914`,
+verified cleanup. The unchanged G2c route passed 20 native checks.
+Twelve focused Python/tool tests, Node syntax and Python compilation passed.
+Full package regressions last passed at H-S30 and were not rerun for this
+new harness. [Checkpoint report](../evaluation/reports/V5/V5-04H-old-acl-late-upsert.md).
+State: COMPLETE for H-S31 only; 39 of 43 exact H IDs accepted. H and V5
+remain open. Handoff: changed new `tools/qdrant_old_acl_late_cases.py`, new
+`tools/check_typescript_qdrant_old_acl_late.mjs`,
+`tools/check_qdrant_security_verification.py`,
+`tools/tests/test_qdrant_security_verification_native.py`,
+`docs/development.md`, this tracker and report. Ignored native result:
+`artifacts/V5/V5-04H/old-acl-both-02/results.json`. Disk headroom 25 GiB;
+no owned process remains. Learning practice unassessed. Next smallest action:
+prove `tombstone_during_repair`, `global_uuid_collision`,
+`lease_expiry_not_fencing` or `supervisor_crash_blocks`.

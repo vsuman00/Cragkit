@@ -1312,8 +1312,14 @@ For [G2c public convergence](../evaluation/reports/V5/V5-04G2c.md), use
 private completion/repetition mode. The same native parent accepts `--runtime
 python`, `--runtime typescript` or `--runtime all`; each run needs a fresh
 artifact directory. It provisions only disposable PostgreSQL/Qdrant fixtures
-and checks eight public/source/failure cases per runtime. Compare the final
+and checks ten public/source/failure cases per runtime. Compare the final
 recorded semantic witnesses when languages run separately. No provider is used.
+
+For the held old-ACL write fault, run the same parent with
+`--with-security-guard --with-purge-profile --old-acl-late --runtime all`
+and a fresh artifact directory. [The H-S31 report](../evaluation/reports/V5/V5-04H-old-acl-late-upsert.md)
+records the exact native command, physical readback and cleanup. This scenario
+uses the existing restricted local roles and makes no provider call.
 
 ## V5 profile-5 schema and optional MCP implementation
 

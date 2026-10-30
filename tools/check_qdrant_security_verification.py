@@ -37,7 +37,17 @@ GRAPH_CHECKS=(
 )
 
 
-def validate_result(value, runtime, *, security_guard=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False, security_repetition=False, public_security=False):
+def validate_result(value, runtime, *, security_guard=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False, security_repetition=False, public_security=False, old_acl_late=False):
+    if old_acl_late:
+        from qdrant_old_acl_late_cases import CHECKS as OLD_ACL_CHECKS
+        if (type(value) is not dict or set(value)!={'runtime','checks','proof_scope','semantic_witness_sha256'}
+                or value['runtime']!=runtime or value['checks']!=list(OLD_ACL_CHECKS)
+                or value['proof_scope']!='native_old_acl_late_upsert_only'
+                or type(value['semantic_witness_sha256']) is not str or len(value['semantic_witness_sha256'])!=64
+                or any(char not in '0123456789abcdef' for char in value['semantic_witness_sha256'])
+                or not security_guard or public_security or any((guarded_graph,security_settlement,security_dispatch,security_completion,security_repetition))):
+            raise RuntimeError('old_acl_late_native_result_shape')
+        return json.loads(json.dumps(value))
     if public_security:
         from qdrant_public_security_cases import CHECKS as PUBLIC_CHECKS
         if (type(value) is not dict or set(value)!={'runtime','checks','proof_scope','semantic_witness_sha256'}
@@ -90,9 +100,9 @@ def validate_result(value, runtime, *, security_guard=False, guarded_graph=False
     return json.loads(json.dumps(value))
 
 
-def failure_observation(value):
+def failure_observation(value, *, max_checks=len(CHECKS)):
     if (type(value) is not dict or value.get('ok') is not False or type(value.get('step')) is not int
-            or not 0 <= value['step'] <= len(CHECKS) or type(value.get('error')) is not str):
+            or not 0 <= value['step'] <= max_checks or type(value.get('error')) is not str):
         raise RuntimeError('security_verification_native_failure_shape')
     if value['error'] in ERRORS:
         if set(value) != {'ok', 'step', 'error'}:
@@ -117,10 +127,12 @@ def failure_observation(value):
     return json.loads(json.dumps(value))
 
 
-async def node_security_verification_cases(value, *, public_security=False):
+async def node_security_verification_cases(value, *, public_security=False, old_acl_late=False):
     environment = {key: val for key, val in os.environ.items() if not key.startswith(('PG', 'QDRANT__'))
         and key not in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'RUST_LOG')}
-    consumer = 'check_typescript_qdrant_public_security.mjs' if public_security else 'check_typescript_qdrant_security_verification.mjs'
+    consumer = ('check_typescript_qdrant_old_acl_late.mjs' if old_acl_late else
+        'check_typescript_qdrant_public_security.mjs' if public_security else
+        'check_typescript_qdrant_security_verification.mjs')
     process = await asyncio.create_subprocess_exec('node', str(ROOT / 'tools' / consumer),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         env=environment, start_new_session=True, limit=65536)
@@ -138,12 +150,19 @@ async def node_security_verification_cases(value, *, public_security=False):
             stdout, stderr = await asyncio.gather(output, errors)
             code = await process.wait()
         if code != 0 and not stderr:
-            observation = failure_observation(json.loads(stdout))
+            if old_acl_late:
+                from qdrant_old_acl_late_cases import CHECKS as OLD_ACL_CHECKS
+                observation = failure_observation(json.loads(stdout), max_checks=len(OLD_ACL_CHECKS))
+            elif public_security:
+                from qdrant_public_security_cases import CHECKS as PUBLIC_CHECKS
+                observation = failure_observation(json.loads(stdout), max_checks=len(PUBLIC_CHECKS))
+            else:
+                observation = failure_observation(json.loads(stdout))
             failure = NativeSecurityVerificationFailure(observation)
             raise failure
         if code != 0 or stderr:
             raise RuntimeError('security_verification_native_child_failed')
-        result = validate_result(json.loads(stdout), 'typescript',public_security=public_security,security_guard='guard_operator_config' in value,guarded_graph='guard_graph_config' in value,security_settlement='settlement_config' in value,security_dispatch='dispatch_config' in value,security_completion='completion_config' in value,security_repetition='repetition_config' in value)
+        result = validate_result(json.loads(stdout), 'typescript',public_security=public_security,old_acl_late=old_acl_late,security_guard=old_acl_late or 'guard_operator_config' in value,guarded_graph='guard_graph_config' in value,security_settlement='settlement_config' in value,security_dispatch='dispatch_config' in value,security_completion='completion_config' in value,security_repetition='repetition_config' in value)
         success = True
         return result
     except BaseException as error:
@@ -177,7 +196,7 @@ async def node_security_verification_cases(value, *, public_security=False):
             raise CleanupFailure(failures, primary=primary, stage='recovery') from None
 
 
-async def check(fixture, runtime, binary, work_dir, *, security_guard=False, purge_profile=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False, security_repetition=False, public_security=False):
+async def check(fixture, runtime, binary, work_dir, *, security_guard=False, purge_profile=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False, security_repetition=False, public_security=False, old_acl_late=False):
     database_type=SecurityGuardDatabase if security_guard else PublicationDatabase
     async with database_type(fixture, with_attestations=True) as database:
         if security_guard:await install_guard(database)
@@ -196,13 +215,18 @@ async def check(fixture, runtime, binary, work_dir, *, security_guard=False, pur
         (work_dir.parent.parent / (runtime+'-role-checks.json')).write_text(json.dumps(role_checks,indent=2)+'\n')
         value = dict(binary=str(binary), work_dir=str(work_dir), inputs=security_verification_input(),
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'))
-        if public_security:
-            from qdrant_public_security_cases import python_public_security_cases
+        if public_security or old_acl_late:
             value['reader_config']=database.config('reader')
             await database.release_admin()
-            result = (await python_public_security_cases(value) if runtime=='python' else
-                      await node_security_verification_cases(value,public_security=True))
-            return validate_result(result,runtime,public_security=True)
+            if old_acl_late:
+                from qdrant_old_acl_late_cases import python_old_acl_late_cases
+                result = (await python_old_acl_late_cases(value) if runtime=='python' else
+                          await node_security_verification_cases(value,old_acl_late=True))
+            else:
+                from qdrant_public_security_cases import python_public_security_cases
+                result = (await python_public_security_cases(value) if runtime=='python' else
+                          await node_security_verification_cases(value,public_security=True))
+            return validate_result(result,runtime,public_security=public_security,old_acl_late=old_acl_late,security_guard=security_guard)
         if security_guard:value['guard_operator_config']=dict(database._operator_config)
         if guarded_graph:value['guard_graph_config']=dict(admin_config=fixture.config)
         if security_settlement:value['settlement_config']=dict(admin_config=fixture.config)
@@ -228,6 +252,7 @@ def main(argv=None):
     parser.add_argument('--security-completion',action='store_true')
     parser.add_argument('--security-repetition',action='store_true')
     parser.add_argument('--public-security',action='store_true')
+    parser.add_argument('--old-acl-late',action='store_true')
     parser.add_argument('--runtime', choices=('python', 'typescript', 'all'), default='all')
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
@@ -237,6 +262,8 @@ def main(argv=None):
         if args.with_purge_profile and not args.with_security_guard:raise RuntimeError('purge_profile_requires_guard_profile')
         if args.public_security and (not args.with_purge_profile or args.guarded_graph or args.security_settlement or args.security_dispatch or args.security_completion or args.security_repetition):
             raise RuntimeError('public_security_requires_exclusive_purge_profile')
+        if args.old_acl_late and (not args.with_purge_profile or args.public_security or args.guarded_graph or args.security_settlement or args.security_dispatch or args.security_completion or args.security_repetition):
+            raise RuntimeError('old_acl_late_requires_exclusive_purge_profile')
         if args.security_repetition and (not args.with_purge_profile or args.guarded_graph or args.security_settlement or args.security_dispatch or args.security_completion):
             raise RuntimeError('security_repetition_requires_exclusive_purge_profile')
         if args.security_settlement and (not args.with_security_guard or args.guarded_graph):
@@ -257,7 +284,7 @@ def main(argv=None):
             private = Path(tempfile.mkdtemp(prefix=runtime + '-', dir=args.artifacts_dir)).resolve()
             # Two runtime clients and the default three reserved slots.
             with PostgresSourceFixture(args.postgres_bin, private / 'postgres', max_connections=7 if args.guarded_graph else 6 if args.with_security_guard else 5) as fixture:
-                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed',security_guard=args.with_security_guard,purge_profile=args.with_purge_profile,guarded_graph=args.guarded_graph,security_settlement=args.security_settlement,security_dispatch=args.security_dispatch,security_completion=args.security_completion,security_repetition=args.security_repetition,public_security=args.public_security), 210))
+                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed',security_guard=args.with_security_guard,purge_profile=args.with_purge_profile,guarded_graph=args.guarded_graph,security_settlement=args.security_settlement,security_dispatch=args.security_dispatch,security_completion=args.security_completion,security_repetition=args.security_repetition,public_security=args.public_security,old_acl_late=args.old_acl_late), 210))
             shutil.rmtree(private)
             results.append(result)
         if len({result['semantic_witness_sha256'] for result in results})!=1:
