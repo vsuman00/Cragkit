@@ -2794,3 +2794,51 @@ the checkpoint report. Native result in ignored
 Disk headroom 28 GiB; no owned process remains. Learning practice unassessed.
 Next smallest action: choose another unresolved H fault with an observable
 physical boundary, freeze the case, then verify both native runtimes.
+
+H-S25 assignment (V5-04H exact ID `source_authority_outage`): one shared
+outcome is an actual caller-owned authority SQL resource becoming unavailable
+at the repair authorization/resume boundary. A prior bounded authority read
+must succeed; the resumed repair must fail with typed `ProviderUnavailable`
+before recovery/preflight or Qdrant mutation, with no ordinary success or
+publication and the previous active pointer preserved. Frozen ignored
+protocol: `artifacts/V5/V5-04H/source-authority-outage-r1-protocol.md`. Sol
+`h_outage_python` owns only `tools/qdrant_repair_cases.py` and assembles; Sol
+`h_outage_node` owns only `tools/check_typescript_qdrant_repair.mjs`. Both do
+substantive native work, coordinate the SQL/read and outage witness directly,
+and change ownership only by explicit transfer with root notice. Root owns
+shared test, serial native validation, report/tracker, Git and escalation.
+Product, SQL/schema/migrations, contracts, sealed/shared fixtures, locks and
+user edits are protected. The two-concurrent-client PostgreSQL ceiling stays
+fixed; after closing the supervisor resource, a sequential fresh writer
+resource may verify the postfailure pointer/intent and must then close.
+Peers run no tests/processes/services/network/DB/Git.
+Outcome/protected/ownership changes return to root, and unresolved material
+decisions go to Astra. State: assigned; H/V5 open.
+
+H-S25 accepted for the client authority-access outage profile: both native
+G1a consumers made a bounded scoped PostgreSQL pointer/intent read, closed
+the caller writer resource, observed `ProviderUnavailable` from the same
+read during repair authorization, and returned typed operational failure.
+Preflight, recovery, publication and Qdrant request counts did not advance.
+A sequential replacement writer resource verified the same active pointer
+and unpublished intent; no more than two clients were open concurrently.
+The Python G1a baseline initially failed before the new case because its
+acknowledgment fixture lacked inactive `publication` state required by the
+shared transaction wrapper. The owning peer added those fields, and native
+Python plus combined runs passed. The final serial parent passed ten checks
+per runtime with verified cleanup; three focused protocol tests, Python
+compilation, Node syntax and 16 seals passed. Full Python/Node regressions
+from H-S22 were not rerun for this fixture/harness change. The injected
+outage is a closed caller-owned authority pool, not a stopped PostgreSQL
+server. No product, SQL/schema/migration, lockfile, shared sealed fixture,
+user edit, provider/hosted call or task-owned service remained.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-source-authority-outage.md).
+State: COMPLETE for H-S25 only; 33 of 43 exact H IDs accepted. H and V5
+remain open. Handoff: changed `tools/qdrant_repair_cases.py`,
+`tools/check_typescript_qdrant_repair.mjs`, `tools/check_qdrant_repair.py`,
+`tools/tests/test_qdrant_repair_native.py`, this tracker and checkpoint
+report. Ignored native result:
+`artifacts/V5/V5-04H/source-authority-outage-both-04/results.json`.
+Disk headroom 28 GiB; no owned process remains. Learning practice unassessed.
+Next smallest action: bind a remaining H fault to an observable native
+interleaving, freeze the owned files, then verify both runtimes.

@@ -12,6 +12,7 @@ const CHECKS=Object.freeze([
   'cross_epoch_prepared_actual_attestation_ack_loss','interrupted_attested_repair_preserves_prior_active',
   'attested_retry_same_generation_without_point_resend','complete_unknown_recovery_then_bounded_verified_replay',
   'historical_repair_no_replay','callback_denial_preserves_active','foreign_unknown_keeps_instance_blocked',
+  'source_authority_outage_fails_repair_authorization',
 ]);
 const ERRORS=new Set(['IntegrityViolation','InvalidRequest','ProviderUnavailable','UnauthorizedScope',
   'UnsupportedCapability','DeadlineExceeded','IndexNotReady','AbortError']);
@@ -59,7 +60,11 @@ async function cases(value){
   const recovery=new PostgresQdrantRecovery(supervisorResource,inputs.config,supervisor,reconciliation);
   const authority=new PostgresQdrantPublicationAuthority(writer,recovery),transport=new ManagedQdrantPublicationTransport(supervisor);
   const checks=[],handles=new Set(),fault={armed:false,fired:0,inserts:0,destroyed:0};
-  let manager,address,primary,puts=0,failPut=false,cancelStage=null,denyCallback=false,pausePublish=null;
+  let manager,address,primary,puts=0,requests=0,failPut=false,cancelStage=null,denyCallback=false,pausePublish=null,outage=null,inspectionResource=null;
+  const reached={preflight:0,recovery:0,publish:0};
+  const originalPreflight=writer.preflight_repair.bind(writer),originalRecover=recovery.recover.bind(recovery);
+  writer.preflight_repair=async(...args)=>{reached.preflight++;return originalPreflight(...args);};
+  recovery.recover=async(...args)=>{reached.recovery++;return originalRecover(...args);};
   const target='/collections/'+inputs.config.physical_collection;
   const reference=stage=>({collection:stage.manifest.collection,document_id:stage.manifest.document_id,intent_id:stage.intent.intent_id});
   const context=(stage,scope=inputs.scope,token=OWNER)=>({...reference(stage),scope,owner_token:token});
@@ -71,6 +76,24 @@ async function cases(value){
     return result;
   };
   const snapshot=(stage,scope=inputs.scope)=>writer.manager_snapshot(context(stage,scope),options);
+  const authorityRead=(pool,stage)=>{
+    const readOptions={...options,deadline:Math.min(options.deadline,now()+5)};
+    return pool.withLease(readOptions,async(client,signal)=>{
+    const lease={deadline:readOptions.deadline,signal};
+    const query=(text,values)=>bounded(client.query({text,values,rowMode:'array'}),lease);
+    await query('BEGIN READ ONLY');
+    try{
+      await query("SELECT set_config('statement_timeout',$1,true)",[String(Math.max(1,Math.floor((readOptions.deadline-now())*1000)))]);
+      await query("SELECT set_config('cragkit_qdrant.tenant_id',$1,true),set_config('cragkit_qdrant.collection',$2,true),set_config('cragkit_qdrant.principal_id',$3,true),set_config('cragkit_qdrant.grant_ids',$4,true),set_config('cragkit_qdrant.authorization_revision',$5,true),set_config('cragkit_qdrant.writer_document_id',$6,true),set_config('cragkit_qdrant.writer_intent_id',$7,true),set_config('cragkit_qdrant.writer_owner_token',$8,true),set_config('cragkit_qdrant.backend_instance_id',$9,true)",
+        [inputs.scope.tenant_id,stage.manifest.collection,inputs.scope.principal_id,JSON.stringify(inputs.scope.grant_ids),inputs.scope.authorization_revision,stage.manifest.document_id,stage.intent.intent_id,OWNER,inputs.instance_id]);
+      const result=await query('SELECT d.active_generation_id,i.state FROM cragkit_qdrant.documents d JOIN cragkit_qdrant.publication_intents i USING (tenant_id,collection,document_id) WHERE d.tenant_id=$1 AND d.collection=$2 AND d.document_id=$3 AND i.intent_id=$4 LIMIT 1',
+        [inputs.scope.tenant_id,stage.manifest.collection,stage.manifest.document_id,stage.intent.intent_id]);
+      await query('COMMIT');
+      if(result.rows.length!==1||result.rows[0].length!==2)throw new Error('authority_read_shape');
+      return result.rows[0];
+    }catch(error){try{await query('ROLLBACK');}catch{client.release(true);}throw error;}
+    });
+  };
   async function active(generation){if((await snapshot(inputs.stage)).document?.active_generation_id!==generation)throw new Error('active_changed');}
   function published(result,stage){if(result.operation!=='repair'||result.state!=='published'||!result.published||result.intent_id!==stage.intent.intent_id)throw new Error('repair_result');}
   async function prepare(stage){
@@ -97,6 +120,7 @@ async function cases(value){
   });
   const originalPublish=writer.publish.bind(writer);
   writer.publish=async(ctx,opts)=>{
+    reached.publish++;
     if(pausePublish?.intent===ctx.intent_id){
       const row=await writer.attestation_snapshot(ctx,opts);
       if(!row.attestation)throw new Error('pause_without_attestation');
@@ -116,6 +140,7 @@ async function cases(value){
     supervisor.transport_for=capability=>{
       const actual=actualTransport(capability);
       const handle={async request(method,path,opts){
+        requests++;
         const mutating=method==='PUT'&&path===target+'/points?wait=true&ordering=strong';
         if(mutating)puts++;
         const response=await actual.request(method,path,opts);
@@ -125,7 +150,16 @@ async function cases(value){
       handles.add(handle);return handle;
     };
     await resource.open();await supervisorResource.open();
-    manager=new QdrantPublicationManager(authority,transport,inputs.config,supervisor,async scope=>{
+    manager=new QdrantPublicationManager(authority,transport,inputs.config,supervisor,async(scope,collection,document)=>{
+      if(outage){
+        if(!same(scope,inputs.scope)||collection!==outage.stage.manifest.collection||document!==outage.stage.manifest.document_id)throw new Error('authority_outage_target');
+        outage.callbacks++;
+        outage.before=await authorityRead(resource,outage.stage);
+        if(outage.before[0]!==inputs.stages.uncertain.manifest.generation_id||outage.before[1]==='published')throw new Error('authority_prior_state');
+        await resource.close();outage.closed=true;
+        try{await authorityRead(resource,outage.stage);}catch(error){if(error instanceof ProviderUnavailable)outage.failed=true;throw error;}
+        throw new Error('authority_outage_read_succeeded');
+      }
       if(denyCallback)return false;
       if(cancelStage&&!cancelStage.fired){
         const state=await writer.inspect(context(cancelStage.stage,scope),options);
@@ -176,13 +210,24 @@ async function cases(value){
     const targetState=await snapshot(blocked),foreign=await snapshot(inputs.second_stage,inputs.second_scope);
     if(!foreign.pending||targetState.pending||targetState.backend.state!=='recovery_blocked'||puts!==before)throw new Error('foreign_unknown_not_blocked');
     await active(uncertain.manifest.generation_id);mark();
+    const baseline={...reached,requests,puts};
+    outage={stage:blocked,callbacks:0,closed:false,failed:false,before:null};
+    await refuses(()=>repair(blocked),ProviderUnavailable);
+    if(outage.callbacks!==1||!outage.closed||!outage.failed||!same({...reached,requests,puts},baseline))throw new Error('authority_outage_boundary');
+    await supervisorResource.close();
+    inspectionResource=new PoolResource(writerConfig);await inspectionResource.open();
+    const after=await authorityRead(inspectionResource,blocked);
+    if(!same(after,outage.before)||after[0]!==uncertain.manifest.generation_id||after[1]==='published')throw new Error('authority_outage_published');
+    await inspectionResource.close();
+    mark();
     return {runtime:'typescript',checks,proof_scope:'native_managed_repair_g1a_only'};
   }catch(error){primary=error;throw error;}
   finally{
     const failures=[],deadline=now()+15;
     const owned=[...(manager?[['manager_close',manager]]:[]),['transport_close',transport],
       ...[...handles].map(handle=>['transport_close',handle]),['reconciliation_close',reconciliation],['recovery_close',recovery],
-      ['writer_close',writer],['resource_close',resource],['supervisor_resource_close',supervisorResource],['controller_close',supervisor]];
+      ['writer_close',writer],['resource_close',resource],['supervisor_resource_close',supervisorResource],
+      ...(inspectionResource?[['inspection_resource_close',inspectionResource]]:[]),['controller_close',supervisor]];
     for(const [operation,owner]of owned){try{await bounded(Promise.resolve().then(()=>owner.close()),{deadline:Math.max(now()+.001,Math.min(now()+8,deadline))});}catch(error){failures.push({operation,outcome:outcome(error)});}}
     if(address){try{await listener(address,true);}catch(error){failures.push({operation:'listener_close',outcome:outcome(error)});}}
     if(failures.length)throw new RuntimeCleanupFailure(primary,failures);

@@ -24,6 +24,8 @@ def test_same_document_successors_preserve_pointer_chain_and_global_identity():
 
 def test_success_cannot_claim_full_repair_or_incomplete_checks():
     result=dict(runtime='python',checks=list(CHECKS),proof_scope='native_managed_repair_g1a_only')
+    assert len(CHECKS)==len(set(CHECKS))==10
+    assert CHECKS[-1]=='source_authority_outage_fails_repair_authorization'
     assert validate_result(result,'python')==result
     for changed in (dict(result,runtime='typescript'),dict(result,proof_scope='full_repair'),
                     dict(result,checks=list(CHECKS)[:-1]),dict(result,private='credential')):

@@ -14,6 +14,7 @@ CHECKS=(
  'historical_repair_no_replay',
  'callback_denial_preserves_active',
  'foreign_unknown_keeps_instance_blocked',
+ 'source_authority_outage_fails_repair_authorization',
 )
 class NativeRepairFailure(RuntimeError):
     def __init__(self,observation):
@@ -51,7 +52,8 @@ async def python_repair_cases(value):
     writer_config, supervisor_config = config(value['writer_config']), config(value['supervisor_config'])
     if writer_config.max_size != 1 or supervisor_config.max_size != 1:
         raise RuntimeError('repair_fixture_two_client_ceiling')
-    acknowledgment = dict(armed=False, fired=0, insert_count=0)
+    acknowledgment = dict(armed=False, fired=0, insert_count=0,
+        publication=dict(track=False,dml=0,armed=False,cas_writes=0,fired=0))
     resource = PoolResource(writer_config, factory=lambda cfg: _AttestationAckPool(cfg, acknowledgment))
     supervisor_resource = PoolResource(supervisor_config)
     supervisor = ManagedQdrantSupervisor(Path(value['binary']), Path(value['work_dir']),
@@ -66,8 +68,9 @@ async def python_repair_cases(value):
     deadline = asyncio.get_running_loop().time() + 125
     checks, handles = [], []
     mode = dict(cancel=False, fired=False)
-    network = dict(mutations=0,drop=False)
-    endpoint = primary = manager = None
+    network = dict(mutations=0,drop=False,requests=0)
+    outage = dict(armed=False, entered=0, reads=0, unavailable=0)
+    endpoint = primary = manager = inspection_resource = None
     target = '/collections/' + inputs['config']['physical_collection']
 
     def reference(stage):
@@ -86,6 +89,22 @@ async def python_repair_cases(value):
             return
         raise RuntimeError('repair_expected_refusal_missing')
     async def authorize(selected_scope, collection, document):
+        if outage['armed']:
+            outage['entered'] += 1
+            if (selected_scope != scope or collection != outage['stage']['manifest']['collection']
+                    or document != outage['stage']['manifest']['document_id']):
+                raise RuntimeError('repair_outage_wrong_authorization_target')
+            outage['before'] = await authority_read(resource, outage['stage'])
+            outage['reads'] += 1
+            if (outage['before'][0] != outage['previous'] or outage['before'][1] == 'published'):
+                raise RuntimeError('repair_outage_invalid_prior_authority')
+            await resource.close()
+            try:
+                await authority_read(resource, outage['stage'])
+            except ProviderUnavailable:
+                outage['unavailable'] += 1
+                raise
+            raise RuntimeError('repair_outage_authority_still_available')
         if mode.get('deny'):return False
         if mode['cancel'] and not mode['fired']:
             state = await snapshot(mode['stage'])
@@ -94,6 +113,26 @@ async def python_repair_cases(value):
                 asyncio.current_task().cancel()
                 await asyncio.sleep(0)
         return True
+    async def authority_read(selected_resource, stage):
+        from cragkit._qdrant_writer import _SCOPE_SQL
+        bounded = min(deadline, asyncio.get_running_loop().time() + 5)
+        async with asyncio.timeout_at(bounded):
+            async with selected_resource.lease(deadline=bounded) as connection:
+                async with connection.transaction():
+                    await connection.execute('SET TRANSACTION READ ONLY')
+                    await connection.execute("SELECT set_config('statement_timeout',%s,true)",
+                        (str(max(1, int((bounded-asyncio.get_running_loop().time())*1000))),))
+                    await connection.execute(_SCOPE_SQL, (scope.tenant_id, stage['manifest']['collection'],
+                        scope.principal_id, json.dumps(list(scope.grant_ids)), scope.authorization_revision,
+                        stage['manifest']['document_id'], stage['intent']['intent_id'], lookup_token, inputs['instance_id']))
+                    cursor = await connection.execute('SELECT d.active_generation_id,i.state '
+                        'FROM cragkit_qdrant.documents d JOIN cragkit_qdrant.publication_intents i '
+                        'USING (tenant_id,collection,document_id) WHERE d.tenant_id=%s AND d.collection=%s '
+                        'AND d.document_id=%s AND i.intent_id=%s LIMIT 1',
+                        (scope.tenant_id,stage['manifest']['collection'],stage['manifest']['document_id'],stage['intent']['intent_id']))
+                    rows = await cursor.fetchall()
+                    if len(rows) != 1:raise RuntimeError('repair_outage_authority_row_missing')
+                    return tuple(rows[0])
     async def prepare(stage):
         await manager.stage(stage, scope, ledger(), deadline=deadline)
         mode.update(cancel=True, fired=False, stage=stage)
@@ -123,6 +162,7 @@ async def python_repair_cases(value):
     class Handle:
         def __init__(self, actual): self.actual = actual
         async def request(self, method, path, **options):
+            network['requests'] += 1
             if method == 'PUT' and '/points?' in path:
                 network['mutations'] += 1
             response=await self.actual.request(method,path,**options)
@@ -235,6 +275,35 @@ async def python_repair_cases(value):
         if state['backend']['state']!='recovery_blocked' or not foreign['pending'] or state['pending']:
             raise RuntimeError('repair_foreign_uncertainty_not_preserved')
         checks.append(CHECKS[8])
+        observed = dict(preflight=0,recovery=0,publish=0)
+        originals = ((writer,'preflight_repair','preflight'),(recovery,'recover','recovery'),(writer,'publish','publish'))
+        saved = []
+        for owner, name, key in originals:
+            actual = getattr(owner,name)
+            async def observe(*args,_actual=actual,_key=key,**kwargs):
+                observed[_key] += 1
+                return await _actual(*args,**kwargs)
+            saved.append((owner,name,actual))
+            setattr(owner,name,observe)
+        writes, requests = network['mutations'], network['requests']
+        outage.update(armed=True,stage=blocked,previous=uncertain['manifest']['generation_id'])
+        try:
+            await expect(ProviderUnavailable,lambda:repair(blocked))
+        finally:
+            outage['armed']=False
+            for owner,name,actual in saved:setattr(owner,name,actual)
+        if (outage['entered']!=1 or outage['reads']!=1 or outage['unavailable']!=1
+                or any(observed.values()) or network['mutations']!=writes or network['requests']!=requests):
+            raise RuntimeError('repair_outage_not_isolated_before_backend')
+        await supervisor_resource.close()
+        inspection_resource = PoolResource(writer_config)
+        try:
+            await inspection_resource.open()
+            after = await authority_read(inspection_resource,blocked)
+        finally:
+            await inspection_resource.close()
+        if after != outage['before']:raise RuntimeError('repair_outage_changed_authority')
+        checks.append(CHECKS[9])
         return dict(runtime='python',checks=checks,proof_scope='native_managed_repair_g1a_only')
     except BaseException as error:
         primary = error
@@ -255,7 +324,9 @@ async def python_repair_cases(value):
         owned = ([('manager_close', manager)] if manager is not None else [])
         owned += [('transport_close', handle) for handle in handles]
         owned += [('recovery_close', recovery), ('writer_close', writer),
-            ('resource_close', resource), ('supervisor_resource_close', supervisor_resource), ('controller_close', supervisor)]
+            ('resource_close', resource), ('supervisor_resource_close', supervisor_resource)]
+        if inspection_resource is not None:owned.append(('inspection_resource_close',inspection_resource))
+        owned.append(('controller_close',supervisor))
         for operation, item in owned:
             try:
                 await asyncio.wait_for(item.close(), max(.001, min(8, cleanup_deadline-asyncio.get_running_loop().time())))

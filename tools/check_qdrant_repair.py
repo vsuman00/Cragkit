@@ -46,7 +46,8 @@ def failure_observation(value):
                     or type(record['operation']) is not str or record['operation'] not in ('manager_close', 'transport_close', 'writer_close', 'recovery_close', 'resource_close',
                         'supervisor_resource_close', 'controller_close', 'listener_close', 'verifier_close',
                         'host_close', 'worker_drain', 'worker_terminate', 'publish_drain',
-                        'wrong_verifier_close', 'reconciliation_close', 'wrong_writer_close')
+                        'wrong_verifier_close', 'reconciliation_close', 'wrong_writer_close',
+                        'inspection_resource_close')
                     or type(record['outcome']) is not str or record['outcome'] not in ERRORS):
                 raise RuntimeError('repair_native_failure_shape')
     else:
