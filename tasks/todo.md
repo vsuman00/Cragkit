@@ -3035,3 +3035,58 @@ remain open. Handoff: changed this tracker and report only. No task-owned
 process remains; disk headroom 27 GiB. Learning practice unassessed. Next
 smallest action: prove `supervisor_crash_blocks` or another remaining exact H
 fault with a distinct physical boundary.
+
+H-S30 assignment (V5-04H exact ID `reserved_owner_crash`): determine the
+configured admission/lease expiry boundary and durable journal state in the
+existing real reserved-child kill trace before making its exact acceptance
+claim. Frozen ignored protocol:
+`artifacts/V5/V5-04H/reserved-owner-crash-r1-protocol.md`; contract QW-r1.
+Sol `h_paused_worker_python` owns a read-only Python audit and assembles;
+Sol `h_paused_worker_node` owns the TypeScript audit. Only separate task-owned
+`/tmp` notes are writable by peers. Both coordinate concrete state/deadline
+dependencies directly. Root owns any parent/test changes, serial native
+verification, report/tracker/Git and escalation. Product, schema/migrations,
+QSC/QW contracts, sealed/shared fixtures, locks and user files are protected;
+peers run no tests/processes/services/network/DB/Git. State: assigned;
+H/V5 open.
+
+H-S30 contract clarification: Sol peers confirmed the exact fixture's literal
+`unknown` expectation contradicted QW-r1's reserved-COMMIT-before-dispatched
+barrier. The killed child cannot run cleanup to change the durable `reserved`
+row. No timed SQL owner lease exists; the current 1.05-second wait does not
+cross the admitted request deadline. Astra recommended preserving product
+state and testing configured request expiry. Root revised only the exact
+fixture expectation and acceptance wording, with ignored r2 protocol:
+`artifacts/V5/V5-04H/reserved-owner-crash-r2-protocol.md`. Sol Python now
+owns only `tools/qdrant_reserved_worker_cases.py` and assembles; Sol Node owns
+only `tools/check_typescript_qdrant_reserved_worker.mjs`. They implement
+separate bounded native deadline witnesses with matching labels, coordinate
+directly and run no tests/processes/services/network/DB/Git. Root retains
+parent/tests, contract, report/tracker/Git and serial native acceptance.
+State: running; H/V5 open.
+
+H-S30 accepted after the narrow fixture clarification. Each native consumer
+captured a five-second crash-operation deadline, killed the real child at the
+acknowledged reserved-COMMIT barrier, independently found the exact durable
+`reserved` row and physical successor absence, then crossed that deadline.
+A fresh host/budget retry made no new dispatch or point write. Full
+document/owner/intent/backend state and the prior published generation's
+physical points remained unchanged; unresolved work still requires managed
+recovery. This is request deadline expiry, not a timed SQL owner lease.
+Root ran Python-only and Node-only native scenarios, then the combined parent:
+14 checks (seven per runtime), matching public hash
+`fad298337cc6ef1386d01a2f62c1fef23377d38bdf05e5da49ca871d0db2a646`,
+verified cleanup. Fourteen focused Python/tool and 37 Node tests, JSON/Node
+syntax, Python compilation, scoped diff and 16 seals passed. Full local
+regressions passed 3,104 Python/tool tests (four existing serializer warnings)
+and 1,557 Node tests with strict TypeScript build.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-reserved-owner-crash.md).
+State: COMPLETE for H-S30 only; 38 of 43 exact H IDs accepted. H and V5
+remain open. Handoff: changed `contracts/fixtures/qdrant_publication.json`,
+`docs/qdrant-publication-acceptance.md`, `docs/development.md`,
+`tools/qdrant_reserved_worker_cases.py`,
+`tools/check_typescript_qdrant_reserved_worker.mjs`, this tracker and report.
+Ignored native result:
+`artifacts/V5/V5-04H/reserved-owner-both-01/results.json`. Disk headroom
+27 GiB; no owned process remains. Learning practice unassessed. Next smallest
+action: an unresolved live-request, supervisor-loss or security-race fault.

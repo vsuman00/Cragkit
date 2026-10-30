@@ -11,9 +11,10 @@ import {QdrantPublicationManager,PostgresQdrantPublicationAuthority,ManagedQdran
 const CHECKS=[
   'actual_child_base_publish_preserves_parent_supervisor',
   'durable_reserved_then_owned_worker_sigkill_preserves_previous_generation',
-  'fresh_sql_reserved_or_unknown_successor_unpublished',
+  'fresh_sql_reserved_successor_unpublished',
   'physical_successor_points_absent',
-  'elapsed_fresh_child_retry_preserves_single_reserved_dispatch',
+  'expired_original_request_fresh_child_retry_preserves_single_reserved_dispatch',
+  'expired_request_keeps_recovery_required',
   'host_close_preserves_supervisor_and_reaps_owned_children',
 ];
 const RESULT_KEYS=['intent_id','operation','state','revision_id','generation_id',
@@ -94,8 +95,9 @@ async function cases(value){
   }
   async function snapshot(stage,scope=inputs.scope){const entry=await bundle(false);try{return await entry.writer.manager_snapshot(context(stage,scope),options);}finally{await closeBundle(entry);}}
   async function stage(stage,scope=inputs.scope){const entry=await bundle();try{await entry.manager.stage(stage,scope,book(),options);}finally{await closeBundle(entry);}}
-  async function publish(stage,scope,observer,ledger=book()){
-    try{return await host.publish(job(stage,scope),ledger,{...options,observer});}finally{accounting(ledger,1);}
+  async function publish(stage,scope,observer,ledger=book(),deadline=options.deadline,deadlineMs=limits.deadline_ms){
+    const selected={...job(stage,scope),limits:{...limits,deadline_ms:deadlineMs}};
+    try{return await host.publish(selected,ledger,{...options,deadline,observer});}finally{accounting(ledger,1);}
   }
   async function operational(work){
     try{await work;}catch(error){assert(['ProviderUnavailable','UnauthorizedScope'].includes(outcome(error)));return;}
@@ -122,12 +124,14 @@ async function cases(value){
       &&events.filter(event=>event.kind==='write_observed'&&event.status===200).length===1);
     await unchangedSupervisor();add(0);
     await stage(inputs.successor);
+    const crashLedger=new ExecutionLedger({limits:{...limits,deadline_ms:5000},deadline:options.deadline});
+    const crashDeadline=crashLedger.deadline;
     const reservedEvents=[];let killed=false;
     await operational(publish(inputs.successor,inputs.scope,async(event,owned)=>{
       reservedEvents.push(event);
-      assert(event.kind==='reserved'&&!killed);
+      assert(event.kind==='reserved'&&!killed&&now()<crashDeadline);
       await owned.terminate(short());killed=true;
-    }));
+    },crashLedger,crashDeadline,5000));
     assert(killed&&reservedEvents.length===1);await unchangedSupervisor();add(1);
     const successorJournal=()=>transaction(query=>query(
       'SELECT dispatch_id,state,sequence::text FROM cragkit_qdrant.dispatch_journal WHERE instance_id=$1 AND intent_id=$2 ORDER BY sequence',
@@ -137,9 +141,10 @@ async function cases(value){
       const observed=await snapshot(inputs.successor);
       assert(observed.intent.state==='writing'&&!observed.intent.authority_committed&&!observed.intent.replica_complete
         &&observed.document.active_generation_id===inputs.stage.manifest.generation_id&&observed.pending);
+      return observed;
     }
-    assert(pending.length===1&&['reserved','unknown'].includes(pending[0][1])&&pending[0][2]==='1');
-    assert(pending[0][0]===reservedEvents[0].dispatch_id);await unpublished();add(2);
+    assert(pending.length===1&&pending[0][1]==='reserved'&&pending[0][2]==='1');
+    assert(pending[0][0]===reservedEvents[0].dispatch_id);const retained=await unpublished();add(2);
     async function absent(){
       const attempt=supervisor.issue_attempt({intent_id:'reserved-absence',owner_token:context(inputs.successor,inputs.scope).owner_token,
         epoch:1,dispatch_id:'reserved-absence'},options);
@@ -149,18 +154,29 @@ async function cases(value){
           ...options,body:bytes({ids:inputs.successor.manifest.members.map(member=>member.point_id),with_payload:true,with_vector:true})});
         const observed=JSON.parse(Buffer.from(raw).toString('utf8'));
         assert(observed.status==='ok'&&isDeepStrictEqual(observed.result,[]));
+        const baseRaw=await transport.request('POST','/collections/'+inputs.config.physical_collection+'/points',{
+          ...options,body:bytes({ids:inputs.expected_points.map(point=>point.id),with_payload:true,with_vector:true})});
+        const base=JSON.parse(Buffer.from(baseRaw).toString('utf8'));
+        const normalized=points=>points.map(({id,payload,vector})=>({id,payload,vector})).sort((a,b)=>a.id.localeCompare(b.id));
+        assert(base.status==='ok'&&isDeepStrictEqual(normalized(base.result),normalized(inputs.expected_points)));
       }finally{await transport.close();}
     }
     await absent();add(3);
     await host.close();host=null;
-    await bounded(new Promise(resolve=>setTimeout(resolve,1050)),options);
+    await bounded(new Promise(resolve=>setTimeout(resolve,Math.max(0,(crashDeadline-now())*1000)+20)),options);
+    assert(now()>=crashDeadline&&crashLedger.deadline===crashDeadline);
     host=new ManagedQdrantPublicationWorkerHost(supervisor,async(scope,collection,document)=>
       isDeepStrictEqual(scope,inputs.scope)&&collection===inputs.stage.manifest.collection&&document===inputs.stage.manifest.document_id);
     const retryEvents=[];
     await operational(publish(inputs.successor,inputs.scope,async event=>{retryEvents.push(event);}));
     assert(retryEvents.length===0&&isDeepStrictEqual(await successorJournal(),pending));
     await unpublished();await absent();await unchangedSupervisor();add(4);
-    await host.close();host=null;await unchangedSupervisor();assert(supervisor.control_binding().alive);add(5);
+    const stillUnresolved=await snapshot(inputs.successor);
+    assert(stillUnresolved.pending&&stillUnresolved.intent.state==='writing'
+      &&stillUnresolved.backend.state==='open'&&stillUnresolved.backend.epoch===1
+      &&['document','owner','intent','backend'].every(key=>isDeepStrictEqual(stillUnresolved[key],retained[key]))
+      &&isDeepStrictEqual(await successorJournal(),pending));add(5);
+    await host.close();host=null;await unchangedSupervisor();assert(supervisor.control_binding().alive);add(6);
     return {runtime:'typescript',checks,proof_scope:'reserved_worker_process_only',
       public_results_sha256:createHash('sha256').update(JSON.stringify(results),'utf8').digest('hex')};
   }catch(error){primary=error;throw error;}

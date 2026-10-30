@@ -9,9 +9,10 @@ from qdrant_publication_worker_cases import ERRORS, NativePublicationWorkerFailu
 CHECKS = (
     'actual_child_base_publish_preserves_parent_supervisor',
     'durable_reserved_then_owned_worker_sigkill_preserves_previous_generation',
-    'fresh_sql_reserved_or_unknown_successor_unpublished',
+    'fresh_sql_reserved_successor_unpublished',
     'physical_successor_points_absent',
-    'elapsed_fresh_child_retry_preserves_single_reserved_dispatch',
+    'expired_original_request_fresh_child_retry_preserves_single_reserved_dispatch',
+    'expired_request_keeps_recovery_required',
     'host_close_preserves_supervisor_and_reaps_owned_children',
 )
 
@@ -55,12 +56,12 @@ async def python_reserved_worker_cases(value):
         return {key: selected['intent'][key] for key in ('collection', 'document_id', 'intent_id')}
     def context(selected):
         return dict(scope=scope, **reference(selected), owner_token='00000000-0000-4000-8000-000000000099')
-    def ledger():
-        return ExecutionLedger(Limits(deadline_ms=60000, max_attempts=1, max_provider_calls=0), deadline=deadline)
-    def job(selected):
+    def ledger(deadline_ms=60000):
+        return ExecutionLedger(Limits(deadline_ms=deadline_ms, max_attempts=1, max_provider_calls=0), deadline=deadline)
+    def job(selected, deadline_ms=60000):
         return dict(writer_pool=dict(value['writer_config']), config=deepcopy(inputs['config']),
             scope=scope.model_dump(mode='json'), reference=reference(selected),
-            limits=Limits(deadline_ms=60000, max_attempts=1, max_provider_calls=0).model_dump(mode='json'))
+            limits=Limits(deadline_ms=deadline_ms, max_attempts=1, max_provider_calls=0).model_dump(mode='json'))
     async def authorize(selected_scope, collection, document):
         return (selected_scope == scope and collection == stage['manifest']['collection']
             and document == stage['manifest']['document_id'])
@@ -138,12 +139,21 @@ async def python_reserved_worker_cases(value):
                     with_payload=True, with_vector=True)), deadline=deadline))
             if result.get('result') != []:
                 raise RuntimeError('reserved_worker_successor_http_arrived')
+            preserved = json.loads(await handle.request('POST', target + '/points',
+                body=request_bytes(dict(ids=[point['id'] for point in inputs['expected_points']],
+                    with_payload=True, with_vector=True)), deadline=deadline))
+            points = preserved.get('result')
+            if (preserved.get('status') != 'ok' or type(points) is not list
+                    or sorted([{key: point[key] for key in ('id', 'payload', 'vector')} for point in points],
+                        key=lambda point: point['id']) != sorted(inputs['expected_points'], key=lambda point: point['id'])):
+                raise RuntimeError('reserved_worker_previous_generation_points_changed')
         finally:
             await handle.close()
-    async def failed_publish(selected_host, observer):
-        book = ledger()
+    async def failed_publish(selected_host, observer, *, book=None, operation_deadline=None, deadline_ms=60000):
+        book = ledger() if book is None else book
         try:
-            await selected_host.publish(job(successor), book, deadline=deadline, observer=observer)
+            await selected_host.publish(job(successor, deadline_ms), book,
+                deadline=deadline if operation_deadline is None else operation_deadline, observer=observer)
         except (ProviderUnavailable, UnauthorizedScope):
             pass
         else:
@@ -179,14 +189,20 @@ async def python_reserved_worker_cases(value):
         checks.append(CHECKS[0])
         await stage_call(successor)
         barrier, unexpected = [], []
+        crash_budget_ms = 5000
+        crash_book = ledger(crash_budget_ms)
+        crash_deadline = crash_book.deadline
         async def kill(event, worker):
             event = plain(event)
             if event['kind'] == 'reserved':
+                if asyncio.get_running_loop().time() >= crash_deadline:
+                    raise RuntimeError('reserved_worker_crash_admission_expired')
                 barrier.append(event)
                 await worker.terminate(deadline=min(deadline, asyncio.get_running_loop().time() + 5))
             else:
                 unexpected.append(event)
-        await failed_publish(host, kill)
+        await failed_publish(host, kill, book=crash_book,
+            operation_deadline=crash_deadline, deadline_ms=crash_budget_ms)
         if len(barrier) != 1 or unexpected:
             raise RuntimeError('reserved_worker_crash_barrier')
         await snapshot()
@@ -194,31 +210,37 @@ async def python_reserved_worker_cases(value):
         checks.append(CHECKS[1])
         rows = await journal()
         if (len(rows) != 1 or rows[0][0] != barrier[0]['dispatch_id']
-                or rows[0][1] not in ('reserved', 'unknown') or str(rows[0][2]) != str(barrier[0]['sequence'])):
+                or rows[0][1] != 'reserved' or str(rows[0][2]) != str(barrier[0]['sequence'])):
             raise RuntimeError('reserved_worker_durable_journal')
-        await snapshot()
+        retained = await snapshot()
         checks.append(CHECKS[2])
         await absent()
         checks.append(CHECKS[3])
         await host.close()
         host = new_host()
-        started = asyncio.get_running_loop().time()
-        await asyncio.wait_for(asyncio.sleep(1.05), max(.001, deadline - started))
-        if asyncio.get_running_loop().time() - started < 1.0:
-            raise RuntimeError('reserved_worker_elapsed_wait')
+        now = asyncio.get_running_loop().time()
+        await asyncio.wait_for(asyncio.sleep(max(0, crash_deadline - now) + .02), max(.001, deadline - now))
+        if asyncio.get_running_loop().time() < crash_deadline or crash_book.deadline != crash_deadline:
+            raise RuntimeError('reserved_worker_original_deadline_not_crossed')
         retry_events = []
         async def retry_observer(event, worker):
             retry_events.append(plain(event))
         await failed_publish(host, retry_observer)
         if retry_events or await journal() != rows:
             raise RuntimeError('reserved_worker_retry_dispatch')
-        await snapshot()
+        after = await snapshot()
         await absent()
         await unchanged()
         checks.append(CHECKS[4])
+        if (after['document'] != retained['document'] or after['owner'] != retained['owner']
+                or after['intent'] != retained['intent'] or after['pending'] is not True
+                or after['backend'] != retained['backend'] or after['backend']['state'] != 'open'
+                or after['backend']['epoch'] != 1):
+            raise RuntimeError('reserved_worker_expiry_released_durable_owner')
+        checks.append(CHECKS[5])
         await host.close()
         await unchanged()
-        checks.append(CHECKS[5])
+        checks.append(CHECKS[6])
         return dict(runtime='python', checks=checks, proof_scope='reserved_worker_process_only',
             public_results_sha256=sha256(request_bytes(results)).hexdigest())
     except BaseException as error:

@@ -1060,6 +1060,14 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 
 Use a fresh directory. This test owns disposable local processes and synthetic data. Ordinary windows use at most two database clients. The paused-child recovery experiment permits three max-one clients; its PostgreSQL fixture uses six total slots while preserving three reserved superuser slots. Other fixtures retain their five-slot default. No provider/model, hosted mutation or automatic supervisor takeover occurs. Full H acceptance, managed repair and installed artifacts remain separate gates.
 
+The reserved-COMMIT child crash has its own native scenario. Run it with a fresh artifact directory:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_worker.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --scenario reserved --runtime all --artifacts-dir artifacts/V5/V5-04H/a-new-reserved-run
+```
+
+It kills the owned child at the acknowledged `reserved` barrier, crosses that operation's recorded five-second request deadline and verifies that a fresh retry cannot clear the durable reservation or write points. The [H-S30 report](../evaluation/reports/V5/V5-04H-reserved-owner-crash.md) records the local evidence and its limits.
+
 Use a fresh directory. The checker opens two restricted resources, runs actual public manager code against isolated PostgreSQL/Qdrant, and compares nineteen exact public-result snapshots. It withholds one real preparation COMMIT acknowledgment and one real completed HTTP response; it does not fabricate successful writes. Prepared cancellation/object restart is narrower than the pending process-kill matrix. Keep native languages and other integration suites serial. Successful cleanup verifies listener absence before removing only owned fixture storage.
 
 ## V5-04G0 preparation attestations
