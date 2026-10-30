@@ -3007,3 +3007,31 @@ native result: `artifacts/V5/V5-04H/paused-old-worker-both-02/results.json`.
 Disk headroom 27 GiB; no owned process remains. Learning practice unassessed.
 Next smallest action: prove one of the seven remaining exact H faults,
 starting with `writer_crash_live_supervisor` or `supervisor_crash_blocks`.
+
+H-S29 assignment (V5-04H exact ID `writer_crash_live_supervisor`): decide
+whether the newly completed ordinary owned-worker native trace proves the
+same-instance recovery after a real child dies after durable dispatch. Frozen
+ignored protocol: `artifacts/V5/V5-04H/writer-crash-live-supervisor-r1-protocol.md`;
+contract QW-r1. Sol `h_paused_worker_python` owns a read-only Python path audit
+and assembles; Sol `h_paused_worker_node` owns a read-only TypeScript path audit.
+Only separate task-owned `/tmp` notes are writable by peers. They coordinate
+concrete missing conditions directly. Root owns native verification,
+report/tracker/Git and escalation. Product, SQL/schema/migrations, QSC/QW
+contracts, sealed/shared fixtures, locks and user files are protected. Peers
+run no tests/processes/services/network/DB/Git. State: assigned; H/V5 open.
+
+H-S29 accepted by exact source/result audit: the ordinary worker native trace
+terminates a real child after its committed dispatch, preserves the previous
+published pointer and an unsettled successor intent, then recovers through the
+same surviving supervisor. That child's exact intent is physically reconciled
+and settled before the single reopen; no supervisor takeover is created. Both
+runtime paths were inspected. Root reused the unchanged H-S28 native result
+after verifying its source and inputs: 12 checks per runtime, matching public
+hash `7ba570d37e0a78880cf9d914816ae12748590d656142dfbf4e6d8c6e030d267e`,
+verified cleanup. No new code or native rerun was needed for this audit-only
+mapping. [Checkpoint report](../evaluation/reports/V5/V5-04H-writer-crash-live-supervisor.md).
+State: COMPLETE for H-S29 only; 37 of 43 exact H IDs accepted. H and V5
+remain open. Handoff: changed this tracker and report only. No task-owned
+process remains; disk headroom 27 GiB. Learning practice unassessed. Next
+smallest action: prove `supervisor_crash_blocks` or another remaining exact H
+fault with a distinct physical boundary.
