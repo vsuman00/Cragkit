@@ -26,6 +26,7 @@ CHECKS = (
     'actual_publication_cas_commit_ack_loss_resolves_exactly_once',
     'bootstrap_acl_changed_rejected_without_sql_http_mutation',
     'partial_member_stage_rejected_before_http_preserves_pointer',
+    'budget_before_dispatch_preserves_journal_stage_pointer_and_http',
 )
 ERRORS = frozenset(('IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability',
     'InvalidRequest', 'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady',
@@ -398,8 +399,13 @@ async def python_publication_manager_cases(value):
         if (staged['document']['active_generation_id'] is not None or network['mutations']
                 or usage['attempts'] != 1 or usage['provider_calls'] or usage['candidates'] or usage['pending']):
             raise RuntimeError('manager_stage_or_ledger_boundary')
+        budget_journal = await journal_states()
+        budget_activity = (network['requests'], network['mutations'])
+        if budget_journal:
+            raise RuntimeError('manager_budget_fixture_already_dispatched')
         await expect(BudgetExhausted, lambda: publish_call(manager, base, selected_ledger=one))
-        if network['mutations']:
+        if ((network['requests'], network['mutations']) != budget_activity
+                or await journal_states() != budget_journal or await current(base) != staged):
             raise RuntimeError('manager_budget_dispatched_mutation')
         checks.append(CHECKS[1])
         published = save(await publish_call(manager, base))
@@ -639,6 +645,7 @@ async def python_publication_manager_cases(value):
         checks.extend(CHECKS[14:17])
         checks.append(CHECKS[17])
         checks.append(CHECKS[18])
+        checks.append(CHECKS[19])
         if len(snapshots) != 19:
             raise RuntimeError('manager_public_snapshot_inventory')
         return dict(runtime='python', checks=checks, proof_scope='public_stage_publish_only',

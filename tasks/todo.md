@@ -2201,3 +2201,43 @@ unrelated user edits remain outside scope. Disk headroom 28 GiB and system
 memory free 40%; task-owned services closed. Learning practice unassessed.
 H and V5 remain open; next smallest action is the next missing native matrix
 boundary, while ID9 waits for an explicit no-owner-lease acceptance decision.
+
+H-S8 assignment (V5-04H matrix ID `budget_before_dispatch`): shared outcome
+is an actual manager budget refusal on the already staged base intent that
+leaves the exact durable journal, staged snapshot, pointer and HTTP request
+count unchanged. Sol `h_bootstrap_python` owns only
+`tools/qdrant_publication_manager_cases.py` and assembles; Sol
+`h_bootstrap_node` owns only
+`tools/check_typescript_qdrant_publication_manager.mjs`. Both add a distinct
+frozen-ID check label without changing public snapshot inventory/hash, and
+coordinate assertion/order parity directly. Root owns serial native parent,
+report/tracker/Git. No product/schema/fixture/migration/lockfile/provider
+change, no peer tests/processes/services/network/DB/install/Git. Outcome or
+protected/other-lane changes to root before edits, unresolved design to
+Astra. State: assigned; H/V5 open.
+
+Independent H-S9 read-only evidence audit: Sol `h_available_audit` owns only
+ignored `artifacts/V5/V5-04H/available-native-audit-r2.md`. Map exact frozen
+IDs 10, 12-16, 18, 37 and 38 to previously executed real Python/Node native
+checks, source assertions, accepted reports and remaining mismatches.
+No product, fixture, schema, tracker or committed report edits; no tests,
+processes, services, network, DB or Git. Root integrates the audit only after
+checking recorded evidence, and never marks an ID complete from a worker
+claim alone. This lane does not change H-S8 ownership or acceptance. State:
+assigned.
+
+H-S8 final handoff: the Python and Node Sol peers transferred their separate
+native manager consumer edits; Python assembled the same ledger/journal/
+snapshot/HTTP assertions and matching check order. Root ran the serial
+PostgreSQL 17/Qdrant 1.20 parent: 40 checks (20 per runtime), matching public
+snapshot hashes and verified task-owned cleanup. Exact frozen ID
+`budget_before_dispatch` has [native evidence](../evaluation/reports/V5/V5-04H-budget.md):
+the exhausted publish raises `BudgetExhausted` with unchanged empty journal,
+staged snapshot, pointer and physical HTTP counters. Four focused parent
+validation tests and all 16 seals passed. Fifteen H IDs are complete.
+Changed files: two native consumers, report and tracker. No product/schema/
+fixture/grant/dependency/lockfile/provider/hosted change. Disk headroom
+28 GiB, system memory free 47%; task-owned services closed. Unrelated user
+edits remain outside scope. Learning practice unassessed. H and V5 remain
+open; next action is to inspect the independent H-S9 native-evidence audit
+and implement only the still-missing fault boundary.

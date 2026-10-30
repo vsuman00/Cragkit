@@ -33,6 +33,7 @@ const CHECKS = Object.freeze([
   'actual_publication_cas_commit_ack_loss_resolves_exactly_once',
   'bootstrap_acl_changed_rejected_without_sql_http_mutation',
   'partial_member_stage_rejected_before_http_preserves_pointer',
+  'budget_before_dispatch_preserves_journal_stage_pointer_and_http',
 ]);
 const ERRORS = new Set(['IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability', 'InvalidRequest',
   'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady', 'BudgetExhausted', 'CancelledError', 'AbortError']);
@@ -293,10 +294,15 @@ async function cases(value) {
 
     const baseBook = ledger(); const baseStaged = save(await stageCall(inputs.stage, inputs.scope, manager, baseBook)); accounting(baseBook, true);
     if (baseStaged.state !== 'staged' || baseStaged.authority_committed || baseStaged.replica_complete || baseStaged.published) throw new Error('public_stage_state');
-    await active(null);
+    const budgetSnapshot = await active(null);
     if (http.puts !== 0) throw new Error('stage_mutated_replica');
+    const budgetJournal = await journal();
+    const budgetActivity = [http.requests, http.puts];
+    if (budgetJournal.length !== 0) throw new Error('staged_budget_fixture_has_dispatch');
     await expected(BudgetExhausted, () => publishCall(inputs.stage, inputs.scope, manager, options, baseBook));
-    if (http.puts !== 0) throw new Error('spent_ledger_mutated_replica');
+    if (!isDeepStrictEqual(await journal(), budgetJournal)
+      || !isDeepStrictEqual(await active(null), budgetSnapshot)
+      || !isDeepStrictEqual([http.requests, http.puts], budgetActivity)) throw new Error('spent_ledger_mutated_stage_or_dispatch');
     checks.push(CHECKS[1]); step = checks.length;
 
     const basePublished = save(await publishCall(inputs.stage));
@@ -518,7 +524,7 @@ async function cases(value) {
     await writer.manager_snapshot(context(inputs.stages.lost_ack, freshScope), options);
     await recovery.initialize(options); await backend();
     if (http.puts !== lostPuts + 1 || handles.size !== 0 || snapshots.length !== 19) throw new Error('borrowed_dependency_or_snapshot_count');
-    checks.push(CHECKS[13], CHECKS[14], CHECKS[15], CHECKS[16], CHECKS[17], CHECKS[18]); step = checks.length;
+    checks.push(CHECKS[13], CHECKS[14], CHECKS[15], CHECKS[16], CHECKS[17], CHECKS[18], CHECKS[19]); step = checks.length;
     return {runtime: 'typescript', checks, proof_scope: 'public_stage_publish_only', public_snapshots_sha256: hash(bytes(snapshots))};
   } catch (error) { primary = error; throw error; }
   finally {
