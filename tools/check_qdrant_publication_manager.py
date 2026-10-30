@@ -22,13 +22,17 @@ from qdrant_publication_manager_cases import (CHECKS, ERRORS, NativePublicationM
 from qdrant_source_native import PostgresSourceFixture
 from runtime_diagnostics import CleanupFailure, describe_error
 
-WRONG_DENSE_CHECKS = ('wrong_dense_vector_public_publish_rejected',)
+CORRUPTION_CHECKS = {
+    'wrong-dense': ('wrong_dense_vector_public_publish_rejected',),
+    'wrong-sparse': ('wrong_sparse_vector_public_publish_rejected',),
+    'wrong-profile': ('wrong_full_profile_public_publish_rejected',),
+}
 
 
 def validate_result(value, runtime, scenario='default'):
-    if scenario not in ('default', 'wrong-dense'):
+    if scenario not in ('default', *CORRUPTION_CHECKS):
         raise RuntimeError('publication_manager_native_scenario')
-    checks = CHECKS if scenario == 'default' else WRONG_DENSE_CHECKS
+    checks = CHECKS if scenario == 'default' else CORRUPTION_CHECKS[scenario]
     proof_scope = 'public_stage_publish_only' if scenario == 'default' else 'public_corruption_only'
     if (type(value) is not dict or set(value) != {'runtime', 'checks', 'proof_scope', 'public_snapshots_sha256'}
             or value['runtime'] != runtime or value['checks'] != list(checks)
@@ -40,9 +44,9 @@ def validate_result(value, runtime, scenario='default'):
 
 
 def failure_observation(value, scenario='default'):
-    if scenario not in ('default', 'wrong-dense'):
+    if scenario not in ('default', *CORRUPTION_CHECKS):
         raise RuntimeError('publication_manager_native_scenario')
-    checks = CHECKS if scenario == 'default' else WRONG_DENSE_CHECKS
+    checks = CHECKS if scenario == 'default' else CORRUPTION_CHECKS[scenario]
     if (type(value) is not dict or value.get('ok') is not False or type(value.get('step')) is not int
             or not 0 <= value['step'] <= len(checks) or type(value.get('error')) is not str):
         raise RuntimeError('publication_manager_native_failure_shape')
@@ -66,7 +70,7 @@ def failure_observation(value, scenario='default'):
 
 
 async def node_publication_manager_cases(value):
-    scenario = 'wrong-dense' if value.get('scenario') == 'wrong_dense' else 'default'
+    scenario = value.get('scenario', 'default').replace('_', '-')
     environment = {key: val for key, val in os.environ.items() if not key.startswith(('PG', 'QDRANT__'))
         and key not in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'RUST_LOG')}
     process = await asyncio.create_subprocess_exec('node', str(ROOT / 'tools/check_typescript_qdrant_publication_manager.mjs'),
@@ -129,8 +133,8 @@ async def check(fixture, runtime, binary, work_dir, scenario='default'):
         value = dict(binary=str(binary), work_dir=str(work_dir), inputs=publication_manager_input(),
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'),
             observer_config=database.fixture.config)
-        if scenario == 'wrong-dense':
-            value['scenario'] = 'wrong_dense'
+        if scenario in CORRUPTION_CHECKS:
+            value['scenario'] = scenario.replace('-', '_')
         await database.release_admin()
         runner = python_publication_manager_cases if runtime == 'python' else node_publication_manager_cases
         return validate_result(await runner(value), runtime, scenario)
@@ -143,7 +147,7 @@ def main(argv=None):
     parser.add_argument('--binary-sha256', required=True)
     parser.add_argument('--artifacts-dir', type=Path, required=True)
     parser.add_argument('--runtime', choices=('python', 'typescript', 'all'), default='all')
-    parser.add_argument('--scenario', choices=('default', 'wrong-dense'), default='default')
+    parser.add_argument('--scenario', choices=('default', *CORRUPTION_CHECKS), default='default')
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
     try:

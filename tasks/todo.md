@@ -2427,3 +2427,39 @@ Twenty exact H IDs have accepted native evidence; H and V5 remain open.
 Next smallest action: extend the isolated public corruption mode to one
 sparse-vector fault, preserving default regression and explicit physical
 readback/pointer checks.
+
+H-S16 assignment (V5-04H matrix IDs `wrong_sparse_vector` and
+`wrong_full_profile`): shared outcome is two fresh native public-manager
+corruption modes proving genuine publication refusal and previous-pointer
+preservation. Contract `public-corruption-r2` is frozen in ignored
+`artifacts/V5/V5-04H/public-corruption-r2-protocol.md`. Sol
+`h_sparse_python` owns only `tools/qdrant_publication_manager_cases.py`
+and assembles; Sol `h_sparse_node` owns only
+`tools/check_typescript_qdrant_publication_manager.mjs`. Both implement
+actual post-forward completed sparse-weight and full-profile fault writes,
+physical readback and matching result/check/hash semantics. Root owns
+parent CLI/protocol test, reports/tracker, serial native and default
+regression, Git and final integration. Product/schema/migration/locks/
+seals/shared fixture/other consumer/user edits protected. Peers run no
+tests/processes/services/network/DB/Git; root uses one local test process
+and synthetic points, no provider/hosted/model action. Resolve dependencies
+directly; escalate changed outcome/protected/ownership to root and any
+unresolved material issue to Astra. State: assigned; H/V5 open.
+
+H-S16 final handoff: Sol Python and Node peers added exclusive public-manager
+fault modes in separate native consumers and coordinated their exact physical
+readback and three-snapshot contract directly; Python assembled. Root reviewed
+the diffs, extended the parent CLI and seven focused protocol guards, then ran
+both new modes, wrong-dense regression and the default manager serially on
+native PostgreSQL/Qdrant. The new modes each passed one check per runtime with
+matching hashes; wrong-dense passed two and default passed 40 with their
+previous hashes. All four parents verified cleanup and all 16 seals matched.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-sparse-profile.md).
+Changed files: parent, two consumers, protocol guard, report and tracker. No
+product/schema/fixture/migration/lockfile/provider/hosted action. Disk
+headroom 28 GiB, system memory free 54%; one orphan from an earlier
+disposable run was stopped. Unrelated user edits remain outside scope.
+Learning practice unassessed. Twenty-two exact H IDs have accepted native
+evidence; H and V5 remain open. Next smallest action: an isolated
+`missing_sparse_vector` public fault followed by ordinary complete-vector
+repair, with previous-pointer and immutable-graph checks.

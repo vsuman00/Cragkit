@@ -65,7 +65,7 @@ async function input() {
   }
   const value = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(chunks)));
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(value.scenario === 'wrong_dense' ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
+    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(['wrong_dense', 'wrong_sparse', 'wrong_profile'].includes(value.scenario) ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
     || typeof value.binary !== 'string' || typeof value.work_dir !== 'string' || !value.inputs?.stages) throw new Error('input_shape');
   return value;
 }
@@ -114,6 +114,7 @@ async function cases(value) {
   const publicationFault = {armed:false,track:false,fired:0,destroyed:0,casWrites:0,dml:0};
   const http = {requests: 0, puts: 0, drop: false, dropped: 0};
   const wrongDense = {armed: false, fired: 0, observed: null};
+  const corruptionScenario = ['wrong_dense', 'wrong_sparse', 'wrong_profile'].includes(value.scenario) ? value.scenario : null;
   let address, primary, manager, callbackMode = null, supervisorLeases = 0;
   const target = '/collections/' + inputs.config.physical_collection;
   const context = (stage, scope = inputs.scope) => ({scope, collection: stage.manifest.collection,
@@ -279,7 +280,7 @@ async function cases(value) {
           const response = await actual.request(method, path, requestOptions);
           if (upsert && wrongDense.armed) {
             const body = JSON.parse(Buffer.from(requestOptions.body).toString('utf8'));
-            const ids = inputs.stages.wrong_dense.manifest.members.map(member => member.point_id).sort();
+            const ids = inputs.stages[corruptionScenario].manifest.members.map(member => member.point_id).sort();
             if (isDeepStrictEqual(body.points?.map(point => point.id).sort(), ids)) {
               completed(response);
               wrongDense.armed = false; wrongDense.fired++;
@@ -290,9 +291,19 @@ async function cases(value) {
               const dense = point.vector?.dense;
               if (!Array.isArray(dense) || dense.length < 2 || dense[0] !== 1
                 || dense.slice(1).some(value => value !== 0)) throw new Error('wrong_dense_basis_input');
-              point.vector.dense = dense.map((_, index) => index === 1 ? 1 : 0);
+              if (corruptionScenario === 'wrong_sparse') {
+                const sparse = point.vector.sparse;
+                if (!Array.isArray(sparse?.indices) || !Array.isArray(sparse.values)
+                  || sparse.indices.length !== sparse.values.length || sparse.values.length === 0
+                  || !sparse.values.every(Number.isFinite)) throw new Error('wrong_sparse_basis_input');
+                sparse.values[0] += .25;
+              } else if (corruptionScenario === 'wrong_profile') {
+                if (!point.payload?.dense_profile || typeof point.payload.dense_profile.model !== 'string'
+                  || point.payload.dense_profile.model === 'wrong-profile') throw new Error('wrong_profile_basis_input');
+                point.payload.dense_profile.model = 'wrong-profile';
+              } else point.vector.dense = dense.map((_, index) => index === 1 ? 1 : 0);
               completed(await actual.request('PUT', path, {...requestOptions, body: bytes({points: [point]})}));
-              wrongDense.observed = {point, ids};
+              wrongDense.observed = {point, ids, points: body.points.map(original => original.id === point.id ? point : original)};
             }
           }
           if (upsert && http.drop) {
@@ -309,12 +320,12 @@ async function cases(value) {
     const identity = supervisor.identity();
     if (!isDeepStrictEqual(await backend(), [[inputs.instance_id, inputs.config.backend_namespace,
       identity.storage_identity, identity.supervisor_id, '1', 'open', null]])) throw new Error('public_manager_registration');
-    if (value.scenario === 'wrong_dense') {
+    if (corruptionScenario !== null) {
       const staged = save(await stageCall(inputs.stage));
       const published = save(await publishCall(inputs.stage));
       if (staged.state !== 'staged' || !published.published || !published.replica_complete
         || http.puts !== 1) throw new Error('wrong_dense_base_publication');
-      const successor = inputs.stages.wrong_dense;
+      const successor = inputs.stages[corruptionScenario];
       const successorStaged = save(await stageCall(successor));
       if (successor.manifest.members.length !== 2 || successorStaged.state !== 'staged'
         || successorStaged.published || successorStaged.replica_complete) throw new Error('wrong_dense_successor_stage');
@@ -329,7 +340,7 @@ async function cases(value) {
       const current = await writer.manager_snapshot(context(successor), options);
       const probeAttempt = supervisor.issue_attempt({intent_id: successor.intent.intent_id,
         owner_token: current.owner.owner_token, epoch: current.backend.epoch,
-        dispatch_id: 'manager-wrong-dense-readback'}, options);
+        dispatch_id: 'manager-' + corruptionScenario.replaceAll('_', '-') + '-readback'}, options);
       const probe = supervisor.transport_for(probeAttempt);
       let physical;
       try {
@@ -340,6 +351,10 @@ async function cases(value) {
       if (physical.status !== 'ok' || !isDeepStrictEqual(physical.result?.map(point => point.id).sort(), stored.ids)
         || !isDeepStrictEqual(corrupted?.vector, stored.point.vector)
         || !isDeepStrictEqual(corrupted?.payload, stored.point.payload)) throw new Error('wrong_dense_physical_fault_missing');
+      if (corruptionScenario !== 'wrong_dense') {
+        const byId = points => points.map(({id, vector, payload}) => ({id, vector, payload})).sort((a, b) => a.id.localeCompare(b.id));
+        if (!isDeepStrictEqual(byId(physical.result), byId(stored.points))) throw new Error('public_corruption_physical_readback_changed');
+      }
       for (const key of ['document_revisions', 'generations', 'members', 'point_claims', 'vector_replays']) {
         if (!isDeepStrictEqual(before[key], after[key]) || !isDeepStrictEqual(baseBefore[key], baseAfter[key])) throw new Error('wrong_dense_immutable_graph_changed');
       }
@@ -358,7 +373,9 @@ async function cases(value) {
         || await writer.publication_preparation(context(successor), options) !== null
         || snapshots.length !== 3) throw new Error('wrong_dense_publication_fence_changed');
       await active(inputs.stage.manifest.generation_id);
-      checks.push('wrong_dense_vector_public_publish_rejected'); step = checks.length;
+      checks.push({wrong_dense: 'wrong_dense_vector_public_publish_rejected',
+        wrong_sparse: 'wrong_sparse_vector_public_publish_rejected',
+        wrong_profile: 'wrong_full_profile_public_publish_rejected'}[corruptionScenario]); step = checks.length;
       return {runtime: 'typescript', checks, proof_scope: 'public_corruption_only', public_snapshots_sha256: hash(bytes(snapshots))};
     }
     checks.push(CHECKS[0]); step = checks.length;
