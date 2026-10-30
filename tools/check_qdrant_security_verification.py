@@ -19,6 +19,7 @@ from qdrant_security_guard_native import SecurityGuardDatabase,install_guard
 from qdrant_purge_native import install as install_purge_profile
 from qdrant_security_verification_cases import (CHECKS, GUARD_CHECKS, SETTLEMENT_CHECKS, DISPATCH_CHECKS, COMPLETION_CHECKS, REPETITION_CHECKS, ERRORS, NativeSecurityVerificationFailure,
     python_security_verification_cases, security_verification_input)
+from qdrant_writer_cases import successor_stage
 from qdrant_source_native import PostgresSourceFixture
 from runtime_diagnostics import CleanupFailure, describe_error
 from check_qdrant_partial_repair import native_role_checks
@@ -37,7 +38,35 @@ GRAPH_CHECKS=(
 )
 
 
-def validate_result(value, runtime, *, security_guard=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False, security_repetition=False, public_security=False, old_acl_late=False, tombstone_repair=False):
+def global_uuid_input():
+    original=security_verification_input()
+    baseline_a, baseline_b=original['stage'], original['ownerless_stage']
+    successor_a=successor_stage({'stage':baseline_a},'uuid-collision-a',baseline_a['manifest']['generation_id'])
+    successor_b=successor_stage({'stage':baseline_b},'uuid-collision-b',baseline_b['manifest']['generation_id'])
+    member=successor_b['manifest']['members'][0]
+    winner=successor_a['manifest']['members'][0]['point_id']
+    manifest=successor_b['manifest']
+    collision_tuple=['cragkit.qdrant.point.v1', *[manifest[key] for key in (
+        'backend_namespace','physical_collection','collection_incarnation','tenant_id',
+        'collection','document_id','revision_id','generation_id')], member['chunk_id'],
+        manifest['dense_profile']['profile_id'],manifest['sparse_profile']['profile_id']]
+    member['point_id']=winner
+    return {key:original[key] for key in ('config','scope','instance_id','collection_config')} | dict(
+        baseline_a=baseline_a,baseline_b=baseline_b,successor_a=successor_a,
+        successor_b=successor_b,collision_tuple=collision_tuple,collision_uuid=winner)
+
+
+def validate_result(value, runtime, *, security_guard=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False, security_repetition=False, public_security=False, old_acl_late=False, tombstone_repair=False, global_uuid=False):
+    if global_uuid:
+        from qdrant_global_uuid_cases import CHECKS as GLOBAL_UUID_CHECKS
+        if (type(value) is not dict or set(value)!={'runtime','checks','proof_scope','semantic_witness_sha256'}
+                or value['runtime']!=runtime or value['checks']!=list(GLOBAL_UUID_CHECKS)
+                or value['proof_scope']!='native_global_uuid_collision_only'
+                or type(value['semantic_witness_sha256']) is not str or len(value['semantic_witness_sha256'])!=64
+                or any(char not in '0123456789abcdef' for char in value['semantic_witness_sha256'])
+                or any((security_guard,guarded_graph,security_settlement,security_dispatch,security_completion,security_repetition,public_security,old_acl_late,tombstone_repair))):
+            raise RuntimeError('global_uuid_native_result_shape')
+        return json.loads(json.dumps(value))
     if tombstone_repair:
         from qdrant_tombstone_repair_cases import CHECKS as TOMBSTONE_REPAIR_CHECKS
         if (type(value) is not dict or set(value)!={'runtime','checks','proof_scope','semantic_witness_sha256'}
@@ -137,10 +166,11 @@ def failure_observation(value, *, max_checks=len(CHECKS)):
     return json.loads(json.dumps(value))
 
 
-async def node_security_verification_cases(value, *, public_security=False, old_acl_late=False, tombstone_repair=False):
+async def node_security_verification_cases(value, *, public_security=False, old_acl_late=False, tombstone_repair=False, global_uuid=False):
     environment = {key: val for key, val in os.environ.items() if not key.startswith(('PG', 'QDRANT__'))
         and key not in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'RUST_LOG')}
-    consumer = ('check_typescript_qdrant_tombstone_repair.mjs' if tombstone_repair else
+    consumer = ('check_typescript_qdrant_global_uuid.mjs' if global_uuid else
+        'check_typescript_qdrant_tombstone_repair.mjs' if tombstone_repair else
         'check_typescript_qdrant_old_acl_late.mjs' if old_acl_late else
         'check_typescript_qdrant_public_security.mjs' if public_security else
         'check_typescript_qdrant_security_verification.mjs')
@@ -161,7 +191,10 @@ async def node_security_verification_cases(value, *, public_security=False, old_
             stdout, stderr = await asyncio.gather(output, errors)
             code = await process.wait()
         if code != 0 and not stderr:
-            if tombstone_repair:
+            if global_uuid:
+                from qdrant_global_uuid_cases import CHECKS as GLOBAL_UUID_CHECKS
+                observation = failure_observation(json.loads(stdout), max_checks=len(GLOBAL_UUID_CHECKS))
+            elif tombstone_repair:
                 from qdrant_tombstone_repair_cases import CHECKS as TOMBSTONE_REPAIR_CHECKS
                 observation = failure_observation(json.loads(stdout), max_checks=len(TOMBSTONE_REPAIR_CHECKS))
             elif old_acl_late:
@@ -176,7 +209,7 @@ async def node_security_verification_cases(value, *, public_security=False, old_
             raise failure
         if code != 0 or stderr:
             raise RuntimeError('security_verification_native_child_failed')
-        result = validate_result(json.loads(stdout), 'typescript',public_security=public_security,old_acl_late=old_acl_late,tombstone_repair=tombstone_repair,security_guard=tombstone_repair or old_acl_late or 'guard_operator_config' in value,guarded_graph='guard_graph_config' in value,security_settlement='settlement_config' in value,security_dispatch='dispatch_config' in value,security_completion='completion_config' in value,security_repetition='repetition_config' in value)
+        result = validate_result(json.loads(stdout), 'typescript',public_security=public_security,old_acl_late=old_acl_late,tombstone_repair=tombstone_repair,global_uuid=global_uuid,security_guard=tombstone_repair or old_acl_late or 'guard_operator_config' in value,guarded_graph='guard_graph_config' in value,security_settlement='settlement_config' in value,security_dispatch='dispatch_config' in value,security_completion='completion_config' in value,security_repetition='repetition_config' in value)
         success = True
         return result
     except BaseException as error:
@@ -210,12 +243,12 @@ async def node_security_verification_cases(value, *, public_security=False, old_
             raise CleanupFailure(failures, primary=primary, stage='recovery') from None
 
 
-async def check(fixture, runtime, binary, work_dir, *, security_guard=False, purge_profile=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False, security_repetition=False, public_security=False, old_acl_late=False, tombstone_repair=False):
+async def check(fixture, runtime, binary, work_dir, *, security_guard=False, purge_profile=False, guarded_graph=False, security_settlement=False, security_dispatch=False, security_completion=False, security_repetition=False, public_security=False, old_acl_late=False, tombstone_repair=False, global_uuid=False):
     database_type=SecurityGuardDatabase if security_guard else PublicationDatabase
     async with database_type(fixture, with_attestations=True) as database:
         if security_guard:await install_guard(database)
         if purge_profile:await install_purge_profile(database)
-        client_ceiling=4 if guarded_graph else 3 if security_guard else 2
+        client_ceiling=4 if guarded_graph else 3 if security_guard or global_uuid else 2
         cursor = await database.admin.execute("SELECT current_setting('max_connections')::int,"
             "current_setting('superuser_reserved_connections')::int,"
             "current_setting('reserved_connections')::int")
@@ -227,12 +260,17 @@ async def check(fixture, runtime, binary, work_dir, *, security_guard=False, pur
             reserved_connections=reserved, runtime_client_ceiling=client_ceiling), indent=2) + '\n')
         role_checks=await native_role_checks(database,profile=5 if purge_profile else 3)
         (work_dir.parent.parent / (runtime+'-role-checks.json')).write_text(json.dumps(role_checks,indent=2)+'\n')
-        value = dict(binary=str(binary), work_dir=str(work_dir), inputs=security_verification_input(),
+        value = dict(binary=str(binary), work_dir=str(work_dir), inputs=global_uuid_input() if global_uuid else security_verification_input(),
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'))
-        if public_security or old_acl_late or tombstone_repair:
-            value['reader_config']=database.config('reader')
+        if global_uuid:value['observer_config']=fixture.config
+        if public_security or old_acl_late or tombstone_repair or global_uuid:
+            if not global_uuid:value['reader_config']=database.config('reader')
             await database.release_admin()
-            if tombstone_repair:
+            if global_uuid:
+                from qdrant_global_uuid_cases import python_global_uuid_cases
+                result = (await python_global_uuid_cases(value) if runtime=='python' else
+                          await node_security_verification_cases(value,global_uuid=True))
+            elif tombstone_repair:
                 from qdrant_tombstone_repair_cases import python_tombstone_repair_cases
                 result = (await python_tombstone_repair_cases(value) if runtime=='python' else
                           await node_security_verification_cases(value,tombstone_repair=True))
@@ -244,7 +282,7 @@ async def check(fixture, runtime, binary, work_dir, *, security_guard=False, pur
                 from qdrant_public_security_cases import python_public_security_cases
                 result = (await python_public_security_cases(value) if runtime=='python' else
                           await node_security_verification_cases(value,public_security=True))
-            return validate_result(result,runtime,public_security=public_security,old_acl_late=old_acl_late,tombstone_repair=tombstone_repair,security_guard=security_guard)
+            return validate_result(result,runtime,public_security=public_security,old_acl_late=old_acl_late,tombstone_repair=tombstone_repair,global_uuid=global_uuid,security_guard=security_guard)
         if security_guard:value['guard_operator_config']=dict(database._operator_config)
         if guarded_graph:value['guard_graph_config']=dict(admin_config=fixture.config)
         if security_settlement:value['settlement_config']=dict(admin_config=fixture.config)
@@ -272,6 +310,7 @@ def main(argv=None):
     parser.add_argument('--public-security',action='store_true')
     parser.add_argument('--old-acl-late',action='store_true')
     parser.add_argument('--tombstone-repair',action='store_true')
+    parser.add_argument('--global-uuid',action='store_true')
     parser.add_argument('--runtime', choices=('python', 'typescript', 'all'), default='all')
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
@@ -285,6 +324,8 @@ def main(argv=None):
             raise RuntimeError('old_acl_late_requires_exclusive_purge_profile')
         if args.tombstone_repair and (not args.with_purge_profile or args.public_security or args.old_acl_late or args.guarded_graph or args.security_settlement or args.security_dispatch or args.security_completion or args.security_repetition):
             raise RuntimeError('tombstone_repair_requires_exclusive_purge_profile')
+        if args.global_uuid and any((args.with_security_guard,args.with_purge_profile,args.public_security,args.old_acl_late,args.tombstone_repair,args.guarded_graph,args.security_settlement,args.security_dispatch,args.security_completion,args.security_repetition)):
+            raise RuntimeError('global_uuid_requires_exclusive_base_profile')
         if args.security_repetition and (not args.with_purge_profile or args.guarded_graph or args.security_settlement or args.security_dispatch or args.security_completion):
             raise RuntimeError('security_repetition_requires_exclusive_purge_profile')
         if args.security_settlement and (not args.with_security_guard or args.guarded_graph):
@@ -304,8 +345,8 @@ def main(argv=None):
         for runtime in ('python', 'typescript') if args.runtime == 'all' else (args.runtime,):
             private = Path(tempfile.mkdtemp(prefix=runtime + '-', dir=args.artifacts_dir)).resolve()
             # Two runtime clients and the default three reserved slots.
-            with PostgresSourceFixture(args.postgres_bin, private / 'postgres', max_connections=7 if args.guarded_graph else 6 if args.with_security_guard else 5) as fixture:
-                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed',security_guard=args.with_security_guard,purge_profile=args.with_purge_profile,guarded_graph=args.guarded_graph,security_settlement=args.security_settlement,security_dispatch=args.security_dispatch,security_completion=args.security_completion,security_repetition=args.security_repetition,public_security=args.public_security,old_acl_late=args.old_acl_late,tombstone_repair=args.tombstone_repair), 210))
+            with PostgresSourceFixture(args.postgres_bin, private / 'postgres', max_connections=7 if args.guarded_graph else 6 if args.with_security_guard or args.global_uuid else 5) as fixture:
+                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed',security_guard=args.with_security_guard,purge_profile=args.with_purge_profile,guarded_graph=args.guarded_graph,security_settlement=args.security_settlement,security_dispatch=args.security_dispatch,security_completion=args.security_completion,security_repetition=args.security_repetition,public_security=args.public_security,old_acl_late=args.old_acl_late,tombstone_repair=args.tombstone_repair,global_uuid=args.global_uuid), 210))
             shutil.rmtree(private)
             results.append(result)
         if len({result['semantic_witness_sha256'] for result in results})!=1:

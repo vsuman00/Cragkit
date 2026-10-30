@@ -3182,3 +3182,49 @@ focused parent test, this tracker and report. Ignored native result:
 process remains; no live provider call. Full package regressions last passed
 at H-S30. Learning practice unassessed. Next smallest action: exact H fault
 `global_uuid_collision`. H/V5 remain open.
+
+H-S33 assignment (V5-04H exact ID `global_uuid_collision`): one shared
+outcome is a native two-document collision at the same physical UUID with one
+atomic claim winner and zero loser Qdrant writes. Contract QW-r1, matrix row
+and acceptance QD-W10 are read-only. Sol `h_uuid_python` owns Python writer/
+native-harness audit and writes only
+`artifacts/V5/V5-04H/global-uuid-python-audit.md`; it assembles the pair.
+Sol `h_uuid_node` owns TypeScript writer/native-harness audit and writes only
+`artifacts/V5/V5-04H/global-uuid-node-audit.md`. They message each other
+directly about concrete shared seams and resolve routine split changes without
+overlapping edits. Root owns protocol, later consumers/parent routing/tests,
+serial native verification, tracker/report/Git and escalation. Product,
+schema/migrations, contracts/sealed fixtures, locks, existing consumers and
+user-owned dirty files are protected. No peer tests, services, network, DB or
+Git actions; fake providers only. State: read-only audit assigned; H/V5 open.
+
+H-S33 pair audit assembled in ignored
+`artifacts/V5/V5-04H/global-uuid-python-audit.md` and
+`artifacts/V5/V5-04H/global-uuid-node-audit.md`. Root approved test-only
+targeted deterministic point-ID collision injection because valid distinct
+documents otherwise derive distinct UUIDs. The SQL claim/guard and native
+manager paths remain real. Frozen implementation protocol:
+`artifacts/V5/V5-04H/global-uuid-r2-protocol.md`. Sol Python now owns only
+new `tools/qdrant_global_uuid_cases.py` and assembles; Sol Node owns only new
+`tools/check_typescript_qdrant_global_uuid.mjs`. Root owns parent routing,
+closed result/focused tests, serial native acceptance and tracker/report/Git.
+Protected boundaries and no-peer-test/resource limits above still apply.
+State: implementation assigned; H/V5 open.
+
+H-S33 accepted for exact `global_uuid_collision` only. Two real document
+coordinators with published baselines raced successor stages for one physical
+UUID through a targeted test-only derivation collision. The native observer
+saw the second SQL claim wait; one atomic stage won and the loser returned
+`IntegrityViolation` with rolled-back successor graph/journal and zero Qdrant
+mutations. Winner publication, retry, full point readback and baseline
+preservation passed. Python-only and TypeScript-only each passed seven checks;
+the combined run passed 14 with matching witness
+`8744159fa9127919ea6f0da05212329ae527b64932d34c12c99b6fbaf7e88c0e`
+and verified cleanup. Fifteen focused tests, syntax/compilation and 16 seals
+passed. [Checkpoint report](../evaluation/reports/V5/V5-04H-global-uuid-collision.md).
+Changed files: two new native consumers, parent routing/input/result closure,
+focused parent tests, this tracker and report. Ignored native result:
+`artifacts/V5/V5-04H/global-uuid-both-01/results.json`. Disk headroom 28 GiB;
+no owned process remains and no provider call ran. Full package regressions
+last passed at H-S30. Learning practice unassessed. Next smallest action:
+exact H fault `lease_expiry_not_fencing`. H/V5 remain open.

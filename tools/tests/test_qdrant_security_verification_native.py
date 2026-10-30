@@ -6,7 +6,7 @@ import sys
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from check_qdrant_security_verification import validate_result,failure_observation
+from check_qdrant_security_verification import validate_result,failure_observation,global_uuid_input
 from qdrant_security_verification_cases import CHECKS,ERRORS,security_verification_input
 
 
@@ -125,6 +125,35 @@ def test_tombstone_repair_result_cannot_claim_other_security_scenarios():
             validate_result(value,'python',**options)
     assert failure_observation(dict(ok=False,step=len(TOMBSTONE_REPAIR_CHECKS),error='ProviderUnavailable'),
         max_checks=len(TOMBSTONE_REPAIR_CHECKS))['step']==len(TOMBSTONE_REPAIR_CHECKS)
+
+
+def test_global_uuid_collision_fixture_targets_one_distinct_document_identity():
+    from cragkit._qdrant_contract import point_id
+    from cragkit._qdrant_writer_contract import prepare_stage
+    value=global_uuid_input()
+    for key in ('baseline_a','baseline_b','successor_a'):
+        prepare_stage(value[key])
+    a,b=value['successor_a'],value['successor_b']
+    assert a['manifest']['document_id']!=b['manifest']['document_id']
+    assert a['manifest']['members'][0]['point_id']==b['manifest']['members'][0]['point_id']==value['collision_uuid']
+    assert point_id(value['collision_tuple'])!=value['collision_uuid']
+    assert b['manifest']['members'][1]['point_id']!=value['collision_uuid']
+
+
+def test_global_uuid_result_is_closed_to_exact_collision_scenario():
+    from qdrant_global_uuid_cases import CHECKS as GLOBAL_UUID_CHECKS
+    value=dict(runtime='python',checks=list(GLOBAL_UUID_CHECKS),
+        proof_scope='native_global_uuid_collision_only',semantic_witness_sha256='a'*64)
+    assert validate_result(value,'python',global_uuid=True)==value
+    for changed in (dict(value,checks=list(GLOBAL_UUID_CHECKS[:-1])),
+                    dict(value,proof_scope='native_tombstone_during_repair_only'),
+                    dict(value,private_source='secret'),dict(value,semantic_witness_sha256='bad')):
+        with pytest.raises(RuntimeError,match='global_uuid_native_result_shape'):
+            validate_result(changed,'python',global_uuid=True)
+    for flags in ({},{'global_uuid':True,'security_guard':True},{'global_uuid':True,'tombstone_repair':True}):
+        with pytest.raises(RuntimeError):validate_result(value,'python',**flags)
+    assert failure_observation(dict(ok=False,step=len(GLOBAL_UUID_CHECKS),error='IntegrityViolation'),
+        max_checks=len(GLOBAL_UUID_CHECKS))['step']==len(GLOBAL_UUID_CHECKS)
 
 
 def test_guard_mode_evidence_requires_its_closed_checks_without_claiming_settlement():
