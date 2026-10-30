@@ -225,7 +225,7 @@ export class ManagedQdrantPublicationWorkerHost{
       await sendBoot(channel,{v:VERSION,job,identity:pinned,remaining_ms:Math.max(1,Math.floor((options.deadline-now())*1000))},options);
       channel.ordinary();
       let id=0,barriers=0,observed=0,finalized=false,result:Readonly<Data>|undefined,terminalError:Error|undefined;
-      const seenWrites=new Set<number>();
+      const seenWrites=new Set<number>(),reserved=new Map<number,Readonly<Data>>();let lastReservedSequence=0;
       for(;;){
         const request=fields(await channel.next(options),['v','id','op','remaining_ms','data']);
         channel.handling(true);
@@ -258,10 +258,15 @@ export class ManagedQdrantPublicationWorkerHost{
           }else if(op==='finalize_end'){
             fields(request.data,[]);need(state.session&&state.release);if(state.callback)await bounded(state.callback,lease);
             state.release();await bounded(state.session,lease);state.release=undefined;state.session=undefined;
-          }else if(op==='before_write'||op==='write_observed'){
-            const data=fields(request.data,op==='before_write'?['attempt_id','dispatch_id','sequence','request_sha256']:['attempt_id','dispatch_id','status']);
+          }else if(op==='reserved'||op==='before_write'||op==='write_observed'){
+            const data=fields(request.data,op!=='write_observed'?['attempt_id','dispatch_id','sequence','request_sha256']:['attempt_id','dispatch_id','status']);
             const attempt_id=count(data.attempt_id,1,8),attempt=state.attempts.get(attempt_id);need(attempt&&data.dispatch_id===attempt.binding.dispatch_id);
-            if(op==='before_write'){current();if(!same(binding(this.#supervisor.attempt_binding(attempt.attempt)),attempt.binding))throw new UnsupportedCapability();need(++barriers<=8&&!seenWrites.has(attempt_id));count(data.sequence,1,256);need(typeof data.request_sha256==='string'&&/^[a-f0-9]{64}$/.test(data.request_sha256));seenWrites.add(attempt_id);}
+            if(op!=='write_observed'){
+              current();if(!same(binding(this.#supervisor.attempt_binding(attempt.attempt)),attempt.binding))throw new UnsupportedCapability();
+              const sequence=count(data.sequence,1,256);need(typeof data.request_sha256==='string'&&/^[a-f0-9]{64}$/.test(data.request_sha256));
+              if(op==='reserved'){need(reserved.size<8&&!reserved.has(attempt_id)&&sequence>lastReservedSequence);reserved.set(attempt_id,Object.freeze({...data}));lastReservedSequence=sequence;}
+              else{need(++barriers<=8&&!seenWrites.has(attempt_id)&&same(reserved.get(attempt_id),data));seenWrites.add(attempt_id);}
+            }
             else{need(++observed<=8&&seenWrites.delete(attempt_id));count(data.status,100,599);}
             if(observer){const callback=Promise.resolve().then(()=>{const value=observer(Object.freeze({kind:op,...data}),owned);need(value instanceof Promise&&!types.isProxy(value));return value;});state.callback=callback;await bounded(callback,lease);state.callback=undefined;}
           }else if(op==='done'){
@@ -403,6 +408,12 @@ export function publication_transport_for(controller:OrdinaryPublicationControll
     async close(){closed=true;abort?.abort();if(pending)await bounded(pending.then(()=>undefined,()=>undefined),{deadline:now()+1});state.handles.delete(handle);},
   };
   state.handles.add(handle);return handle;
+}
+export async function publication_reserved(controller:OrdinaryPublicationController,attempt:unknown,dispatch:Readonly<{dispatch_id:string;sequence:number;request_bytes:readonly number[]}>,options:LeaseOptions):Promise<void>{
+  need(is_publication_controller(controller));
+  if(!is_worker_controller(controller))return;
+  const issued=local(controller).attempts.get(attempt as object);need(issued);
+  await rpc(controller,'reserved',{attempt_id:issued.id,dispatch_id:dispatch.dispatch_id,sequence:dispatch.sequence,request_sha256:sha(Buffer.from(dispatch.request_bytes))},options);
 }
 export async function publication_before_write(controller:OrdinaryPublicationController,attempt:unknown,dispatch:Readonly<{dispatch_id:string;sequence:number;request_bytes:readonly number[]}>,options:LeaseOptions):Promise<void>{
   need(is_publication_controller(controller));

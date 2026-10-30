@@ -9,7 +9,7 @@ import {createHash} from 'node:crypto';
 import {ManagedQdrantPublicationWorkerHost,OwnedPublicationWorker,OrdinaryWorkerController,
   PublicationWorkerFrameDecoder,encode_worker_frame,strict_worker_json,publication_worker_job,
   is_worker_controller,is_publication_controller,publication_attempt_binding,publication_controller_profile,
-  publication_issue_attempt,publication_transport_for,publication_before_write,publication_finalization,
+  publication_issue_attempt,publication_transport_for,publication_reserved,publication_before_write,publication_finalization,
   publication_worker_http_request,publication_worker_http_status,require_publication_finalization} from '../dist/qdrant-publication-worker.js';
 import {ManagedQdrantSupervisor} from '../dist/qdrant-supervisor.js';
 import {ExecutionLedger,BudgetExhausted} from '../dist/execution.js';
@@ -180,12 +180,13 @@ test('retired before-write ACK keeps captured credential and allows only closed 
   const fixture=supervisor(),events=[];
   fakeSpawn(t,async({rpc,die})=>{
     const issued=await rpc('issue',{intent_id:reference.intent_id,owner_token:'00000000-0000-4000-8000-000000000001',epoch:1,dispatch_id:'publication-test'});
+    await rpc('reserved',{attempt_id:issued.attempt_id,dispatch_id:'publication-test',sequence:1,request_sha256:'a'.repeat(64)});
     await rpc('before_write',{attempt_id:issued.attempt_id,dispatch_id:'publication-test',sequence:1,request_sha256:'a'.repeat(64)});
     await rpc('write_observed',{attempt_id:issued.attempt_id,dispatch_id:'publication-test',status:401});await rpc('done',{result:null,error:'UnauthorizedScope',cleanup:[]});die();
   });
   const host=new ManagedQdrantPublicationWorkerHost(fixture.actual,async()=>true);
   await assert.rejects(host.publish(job(),ledger(),{...options(),observer:async event=>{events.push(event.kind);if(event.kind==='before_write')fixture.state.identity.credential_generation='retired';}}),error=>error.name==='UnauthorizedScope');
-  assert.deepEqual(events,['before_write','write_observed']);assert.equal(fixture.state.credentials,1);await host.close();
+  assert.deepEqual(events,['reserved','before_write','write_observed']);assert.equal(fixture.state.credentials,1);await host.close();
 });
 test('kill failure retains finalization ownership until close can reap exact child',async t=>{
   const fixture=supervisor();let enteredResolve;const entered=new Promise(resolve=>{enteredResolve=resolve;});
@@ -279,4 +280,41 @@ test('all dispatch helpers reject structural, subclass and proxy controllers bef
     await assert.rejects(publication_finalization(value,{},async()=>{invoked++;},options()),InvalidRequest);
   }
   assert.equal(invoked,0);
+});
+
+for(const mode of ['before-reserved','duplicate-reserved','wrong-dispatch','wrong-attempt','digest-mismatch','sequence-mismatch','replayed-before','extra-field','bad-digest','out-of-order'])test(`reserved barrier rejects ${mode}`,async t=>{
+  const fixture=supervisor(),events=[];
+  fakeSpawn(t,async({rpc})=>{
+    const issue={intent_id:reference.intent_id,owner_token:'00000000-0000-4000-8000-000000000001',epoch:1,dispatch_id:'publication-test'};
+    const issued=await rpc('issue',issue),data={attempt_id:issued.attempt_id,dispatch_id:issue.dispatch_id,sequence:1,request_sha256:'a'.repeat(64)};
+    let op='reserved',invalid={...data};
+    if(['duplicate-reserved','digest-mismatch','sequence-mismatch','replayed-before','out-of-order'].includes(mode))await rpc('reserved',data);
+    if(mode==='before-reserved')op='before_write';
+    if(mode==='wrong-dispatch')invalid.dispatch_id='forged';
+    if(mode==='wrong-attempt')invalid.attempt_id=2;
+    if(mode==='bad-digest')invalid.request_sha256='bad';
+    if(mode==='extra-field')invalid.body='forbidden';
+    if(mode==='digest-mismatch'){op='before_write';invalid.request_sha256='b'.repeat(64);}
+    if(mode==='sequence-mismatch'){op='before_write';invalid.sequence=2;}
+    if(mode==='replayed-before'){op='before_write';await rpc(op,data);}
+    if(mode==='out-of-order'){const next=await rpc('issue',{...issue,dispatch_id:'publication-next'});invalid={...data,attempt_id:next.attempt_id,dispatch_id:'publication-next'};}
+    await assert.rejects(rpc(op,invalid));
+  });
+  const host=new ManagedQdrantPublicationWorkerHost(fixture.actual,async()=>true);
+  await assert.rejects(host.publish(job(),ledger(),{...options(),observer:async event=>{assert(Object.isFrozen(event));events.push(event);}}),InvalidRequest);
+  assert.equal(events.length,mode==='replayed-before'?2:['duplicate-reserved','digest-mismatch','sequence-mismatch','out-of-order'].includes(mode)?1:0);
+  await host.close();
+});
+test('reserved observer finishes before reply and retains exact metadata',async t=>{
+  const fixture=supervisor();let completed=false;
+  const data={attempt_id:1,dispatch_id:'publication-test',sequence:1,request_sha256:'a'.repeat(64)};
+  fakeSpawn(t,async({rpc,die})=>{
+    await rpc('issue',{intent_id:reference.intent_id,owner_token:'00000000-0000-4000-8000-000000000001',epoch:1,dispatch_id:data.dispatch_id});
+    await rpc('reserved',data);assert.equal(completed,true);
+    await rpc('before_write',data);await rpc('write_observed',{attempt_id:1,dispatch_id:data.dispatch_id,status:200});
+    await rpc('done',{result:result(),error:null,cleanup:[]});die();
+  });
+  const host=new ManagedQdrantPublicationWorkerHost(fixture.actual,async()=>true);
+  await host.publish(job(),ledger(),{...options(),observer:async event=>{if(event.kind==='reserved'){assert.deepEqual(event,{kind:'reserved',...data});await Promise.resolve();completed=true;}}});
+  await host.close();
 });

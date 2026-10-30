@@ -9,7 +9,7 @@ import {QdrantReconciliationVerifier,VerificationBudget} from './qdrant-reconcil
 import {QdrantSecurityVerifier,verify_security_ordinary,verify_purge_ordinary} from './qdrant-security-verification.js';
 import {SecurityReadbackBudget} from './qdrant-security-readback.js';
 import {QdrantPublicationVerifier,validate_publication_receipt} from './qdrant-publication-verification.js';
-import {is_publication_controller,is_worker_controller,publication_worker_reference,publication_controller_profile,publication_issue_attempt,publication_attempt_binding,publication_transport_for,publication_before_write,publication_finalization,type OrdinaryPublicationController} from './qdrant-publication-worker.js';
+import {is_publication_controller,is_worker_controller,publication_worker_reference,publication_controller_profile,publication_issue_attempt,publication_attempt_binding,publication_transport_for,publication_reserved,publication_before_write,publication_finalization,type OrdinaryPublicationController} from './qdrant-publication-worker.js';
 import {ExecutionLedger,BudgetExhausted,type Reservation} from './execution.js';
 import {type TrustedScope} from './requests.js';
 import {same,parse_response,type QdrantConfig} from './qdrant-contract.js';
@@ -361,6 +361,7 @@ export class QdrantPublicationManager {
     let closed=false;
     try {
       const reservation=await this.#reserve(context,session,sequence,ids,options);
+      await publication_reserved(this.#supervisor,session.attempt,{dispatch_id:String(session.binding.dispatch_id),sequence,request_bytes:reservation.request_bytes},options);
       await this.#mark(context,session,sequence,ids,options);
       await publication_before_write(this.#supervisor,session.attempt,{dispatch_id:String(session.binding.dispatch_id),sequence,request_bytes:reservation.request_bytes},options);
       let ack:Ack;

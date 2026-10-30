@@ -653,3 +653,37 @@ async def test_http_handle_original_channel_and_key_are_not_caller_replaceable()
         await forged.request('GET', '/collections/x', deadline=deadline())
     await handle.close()
     await controller.close()
+
+
+@run_async
+async def test_reserved_controller_uses_closed_rpc_and_rejects_foreign_attempt():
+    rpc = RPC([{}])
+    controller = worker.OrdinaryWorkerController(worker._BOOT_TOKEN, rpc, worker._job(job()), identity(), deadline())
+    attempt = worker._Attempt()
+    worker._CONTROLLERS[controller].attempts[attempt] = {'attempt_id': 1}
+    payload = dict(dispatch_id='dispatch', sequence=1, request_sha256='a' * 64)
+    await controller.reserved(attempt, payload, deadline=deadline())
+    assert rpc.calls == [('reserved', dict(attempt_id=1, **payload))]
+    with pytest.raises(InvalidRequest):
+        await controller.reserved(worker._Attempt(), payload, deadline=deadline())
+    await controller.close()
+
+
+def test_reserved_barrier_requires_exact_order_identity_and_single_use():
+    reservations, written = {}, set()
+    payload = dict(attempt_id=1, dispatch_id='dispatch', sequence=3, request_sha256='a' * 64)
+    binding = {'dispatch_id': 'dispatch'}
+    with pytest.raises(InvalidRequest):
+        worker._admit_barrier('before_write', payload, binding, reservations, written)
+    for changes in ({'dispatch_id': 'forged'}, {'sequence': 0}, {'request_sha256': 'A' * 64}, {'extra': True}):
+        with pytest.raises(InvalidRequest):
+            worker._admit_barrier('reserved', dict(payload, **changes), binding, reservations, written)
+    worker._admit_barrier('reserved', payload, binding, reservations, written)
+    for op, changes in (('reserved', {}), ('before_write', {'request_sha256': 'b' * 64}),
+                        ('before_write', {'sequence': 4}), ('reserved', {'attempt_id': 2, 'sequence': 2})):
+        with pytest.raises(InvalidRequest):
+            worker._admit_barrier(op, dict(payload, **changes), binding, reservations, written)
+    worker._admit_barrier('before_write', payload, binding, reservations, written)
+    with pytest.raises(InvalidRequest):
+        worker._admit_barrier('before_write', payload, binding, reservations, written)
+    assert written == {1} and reservations == {1: payload}

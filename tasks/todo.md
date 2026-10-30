@@ -2082,3 +2082,38 @@ native evidence. Resource observation is inherited from the same parent run:
 Learning practice unassessed. H and V5 remain open. Next smallest action is
 the reserved dispatch-before-HTTP process boundary (matrix IDs 8 and 9),
 which the existing dispatched-state worker crash cannot substitute.
+
+H-S6a assignment: root froze the additive private `ordinary-worker-r1`
+reserved observer event in [QW-r1](../contracts/QDRANT_PUBLICATION_V5.md).
+Shared outcome is a real child-to-parent event after durable reserve and
+before mark-dispatched, with exact attempt/digest binding and ordered,
+single-use parent validation; ordinary public output, existing later
+before-write behavior and owned cleanup remain intact. Sol `h_reserved_python`
+owns only Python `qdrant_publication.py`, `_qdrant_publication_worker.py` and
+their two existing focused test files, and assembles. Sol `h_reserved_node`
+owns only Node `qdrant-publication.ts`, `qdrant-publication-worker.ts` and
+their two existing focused test files. Both make substantive source/test edits
+and resolve event/error/order details directly. Root owns contract, native
+consumers, all serial test/service runs, report/tracker and Git. No schema,
+fixture, migration, lockfile, public manager API, recovery or supervisor
+changes; no peer tests/processes/services/network/DB/install/Git. Outcome or
+protected-boundary change goes to root before edits, unresolved design to
+Astra. State: assigned; native reserved crash acceptance waits for S6b.
+
+H-S6a source handoff: Python and Node Sol peers made and transferred separate
+manager, worker-protocol and focused-test edits; Python assembled the two
+implementations. Root integrated the frozen private contract, ran Python
+focused publication/worker tests (82 passed), Node focused tests (62 passed),
+strict TypeScript build and mypy (49 source files) serially. [Checkpoint
+report](../evaluation/reports/V5/V5-04H-reserved-seam.md). The `reserved`
+event is emitted after durable reservation and before dispatched/HTTP;
+parent validation binds it to the original attempt and later before-write
+metadata. Native process-death acceptance is pending, so state is
+IMPLEMENTED_UNVALIDATED for H IDs 8/9. Changed files: QW contract, Python and
+Node manager/worker sources and focused tests, report and tracker. No schema,
+fixture, migration, grant, dependency, lockfile, provider or hosted change.
+Task-owned services were not started for this source checkpoint; unrelated
+user edits remain outside scope. Learning practice unassessed. Next smallest
+action H-S6b: extend the native child harness with an isolated reserved-stage
+fixture, kill/reap that child at the new committed barrier, and prove journal,
+physical absence, prior pointer and successor refusal in both runtimes.

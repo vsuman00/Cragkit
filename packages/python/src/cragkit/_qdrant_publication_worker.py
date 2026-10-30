@@ -452,6 +452,14 @@ class OrdinaryWorkerController:
         state.handles.add(handle)
         return handle
 
+    async def reserved(self, attempt: Any, dispatch: Any, *, deadline: float) -> None:
+        state = _controller_state(self)
+        record = state.attempts.get(attempt)
+        if record is None:
+            raise InvalidRequest()
+        result = await self._rpc('reserved', dict(attempt_id=record['attempt_id'], **dispatch), deadline)
+        _object(result, set())
+
     async def before_write(self, attempt: Any, dispatch: Any, *, deadline: float) -> None:
         state = _controller_state(self)
         record = state.attempts.get(attempt)
@@ -638,6 +646,29 @@ def _host_state(value: Any) -> Any:
     return _HOSTS[value]
 
 
+def _admit_barrier(op: str, data: Any, binding: Any,
+                   reservations: dict[int, dict[str, Any]], written: set[int]) -> None:
+    _object(data, {'attempt_id', 'dispatch_id', 'sequence', 'request_sha256'})
+    index = _integer(data['attempt_id'], 1, 8)
+    if data['dispatch_id'] != binding['dispatch_id']:
+        raise InvalidRequest()
+    _integer(data['sequence'], 1, 256)
+    digest = data['request_sha256']
+    if type(digest) is not str or len(digest) != 64 or any(ch not in '0123456789abcdef' for ch in digest):
+        raise InvalidRequest()
+    if op == 'reserved':
+        if len(reservations) >= 8 or index in reservations or any(
+                data['sequence'] <= prior['sequence'] for prior in reservations.values()):
+            raise InvalidRequest()
+        reservations[index] = dict(data)
+    elif op == 'before_write':
+        if len(written) >= 8 or index in written or reservations.get(index) != data:
+            raise InvalidRequest()
+        written.add(index)
+    else:
+        raise InvalidRequest()
+
+
 class ManagedQdrantPublicationWorkerHost:
     __slots__ = ('__weakref__',)
 
@@ -753,8 +784,9 @@ class ManagedQdrantPublicationWorkerHost:
         state.channel = _Channel(reader, writer)
         remaining = max(1, int((deadline - asyncio.get_running_loop().time()) * 1000))
         await _send_boot(state.channel, dict(v=1, job=job, identity=identity, remaining_ms=remaining), deadline)
-        sequence = barriers = observations = 0
+        sequence = observations = 0
         finalized = False
+        reservations: dict[int, dict[str, Any]] = {}
         written: set[int] = set()
         observed: set[int] = set()
         async def callback(function: Any, *args: Any) -> Any:
@@ -826,17 +858,10 @@ class ManagedQdrantPublicationWorkerHost:
                         _object(data, {'attempt_id'})
                         _, binding = attempt(data)
                         result = dict(binding=binding)
-                    elif op == 'before_write':
+                    elif op in ('reserved', 'before_write'):
                         _object(data, {'attempt_id', 'dispatch_id', 'sequence', 'request_sha256'})
                         _, binding = attempt(data)
-                        index = data['attempt_id']
-                        if barriers >= 8 or index in written or data['dispatch_id'] != binding['dispatch_id']:
-                            raise InvalidRequest()
-                        _integer(data['sequence'], 1, 256)
-                        if type(data['request_sha256']) is not str or len(data['request_sha256']) != 64 or any(ch not in '0123456789abcdef' for ch in data['request_sha256']):
-                            raise InvalidRequest()
-                        barriers += 1
-                        written.add(index)
+                        _admit_barrier(op, data, binding, reservations, written)
                         if observer is not None:
                             await callback(observer, dict(kind=op, **data), state.owned)
                     elif op == 'write_observed':

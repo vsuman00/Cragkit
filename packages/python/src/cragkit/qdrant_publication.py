@@ -428,6 +428,11 @@ class QdrantPublicationManager:
                     raise ProviderUnavailable() from None
                 reservation = await self._writer.reserve_dispatch(ctx, request, deadline=deadline)
             self._check(deadline)
+            if is_worker(self._supervisor):
+                await cast(Any, self._supervisor).reserved(session.attempt, dict(dispatch_id=dispatch_id,
+                    sequence=sequence, request_sha256=hashlib.sha256(reservation['request_bytes']).hexdigest()),
+                    deadline=deadline)
+                self._check(deadline)
             try:
                 await self._writer.mark_dispatched(ctx, dispatch_id, deadline=deadline)
             except ProviderUnavailable:

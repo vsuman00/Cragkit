@@ -923,3 +923,36 @@ async def test_public_security_budget_failure_preserves_committed_authority(monk
     assert events == ['project', 'recover', 'advance']
     assert state['intent']['authority_committed'] and not state['intent']['replica_complete']
     await manager.close()
+
+
+@pytest.mark.parametrize('reconcile', [False, True])
+@run_async
+async def test_worker_reserved_barrier_precedes_dispatched_and_http(monkeypatch, tmp_path, reconcile):
+    manager, _, _, supervisor, _, state, _ = await setup(monkeypatch, tmp_path)
+    await manager.initialize(deadline=asyncio.get_running_loop().time() + 5)
+    await manager.stage(stage_input(), ctx()['scope'], ledger(), deadline=asyncio.get_running_loop().time() + 5)
+    if reconcile:
+        state['faults'].add('reserve_ack')
+    barriers = []
+
+    async def reserved(attempt, payload, *, deadline):
+        row = state['dispatches'][payload['dispatch_id']]
+        assert row['state'] == 'reserved'
+        assert payload['request_sha256'] == row['request_sha256']
+        assert payload['sequence'] == row['sequence']
+        assert 'http' not in state['events']
+        barriers.append(('reserved', attempt, dict(payload)))
+
+    async def before_write(attempt, payload, *, deadline):
+        assert state['dispatches'][payload['dispatch_id']]['state'] == 'dispatched'
+        assert barriers == [('reserved', attempt, payload)]
+        assert 'http' not in state['events']
+        barriers.append(('before_write', attempt, dict(payload)))
+
+    monkeypatch.setattr(implementation, 'is_worker', lambda value: value is supervisor)
+    monkeypatch.setattr(supervisor, 'reserved', reserved, raising=False)
+    monkeypatch.setattr(supervisor, 'before_write', before_write, raising=False)
+    result = await manager.publish({key: ctx()[key] for key in ('collection', 'document_id', 'intent_id')},
+        ctx()['scope'], ledger(), deadline=asyncio.get_running_loop().time() + 5)
+    assert result['published'] and [item[0] for item in barriers] == ['reserved', 'before_write']
+    assert state['events'].count('http') == 1
