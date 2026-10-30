@@ -2707,3 +2707,44 @@ Thirty of 43 exact H IDs now have accepted native evidence. Next smallest
 action: map an unresolved H fault to the existing actual process/security
 harness, freeze its boundary and run both native runtimes. H and V5 remain
 open; downstream V5-05/06/C2 acceptance is still gated.
+
+H-S23 assignment (V5-04H exact ID `acl_replica_ack_lost`): shared outcome is
+an actual completed auth-3 full-point replica PUT with lost client reply,
+durable uncertainty and old-reader source denial, followed by current-auth
+replay after physical credential fencing. The frozen ignored protocol is
+`artifacts/V5/V5-04H/acl-replica-ack-r1-protocol.md`. Sol
+`h_acl_python` owns only `tools/qdrant_public_security_cases.py` and
+assembles; Sol `h_acl_node` owns only
+`tools/check_typescript_qdrant_public_security.mjs`. Both do substantive
+native consumer work, coordinate the fault window and evidence shape
+directly, and adjust ownership only by explicit transfer with root notice.
+Root owns the parent closed-result test, serial native verification,
+report/tracker, Git and escalation. Product, schema/migrations, QSC/QW
+contracts, sealed/shared fixtures, locks and user edits are protected.
+Peers run no tests/processes/services/network/DB/Git; root uses one native
+suite at a time. Outcome/protected changes return to root; unresolved
+material decisions go to Astra. State: assigned; H/V5 open.
+
+H-S23 accepted: the Python and Node G2c native consumers each observed a
+completed auth-3 full-point PUT with a lost reply, a fresh owner journal in
+`unknown`, backend recovery block, and unavailable retained/fresh source
+requests with zero released bytes. Retry fenced the uncertain credential;
+direct readback returned the exact four current auth-3 ACL points, with no
+retired-key PUT resend. The older auth-4 lost-ACK case still passed. Root
+reviewed the peer diffs, fixed the fixture assumptions through the owning
+lanes, and ran the serial native parent: nine checks per runtime, matching
+semantic witness `bcf117af7abc3b1bfc33a924ee0fe0ac4843445601c862cb2e413d2ee7a08df5`,
+and verified cleanup. Ten focused protocol tests, Python compilation, Node
+syntax, and all 16 seals passed. Full Python/Node regressions had passed in
+H-S22 and were not rerun for this fixture-only change. No product, SQL,
+schema/migration, lockfile, shared sealed fixture, or user-owned edit; no
+provider/hosted call. [Checkpoint report](../evaluation/reports/V5/V5-04H-acl-replica-ack-lost.md).
+State: COMPLETE for H-S23 only; 31 of 43 exact H IDs accepted. H and V5
+remain open. Handoff: changed `tools/qdrant_public_security_cases.py`,
+`tools/check_typescript_qdrant_public_security.mjs`,
+`tools/tests/test_qdrant_security_verification_native.py`, this tracker, and
+the checkpoint report. Native evidence is in ignored
+`artifacts/V5/V5-04H/acl-replica-ack-both-07/results.json`. No task-owned
+service remains. Learning practice unassessed. Next smallest action: select
+the next unresolved H fault, freeze its physical failure boundary, then run
+both native runtimes before updating acceptance.

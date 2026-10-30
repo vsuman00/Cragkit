@@ -15,6 +15,7 @@ const CHECKS = [
   'public_authority_then_full_document_convergence',
   'completed_retry_has_no_physical_or_authority_mutation',
   'repeated_update_preserves_original_stage_history',
+  'acl_replica_ack_lost_replays_current_revocation',
   'lost_completed_ack_keeps_pending_and_retry_refences',
   'current_source_allowed_and_revoked_scopes',
   'ownerless_denied_stage_public_bootstrap',
@@ -118,7 +119,7 @@ async function cases(value) {
   const store = new PostgresQdrantSourceStore(pools[2], inputs.config);
   const handles = new Set();
   const observations = [];
-  let address, httpCount = 0, armed = false, drops = 0;
+  let address, httpCount = 0, armed = false, drops = 0, puts = 0, retiredKey, currentKey, droppedPoints, retiredResends = 0;
   const nativeRequest = http.request, target = '/collections/'+inputs.config.physical_collection+'/points?wait=true&ordering=strong';
   const scope = revision => ({
     ...inputs.scope, authorization_revision: revision
@@ -217,15 +218,52 @@ async function cases(value) {
     await pair.handle.close();
     handles.delete(pair.handle);
   }
+  async function journal(intent, pendingOnly = false) {
+    return pools[1].withLease(options, async client => {
+      await client.query({text:'BEGIN',values:[],rowMode:'array'});
+      try {
+        await client.query({text:"SELECT set_config('cragkit_qdrant.backend_instance_id',$1,true)",values:[inputs.instance_id],rowMode:'array'});
+        const result = await client.query({text:'SELECT state,completion_sha256 FROM cragkit_qdrant.dispatch_journal WHERE instance_id=$1 AND tenant_id=$2 AND collection=$3 AND document_id=$4 AND intent_id=$5'+(pendingOnly ? " AND state<>'settled'" : '')+' ORDER BY sequence LIMIT 9',
+          values:[inputs.instance_id,inputs.scope.tenant_id,inputs.stage.manifest.collection,inputs.stage.manifest.document_id,intent],rowMode:'array'});
+        await client.query({text:'COMMIT',values:[],rowMode:'array'});
+        return result.rows;
+      } catch (error) {
+        await client.query({text:'ROLLBACK',values:[],rowMode:'array'});
+        throw error;
+      }
+    });
+  }
+  async function physical(method, path, key, body) {
+    assert(typeof key === 'string' && /^[0-9a-f]{64}$/.test(key));
+    const endpoint = new URL(address), encoded = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
+    assert(endpoint.protocol === 'http:' && endpoint.hostname === '127.0.0.1' && endpoint.origin === address);
+    return new Promise((resolve,reject) => {
+      const request = nativeRequest({hostname:'127.0.0.1',port:Number(endpoint.port),method,path,agent:false,
+        signal:options.signal,headers:{'api-key':key,...(encoded ? {'content-type':'application/json','content-length':encoded.length} : {})}}, response => {
+        const chunks = []; let size = 0;
+        response.on('data',chunk => { size += chunk.length; if(size > 1048576) request.destroy(new ProviderUnavailable()); else chunks.push(chunk); });
+        response.on('end',() => resolve({status:response.statusCode,body:Buffer.concat(chunks)}));
+        response.on('error',reject);
+      });
+      request.setTimeout(Math.max(1,Math.min(5000,(options.deadline-now())*1000)),() => request.destroy(new ProviderUnavailable()));
+      request.on('error',reject);
+      request.end(encoded);
+    });
+  }
   function mark(result) {
     observations.push(row(result));
     step++;
   }
   http.request = function(requestOptions, callback) {
     httpCount++;
+    if (requestOptions?.headers?.['api-key']) currentKey = requestOptions.headers['api-key'];
+    if (requestOptions?.method === 'PUT' && requestOptions.path === target) {
+      puts++;
+      if (retiredKey && currentKey === retiredKey) retiredResends++;
+    }
     const drop = armed && requestOptions?.method === 'PUT' && requestOptions.path === target;
-    if (drop) armed = false;
-    return nativeRequest.call(this, requestOptions, incoming => {
+    if (drop) { armed = false; retiredKey = currentKey; }
+    const outgoing = nativeRequest.call(this, requestOptions, incoming => {
       if (!drop) {
         callback(incoming);
         return;
@@ -259,6 +297,28 @@ async function cases(value) {
         incoming.once = originalOnce;
       }
     });
+    if (drop) {
+      const originalWrite = outgoing.write, originalEnd = outgoing.end, chunks = [];
+      let size = 0;
+      const capture = chunk => {
+        if (chunk === undefined || chunk === null || typeof chunk === 'function') return;
+        const buffer = Buffer.from(chunk);
+        size += buffer.length;
+        assert(size <= 1048576);
+        chunks.push(buffer);
+      };
+      outgoing.write = function(chunk, ...args) {
+        capture(chunk);
+        return originalWrite.call(this,chunk,...args);
+      };
+      outgoing.end = function(chunk, ...args) {
+        capture(chunk);
+        assert(size > 0);
+        droppedPoints = decode(Buffer.concat(chunks)).points;
+        return originalEnd.call(this,chunk,...args);
+      };
+    }
+    return outgoing;
   };
   try {
     await supervisor.initialize({
@@ -310,10 +370,29 @@ async function cases(value) {
     const original = await writer.manager_snapshot(context(inputs.stage.intent.intent_id,'auth-2'), options);
     const third = update(3);
     await commit(third,'auth-2');
+    const thirdProjection = security_projection_data(await writer.project_security(context(third.intent_id,'auth-3'),options),writer);
+    assert(thirdProjection.point_ids.length === 4);
+    const thirdDrops = drops, thirdPuts = puts;
+    armed = true;
+    await refuses(ProviderUnavailable, () => converge(third,'auth-3'));
+    const thirdPending = await snapshot(third,'auth-3');
+    assert(drops === thirdDrops+1 && puts === thirdPuts+1 && !armed
+      && thirdPending.pending && thirdPending.backend.state === 'recovery_blocked'
+      && thirdPending.document.authorization_revision === 'auth-3'
+      && thirdPending.intent.authority_committed && !thirdPending.intent.replica_complete
+      && thirdPending.owner
+      && same(await journal(thirdPending.owner.intent_id,true), [['unknown',null]])
+      && Array.isArray(droppedPoints)
+      && same(droppedPoints.map(point => point.id).sort(),[...thirdProjection.point_ids].sort())
+      && droppedPoints.every(point => same(point.payload,thirdProjection.points.find(expected => expected.point_id === point.id)?.payload)
+        && point.payload.authorization_revision === 'auth-3' && point.vector?.dense));
+    const thirdGeneration = supervisor.control_binding().credential_generation;
+    const thirdKey = retiredKey, thirdRetiredResends = retiredResends;
     const released = await retained.handle.release(retained.result.binding, {
       purpose:'final', max_source_bytes: 16777216, include_source: true
     });
-    assert(released.state === 'unavailable');
+    assert(released.state === 'unavailable' && released.binding === null && released.evidence === null
+      && released.private_source === null && released.source_bytes === 0);
     await closeSource(retained);
     const denied = await source('auth-3');
     assert(denied.result.state === 'unavailable');
@@ -327,13 +406,33 @@ async function cases(value) {
     assert(same(history.intent, original.intent)
       && history.document.active_generation_id === inputs.stage.manifest.generation_id);
     mark(thirdResult);
+    const thirdRecovered = await snapshot(third,'auth-3');
+    const thirdJournal = await journal(thirdPending.owner.intent_id);
+    assert(supervisor.control_binding().credential_generation !== thirdGeneration
+      && currentKey !== thirdKey
+      && thirdRecovered.backend.state === 'open'
+      && thirdJournal.length > 0 && thirdJournal.every(entry => entry[0] === 'settled' && typeof entry[1] === 'string')
+      && drops === thirdDrops+1 && retiredResends === thirdRetiredResends
+      && !(await snapshot(third,'auth-3')).pending);
+    assert((await physical('GET',target.split('?')[0],thirdKey)).status === 401);
+    const readback = await physical('POST',target.split('?')[0],currentKey,
+      {ids:thirdProjection.point_ids,with_payload:true,with_vector:true});
+    const replicas = decode(readback.body);
+    assert(readback.status === 200 && replicas.status === 'ok' && Array.isArray(replicas.result)
+      && same(replicas.result.map(point => point.id).sort(), [...thirdProjection.point_ids].sort())
+      && replicas.result.every(point => point.payload.authorization_revision === 'auth-3'
+        && same(point.payload.principal_ids,['reader-b']) && same(point.payload.grant_ids,[])
+        && same(point.payload,thirdProjection.points.find(expected => expected.point_id === point.id)?.payload)));
+    observations.push(['acl_replica_ack_lost','auth-3','recovery_blocked','unknown','unavailable','unavailable',0,1,0,true,true]);
+    step++;
 
     const fourth = update(4);
     await commit(fourth,'auth-3');
+    const fourthDrops = drops;
     armed = true;
     await refuses(ProviderUnavailable, () => converge(fourth,'auth-4'));
     const pending = await snapshot(fourth,'auth-4');
-    assert(drops === 1
+    assert(drops === fourthDrops+1
       && !armed
       && pending.pending
       && pending.backend.state === 'recovery_blocked'
@@ -341,7 +440,7 @@ async function cases(value) {
     const generation = supervisor.control_binding().credential_generation;
     const fourthResult = await converge(fourth,'auth-4');
     complete(fourthResult);
-    assert(supervisor.control_binding().credential_generation !== generation && drops === 1);
+    assert(supervisor.control_binding().credential_generation !== generation && drops === fourthDrops+1);
     mark(fourthResult);
     observations.push(['source','verified','unavailable','unavailable','verified']);
     step++;

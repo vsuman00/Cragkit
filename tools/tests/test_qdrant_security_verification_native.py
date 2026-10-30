@@ -56,7 +56,8 @@ def test_public_security_evidence_has_its_own_complete_closed_observations():
     from qdrant_public_security_cases import CHECKS as PUBLIC_CHECKS
     value=dict(runtime='python',checks=list(PUBLIC_CHECKS),proof_scope='native_public_security_convergence_only',
         semantic_witness_sha256='a'*64)
-    assert len(PUBLIC_CHECKS)==len(set(PUBLIC_CHECKS))==8
+    assert len(PUBLIC_CHECKS)==len(set(PUBLIC_CHECKS))==9
+    assert PUBLIC_CHECKS[3]=='acl_replica_ack_lost_replays_current_revocation'
     assert validate_result(value,'python',public_security=True)==value
     for changed in (dict(value,checks=[]),dict(value,proof_scope='native_security_repetition_only'),
                     dict(value,private='source'),dict(value,semantic_witness_sha256=True)):
