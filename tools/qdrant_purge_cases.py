@@ -11,6 +11,7 @@ CHECKS = (
     'completed_purge_retry_is_metadata_only',
     'lost_delete_ack_requires_actual_refence_before_erasure',
     'interrupted_delete_keeps_purge_pending_until_recovery',
+    'old_write_after_initial_purge_repeats_absence_after_fencing',
     'ordinary_purge_owner_handoff_resumes_without_guard_bypass',
     'lost_erasure_commit_confirms_exact_retained_history',
     'ownerless_tombstone_bootstrap_and_forged_receipt_refusal',
@@ -18,7 +19,8 @@ CHECKS = (
 )
 
 POLICY = 'erase_managed_source_and_replay_v1'
-COMPLETED = ('base', 'delete_loss', 'handoff', 'commit_loss', 'ownerless', 'authority_change', 'purge_interruption')
+COMPLETED = ('base', 'delete_loss', 'handoff', 'commit_loss', 'ownerless', 'authority_change',
+    'purge_interruption', 'old_write_after_initial_purge')
 FAULT_CHECKS = (
     'current_credential_pending_delete_refused',
     'administrative_foreign_intent_pending_refused_and_restored',
@@ -66,7 +68,7 @@ def purge_input():
     from qdrant_writer_cases import successor_stage
 
     documents = {}
-    for name in (*COMPLETED, 'extra'):
+    for name in (*COMPLETED, 'extra', 'outside_replacement'):
         seed, _ = guard_inputs('purge-' + name)
         stage = seed['stage']
         authorization = deepcopy(stage['intent']['initial_authorization'])
@@ -82,8 +84,15 @@ def purge_input():
         documents[name] = dict(stage=stage,
             second_stage=successor_stage(seed, 'purge-' + name + '-retained', stage['manifest']['generation_id']),
             expected_points=seed['expected_points'], tombstone=tombstone, purge=purge)
-        if name == 'delete_loss':
+        if name in ('delete_loss', 'outside_replacement'):
             documents[name]['published_second'] = True
+        if name == 'outside_replacement':
+            second = documents[name]['second_stage']['manifest']
+            points = deepcopy(seed['expected_points'])
+            for point, member in zip(points, second['members'], strict=True):
+                point['id'] = member['point_id']
+                point['payload'].update(revision_id=second['revision_id'], generation_id=second['generation_id'])
+            documents[name]['second_expected_points'] = points
         if name == 'authority_change':
             changed = deepcopy(tombstone)
             changed.update(intent_id=tombstone['intent_id']+'-auth3',
@@ -127,6 +136,7 @@ async def python_purge_cases(value):
     settlement_probe = dict(active=False, foreign=[], owned=[], updates=0)
     network = dict(count=0, mode=None, put_drops=0, delete_drops=0, deletes=[])
     delete_interruption = dict(armed=False, entered=asyncio.Event(), cancelled=False)
+    old_write = dict(armed=False, entered=asyncio.Event(), release=asyncio.Event(), args=None, completed=False)
     database = dict(writes=0, bodies=0, mode=None, rollbacks=0, lost=0,
         confirming=False, confirmations=0, confirm_queries=0, confirm_http=0,
         confirm_bodies=0, confirm_writes=0, functions=0, guard_active=False, handoff_lost=0)
@@ -313,7 +323,21 @@ async def python_purge_cases(value):
     async def observed_http(*args, **kwargs):
         network['count'] += 1
         if database['confirming']: database['confirm_http'] += 1
+        held = (old_write['armed'] and len(args) > 3 and args[1] == 'PUT'
+            and args[2] == target + '/points?wait=true&ordering=strong')
+        if held:
+            old_write.update(armed=False, args=args)
+            old_write['entered'].set()
+            await old_write['release'].wait()
         result = await original_http(*args, **kwargs)
+        if held:
+            status, raw = result
+            response = json.loads(raw)
+            if (status != 200 or response.get('status') != 'ok'
+                    or response.get('result', {}).get('status') != 'completed'):
+                raise RuntimeError('purge_old_write_not_completed')
+            old_write['completed'] = True
+            raise ProviderUnavailable()
         if len(args) > 3:
             method, path, body = args[1:4]
             kind = 'put' if method == 'PUT' and path == target + '/points?wait=true&ordering=strong' else (
@@ -637,6 +661,121 @@ async def python_purge_cases(value):
         _, denied = await source(auth2, item); unavailable(denied)
         checks.append(CHECKS[5]); observations.append([
             'purge_interruption', 'aborted', 'recovery_blocked', True, True, 'unavailable', True, 0, 'complete'])
+        outside = await setup('outside_replacement')
+        item = await setup('old_write_after_initial_purge')
+        retained_request, retained = await source(scope, item)
+        if retained.state != 'verified': raise RuntimeError('purge_old_write_retained_source_missing')
+        old_write['armed'] = True
+        publish = asyncio.create_task(call(manager.publish, reference(item['second_stage'])))
+        try:
+            await asyncio.wait_for(old_write['entered'].wait(),
+                max(.001, deadline-asyncio.get_running_loop().time()))
+            await commit(item['tombstone'])
+            unavailable(await retained_request.release(retained.binding, purpose='final',
+                max_source_bytes=16777216, include_source=True))
+            await writer.bind_purge(item['purge'], auth2, owner_token=token, deadline=deadline)
+            pending = await snapshot(item['purge'])
+            before_graph = graph(await writer.project_purge(context(item['purge']), POLICY, deadline=deadline))
+            expected_ids = {member['point_id'] for stage in (item['stage'], item['second_stage'])
+                for member in stage['manifest']['members']}
+            held_ids = {point['id'] for point in json.loads(old_write['args'][3])['points']}
+            if (len(expected_ids) != 4 or len(held_ids) != 2 or not held_ids <= expected_ids
+                    or set(before_graph['point_ids']) != expected_ids or not pending['pending']
+                    or pending['intent']['purge_complete'] or not pending['intent']['authority_committed']):
+                raise RuntimeError('purge_old_write_pending_fixture')
+            credential = old_write['args'][0]
+            async def raw_request(method, path, body):
+                status, raw = await original_http(credential, method, path, request_bytes(body), deadline)
+                response = json.loads(raw)
+                if status != 200 or response.get('status') != 'ok':
+                    raise RuntimeError('purge_old_write_harness_http')
+                return response
+            async def scoped_points(selected, ids):
+                manifest = selected['stage']['manifest']
+                response = await raw_request('POST', target + '/points/scroll', dict(
+                    filter=dict(must=[dict(key=field, match=dict(value=manifest[field])) for field in fields]),
+                    limit=8, with_payload=True, with_vector=False))
+                result = response.get('result', {})
+                points = result.get('points')
+                if (type(points) is not list or {point['id'] for point in points} != ids
+                        or len(points) != len(ids) or result.get('next_page_offset', 'missing') is not None
+                        or any(point['payload'].get(field) != manifest[field] for point in points for field in fields)):
+                    raise RuntimeError('purge_old_write_scoped_membership')
+                return len(points)
+            erased = await raw_request('POST', target + '/points/delete?wait=true&ordering=strong',
+                dict(points=sorted(expected_ids)))
+            if erased.get('result', {}).get('status') != 'completed':
+                raise RuntimeError('purge_old_write_initial_delete')
+            await scoped_points(item, set())
+            functions = database['functions']
+            book = ExecutionLedger(Limits(max_provider_calls=0), deadline=deadline)
+            await expect(ProviderUnavailable, lambda: manager.purge(item['purge'], auth2, book,
+                retention_policy=POLICY, deadline=deadline))
+            if any(book.snapshot()[field] for field in ('attempts', 'provider_calls', 'pending')):
+                raise RuntimeError('purge_old_write_busy_budget')
+            await expect(ProviderUnavailable, lambda: writer.acquire_owner(context(item['purge']), deadline=deadline))
+            if (await snapshot(item['purge']) != pending or database['functions'] != functions
+                    or graph(await writer.project_purge(context(item['purge']), POLICY, deadline=deadline)) != before_graph
+                    or old_write['release'].is_set() or publish.done()):
+                raise RuntimeError('purge_old_write_early_completion')
+            _, denied = await source(auth2, item); unavailable(denied)
+            old_write['release'].set()
+            await expect(ProviderUnavailable, lambda: publish)
+            if not old_write['completed']: raise RuntimeError('purge_old_write_never_landed')
+            await scoped_points(item, held_ids)
+            if (not (await snapshot(item['purge']))['pending'] or database['functions'] != functions
+                    or graph(await writer.project_purge(context(item['purge']), POLICY, deadline=deadline)) != before_graph):
+                raise RuntimeError('purge_old_write_reappearance_lost')
+            generation = supervisor.control_binding()['credential_generation']
+            absence_before_completion = []
+            async def checked_completion(verifier, receipt, **options):
+                data = purge_absence_receipt_data(receipt, verifier, deadline=options['deadline'])
+                if (data['context'].intent_id != item['purge']['intent_id']
+                        or supervisor.control_binding()['credential_generation'] == generation
+                        or not old_write['completed'] or database['functions'] != functions):
+                    raise RuntimeError('purge_old_write_completion_order')
+                absence_before_completion.append(data['absence_sha256'])
+                return await original_complete(verifier, receipt, **options)
+            writer.complete_purge = checked_completion
+            try:
+                await purge(item['purge'])
+            finally:
+                writer.complete_purge = original_complete
+            if (supervisor.control_binding()['credential_generation'] == generation
+                    or (await snapshot(item['purge']))['pending'] or database['functions'] != functions+1
+                    or len(absence_before_completion) != 1):
+                raise RuntimeError('purge_old_write_not_refenced')
+            outside_ids = {member['point_id'] for stage in (outside['stage'], outside['second_stage'])
+                for member in stage['manifest']['members']}
+            capability = supervisor.issue_attempt(dict(intent_id='native-old-write-final-readback', owner_token=token,
+                epoch=supervisor.control_binding()['epoch'], dispatch_id='native-old-write-final-readback'), deadline=deadline)
+            probe = supervisor.transport_for(capability)
+            try:
+                async def managed_read(method, path, body):
+                    return json.loads(bytes(await probe.request(method, path, body=request_bytes(body), deadline=deadline)))
+                raw_request = managed_read
+                await scoped_points(item, set())
+                await scoped_points(outside, outside_ids)
+            finally:
+                await probe.close()
+            survivor = await snapshot(outside['second_stage'], scope)
+            if (len(outside_ids) != 4 or survivor['document']['active_generation_id'] != outside['second_stage']['manifest']['generation_id']
+                    or survivor['intent']['state'] != 'published'):
+                raise RuntimeError('purge_old_write_replacement_lost')
+            _, denied = await source(auth2, item); unavailable(denied)
+            _, available = await source(scope, dict(outside, stage=outside['second_stage'],
+                expected_points=outside['second_expected_points']))
+            if available.state != 'verified': raise RuntimeError('purge_old_write_outside_source_lost')
+        finally:
+            old_write['armed'] = False
+            old_write['release'].set()
+            if not publish.done(): publish.cancel()
+            await asyncio.gather(publish, return_exceptions=True)
+            old_write['args'] = None
+        checks.append(CHECKS[6]); observations.append(['old_write_after_initial_purge', [
+            'old_upsert_admitted', 'tombstone_committed', 'harness_delete_completed', 'first_scoped_absence',
+            'purge_refused_claims_retained', 'old_upsert_completed', 'old_points_reappeared', 'managed_fence',
+            'second_scoped_absence', 'purge_complete'], 0, 2, 0, 4, 'unavailable', True])
         item = await setup('handoff'); await commit(item['tombstone'])
         captured = {}
         async def interrupt(verifier, receipt, **options):
@@ -735,7 +874,7 @@ async def python_purge_cases(value):
         result = await purge(item['purge'])
         if counts != (supervisor.control_binding()['credential_generation'], len(network['deletes'])):
             raise RuntimeError('purge_handoff_repeated_delete')
-        checks.append(CHECKS[6]); observations.append(row(result))
+        checks.append(CHECKS[7]); observations.append(row(result))
         item = await setup('commit_loss'); await commit(item['tombstone'])
         captured.clear()
         async def rollback_completion(verifier, receipt, **options):
@@ -756,14 +895,14 @@ async def python_purge_cases(value):
         if (database['lost'] != 1 or database['confirmations'] != 1 or not database['confirm_queries']
                 or database['confirm_http'] or database['confirm_bodies'] or database['confirm_writes'] or database['confirming']):
             raise RuntimeError('purge_commit_confirmation_not_readonly')
-        checks.append(CHECKS[7]); observations.append(row(result))
+        checks.append(CHECKS[8]); observations.append(row(result))
         item = await setup('ownerless'); await commit(item['tombstone'])
         denied = await writer.admit_publication(context(item['stage']), deadline=deadline)
         pending = await snapshot(item['stage'])
         if denied['intent']['state'] != 'denied' or pending['owner'] is not None:
             raise RuntimeError('purge_ownerless_prerequisite')
         result = await purge(item['purge'])
-        checks.append(CHECKS[8]); observations.append(row(result))
+        checks.append(CHECKS[9]); observations.append(row(result))
         item = await setup('authority_change'); await commit(item['tombstone'])
         functions = database['functions']
         async def changed_authority(verifier,receipt,**options):
@@ -817,7 +956,7 @@ async def python_purge_cases(value):
         await expect(UnsupportedCapability, lambda: manager.purge(item['purge'], auth2,
             ExecutionLedger(Limits(max_provider_calls=0), deadline=deadline), retention_policy='unsupported', deadline=deadline))
         if counts != (network['count'], database['writes']): raise RuntimeError('purge_refusal_mutated')
-        checks.append(CHECKS[9]); observations.append(['refusals', 'integrity_violation', 'unauthorized_scope', 'unsupported_capability'])
+        checks.append(CHECKS[10]); observations.append(['refusals', 'integrity_violation', 'unauthorized_scope', 'unsupported_capability'])
         if tuple(fault_checks)!=FAULT_CHECKS:
             raise RuntimeError('purge_fault_checks_missing')
         witness = json.dumps(['cragkit.qdrant.managed-purge.v2', observations, fault_checks], ensure_ascii=False, separators=(',', ':')).encode('utf-8')

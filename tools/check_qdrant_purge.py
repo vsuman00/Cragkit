@@ -93,6 +93,7 @@ async def storage_checks(database, inputs):
                 return await (await connection.execute(sql, keys, prepare=False)).fetchall()
             for name, fixture in inputs['documents'].items():
                 erased = name in COMPLETED
+                outside = name == 'outside_replacement'
                 first = fixture['stage']['manifest']
                 key = (first['tenant_id'], first['collection'], first['document_id'])
                 where = 'tenant_id=%s AND collection=%s AND document_id=%s'
@@ -142,16 +143,22 @@ async def storage_checks(database, inputs):
                     'FROM cragkit_qdrant.documents WHERE '+where, key)
                 active = None if name == 'ownerless' else (fixture['second_stage']['manifest']['generation_id']
                     if fixture.get('published_second') else first['generation_id'])
-                if actual != [(erased, True, active)]:
+                if actual != [(erased, not outside, active)]:
                     raise RuntimeError('purge_native_document_barrier')
-                terminal = fixture.get('followup_purge', fixture['purge'])
-                actual = await rows('SELECT state,authority_committed,replica_complete,purge_complete,payload_sha256 '
-                    'FROM cragkit_qdrant.publication_intents WHERE '+where+' AND intent_id=%s', (*key, terminal['intent_id']))
-                digest = encode_purge_intent(terminal).sha256
-                if erased and actual != [('complete', True, True, True, digest)]:
-                    raise RuntimeError('purge_native_terminal_flags')
-                if not erased and (len(actual) != 1 or actual[0][2:4] != (False, False)):
-                    raise RuntimeError('purge_native_refusal_flags')
+                if outside:
+                    actual = await rows('SELECT count(*) FROM cragkit_qdrant.publication_intents WHERE '+where+
+                        " AND action IN ('tombstone','purge')", key)
+                    if actual != [(0,)]:
+                        raise RuntimeError('purge_native_outside_authority_changed')
+                else:
+                    terminal = fixture.get('followup_purge', fixture['purge'])
+                    actual = await rows('SELECT state,authority_committed,replica_complete,purge_complete,payload_sha256 '
+                        'FROM cragkit_qdrant.publication_intents WHERE '+where+' AND intent_id=%s', (*key, terminal['intent_id']))
+                    digest = encode_purge_intent(terminal).sha256
+                    if erased and actual != [('complete', True, True, True, digest)]:
+                        raise RuntimeError('purge_native_terminal_flags')
+                    if not erased and (len(actual) != 1 or actual[0][2:4] != (False, False)):
+                        raise RuntimeError('purge_native_refusal_flags')
                 records = await rows('SELECT policy_id,purge_payload_sha256,tombstone_payload_sha256,inventory_sha256,'
                     'absence_sha256,erasure_sha256 FROM cragkit_qdrant.purge_erasures WHERE '+where, key)
                 if erased:

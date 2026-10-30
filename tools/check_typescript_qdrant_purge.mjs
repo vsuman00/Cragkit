@@ -23,6 +23,7 @@ const CHECKS = [
   'completed_purge_retry_is_metadata_only',
   'lost_delete_ack_requires_actual_refence_before_erasure',
   'interrupted_delete_keeps_purge_pending_until_recovery',
+  'old_write_after_initial_purge_repeats_absence_after_fencing',
   'ordinary_purge_owner_handoff_resumes_without_guard_bypass',
   'lost_erasure_commit_confirms_exact_retained_history',
   'ownerless_tombstone_bootstrap_and_forged_receipt_refusal',
@@ -207,6 +208,8 @@ async function cases(value) {
   recovery.recover=async function(...args){capturedProof=await originalRecover.apply(this,args);return capturedProof;};
   let address, httpCount = 0, armed = null, putDrops = 0, deleteDrops = 0;
   let interruptDelete = null, interruptedDeletes = 0;
+  let heldUpsert = null;
+  let scopedAbsenceObserver = null;
   const deleteBodies = [];
   const nativeRequest = http.request;
   const pointPath = '/collections/'+inputs.config.physical_collection+'/points';
@@ -277,10 +280,18 @@ async function cases(value) {
       : requestOptions?.method === 'POST' && requestOptions.path === pointPath+'/delete?wait=true&ordering=strong' ? 'delete' : null;
     const drop = armed !== null && armed === mode;
     const interrupt = mode === 'delete' ? interruptDelete : null;
+    const held = mode === 'upsert' && heldUpsert?.armed ? heldUpsert : null;
+    if (held) { held.armed = false; held.requestOptions = requestOptions; }
     if (interrupt) interruptDelete = null;
     if (drop) armed = null;
+    const observedScrollChunks = [];
     const request = nativeRequest.call(this,requestOptions,incoming => {
-      if (!drop && !interrupt) return callback(incoming);
+      if (scopedAbsenceObserver && requestOptions?.method === 'POST' && requestOptions.path === pointPath+'/scroll') {
+        const observe = scopedAbsenceObserver, chunks = []; let size = 0;
+        incoming.on('data',chunk => { size += chunk.length; if (size <= 1048576) chunks.push(Buffer.from(chunk)); });
+        incoming.once('end',() => { if (size <= 1048576 && incoming.statusCode === 200) observe(decode(Buffer.concat(chunks)),decode(Buffer.concat(observedScrollChunks))); });
+      }
+      if (!drop && !interrupt && !held) return callback(incoming);
       const chunks = [];
       let size = 0, suppressed = false;
       const originalOnce = incoming.once;
@@ -289,6 +300,7 @@ async function cases(value) {
         try {
           assert(suppressed && size <= 1048576 && incoming.statusCode === 200);
           completed(Buffer.concat(chunks));
+          if (held) { held.completed = true; incoming.emit('error',new ProviderUnavailable()); return; }
           if (interrupt) { interruptedDeletes++; interrupt.abort(); return; }
           if (mode === 'delete') deleteDrops++; else putDrops++;
         } catch { if (interrupt) { interrupt.abort(); return; } }
@@ -300,6 +312,25 @@ async function cases(value) {
       };
       try { callback(incoming); } finally { incoming.once = originalOnce; }
     });
+    if (scopedAbsenceObserver && requestOptions?.method === 'POST' && requestOptions.path === pointPath+'/scroll') {
+      const originalWrite = request.write, originalEnd = request.end;
+      request.write = function(chunk,...args) { if (chunk) observedScrollChunks.push(Buffer.from(chunk)); return originalWrite.call(this,chunk,...args); };
+      request.end = function(chunk,...args) {
+        if (chunk && typeof chunk !== 'function') observedScrollChunks.push(Buffer.from(chunk));
+        return originalEnd.call(this,chunk,...args);
+      };
+    }
+    if (held) {
+      const originalWrite = request.write, originalEnd = request.end;
+      const chunks = [];
+      request.write = function(chunk) { chunks.push(Buffer.from(chunk)); return true; };
+      request.end = function(chunk) {
+        if (chunk && typeof chunk !== 'function') chunks.push(Buffer.from(chunk));
+        held.body = Buffer.concat(chunks);
+        held.release = () => { originalWrite.call(request,held.body); originalEnd.call(request); };
+        held.reached(); return request;
+      };
+    }
     if (mode === 'delete') {
       const chunks = [];
       const originalWrite = request.write, originalEnd = request.end;
@@ -486,6 +517,112 @@ async function cases(value) {
         && Array.isArray(physical.result.points) && physical.result.points.length === 0);
     } finally { await absenceTransport.close(); }
     observations.push(['purge_interruption','aborted','recovery_blocked',true,true,'unavailable',true,0,'complete']); step++;
+
+    const oldWrite = inputs.documents.old_write_after_initial_purge;
+    const outside = inputs.documents.outside_replacement;
+    await setup(oldWrite); await setup(outside);
+    const retainedOld = await source(oldWrite,'auth-1'); assert(retainedOld.result.state === 'verified');
+    let reachedOld;
+    const oldReached = new Promise(resolve => { reachedOld = resolve; });
+    const hold = {armed:true,reached:reachedOld,completed:false}; heldUpsert = hold;
+    const oldInitialErasureCount = sql.functions;
+    const oldPublish = call(book => manager.publish(ref(oldWrite.second_stage.intent),inputs.scope,book,options))
+      .then(result => ({result}),error => ({error}));
+    try {
+      await bounded(oldReached,options);
+      await tombstone(oldWrite);
+      const oldPurgeContext = context(oldWrite.purge);
+      const bound = await writer.bind_purge(oldWrite.purge,scope('auth-2'),{...options,owner_token:OWNER});
+      assert(bound.authority_committed && !bound.replica_complete && !bound.purge_complete);
+      const beforeOldGraph = graph(await writer.project_purge(oldPurgeContext,POLICY,options));
+      const allOldIds = [...oldWrite.stage.manifest.members,...oldWrite.second_stage.manifest.members].map(member => member.point_id).sort();
+      assert(allOldIds.length === 4 && same([...beforeOldGraph.point_ids].sort(),allOldIds)
+        && (await snapshot(oldWrite)).pending && !(await snapshot(oldWrite)).intent.purge_complete);
+      async function injected(method,path,body) {
+        const requestBody = Buffer.from(body);
+        assert(requestBody.length <= 1048576);
+        const privateOptions = {...hold.requestOptions,method,path,headers:{...hold.requestOptions.headers,'content-length':requestBody.length}};
+        const result = await bounded(new Promise((resolve,reject) => {
+          const request = nativeRequest.call(http,privateOptions,incoming => {
+            const chunks = []; let size = 0;
+            incoming.on('data',chunk => { size += chunk.length; if (size <= 1048576) chunks.push(Buffer.from(chunk)); else incoming.destroy(); });
+            incoming.on('error',reject);
+            incoming.once('end',() => { try { assert(size <= 1048576 && incoming.statusCode === 200); resolve(Buffer.concat(chunks)); } catch(error) { reject(error); } });
+          });
+          request.once('error',reject); request.end(requestBody);
+        }),options);
+        return result;
+      }
+      const oldFilter = {must:filterKeys.map(key => ({key,match:{value:oldWrite.stage.manifest[key]}}))};
+      let physicalPoints;
+      async function injectedPoints(item,filter) {
+        const requestBody = bytes({filter,limit:8,with_payload:true,with_vector:true});
+        let raw;
+        if (generation() === heldGeneration) raw = await injected('POST',pointPath+'/scroll',requestBody);
+        else {
+          const attempt = supervisor.issue_attempt({intent_id:item.stage.intent.intent_id,owner_token:OWNER,
+            epoch:supervisor.control_binding().epoch,dispatch_id:'native-old-write-final-'+item.stage.manifest.document_id},options);
+          const handle = supervisor.transport_for(attempt);
+          try { raw = await handle.request('POST',pointPath+'/scroll',{...options,body:requestBody,max_response_bytes:1048576}); }
+          finally { await handle.close(); }
+        }
+        const body = decode(raw);
+        assert(body.status === 'ok' && body.result?.next_page_offset === null && Array.isArray(body.result.points));
+        assert(body.result.points.every(point => filterKeys.every(key => point.payload?.[key] === item.stage.manifest[key])));
+        physicalPoints = body.result.points;
+        return body.result.points.map(point => point.id).sort();
+      }
+      const heldGeneration = generation();
+      completed(await injected('POST',pointPath+'/delete?wait=true&ordering=strong',bytes({points:allOldIds})));
+      assert((await injectedPoints(oldWrite,oldFilter)).length === 0);
+      await refuses(ProviderUnavailable,() => writer.acquire_owner(oldPurgeContext,options));
+      await refuses(ProviderUnavailable,() => call(book => manager.purge(oldWrite.purge,scope('auth-2'),book,POLICY,options),0));
+      assert(same(graph(await writer.project_purge(oldPurgeContext,POLICY,options)),beforeOldGraph)
+        && (await snapshot(oldWrite)).pending && !(await snapshot(oldWrite)).intent.purge_complete
+        && sql.functions === oldInitialErasureCount);
+      unavailable(await retainedOld.handle.release(retainedOld.result.binding,{purpose:'final',max_source_bytes:16777216,include_source:true}));
+      await closeSource(retainedOld);
+      const deniedOld = await source(oldWrite,'auth-2'); unavailable(deniedOld.result); await closeSource(deniedOld);
+      hold.release(); hold.release = null;
+      const oldOutcome = await bounded(oldPublish,options);
+      assert(hold.completed && oldOutcome.error instanceof ProviderUnavailable);
+      const heldIds = decode(hold.body).points.map(point => point.id).sort();
+      assert(heldIds.length === 2 && same(await injectedPoints(oldWrite,oldFilter),heldIds));
+      assert(sql.functions === oldInitialErasureCount && (await snapshot(oldWrite)).pending
+        && same(graph(await writer.project_purge(oldPurgeContext,POLICY,options)),beforeOldGraph));
+      const beforeOldRecovery = generation(), oldErasureStart = sql.functions;
+      let productAbsence = false;
+      scopedAbsenceObserver = (body,request) => {
+        if (generation() !== beforeOldRecovery && body.status === 'ok'
+          && same(request.filter,oldFilter)
+          && body.result?.next_page_offset === null && Array.isArray(body.result.points) && body.result.points.length === 0) productAbsence = true;
+      };
+      const originalOldComplete = writer.complete_purge;
+      writer.complete_purge = async function(...args) {
+        assert(generation() !== beforeOldRecovery && productAbsence);
+        return originalOldComplete.apply(this,args);
+      };
+      try { complete(await purge(oldWrite)); } finally { writer.complete_purge = originalOldComplete; scopedAbsenceObserver = null; }
+      assert(productAbsence && sql.functions === oldErasureStart+1 && !(await snapshot(oldWrite)).pending);
+      const outsideFilter = {must:filterKeys.map(key => ({key,match:{value:outside.stage.manifest[key]}}))};
+      const outsideIds = [...outside.stage.manifest.members,...outside.second_stage.manifest.members].map(member => member.point_id).sort();
+      assert(outsideIds.length === 4 && same(await injectedPoints(outside,outsideFilter),outsideIds));
+      const outsideState = await writer.manager_snapshot(context(outside.second_stage.intent,'auth-1'),options);
+      assert(outsideState.document.active_generation_id === outside.second_stage.manifest.generation_id);
+      const outsideCurrent = {...outside,stage:outside.second_stage,
+        expected_points:physicalPoints.filter(point => point.payload.generation_id === outside.second_stage.manifest.generation_id)};
+      assert(outsideCurrent.expected_points.length === 2);
+      const outsideSource = await source(outsideCurrent,'auth-1'); assert(outsideSource.result.state === 'verified'); await closeSource(outsideSource);
+      const oldErasedSource = await source(oldWrite,'auth-2'); unavailable(oldErasedSource.result); await closeSource(oldErasedSource);
+      observations.push(['old_write_after_initial_purge',['old_upsert_admitted','tombstone_committed','harness_delete_completed','first_scoped_absence',
+        'purge_refused_claims_retained','old_upsert_completed','old_points_reappeared','managed_fence','second_scoped_absence','purge_complete'],0,2,0,4,'unavailable',true]); step++;
+    } finally {
+      heldUpsert = null;
+      scopedAbsenceObserver = null;
+      if (hold.release) { hold.release(); hold.release = null; }
+      await bounded(oldPublish,options);
+      if (handles.has(retainedOld.handle)) await closeSource(retainedOld);
+    }
 
     const handoff = inputs.documents.handoff;
     await setup(handoff); await tombstone(handoff);

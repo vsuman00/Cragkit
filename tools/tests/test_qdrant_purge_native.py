@@ -14,7 +14,8 @@ def test_purge_fixture_binds_distinct_documents_complete_graphs_and_exact_tombst
     from cragkit._qdrant_manifest import encode_security_intent, encode_purge_intent
     from cragkit._qdrant_writer_contract import prepare_stage
     value = purge_input()
-    assert set(value['documents']) == {*COMPLETED, 'extra'}
+    assert set(value['documents']) == {*COMPLETED, 'extra', 'outside_replacement'}
+    assert value['documents']['outside_replacement']['published_second'] is True
     documents, points = set(), set()
     for item in value['documents'].values():
         first, second = item['stage'], item['second_stage']
@@ -43,9 +44,10 @@ def test_purge_fixture_binds_distinct_documents_complete_graphs_and_exact_tombst
 
 
 def test_purge_native_evidence_cannot_substitute_partial_or_physical_only_results():
-    assert len(CHECKS) == len(set(CHECKS)) == 10
+    assert len(CHECKS) == len(set(CHECKS)) == 11
     assert CHECKS[0] == 'tombstone_before_purge_denies_source_while_points_remain'
     assert CHECKS[5] == 'interrupted_delete_keeps_purge_pending_until_recovery'
+    assert CHECKS[6] == 'old_write_after_initial_purge_repeats_absence_after_fencing'
     for runtime in ('python', 'typescript'):
         value = dict(runtime=runtime, checks=list(CHECKS), fault_checks=list(FAULT_CHECKS), proof_scope='native_managed_purge_only',
             semantic_witness_sha256='a'*64)

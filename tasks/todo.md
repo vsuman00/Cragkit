@@ -2890,3 +2890,68 @@ report. Ignored native result:
 headroom 28 GiB; no owned process remains. Learning practice unassessed.
 Next smallest action: isolate another unresolved H fault and prove its
 physical boundary in both native runtimes before acceptance.
+
+H-S27 assignment (V5-04H exact ID `old_write_after_initial_purge`): shared
+outcome is an actual older admitted full-point upsert held beyond an initial
+scoped absence observation on a tombstoned document. Purge must remain
+pending with claims retained until managed fencing/recovery resolves the
+write, then repeat exact scoped absence before completion; an outside
+replacement generation/document survives, and source stays denied. Frozen
+ignored protocol: `artifacts/V5/V5-04H/old-write-after-purge-r1-protocol.md`.
+Sol `h_old_write_python` owns only `tools/qdrant_purge_cases.py` and
+assembles; Sol `h_old_write_node` owns only
+`tools/check_typescript_qdrant_purge.mjs`. They inspect and agree actual
+transport pause/absence/fence points directly before edits, perform
+substantive nonoverlapping consumer work, and transfer ownership only by
+explicit agreement with root notice. Root owns parent test, serial native
+verification, report/tracker, Git and escalation. Product, SQL/schema,
+migrations, supervisor/QSC/QW contracts, sealed/shared fixtures, locks and
+user files are protected. Peers run no tests/processes/services/network/DB/Git;
+root uses one bounded native suite at a time. Outcome/protected/ownership
+changes return to root. If no truthful native interleaving exists within
+these boundaries, peers report options instead of substituting a weaker
+case; unresolved material issues go to Astra. State: assigned; H/V5 open.
+
+H-S27 outcome clarification: the managed supervisor correctly refuses a
+second physical request while the older admitted upsert is held, so the
+first absence cannot be a concurrent managed purge request. Sol peers
+raised this before coding. Astra reviewed the exact matrix and advised
+that a clearly labelled harness-only real delete/absence fault injection
+can establish the race, provided the same held old write later lands,
+physical points reappear, native managed recovery fences it, and managed
+purge repeats scoped absence before completion. Root accepted that bounded
+interpretation without changing product scope. Frozen revision:
+`artifacts/V5/V5-04H/old-write-after-purge-r2-protocol.md`. The ID stays
+unaccepted until both native runtimes prove the complete sequence.
+
+H-S27 accepted: both native consumers held a real older admitted managed
+upsert before HTTP send, committed a target tombstone, bound a durable
+incomplete purge intent, and observed owner/busy-manager refusal with claims
+retained and source denied. A clearly labelled harness-only strong exact-ID
+delete and scoped empty scroll supplied the first absence. The same held
+old write then completed and its two points physically reappeared. Native
+managed recovery fenced the uncertain transport and purge repeated exact
+scoped absence before completion. An outside published replacement's four
+physical points, newer active pointer and source survived. The parent
+independent storage audit additionally found no outside tombstone, purge
+intent or erasure. This does not claim the first delete was a managed purge.
+Root reviewed the peer artifacts and ran the serial parent: 52 checks
+(eleven scenarios, five faults and ten storage checks per runtime), matching
+witness `7e2b06be9835776bfe9569e2b17f84f7584a598509e6dc8bd9e33485260aa37e`,
+with verified cleanup. Seven focused protocol tests, Node syntax, Python
+compilation and 16 seals passed. Full Python/Node regressions from H-S22
+were not rerun for this fixture/harness slice. The first combined run
+passed Python and found a Node harness number-array HTTP body error; the
+owning peer corrected it to a bounded `Buffer`, and Node-only plus combined
+native reruns passed. No product, SQL/schema/migration, lockfile, sealed
+shared fixture, user edit, provider/hosted call or owned service remained.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-old-write-after-purge.md).
+State: COMPLETE for H-S27 only; 35 of 43 exact H IDs accepted. H and V5
+remain open. Handoff: changed `tools/qdrant_purge_cases.py`,
+`tools/check_typescript_qdrant_purge.mjs`, `tools/check_qdrant_purge.py`,
+`tools/tests/test_qdrant_purge_native.py`, this tracker and checkpoint
+report. Ignored native result:
+`artifacts/V5/V5-04H/old-write-after-purge-both-03/results.json`.
+Disk headroom 28 GiB; no owned process remains. Learning practice unassessed.
+Next smallest action: choose a remaining H ownership/crash/tombstone fault,
+freeze its native barrier and verify both runtimes.
