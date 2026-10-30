@@ -20,6 +20,7 @@ const CHECKS = Object.freeze([
   'two_documents_have_real_journaled_writes_with_lost_acknowledgments',
   'durable_instance_block_commits_before_actual_physical_fencing',
   'captured_old_key_is_denied_after_same_storage_restart',
+  'fabricated_physical_proofs_cannot_authorize_recovery_or_clear_unknowns',
   'recovery_owner_advance_preserves_exact_token_and_rejects_wrong_owner',
   'copied_receipt_cannot_authorize_sql_settlement',
   'retired_readback_settles_only_the_authorized_document',
@@ -331,20 +332,36 @@ async function cases(value) {
     checks.push(CHECKS[2]);
     if (await oldKeyStatus(oldCredential, target + '/points?wait=true&ordering=strong', Buffer.from(originalRequest.request_bytes), options.signal) !== 401) throw new Error('old_key_not_denied');
     checks.push(CHECKS[3]);
+    const unknownRows = () => sup(query => query('SELECT tenant_id,collection,document_id,intent_id,dispatch_id,instance_id,sequence,owner_token::text,backend_epoch,credential_generation,operation,recovery,request_sha256,state,completion_sha256,created_xid::text FROM cragkit_qdrant.dispatch_journal WHERE instance_id=$1 ORDER BY dispatch_id', [inputs.instance_id]));
+    const unknownBefore = await unknownRows();
+    const blockedBefore = await state();
+    if (!isDeepStrictEqual(await journal(), [['e2b-first-lost', 'unknown'], ['e2b-second-lost', 'unknown']])) throw new Error('fabricated_proof_requires_two_unknowns');
+    const fabricatedProofs = [
+      JSON.parse(JSON.stringify(bindingA)),
+      {...bindingA, drained: true, quiescent: true, writer_pid: await observedListener(address)},
+    ];
+    for (const fabricated of fabricatedProofs) {
+      await assertBlocked();
+      await expected(UnsupportedCapability, () => recovery.advance_owner(fabricated, ctx, options));
+      if (!isDeepStrictEqual(await unknownRows(), unknownBefore)
+        || !isDeepStrictEqual(await state(), blockedBefore)) throw new Error('fabricated_proof_changed_durable_state');
+      await assertBlocked();
+    }
+    checks.push(CHECKS[4]);
     await expected(ProviderUnavailable, () => recovery.advance_owner(proofA, {...ctx, owner_token: SECOND_OWNER}, options));
     const owner = await recovery.advance_owner(proofA, ctx, options);
     if (!isDeepStrictEqual(owner, {owner_token: OWNER, backend_epoch: 2})) throw new Error('owner_rebound');
-    checks.push(CHECKS[4]);
+    checks.push(CHECKS[5]);
     const receiptA = await verifier.verify(proofA, ctx, options);
     await expected(InvalidRequest, () => recovery.settle_retired(proofA, JSON.parse(JSON.stringify(receiptA)), options));
-    checks.push(CHECKS[5]);
+    checks.push(CHECKS[6]);
     if ((await recovery.settle_retired(proofA, receiptA, options)).settled_count !== 1
       || !isDeepStrictEqual(await journal(), [['e2b-first-lost', 'settled'], ['e2b-second-lost', 'unknown']])) throw new Error('cross_document_settlement');
-    checks.push(CHECKS[6]);
+    checks.push(CHECKS[7]);
     await expected(ProviderUnavailable, () => recovery.reopen(proofA, options));
     await assertBlocked();
     if (!supervisor.control_binding().sealed) throw new Error('pending_other_document_not_sealed');
-    checks.push(CHECKS[7]);
+    checks.push(CHECKS[8]);
 
     const proofB = await recovery.recover('e2b-native', options);
     const bindingB = supervisor.recovery_binding(proofB);
@@ -352,11 +369,11 @@ async function cases(value) {
     await expected(UnsupportedCapability, () => supervisor.recovery_binding(proofA));
     await expected(UnsupportedCapability, () => receipt_data(receiptA, verifier));
     await assertBlocked();
-    checks.push(CHECKS[8]);
+    checks.push(CHECKS[9]);
     await recovery.advance_owner(proofB, second, options);
     const secondReceipt = await verifier.verify(proofB, second, options);
     if ((await recovery.settle_retired(proofB, secondReceipt, options)).settled_count !== 1) throw new Error('second_document_not_settled');
-    checks.push(CHECKS[9]);
+    checks.push(CHECKS[10]);
 
     // Explicit fixture-only current-generation admission; journal and membership commit together.
     const currentDispatch = 'e2b-current-unknown';
@@ -375,15 +392,15 @@ async function cases(value) {
     completed(await currentHandle.request('PUT', target + '/points?wait=true&ordering=strong', {...options, body: originalRequest.request_bytes}));
     await closeHandle(currentHandle);
     await sup(query => query("UPDATE cragkit_qdrant.dispatch_journal SET state='unknown' WHERE instance_id=$1 AND dispatch_id=$2", [inputs.instance_id, currentDispatch]));
-    checks.push(CHECKS[10]);
+    checks.push(CHECKS[11]);
     const currentReceipt = await verifier.verify(proofB, ctx, options);
     await expected(ProviderUnavailable, () => recovery.settle_retired(proofB, currentReceipt, options));
     if (!isDeepStrictEqual(await journal(), [['e2b-current-unknown', 'unknown'], ['e2b-first-lost', 'settled'], ['e2b-second-lost', 'settled']])) throw new Error('current_generation_was_settled');
-    checks.push(CHECKS[11]);
+    checks.push(CHECKS[12]);
     await expected(ProviderUnavailable, () => recovery.reopen(proofB, options));
     await assertBlocked();
     if (!supervisor.control_binding().sealed) throw new Error('current_generation_not_sealed');
-    checks.push(CHECKS[12]);
+    checks.push(CHECKS[13]);
 
     const proofC = await recovery.recover('e2b-native', options);
     const bindingC = supervisor.recovery_binding(proofC);
@@ -391,9 +408,9 @@ async function cases(value) {
     await recovery.advance_owner(proofC, ctx, options);
     const receiptC = await verifier.verify(proofC, ctx, options);
     if ((await recovery.settle_retired(proofC, receiptC, options)).settled_count !== 1) throw new Error('retired_current_write_not_settled');
-    checks.push(CHECKS[13]);
-    if ((await recovery.settle_retired(proofC, receiptC, options)).settled_count !== 0) throw new Error('settlement_replay_changed');
     checks.push(CHECKS[14]);
+    if ((await recovery.settle_retired(proofC, receiptC, options)).settled_count !== 0) throw new Error('settlement_replay_changed');
+    checks.push(CHECKS[15]);
 
     competingRecovery = new PostgresQdrantRecovery(supervisorResource, inputs.config, supervisor, verifier);
     await competingRecovery.initialize(options);
@@ -412,12 +429,12 @@ async function cases(value) {
     await expected(ProviderUnavailable, () => supervisor.recover({recovery_id: 'e2b-native', old_epoch: 1, new_epoch: 2}, options));
     if (injection.sqlCalls !== queriesBeforeCompetition) throw new Error('competing_operation_reached_sql');
     await assertBlocked();
-    checks.push(CHECKS[15]);
+    checks.push(CHECKS[16]);
     release();
     const handoffProof = await competing;
     if (supervisor.recovery_binding(handoffProof).new_epoch !== 2 || fenceCount !== 4) throw new Error('shared_session_handoff_failed');
     await competingRecovery.close(); competingRecovery = undefined;
-    checks.push(CHECKS[16]);
+    checks.push(CHECKS[17]);
 
     injection.armed = true;
     let reopened;
@@ -430,11 +447,11 @@ async function cases(value) {
     }
     if (!injection.fired || !injection.boundarySealed || !injection.handoffChecked || injection.openUpdates !== 1
       || injection.freshOpenReads < 1 || !isDeepStrictEqual(reopened, {state: 'open', epoch: 2})) throw new Error('open_commit_not_reconciled');
-    checks.push(CHECKS[17]);
+    checks.push(CHECKS[18]);
     if (!isDeepStrictEqual(await state(), [['open', '2', null]])) throw new Error('sql_open_state');
     await ordinaryRead(2, 'e2b-ordinary-after-recovery');
     await expected(UnsupportedCapability, () => supervisor.recovery_binding(handoffProof));
-    checks.push(CHECKS[18]);
+    checks.push(CHECKS[19]);
 
     const nextProof = await recovery.recover('e2b-next', options);
     if (supervisor.recovery_binding(nextProof).new_epoch !== 3 || fenceCount !== 5) throw new Error('next_epoch_not_advanced');
@@ -442,14 +459,14 @@ async function cases(value) {
     const nextOpen = await recovery.reopen(nextProof, options);
     if (!isDeepStrictEqual(nextOpen, {state: 'open', epoch: 3}) || !isDeepStrictEqual(await state(), [['open', '3', null]])) throw new Error('next_epoch_not_open');
     await ordinaryRead(3, 'e2b-next-ordinary');
-    checks.push(CHECKS[19]);
+    checks.push(CHECKS[20]);
     for (const context of [ctx, second]) {
       const intent = await writer.inspect(context, options);
       if (!intent || intent.state !== 'writing' || intent.authority_committed || intent.replica_complete || intent.purge_complete) throw new Error('recovery_claimed_publication');
     }
     const remaining = await journal();
     if (remaining.length !== 3 || remaining.some(row => row[1] !== 'settled')) throw new Error('unexpected_final_journal');
-    checks.push(CHECKS[20]);
+    checks.push(CHECKS[21]);
     return {runtime: 'typescript', checks, proof_scope: 'durable_recovery_settlement_only'};
   } catch (error) { primary = error; throw error; }
   finally {

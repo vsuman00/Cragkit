@@ -2330,3 +2330,52 @@ Unrelated user edits remain outside scope. Learning practice unassessed.
 Eighteen exact H IDs have accepted native evidence; H and V5 remain open.
 Next smallest action: add same-trace public manager publication refusal for
 the existing F1 wrong-membership/vector/profile native mutations.
+
+H-S13 assignment (V5-04H matrix ID `forged_quiescence_proof`): the next
+smaller independent boundary is an actual fabricated physical-proof refusal
+while E2b has two durable unknown journals. Sol `h_forged_python` owns only
+`tools/qdrant_recovery_cases.py` and assembles; Sol `h_forged_node` owns only
+`tools/check_typescript_qdrant_recovery.mjs`. Both contribute the same
+native assertion: after a genuine physical fence, submit serialized and
+invented proof-shaped objects with matching epoch/PID/quiescence fields to
+the real recovery authority boundary, require `UnsupportedCapability`,
+compare exact journal and blocked SQL/native admission before/after, then
+continue genuine settlement. Coordinate field shape, error and ordered
+check label directly. Root owns report/tracker, serial native parent,
+combined checks and Git. Contract/fixture, product, schema, migration,
+locks, seals, other consumers and user edits protected. Peers run no tests,
+services/network/DB/Git; root uses one local test process, synthetic data,
+no hosted/provider/model action. Escalate changed outcome, protected/other
+ownership to root, unresolved material decision to Astra. State: assigned;
+H and V5 open. The F1 public-manager corruption group remains a later
+separate fixture slice.
+
+Independent H-S14 read-only preparation: Sol `h_public_fault_design` owns
+only ignored `artifacts/V5/V5-04H/public-corruption-design.md`. Inspect
+current F1 verifier and public-manager native consumers to propose the
+smallest isolated actual public publish fault scenario for frozen IDs
+`equal_count_wrong_set`, `wrong_dense_vector`, `wrong_sparse_vector`,
+`missing_sparse_vector`, `wrong_full_profile`. Show where physical writes,
+same-trace manager refusal, unchanged pointer/flags and complete-vector
+repair checks belong, and note resource/fixture isolation. No code/shared
+fixture/tracker/committed report edits, tests/processes/services/network/
+DB/Git. This preparation does not claim H acceptance and does not overlap
+H-S13; root decides sequencing after inspecting it. State: assigned.
+
+H-S13 final handoff: Sol Python and Node peers added matched fabricated
+physical-proof checks to separate E2b native consumers and coordinated the
+restricted 16-column journal projection and ordered label indices. Python
+assembled; both writers stopped before root integration. Root inspected
+both diffs, ran four focused protocol guards, then one serial native parent
+against PostgreSQL 17/Qdrant 1.20. It passed eight SQL checks plus 22 per
+runtime, with verified cleanup; 16 seals matched. Copied and invented proof
+objects reached `advance_owner`, raised `UnsupportedCapability`, and left
+the two genuine unknown journal rows and blocked SQL/native admission
+unchanged. Genuine settlement then completed. [Checkpoint report](../evaluation/reports/V5/V5-04H-forged-proof.md).
+Changed files: two native consumers, report and tracker. No product/schema/
+fixture/migration/lockfile/provider/hosted action. Disk headroom 28 GiB,
+system memory free 54%; task-owned processes closed. Unrelated user edits
+remain outside scope. Learning practice unassessed. Nineteen exact H IDs
+have accepted native evidence; H and V5 remain open. Next: inspect H-S14
+read-only public corruption design, then implement one isolated public
+manager refusal fault before widening to the remaining related IDs.

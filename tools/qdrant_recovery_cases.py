@@ -17,6 +17,7 @@ CHECKS = (
     'two_documents_have_real_journaled_writes_with_lost_acknowledgments',
     'durable_instance_block_commits_before_actual_physical_fencing',
     'captured_old_key_is_denied_after_same_storage_restart',
+    'fabricated_physical_proofs_cannot_authorize_recovery_or_clear_unknowns',
     'recovery_owner_advance_preserves_exact_token_and_rejects_wrong_owner',
     'copied_receipt_cannot_authorize_sql_settlement',
     'retired_readback_settles_only_the_authorized_document',
@@ -347,23 +348,48 @@ async def python_recovery_cases(value):
             target + '/points?wait=true&ordering=strong', original['request_bytes'])
         if status != 401: raise RuntimeError('recovery_native_retired_key_not_denied')
         checks.append(CHECKS[3])
+        from types import SimpleNamespace
+        async def unknown_rows():
+            return await sup(lambda query: query(
+                'SELECT tenant_id,collection,document_id,intent_id,dispatch_id,instance_id,sequence,'
+                'owner_token::text,backend_epoch,credential_generation,operation,recovery,request_sha256,'
+                'state,completion_sha256,created_xid::text FROM cragkit_qdrant.dispatch_journal '
+                'WHERE instance_id=%s ORDER BY dispatch_id', (inputs['instance_id'],)))
+        unknown_journal = await unknown_rows()
+        blocked_state = await state()
+        if await journal() != [('e2b-first-lost', 'unknown'), ('e2b-second-lost', 'unknown')]:
+            raise RuntimeError('recovery_native_forged_proof_unknowns_missing')
+        fabricated_proofs = (
+            json.loads(json.dumps(dict(binding_a))),
+            SimpleNamespace(**dict(binding_a, drained=True, quiescent=True,
+                writer_pid=await observed_listener(endpoint))),
+        )
+        for fabricated in fabricated_proofs:
+            await assert_blocked()
+            await expect(UnsupportedCapability, lambda: recovery.advance_owner(
+                fabricated, ctx, deadline=deadline))
+            if (await unknown_rows() != unknown_journal
+                    or await state() != blocked_state):
+                raise RuntimeError('recovery_native_forged_proof_changed_durable_state')
+            await assert_blocked()
+        checks.append(CHECKS[4])
         await expect(ProviderUnavailable, lambda: recovery.advance_owner(proof_a,
             dict(ctx, owner_token=second_token), deadline=deadline))
         owner = await recovery.advance_owner(proof_a, ctx, deadline=deadline)
         if dict(owner) != dict(owner_token=OWNER_TOKEN, backend_epoch=2): raise RuntimeError('recovery_native_owner_rebound')
-        checks.append(CHECKS[4])
+        checks.append(CHECKS[5])
         receipt_a = await verifier.verify(proof_a, ctx, deadline=deadline)
         await expect(InvalidRequest, lambda: recovery.settle_retired(proof_a, {}, deadline=deadline))
-        checks.append(CHECKS[5])
+        checks.append(CHECKS[6])
         if (await recovery.settle_retired(proof_a, receipt_a, deadline=deadline))['settled_count'] != 1:
             raise RuntimeError('recovery_native_settlement_missing')
         if await journal() != [('e2b-first-lost', 'settled'), ('e2b-second-lost', 'unknown')]:
             raise RuntimeError('recovery_native_foreign_document_settled')
-        checks.append(CHECKS[6])
+        checks.append(CHECKS[7])
         await expect(ProviderUnavailable, lambda: recovery.reopen(proof_a, deadline=deadline))
         await assert_blocked()
         if not supervisor.control_binding()['sealed']: raise RuntimeError('recovery_native_pending_not_sealed')
-        checks.append(CHECKS[7])
+        checks.append(CHECKS[8])
         proof_b = await recovery.recover('e2b-native', deadline=deadline)
         binding_b = supervisor.recovery_binding(proof_b)
         if (fence_count != 2 or binding_b['new_epoch'] != 2
@@ -374,12 +400,12 @@ async def python_recovery_cases(value):
             except UnsupportedCapability: pass
             else: raise RuntimeError('recovery_native_stale_physical_proof_accepted')
         await assert_blocked()
-        checks.append(CHECKS[8])
+        checks.append(CHECKS[9])
         await recovery.advance_owner(proof_b, second, deadline=deadline)
         other_receipt = await verifier.verify(proof_b, second, deadline=deadline)
         if (await recovery.settle_retired(proof_b, other_receipt, deadline=deadline))['settled_count'] != 1:
             raise RuntimeError('recovery_native_other_authorized_document_not_settled')
-        checks.append(CHECKS[9])
+        checks.append(CHECKS[10])
         dispatch_id = 'e2b-current-unknown'
         async def reserve(query):
             await query("INSERT INTO cragkit_qdrant.dispatch_journal(tenant_id,collection,document_id,intent_id,dispatch_id,instance_id,sequence,owner_token,backend_epoch,credential_generation,operation,recovery,request_bytes,request_sha256) VALUES(%s,%s,%s,%s,%s,%s,2,%s,2,%s,'complete_point_upsert',true,%s,%s)",
@@ -402,16 +428,16 @@ async def python_recovery_cases(value):
             body=original['request_bytes'], deadline=deadline))
         await close_handle(handle)
         await dispatch_state('unknown')
-        checks.append(CHECKS[10])
+        checks.append(CHECKS[11])
         current_receipt = await verifier.verify(proof_b, ctx, deadline=deadline)
         await expect(ProviderUnavailable, lambda: recovery.settle_retired(proof_b, current_receipt, deadline=deadline))
         if await journal() != [('e2b-current-unknown', 'unknown'), ('e2b-first-lost', 'settled'), ('e2b-second-lost', 'settled')]:
             raise RuntimeError('recovery_native_current_generation_settled')
-        checks.append(CHECKS[11])
+        checks.append(CHECKS[12])
         await expect(ProviderUnavailable, lambda: recovery.reopen(proof_b, deadline=deadline))
         await assert_blocked()
         if not supervisor.control_binding()['sealed']: raise RuntimeError('recovery_native_current_generation_not_sealed')
-        checks.append(CHECKS[12])
+        checks.append(CHECKS[13])
         proof_c = await recovery.recover('e2b-native', deadline=deadline)
         binding_c = supervisor.recovery_binding(proof_c)
         if (fence_count != 3 or binding_c['new_epoch'] != 2
@@ -421,10 +447,10 @@ async def python_recovery_cases(value):
         receipt_c = await verifier.verify(proof_c, ctx, deadline=deadline)
         if (await recovery.settle_retired(proof_c, receipt_c, deadline=deadline))['settled_count'] != 1:
             raise RuntimeError('recovery_native_retired_generation_not_settled')
-        checks.append(CHECKS[13])
+        checks.append(CHECKS[14])
         if (await recovery.settle_retired(proof_c, receipt_c, deadline=deadline))['settled_count'] != 0:
             raise RuntimeError('recovery_native_settlement_replay_changed')
-        checks.append(CHECKS[14])
+        checks.append(CHECKS[15])
         competing_recovery = PostgresQdrantRecovery(sup_resource, inputs['config'], supervisor, verifier)
         await competing_recovery.initialize(deadline=deadline)
         started, released = asyncio.Event(), asyncio.Event()
@@ -447,13 +473,13 @@ async def python_recovery_cases(value):
         if observations['sql_calls'] != before:
             raise RuntimeError('recovery_native_competing_operation_reached_sql')
         await assert_blocked()
-        checks.append(CHECKS[15])
+        checks.append(CHECKS[16])
         released.set()
         handoff_proof = await competing
         if supervisor.recovery_binding(handoff_proof)['new_epoch'] != 2 or fence_count != 4:
             raise RuntimeError('recovery_native_shared_session_handoff')
         await competing_recovery.close(); competing_recovery = None
-        checks.append(CHECKS[16])
+        checks.append(CHECKS[17])
         observations['armed'] = True
         try:
             opened = await recovery.reopen(handoff_proof, deadline=deadline)
@@ -465,13 +491,13 @@ async def python_recovery_cases(value):
                 or observations['open_updates'] != 1 or observations['fresh_open_reads'] < 1
                 or dict(opened) != dict(state='open', epoch=2)):
             raise RuntimeError('recovery_native_open_ack_not_reconciled')
-        checks.append(CHECKS[17])
+        checks.append(CHECKS[18])
         if await state() != [('open', 2, None)]: raise RuntimeError('recovery_native_sql_not_open')
         await ordinary_read(2, 'e2b-ordinary-after-recovery')
         try: supervisor.recovery_binding(handoff_proof)
         except UnsupportedCapability: pass
         else: raise RuntimeError('recovery_native_old_proof_after_open')
-        checks.append(CHECKS[18])
+        checks.append(CHECKS[19])
         next_proof = await recovery.recover('e2b-next', deadline=deadline)
         if supervisor.recovery_binding(next_proof)['new_epoch'] != 3 or fence_count != 5:
             raise RuntimeError('recovery_native_next_epoch_not_advanced')
@@ -480,7 +506,7 @@ async def python_recovery_cases(value):
             raise RuntimeError('recovery_native_next_epoch_not_open')
         if await state() != [('open', 3, None)]: raise RuntimeError('recovery_native_next_sql_state')
         await ordinary_read(3, 'e2b-next-ordinary')
-        checks.append(CHECKS[19])
+        checks.append(CHECKS[20])
         for context in (ctx, second):
             intent = await writer.inspect(context, deadline=deadline)
             if intent is None or intent['state'] != 'writing' or any(intent[key] for key in
@@ -489,7 +515,7 @@ async def python_recovery_cases(value):
         remaining = await journal()
         if len(remaining) != 3 or any(row[1] != 'settled' for row in remaining):
             raise RuntimeError('recovery_native_final_journal')
-        checks.append(CHECKS[20])
+        checks.append(CHECKS[21])
         return dict(runtime='python', checks=checks, proof_scope='durable_recovery_settlement_only')
     except BaseException as error:
         primary = error
