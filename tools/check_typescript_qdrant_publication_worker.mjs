@@ -28,6 +28,16 @@ const cancellation=new AbortController();let readingInput=true,step=0;
 const cancel=()=>{cancellation.abort();if(readingInput)process.stdin.destroy();};
 process.on('SIGTERM',cancel);process.on('SIGINT',cancel);
 const assert=value=>{if(!value)throw new Error('acceptance_failed');};
+function barrier(events,event){
+  if(event.kind==='reserved')assert(events.length===0&&event.attempt_id===1&&event.sequence===1
+    &&typeof event.dispatch_id==='string'&&event.dispatch_id.length>0&&/^[0-9a-f]{64}$/.test(event.request_sha256));
+  else{
+    assert(event.kind==='before_write'&&events.length===1&&events[0].kind==='reserved');
+    const {kind:reservedKind,...reserved}=events[0],{kind:beforeKind,...before}=event;
+    assert(isDeepStrictEqual(reserved,before));
+  }
+  events.push(event);
+}
 const bytes=value=>[...Buffer.from(JSON.stringify(value),'utf8')];
 const canonical=value=>Array.isArray(value)?'['+value.map(canonical).join(',')+']':value&&typeof value==='object'
   ?'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical(value[key])).join(',')+'}':JSON.stringify(value);
@@ -129,7 +139,7 @@ async function cases(value){
     assert(bootstrap.length<=262144);await send({v:1,op:'boot_begin',total:bootstrap.length,sha256:digest(bootstrap)});
     for(let offset=0;offset<bootstrap.length;offset+=48000)await send({v:1,op:'boot_chunk',offset,data:bootstrap.subarray(offset,offset+48000).toString('base64')});
     await send({v:1,op:'boot_end'});
-    let id=0,issued,issuedBinding,barrier=false;
+    let id=0,issued,issuedBinding,reserved,barrier=false;
     for(;;){
       const frame=await receive();assert(isDeepStrictEqual(Object.keys(frame).sort(),['data','id','op','remaining_ms','v'])&&frame.v===1&&frame.id===++id&&id<=128
         &&Number.isSafeInteger(frame.remaining_ms)&&frame.remaining_ms>0&&frame.remaining_ms<=300000);
@@ -142,8 +152,13 @@ async function cases(value){
         await supervisor.deliver_worker_credential(issued,value=>{assert(!credential);credential=value;},eofOptions);
         reply={attempt_id:1,binding:issuedBinding,endpoint:credential.endpoint,api_key:credential.api_key};credential=undefined;
       }else if(frame.op==='validate'){assert(issued&&isDeepStrictEqual(data,{attempt_id:1}));reply={binding:supervisor.attempt_binding(issued)};assert(isDeepStrictEqual(reply.binding,issuedBinding));}
+      else if(frame.op==='reserved'){
+        assert(issued&&!reserved&&isDeepStrictEqual(Object.keys(data).sort(),['attempt_id','dispatch_id','request_sha256','sequence'])
+          &&data.attempt_id===1&&data.dispatch_id===issuedBinding.dispatch_id&&data.sequence===1&&/^[0-9a-f]{64}$/.test(data.request_sha256));
+        reserved={...data};reply={};
+      }
       else if(frame.op==='before_write'){
-        assert(issued&&isDeepStrictEqual(Object.keys(data).sort(),['attempt_id','dispatch_id','request_sha256','sequence'])&&data.attempt_id===1&&data.dispatch_id===issuedBinding.dispatch_id&&data.sequence===1&&/^[0-9a-f]{64}$/.test(data.request_sha256));
+        assert(issued&&isDeepStrictEqual(data,reserved));
         barrier=true;socket.end();break;
       }else throw new Error('unexpected_worker_operation');
       await send({v:1,id,ok:true,data:reply});reply=undefined;
@@ -164,10 +179,14 @@ async function cases(value){
         &&[inputs.stage.manifest.document_id,inputs.second_stage.manifest.document_id].includes(document));return true;
     });
     const writes=[],barriers=[];
-    const normal=async event=>{if(event.kind==='before_write')barriers.push(event);else writes.push(event);};
+    const normal=async event=>{
+      if(event.kind==='write_observed'){
+        assert(barriers.length===2&&writes.length===0);writes.push(event);
+      }else barrier(barriers,event);
+    };
     const first=save(await publish(inputs.stage,inputs.scope,normal));
-    assert(writes.length===1&&writes[0].status===200&&barriers.length===1
-      &&writes[0].attempt_id===barriers[0].attempt_id&&writes[0].dispatch_id===barriers[0].dispatch_id);
+    assert(writes.length===1&&writes[0].status===200&&barriers.length===2
+      &&writes[0].attempt_id===barriers[1].attempt_id&&writes[0].dispatch_id===barriers[1].dispatch_id);
     await unchangedSupervisor();const settled=await journal();assert(settled.length===1&&settled[0][2]==='settled');add(0);
     const historicalEvents=[];const historical=save(await publish(inputs.stage,inputs.scope,async event=>{historicalEvents.push(event);}));
     assert(isDeepStrictEqual(first,historical)&&historicalEvents.length===0&&isDeepStrictEqual(await journal(),settled));await unchangedSupervisor();add(1);
@@ -175,12 +194,13 @@ async function cases(value){
     try{await host.publish(job(inputs.stage),exhausted,options);}catch(error){assert(error instanceof BudgetExhausted);denied=true;}
     assert(denied);accounting(exhausted,1);assert(isDeepStrictEqual(await journal(),settled));add(2);
     await stage(inputs.successor);
-    let killed=false;
+    let killed=false;const killBarriers=[];
     await operational(publish(inputs.successor,inputs.scope,async(event,owned)=>{
+      if(event.kind==='write_observed')throw new Error('killed_worker_sent_http');
+      barrier(killBarriers,event);
       if(event.kind==='before_write'){assert(!killed);await owned.terminate(short());killed=true;}
-      else throw new Error('killed_worker_sent_http');
     }));
-    assert(killed);await unchangedSupervisor();
+    assert(killed&&killBarriers.length===2);await unchangedSupervisor();
     const afterKill=await snapshot(inputs.successor),pendingA=(await journal()).filter(row=>row[0]===inputs.successor.intent.intent_id);
     assert(afterKill.intent.state==='writing'&&!afterKill.intent.authority_committed&&!afterKill.intent.replica_complete
       &&afterKill.document.active_generation_id===inputs.stage.manifest.generation_id&&afterKill.pending
@@ -198,14 +218,19 @@ async function cases(value){
     }finally{await absenceTransport.close();}
     add(4);
     await stage(inputs.second_stage,inputs.second_scope);
-    let arrived;const paused=new Promise(resolve=>{arrived=resolve;});let statuses=[];
+    let arrived;const paused=new Promise(resolve=>{arrived=resolve;});let statuses=[];const pauseBarriers=[];
     activeJob=publish(inputs.second_stage,inputs.second_scope,async(event,owned)=>{
-      if(event.kind==='before_write'){assert(!pausedWorker);await owned.pause(short());pausedWorker=owned;arrived();}
-      else statuses.push(event.status);
+      if(event.kind==='write_observed'){
+        assert(pauseBarriers.length===2&&event.attempt_id===pauseBarriers[1].attempt_id
+          &&event.dispatch_id===pauseBarriers[1].dispatch_id);statuses.push(event.status);
+      }else{
+        barrier(pauseBarriers,event);
+        if(event.kind==='before_write'){assert(!pausedWorker);await owned.pause(short());pausedWorker=owned;arrived();}
+      }
     });activeJob.catch(()=>{});
     await bounded(Promise.race([paused,activeJob.then(()=>{throw new Error('worker_pause_missing');})]),options);
     const pendingB=(await journal()).filter(row=>row[0]===inputs.second_stage.intent.intent_id);
-    assert(statuses.length===0&&pendingB.length===1&&pendingB[0][2]==='dispatched');add(5);
+    assert(pauseBarriers.length===2&&statuses.length===0&&pendingB.length===1&&pendingB[0][2]==='dispatched');add(5);
     // This bounded window has three max-one clients: stopped child, parent writer and supervisor.
     const recoveryEntry=await bundle();
     try{

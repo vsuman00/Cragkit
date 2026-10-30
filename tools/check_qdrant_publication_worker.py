@@ -18,23 +18,31 @@ from qdrant_native import REFERENCE_BINARY_SHA256
 from qdrant_publication_native import PublicationDatabase
 from qdrant_publication_worker_cases import (CHECKS, ERRORS, NativePublicationWorkerFailure,
     python_publication_worker_cases, publication_worker_input)
+from qdrant_reserved_worker_cases import CHECKS as RESERVED_CHECKS, python_reserved_worker_cases
 from qdrant_source_native import PostgresSourceFixture
 from runtime_diagnostics import CleanupFailure, describe_error
 
 
-def validate_result(value, runtime):
+def validate_result(value, runtime, *, scenario='ordinary'):
+    if scenario not in ('ordinary', 'reserved'):
+        raise RuntimeError('publication_worker_native_scenario')
+    checks = CHECKS if scenario == 'ordinary' else RESERVED_CHECKS
+    proof_scope = 'ordinary_worker_process_only' if scenario == 'ordinary' else 'reserved_worker_process_only'
     if (type(value) is not dict or set(value) != {'runtime', 'checks', 'proof_scope', 'public_results_sha256'}
-            or value['runtime'] != runtime or value['checks'] != list(CHECKS)
+            or value['runtime'] != runtime or value['checks'] != list(checks)
             or type(value['public_results_sha256']) is not str
             or re.fullmatch('[0-9a-f]{64}', value['public_results_sha256']) is None
-            or value['proof_scope'] != 'ordinary_worker_process_only'):
+            or value['proof_scope'] != proof_scope):
         raise RuntimeError('publication_worker_native_result_shape')
     return value
 
 
-def failure_observation(value):
+def failure_observation(value, *, scenario='ordinary'):
+    if scenario not in ('ordinary', 'reserved'):
+        raise RuntimeError('publication_worker_native_scenario')
+    checks = CHECKS if scenario == 'ordinary' else RESERVED_CHECKS
     if (type(value) is not dict or value.get('ok') is not False or type(value.get('step')) is not int
-            or not 0 <= value['step'] <= len(CHECKS) or type(value.get('error')) is not str):
+            or not 0 <= value['step'] <= len(checks) or type(value.get('error')) is not str):
         raise RuntimeError('publication_worker_native_failure_shape')
     if value['error'] in ERRORS:
         if set(value) != {'ok', 'step', 'error'}:
@@ -56,10 +64,12 @@ def failure_observation(value):
     return json.loads(json.dumps(value))
 
 
-async def node_publication_worker_cases(value):
+async def node_publication_worker_cases(value, *, scenario='ordinary'):
     environment = {key: val for key, val in os.environ.items() if not key.startswith(('PG', 'QDRANT__'))
         and key not in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'RUST_LOG')}
-    process = await asyncio.create_subprocess_exec('node', str(ROOT / 'tools/check_typescript_qdrant_publication_worker.mjs'),
+    script = ('check_typescript_qdrant_publication_worker.mjs' if scenario == 'ordinary'
+        else 'check_typescript_qdrant_reserved_worker.mjs')
+    process = await asyncio.create_subprocess_exec('node', str(ROOT / 'tools' / script),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         env=environment, start_new_session=True, limit=65536)
     output = asyncio.create_task(read_bounded(process.stdout, 65536))
@@ -76,12 +86,12 @@ async def node_publication_worker_cases(value):
             stdout, stderr = await asyncio.gather(output, errors)
             code = await process.wait()
         if code != 0 and not stderr:
-            observation = failure_observation(json.loads(stdout))
+            observation = failure_observation(json.loads(stdout), scenario=scenario)
             failure = NativePublicationWorkerFailure(observation)
             raise failure
         if code != 0 or stderr:
             raise RuntimeError('publication_worker_native_child_failed')
-        result = validate_result(json.loads(stdout), 'typescript')
+        result = validate_result(json.loads(stdout), 'typescript', scenario=scenario)
         success = True
         return result
     except BaseException as error:
@@ -115,7 +125,7 @@ async def node_publication_worker_cases(value):
             raise CleanupFailure(failures, primary=primary, stage='recovery') from None
 
 
-async def check(fixture, runtime, binary, work_dir):
+async def check(fixture, runtime, binary, work_dir, *, scenario='ordinary'):
     async with PublicationDatabase(fixture) as database:
         cursor = await database.admin.execute("SELECT current_setting('max_connections')::int,"
             "current_setting('superuser_reserved_connections')::int,"
@@ -129,8 +139,12 @@ async def check(fixture, runtime, binary, work_dir):
         value = dict(binary=str(binary), work_dir=str(work_dir), inputs=publication_worker_input(),
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'))
         await database.release_admin()
-        runner = python_publication_worker_cases if runtime == 'python' else node_publication_worker_cases
-        return validate_result(await runner(value), runtime)
+        if runtime == 'python':
+            runner = python_publication_worker_cases if scenario == 'ordinary' else python_reserved_worker_cases
+            result = await runner(value)
+        else:
+            result = await node_publication_worker_cases(value, scenario=scenario)
+        return validate_result(result, runtime, scenario=scenario)
 
 
 def main(argv=None):
@@ -140,6 +154,7 @@ def main(argv=None):
     parser.add_argument('--binary-sha256', required=True)
     parser.add_argument('--artifacts-dir', type=Path, required=True)
     parser.add_argument('--runtime', choices=('python', 'typescript', 'all'), default='all')
+    parser.add_argument('--scenario', choices=('ordinary', 'reserved'), default='ordinary')
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
     try:
@@ -156,7 +171,8 @@ def main(argv=None):
             # Preserve PostgreSQL's3 superuser-reserved slots while permitting
             # the explicit3-client paused-child recovery fixture.
             with PostgresSourceFixture(args.postgres_bin, private / 'postgres', max_connections=6) as fixture:
-                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary, private / 'managed'), 180))
+                result = asyncio.run(asyncio.wait_for(check(fixture, runtime, binary,
+                    private / 'managed', scenario=args.scenario), 180))
             shutil.rmtree(private)
             results.append(result)
         if len(results) == 2:

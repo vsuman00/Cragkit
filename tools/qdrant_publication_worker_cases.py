@@ -165,6 +165,22 @@ async def python_publication_worker_cases(value):
         if result['document']['active_generation_id'] != expected_active or result['pending'] is not pending:
             raise RuntimeError('worker_authority_snapshot')
         return result
+    def barrier_event(event, events):
+        if event['kind'] == 'reserved':
+            if (events or event['attempt_id'] != 1 or event['sequence'] != 1
+                    or type(event['dispatch_id']) is not str or not event['dispatch_id']
+                    or type(event['request_sha256']) is not str or len(event['request_sha256']) != 64
+                    or any(char not in '0123456789abcdef' for char in event['request_sha256'])):
+                raise RuntimeError('worker_reserved_marker_invalid')
+        elif (len(events) != 1 or events[0]['kind'] != 'reserved'
+                or dict(event, kind='reserved') != events[0]):
+            raise RuntimeError('worker_reserved_before_write_mismatch')
+        events.append(event)
+    def write_event(event, events):
+        if (len(events) != 2 or events[1]['kind'] != 'before_write'
+                or event['attempt_id'] != events[1]['attempt_id']
+                or event['dispatch_id'] != events[1]['dispatch_id']):
+            raise RuntimeError('worker_write_observation_barrier_mismatch')
     try:
         await supervisor.initialize(deadline=deadline, provision=provision)
         endpoint = supervisor.identity()['endpoint']
@@ -176,23 +192,29 @@ async def python_publication_worker_cases(value):
         await close_parent()
         host = ManagedQdrantPublicationWorkerHost(supervisor, authorize)
         observed = []
+        normal_barriers = []
         async def observe(event, worker):
             event = plain(event)
-            if event['kind'] == 'write_observed':
+            if event['kind'] in ('reserved', 'before_write'):
+                barrier_event(event, normal_barriers)
+            elif event['kind'] == 'write_observed':
+                write_event(event, normal_barriers)
                 observed.append(event['status'])
         book = ledger()
         result = record(await host.publish(job(inputs['stage'], scopes[0]), book, deadline=deadline, observer=observe))
         usage(book)
-        if result['published'] is not True or result['state'] != 'published' or observed != [200]:
+        if (result['published'] is not True or result['state'] != 'published'
+                or observed != [200] or len(normal_barriers) != 2):
             raise RuntimeError('worker_actual_child_publication')
         if dict(supervisor.control_binding()) != original_identity or await observed_listener(endpoint) != first_pid:
             raise RuntimeError('worker_parent_supervisor_replaced')
         checks.append(CHECKS[0])
         observed.clear()
+        normal_barriers.clear()
         book = ledger()
         historical = record(await host.publish(job(inputs['stage'], scopes[0]), book, deadline=deadline, observer=observe))
         usage(book)
-        if historical != result or observed:
+        if historical != result or observed or normal_barriers:
             raise RuntimeError('worker_historical_rewrite')
         checks.append(CHECKS[1])
         book = ledger()
@@ -206,7 +228,7 @@ async def python_publication_worker_cases(value):
         else:
             raise RuntimeError('worker_budget_not_enforced')
         usage(book)
-        if observed:
+        if observed or normal_barriers:
             raise RuntimeError('worker_budget_mutation')
         checks.append(CHECKS[2])
         bundle = await open_parent()
@@ -215,17 +237,20 @@ async def python_publication_worker_cases(value):
         barrier = []
         async def kill(event, worker):
             event = plain(event)
+            if event['kind'] == 'write_observed':
+                raise RuntimeError('worker_killed_child_sent_http')
+            if event['kind'] in ('reserved', 'before_write'):
+                barrier_event(event, barrier)
             if event['kind'] == 'before_write':
-                barrier.append(event)
                 await worker.terminate(deadline=min(deadline, asyncio.get_running_loop().time() + 5))
         book = ledger()
         await fail(host.publish(job(inputs['successor'], scopes[0]), book, deadline=deadline, observer=kill))
         usage(book)
-        if len(barrier) != 1:
+        if len(barrier) != 2:
             raise RuntimeError('worker_crash_marker_missing')
         bundle = await open_parent()
         state = await snapshot(bundle, inputs['successor'], scopes[0], inputs['stage']['manifest']['generation_id'], True)
-        status = await bundle['writer'].dispatch_status(context(inputs['successor'], scopes[0]), barrier[0]['dispatch_id'], deadline=deadline)
+        status = await bundle['writer'].dispatch_status(context(inputs['successor'], scopes[0]), barrier[1]['dispatch_id'], deadline=deadline)
         if state['intent']['state'] != 'writing' or status is None or status['state'] not in ('dispatched', 'unknown'):
             raise RuntimeError('worker_crash_uncertainty_missing')
         if await observed_listener(endpoint) != first_pid:
@@ -254,14 +279,18 @@ async def python_publication_worker_cases(value):
         await close_parent()
         reached = asyncio.Event()
         observations = []
+        paused_barriers = []
         async def pause(event, worker):
             nonlocal paused_worker
             event = plain(event)
+            if event['kind'] in ('reserved', 'before_write'):
+                barrier_event(event, paused_barriers)
             if event['kind'] == 'before_write':
                 await worker.pause(deadline=min(deadline, asyncio.get_running_loop().time() + 5))
                 paused_worker = worker
                 reached.set()
-            else:
+            elif event['kind'] == 'write_observed':
+                write_event(event, paused_barriers)
                 observations.append(event)
         book = ledger()
         worker_job = asyncio.create_task(host.publish(job(inputs['second_stage'], scopes[1]), book, deadline=deadline, observer=pause))
@@ -275,6 +304,8 @@ async def python_publication_worker_cases(value):
         finally:
             arrived.cancel()
             await asyncio.gather(arrived, return_exceptions=True)
+        if len(paused_barriers) != 2:
+            raise RuntimeError('worker_pause_barriers_missing')
         checks.append(CHECKS[5])
         # Three max-one clients only in this explicit paused-E2 window.
         bundle = await open_parent()
@@ -364,6 +395,7 @@ async def _fixed_entry_eof(job, supervisor, deadline):
     process = reader = stream = None
     attempts = {}
     reached = False
+    reserved = None
     end = min(deadline, asyncio.get_running_loop().time() + 20)
     environment = {key: val for key, val in os.environ.items() if key in ('PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL')}
     try:
@@ -422,9 +454,19 @@ async def _fixed_entry_eof(job, supervisor, deadline):
                         endpoint=key['endpoint'], api_key=key['api_key'])
                 elif op == 'validate':
                     answer = dict(binding=dict(supervisor.attempt_binding(attempts[data['attempt_id']])))
+                elif op == 'reserved':
+                    binding = dict(supervisor.attempt_binding(attempts[data['attempt_id']]))
+                    if (reserved is not None or set(data) != {'attempt_id', 'dispatch_id', 'sequence', 'request_sha256'}
+                            or data['dispatch_id'] != binding['dispatch_id'] or data['sequence'] != 1
+                            or type(data['request_sha256']) is not str
+                            or len(data['request_sha256']) != 64
+                            or any(ch not in '0123456789abcdef' for ch in data['request_sha256'])):
+                        raise RuntimeError('worker_eof_reserved_target')
+                    reserved = dict(data)
+                    answer = {}
                 elif op == 'before_write':
                     binding = dict(supervisor.attempt_binding(attempts[data['attempt_id']]))
-                    if data['dispatch_id'] != binding['dispatch_id']:
+                    if data['dispatch_id'] != binding['dispatch_id'] or data != reserved:
                         raise RuntimeError('worker_eof_dispatch_target')
                     reached = True
                     break

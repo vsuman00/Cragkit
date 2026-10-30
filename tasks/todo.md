@@ -2117,3 +2117,62 @@ user edits remain outside scope. Learning practice unassessed. Next smallest
 action H-S6b: extend the native child harness with an isolated reserved-stage
 fixture, kill/reap that child at the new committed barrier, and prove journal,
 physical absence, prior pointer and successor refusal in both runtimes.
+
+H-S6b assignment: shared outcome is a separate disposable native worker
+scenario using the already frozen base stage and successor fixture. Publish
+the base generation, stage the successor, then terminate/reap the exact child
+when its `reserved` event arrives after real SQL COMMIT and before
+`mark_dispatched`/HTTP. Independently observe the durable reserved journal,
+absent successor points, preserved base pointer and unchanged supervisor;
+an elapsed-time fresh child retry must not create a second dispatch or
+publish. Sol `h_reserved_native_python` owns only new
+`tools/qdrant_reserved_worker_cases.py` and is assembler; Sol
+`h_reserved_native_node` owns only new
+`tools/check_typescript_qdrant_reserved_worker.mjs`. They coordinate exact
+result labels, safe output shape and observed boundaries directly. Root owns
+`tools/check_qdrant_publication_worker.py` scenario selection, serial native
+execution, report/tracker and Git. Existing worker consumer files, product,
+schema, fixture, migrations, lockfiles, public APIs and supervisor/recovery
+remain protected. No peer tests/processes/services/network/DB/install/Git.
+Outcome/protected/other-lane changes to root first; unresolved design to
+Astra. State: assigned; H IDs 8/9 and V5 remain open pending native evidence.
+
+H-S6b ordinary-worker regression assignment: the new reserved event changes
+the existing native observer stream. Shared outcome is to keep the accepted
+dispatched-crash and paused-old-worker boundaries exact: assert the new
+reserved event precedes the matching before-write event, then terminate/pause
+only at before-write and count only actual HTTP status observations. Sol
+`h_bootstrap_python` owns only
+`tools/qdrant_publication_worker_cases.py` and assembles; Sol
+`h_bootstrap_node` owns only
+`tools/check_typescript_qdrant_publication_worker.mjs`. Both use the frozen
+private event contract, preserve existing check labels/hash inputs and
+coordinate the event assertions directly. Root owns serial native runs,
+report/tracker and Git. No product/schema/fixture/migration/lockfile change
+or peer tests/processes/services/network/DB/install/Git. Escalate outcome,
+protected-boundary or other-lane changes before edits. State: assigned.
+
+H-S6b final handoff: Python and Node Sol peers assembled the separate native
+reserved-crash consumers and existing ordinary-worker observer regressions.
+Root integrated the scenario-selecting parent, fixed only two observed fixture
+issues (optional Python verifier close and the fixed EOF channel's new
+reserved-event acknowledgment), then ran both runtimes serially on disposable
+PostgreSQL 17/Qdrant 1.20. Reserved scenario: 12 checks (six per runtime),
+matching public hash and verified cleanup. Ordinary worker regression: 18
+checks (nine per runtime), matching public hash and verified cleanup.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-reserved-crash.md). Full
+Python/package-tool 3,097 passed (four existing serializer warnings), full
+Node 1,557 and strict build passed; mypy 49 source files and 16 seals passed.
+`journal_commit_before_api` has accepted native evidence. The actual
+`reserved_owner_crash` child-kill/retry trace is partial because the bounded
+1.05-second wait does not cross a configured lease-expiry boundary; do not
+count that ID complete. Thirteen exact H IDs have complete native evidence.
+Changed files: new Python/Node reserved consumers, scenario parent, existing
+ordinary consumers, this report and tracker. No product/schema/grant/fixture/
+migration/dependency/lockfile/provider/hosted change in S6b. Disk headroom
+28 GiB, system memory free 47%; task-owned processes/listeners closed.
+Unrelated user edits remain outside scope. Learning practice unassessed.
+H and V5 remain open; next smallest action is to settle the lease-boundary
+interpretation for ID 9 and implement the remaining complete fault rows,
+including supervisor/coordinator death, without treating elapsed time alone
+as fencing.
