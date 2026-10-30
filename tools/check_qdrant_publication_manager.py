@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import signal
 import tempfile
+import traceback
 
 from check_qdrant_writer import read_bounded
 from qdrant_authority_schema import ROOT
@@ -116,7 +117,8 @@ async def node_publication_manager_cases(value):
 async def check(fixture, runtime, binary, work_dir):
     async with PublicationDatabase(fixture) as database:
         value = dict(binary=str(binary), work_dir=str(work_dir), inputs=publication_manager_input(),
-            writer_config=database.config('writer'), supervisor_config=database.config('supervisor'))
+            writer_config=database.config('writer'), supervisor_config=database.config('supervisor'),
+            observer_config=database.fixture.config)
         await database.release_admin()
         runner = python_publication_manager_cases if runtime == 'python' else node_publication_manager_cases
         return validate_result(await runner(value), runtime)
@@ -158,6 +160,11 @@ def main(argv=None):
         print(json.dumps(dict(ok=True, checks=sum(len(r['checks']) for r in results), cleanup_verified=True)))
         return 0
     except Exception as error:
+        if isinstance(error, NativePublicationManagerFailure) and error.__context__ is not None:
+            locations = [{'path': frame.filename.rsplit('/Cragkit/', 1)[-1], 'line': frame.lineno}
+                for frame in traceback.extract_tb(error.__context__.__traceback__)
+                if '/Cragkit/tools/' in frame.filename or '/Cragkit/packages/' in frame.filename]
+            (args.artifacts_dir / 'failure-locations.json').write_text(json.dumps(locations) + '\n')
         diagnostic = error.to_dict() if isinstance(error, CleanupFailure) else describe_error(error, operation='primary', stage='recovery')
         print(json.dumps(dict(ok=False, error=diagnostic,
             **({'native': error.observation} if isinstance(error, NativePublicationManagerFailure) else {}))))

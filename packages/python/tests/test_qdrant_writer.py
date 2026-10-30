@@ -1002,6 +1002,82 @@ async def test_same_generation_cannot_adopt_a_different_manifest_even_at_equal_c
         assert ('ensure','members') in events and connection.commits==1
 
 
+@pytest.mark.parametrize('fault', [None, 'missing', 'payload', 'fence', 'graph', 'body', 'rollback', 'cancel', 'deadline'])
+@run_async
+async def test_stage_commit_ack_loss_confirms_once_read_only_without_mutation_retry(monkeypatch, fault):
+    plan = prepare_stage(stage_input()); graph = stage_data(plan)
+    connections = []; writes = []; loads = []
+    class KnownRollback(Exception):
+        sqlstate = '40001'
+    class StageConnection(Connection):
+        def transaction(self):
+            original = super().transaction()
+            class Transaction:
+                async def __aenter__(self):
+                    return await original.__aenter__()
+                async def __aexit__(self, *args):
+                    result = await original.__aexit__(*args)
+                    if args[0] is None and len(connections) == 1:
+                        if fault == 'rollback': raise KnownRollback()
+                        if fault == 'cancel': raise asyncio.CancelledError()
+                        if fault == 'deadline': raise DeadlineExceeded()
+                        raise ConnectionError('PRIVATE_STAGE_COMMIT_ACK_LOSS')
+                    return result
+            return Transaction()
+    pool = resource(monkeypatch, Connection())
+    @asynccontextmanager
+    async def lease(self, *, deadline):
+        connection = StageConnection(); connections.append(connection)
+        yield connection
+    monkeypatch.setattr(PoolResource, 'lease', lease)
+    writer = PostgresQdrantWriter(pool, config(), 'fixture-instance'); writer._ready = True
+    result = dict(action='stage', state='staged', payload_sha256=plan.payload_sha256)
+    async def inspect(connection, context): return result
+    async def ensure(connection, table, values, keys, json_columns=()):
+        writes.append(table)
+        if fault == 'body': raise ConnectionError('PRIVATE_STAGE_BODY_FAILURE')
+    async def document(connection, context, **options):
+        return dict(mutation_epoch=1, active_generation_id='gen-1', tombstoned=False)
+    original_query = writer._query
+    async def query(connection, sql, params=()):
+        if sql.startswith('SELECT document_id FROM'): return [('doc-1',)]
+        if sql.startswith('SELECT intent_id FROM'): return []
+        if sql.startswith('SELECT instance_id,action,payload_bytes'):
+            connection.calls.append((sql, params))
+            row = ['fixture-instance', 'stage', graph.intent_encoding.encoded_bytes,
+                graph.intent_encoding.sha256, graph.manifest_encoding.encoded_bytes,
+                graph.manifest_encoding.sha256, graph.manifest.revision_id,
+                graph.manifest.generation_id, graph.intent.expected_active_generation_id,
+                graph.intent.expected_authorization_revision, graph.intent.expected_mutation_epoch]
+            if fault == 'missing': return []
+            if fault == 'payload': row[2] = b'contradiction'
+            if fault == 'fence': row[-1] += 1
+            return [tuple(row)]
+        return await original_query(connection, sql, params)
+    async def load(connection, context):
+        loads.append(connection)
+        if fault == 'graph': raise IntegrityViolation()
+        return prepare_stage(stage_input())
+    monkeypatch.setattr(writer, '_inspect', inspect); monkeypatch.setattr(writer, '_ensure', ensure)
+    monkeypatch.setattr(writer, '_document', document); monkeypatch.setattr(writer, '_query', query)
+    monkeypatch.setattr(writer, '_load_stage', load)
+    options = dict(owner_token=ctx()['owner_token'], deadline=asyncio.get_running_loop().time()+2)
+    if fault is None:
+        assert await writer.stage(plan, ctx()['scope'], **options) == result
+        assert len(loads) == 1
+    else:
+        error = (IntegrityViolation if fault in ('payload', 'fence', 'graph') else
+                 asyncio.CancelledError if fault == 'cancel' else
+                 DeadlineExceeded if fault == 'deadline' else ProviderUnavailable)
+        with pytest.raises(error): await writer.stage(plan, ctx()['scope'], **options)
+    assert writes.count('publication_intents') == 1
+    assert len(connections) == (1 if fault in ('body', 'rollback', 'cancel', 'deadline') else 2)
+    if len(connections) == 2:
+        assert connections[0].closed
+        assert ('SET TRANSACTION READ ONLY', None) in connections[1].calls
+        assert not any(sql.startswith(('INSERT ', 'UPDATE ', 'DELETE ')) for sql, _ in connections[1].calls)
+
+
 class ManagerConnection(Connection):
     """Stateful committed-metadata double; no remote completion is simulated."""
     def __init__(self, state):

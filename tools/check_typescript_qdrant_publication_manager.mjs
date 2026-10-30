@@ -1,12 +1,15 @@
 /** Actual native public stage/publish cases; worker SIGKILL belongs to F2b/H. */
 import {execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {writeFileSync} from 'node:fs';
+import {join} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {PoolResource, parse_pool_config, bounded, now} from '../packages/typescript/dist/postgres-pool.js';
 import {ExecutionLedger, BudgetExhausted} from '../packages/typescript/dist/execution.js';
 import {QdrantPublicationManager, PostgresQdrantPublicationAuthority, ManagedQdrantPublicationTransport,
   PostgresQdrantWriter, PostgresQdrantRecovery, ManagedQdrantSupervisor,
   QdrantReconciliationVerifier} from '../packages/typescript/dist/qdrant-publication.js';
+import {prepare_stage, stage_data} from '../packages/typescript/dist/qdrant-writer-contract.js';
 import {IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope} from '../packages/typescript/dist/errors.js';
 
 const OWNER = '00000000-0000-4000-8000-000000000001';
@@ -25,12 +28,15 @@ const CHECKS = Object.freeze([
   'fresh_scope_terminal_replay_never_restores_initial_acl',
   'actual_lost_write_ack_stays_unknown_and_retry_does_not_resend',
   'manager_close_preserves_borrowed_dependencies',
+  'actual_atomic_stage_rollback_preserves_pointer_and_no_rows',
+  'actual_stage_commit_ack_loss_resumes_exact_graph_without_http',
 ]);
 const ERRORS = new Set(['IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability', 'InvalidRequest',
   'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady', 'BudgetExhausted', 'CancelledError', 'AbortError']);
 const RESULT_KEYS = ['intent_id', 'operation', 'state', 'revision_id', 'generation_id',
   'authority_committed', 'replica_complete', 'published', 'purge_complete'];
 const cancellation = new AbortController();
+let failureDirectory;
 let readingInput = true, step = 0;
 const cancel = () => { cancellation.abort(); if (readingInput) process.stdin.destroy(); };
 process.on('SIGTERM', cancel); process.on('SIGINT', cancel);
@@ -55,7 +61,7 @@ async function input() {
   }
   const value = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(chunks)));
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'supervisor_config', 'work_dir', 'writer_config'])
+    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', 'supervisor_config', 'work_dir', 'writer_config'])
     || typeof value.binary !== 'string' || typeof value.work_dir !== 'string' || !value.inputs?.stages) throw new Error('input_shape');
   return value;
 }
@@ -100,7 +106,8 @@ async function cases(value) {
   const transport = new ManagedQdrantPublicationTransport(supervisor);
   const checks = [], snapshots = [], managers = new Set(), handles = new Set();
   const injection = {armed: false, fired: 0, destroyed: 0};
-  const http = {puts: 0, drop: false, dropped: 0};
+  const stageFault = {kind: null, target: null, fired: 0, destroyed: 0, inserts: 0, dml: 0};
+  const http = {requests: 0, puts: 0, drop: false, dropped: 0};
   let address, primary, manager, callbackMode = null, supervisorLeases = 0;
   const target = '/collections/' + inputs.config.physical_collection;
   const context = (stage, scope = inputs.scope) => ({scope, collection: stage.manifest.collection,
@@ -199,11 +206,23 @@ async function cases(value) {
   }
   const realLease = resource.withLease.bind(resource);
   resource.withLease = (opts, operation) => realLease(opts, (client, signal) => {
-    let preparation = false, unknown = false;
+    let preparation = false, unknown = false, targetStage = false, stageUnknown = false;
     return operation({
       async query(query) {
+        if (stageFault.target && /^(?:INSERT INTO|UPDATE|DELETE FROM) cragkit_qdrant\./.test(query.text)) stageFault.dml++;
         const result = await client.query(query);
-        if (/^BEGIN\b/.test(query.text)) preparation = false;
+        if (/^BEGIN\b/.test(query.text)) { preparation = false; targetStage = false; }
+        if (stageFault.target && /^INSERT INTO cragkit_qdrant\.publication_intents\b/.test(query.text)
+          && query.values?.includes(stageFault.target)) {
+          targetStage = true; stageFault.inserts++;
+          if (stageFault.kind === 'rollback') {
+            stageFault.kind = null; stageFault.fired++; throw new ProviderUnavailable();
+          }
+        }
+        if (query.text === 'COMMIT' && targetStage && stageFault.kind === 'ack') {
+          stageFault.kind = null; stageFault.fired++; stageUnknown = true;
+          throw Object.assign(new Error('closed_stage_commit_fault'), {code: '08006'});
+        }
         if (/^INSERT INTO cragkit_qdrant\.preparations\b/.test(query.text)) preparation = true;
         if (query.text === 'COMMIT' && preparation && injection.armed) {
           injection.armed = false; injection.fired++; unknown = true;
@@ -213,6 +232,10 @@ async function cases(value) {
       },
       getTransactionStatus: () => client.getTransactionStatus(),
       release(destroy) {
+        if (stageUnknown) {
+          if (destroy !== true) throw new Error('stage_unknown_client_reused');
+          stageFault.destroyed++; stageUnknown = false;
+        }
         if (unknown) {
           if (destroy !== true) throw new Error('unknown_commit_client_reused');
           injection.destroyed++; unknown = false;
@@ -231,6 +254,7 @@ async function cases(value) {
       const actual = realTransportFor(capability);
       const observed = {
         async request(method, path, requestOptions) {
+          http.requests++;
           const upsert = method === 'PUT' && path === target + '/points?wait=true&ordering=strong';
           if (upsert) http.puts++;
           const response = await actual.request(method, path, requestOptions);
@@ -284,6 +308,70 @@ async function cases(value) {
     }
     if (await writer.inspect(context(inputs.stages.denied_input), options) !== null || http.puts !== beforeHistorical) throw new Error('authorizer_created_work');
     checks.push(CHECKS[5]); step = checks.length;
+
+    async function observeStage(stage) {
+      const observer = new PoolResource(parse_pool_config({...value.observer_config, max_size: 1}));
+      try {
+        await observer.open();
+        return await observer.withLease(options, async (client, signal) => {
+          const query = async (text, values = []) => (await bounded(client.query({text, values, rowMode: 'array'}),
+            {deadline: options.deadline, signal})).rows;
+          await query('BEGIN READ ONLY');
+          try {
+            const graph = {};
+            const key = [stage.manifest.tenant_id, stage.manifest.collection, stage.manifest.document_id];
+            for (const [table, field, id] of [
+              ['publication_intents', 'intent_id', stage.intent.intent_id],
+              ['document_revisions', 'revision_id', stage.manifest.revision_id],
+              ['generations', 'generation_id', stage.manifest.generation_id],
+              ['members', 'generation_id', stage.manifest.generation_id],
+              ['vector_replays', 'generation_id', stage.manifest.generation_id],
+              ['point_claims', 'generation_id', stage.manifest.generation_id],
+              ['document_owners', 'intent_id', stage.intent.intent_id],
+            ]) graph[table] = await query(`SELECT to_jsonb(t) FROM cragkit_qdrant.${table} t WHERE (tenant_id,collection,document_id)=($1,$2,$3) AND ${field}=$4 ORDER BY to_jsonb(t)::text`, [...key, id]);
+            graph.pointer = await query('SELECT active_generation_id FROM cragkit_qdrant.documents WHERE (tenant_id,collection,document_id)=($1,$2,$3)', key);
+            await query('COMMIT'); return graph;
+          } catch (error) { await query('ROLLBACK'); throw error; }
+        });
+      } finally { await observer.close(); }
+    }
+    const stageRequests = http.requests;
+    stageFault.kind = 'rollback'; stageFault.target = inputs.stages.stage_rollback.intent.intent_id;
+    await expected(ProviderUnavailable, () => stageCall(inputs.stages.stage_rollback));
+    const rolledBack = await observeStage(inputs.stages.stage_rollback);
+    if (stageFault.kind !== null || stageFault.fired !== 1 || stageFault.inserts !== 1
+      || Object.entries(rolledBack).some(([key, rows]) => key !== 'pointer' && rows.length !== 0)
+      || !isDeepStrictEqual(rolledBack.pointer, [[inputs.stage.manifest.generation_id]])
+      || http.requests !== stageRequests) throw new Error('stage_rollback_not_atomic');
+
+    stageFault.kind = 'ack'; stageFault.target = inputs.stages.stage_ack_loss.intent.intent_id;
+    const ackStage = await stageCall(inputs.stages.stage_ack_loss);
+    const committedStage = await observeStage(inputs.stages.stage_ack_loss);
+    const committedDml = stageFault.dml;
+    const memberCount = inputs.stages.stage_ack_loss.manifest.members.length;
+    if (stageFault.kind !== null || stageFault.fired !== 2 || stageFault.destroyed !== 1 || stageFault.inserts !== 2
+      || ackStage.state !== 'staged' || committedStage.publication_intents.length !== 1
+      || committedStage.document_revisions.length !== 1 || committedStage.generations.length !== 1
+      || ['members', 'vector_replays', 'point_claims'].some(key => committedStage[key].length !== memberCount)
+      || committedStage.document_owners.length !== 0
+      || !isDeepStrictEqual(committedStage.pointer, [[inputs.stage.manifest.generation_id]])) throw new Error('stage_ack_graph_incomplete');
+    const freshWriter = new PostgresQdrantWriter(resource, inputs.config, inputs.instance_id);
+    const freshVerifier = new QdrantReconciliationVerifier(freshWriter, supervisor);
+    const freshRecovery = new PostgresQdrantRecovery(supervisorResource, inputs.config, supervisor, freshVerifier);
+    const freshAuthority = new PostgresQdrantPublicationAuthority(freshWriter, freshRecovery);
+    const freshManager = new QdrantPublicationManager(freshAuthority, transport, inputs.config, supervisor, authorize);
+    managers.add(freshManager);
+    try {
+      await freshManager.initialize(options);
+      const restored = await freshWriter.load_stage(context(inputs.stages.stage_ack_loss), options);
+      if (!isDeepStrictEqual(stage_data(restored), stage_data(prepare_stage(inputs.stages.stage_ack_loss)))) throw new Error('stage_ack_reconstruction_changed');
+      const replayStage = await stageCall(inputs.stages.stage_ack_loss, inputs.scope, freshManager);
+      if (!isDeepStrictEqual(replayStage, ackStage) || stageFault.dml !== committedDml || stageFault.inserts !== 2 || http.requests !== stageRequests
+        || !isDeepStrictEqual(await observeStage(inputs.stages.stage_ack_loss), committedStage)) throw new Error('stage_ack_retry_mutated_graph');
+    } finally {
+      await freshManager.close(); managers.delete(freshManager);
+      await freshRecovery.close(); await freshVerifier.close(); await freshWriter.close();
+    }
 
     save(await stageCall(inputs.stages.loser)); save(await stageCall(inputs.stages.winner));
     save(await publishCall(inputs.stages.winner)); const winnerPuts = http.puts;
@@ -357,7 +445,7 @@ async function cases(value) {
     await writer.manager_snapshot(context(inputs.stages.lost_ack, freshScope), options);
     await recovery.initialize(options); await backend();
     if (http.puts !== lostPuts + 1 || handles.size !== 0 || snapshots.length !== 19) throw new Error('borrowed_dependency_or_snapshot_count');
-    checks.push(CHECKS[13]); step = checks.length;
+    checks.push(CHECKS[13], CHECKS[14], CHECKS[15]); step = checks.length;
     return {runtime: 'typescript', checks, proof_scope: 'public_stage_publish_only', public_snapshots_sha256: hash(bytes(snapshots))};
   } catch (error) { primary = error; throw error; }
   finally {
@@ -382,8 +470,14 @@ async function cases(value) {
 
 try {
   const value = await bounded(input(), {deadline: now() + 5, signal: cancellation.signal}); readingInput = false;
+  failureDirectory = value.work_dir;
   process.stdout.write(JSON.stringify(await cases(value)) + '\n');
 } catch (error) {
+  if(failureDirectory){
+    const locations=[...String(error?.stack??'').matchAll(/(?:packages\/typescript\/(?:dist|src)|tools)\/[a-zA-Z0-9_.\/-]+:\d+:\d+/g)]
+      .map(match=>match[0]);
+    try{writeFileSync(join(failureDirectory,'failure-locations.json'),JSON.stringify(locations)+'\n',{mode:0o600});}catch{}
+  }
   process.stdout.write(JSON.stringify(error instanceof RuntimeCleanupFailure
     ? {ok: false, step, error: 'cleanup_failed', primary: error.primary, cleanup: error.failures}
     : {ok: false, step, error: outcome(error)}) + '\n');

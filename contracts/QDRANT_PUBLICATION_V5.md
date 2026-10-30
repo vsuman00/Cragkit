@@ -77,6 +77,15 @@ The public operations are:
 
 Every change contains a stable caller-supplied `intent_id`, full tenant/collection/document target, action kind and expected `authorization_revision`/`mutation_epoch`. Stage additionally binds `expected_active_generation_id` (including explicit null for first publication), immutable revision/generation IDs, canonical bytes/locator/parser, chunker identity, full profiles and every member/span/vector. Its required `initial_authorization` field is null for an existing document, or a complete trusted initial authorization/metadata value for creation. That initial value is bound to the stage intent, never inferred from source text. Creation must atomically require document absence or reconcile a document created by the identical recorded intent. A changed initial ACL is a changed intent payload, even though later current replicas remain mutable. A null initial value requires an existing document; stage never replaces its authorization. Missing versus null is validated explicitly; unknown fields are rejected.
 
+The intent, source revision, generation, members, vector replay and physical
+claims stage in one PostgreSQL transaction. A rollback leaves none of those
+new rows. If that transaction commits but its reply is lost, the writer uses
+one fresh scoped SQL READ ONLY transaction to compare the exact original
+intent bytes, fences and complete immutable graph before returning its stored
+stage result. It does not replay stage DML or contact Qdrant. A missing record
+is unavailable; a contradictory record is an integrity failure. Deadline or
+cancellation does not become a successful confirmation.
+
 The application binds the existing `authorize_write(scope, collection, document_id)` async callback outside agent-editable input. Its result must be an actual boolean. Pass a freshly validated trusted scope and the immutable scoped target, preserving the existing indexer callback signature. Call it before initial authority admission and again before each new external mutation and publication CAS. Await it outside an SQL transaction; the following transaction must compare the authority fences observed for that attempt. A true callback does not override RLS, a tombstone or a changed fence. False is `UnauthorizedScope`; malformed results are `InvalidRequest`; unknown callback failures are redacted `ProviderUnavailable`.
 
 Stable intent lookup is fully scoped. Reusing an intent ID with a different action or immutable payload digest is `IntegrityViolation`; do not allocate another revision or silently adopt the new input. A matching completed retry resolves its durable outcome after fresh write authorization. A lost SQL acknowledgment is reconciled by reading that same identity, not by assuming rollback or issuing an alternate operation.

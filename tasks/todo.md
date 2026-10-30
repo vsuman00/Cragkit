@@ -1919,3 +1919,51 @@ and user audit edits remain outside this G3 scope. Learning practice remains
 unassessed. Next smallest action: freeze and execute V5-04H's exact 43-case
 matrix against the final source, starting with atomic stage and publication
 COMMIT boundaries, then continue V5-05/06 acceptance and C2.
+
+V5-04H-S1 assignment: two Sol peers share the native atomic stage-boundary
+outcome under frozen ignored `artifacts/V5/V5-04H/stage-fault-protocol.md`.
+Python `h_stage_python` owns only `tools/qdrant_publication_manager_cases.py`
+and is assembler; Node `h_stage_node` owns only
+`tools/check_typescript_qdrant_publication_manager.mjs`. Both implement actual
+stage rollback and post-COMMIT reply loss with exact immutable row/pointer and
+zero HTTP assertions, then report to root. Read-only dependencies: 43-case
+fixture, public manager contract, existing native parent and tests. No product,
+schema, fixture, migration, manifest, lockfile or tracker edits by peers. No
+peer tests/processes/services/network/DB/install/Git. Root owns shared parent
+check/test, serial native execution, final integration, tracker and Git.
+Peer dependency messages go directly to the other owner; unresolved protected
+decisions go to root then Astra. State: assigned, final H acceptance open.
+
+H-S1b parity handoff: native consumer assembly exposed an existing stage
+lost-COMMIT public result difference. Python returned unavailable; Node
+read-only-confirmed logically but did not declare a SQL READ ONLY transaction.
+Astra advised exact Python confirmation while preserving Node's established
+success, plus stage-specific Node hardening. Frozen ignored protocol:
+`artifacts/V5/V5-04H/stage-confirmation-parity.md`. Sol `h_parity_python`
+owns only Python `_qdrant_writer.py` and `test_qdrant_writer.py`, assembler;
+Sol `h_parity_node` owns only Node `qdrant-writer.ts` and
+`qdrant-writer.test.mjs`. One shared outcome: exact same-intent read-only
+confirmation after genuine lost stage COMMIT, no mutation replay, matching
+errors/cancellation. Root retains H-S1 consumers, shared docs/fixture,
+execution, tracker and Git. No peer tests/processes/network/DB/install/Git.
+State: assigned; H-S1 native acceptance waits for parity integration.
+
+H-S1 final handoff: both managed Sol pairs transferred their files; Python
+assembled each cross-runtime outcome. Root corrected only observed harness
+faults (a staged receipt has false authority_committed, a fresh manager needs
+its own writer-bound recovery, issued replay objects require byte/hash
+comparison, and an unset Node target must not match SQL NULL). The final
+serial native parent passed 32 checks (16 per runtime), matching public
+snapshot hashes and task-owned cleanup. Five frozen H IDs are now evidenced:
+`intent_commit_failed`, `intent_ack_lost`, `source_commit_failed`,
+`source_ack_lost`, `claim_ack_lost`. [Checkpoint report](../evaluation/reports/V5/V5-04H-stage.md).
+Focused Python writer/tool 260 and Node writer 232 passed; full Python/tool
+3,088 (four existing warnings), full Node 1,530, strict mypy 49 files and
+TypeScript build passed. Sixteen sealed inputs matched. Contract/fixture/docs,
+writer source/tests, native parent/consumers/test and report/tracker are the
+owned change. No migration/grant/dependency/lockfile/provider/hosted/release
+change. Disk headroom 28 GiB, system memory free 50%; task-owned services
+closed. User audit and unrelated retrieval/adapters/README edits remain
+outside scope. Learning practice unassessed. V5-04H and V5 parent remain open;
+next smallest H action is genuine final publication CAS COMMIT reply loss
+(fixture ID `publication_ack_lost`), then the remaining 43-ID matrix.

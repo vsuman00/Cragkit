@@ -809,13 +809,14 @@ export class PostgresQdrantWriter {
       revision_id:record.revision_id,generation_id:record.generation_id,
       expected_active_generation_id:intent.expected_active_generation_id,
       expected_authorization_revision:intent.expected_authorization_revision,expected_mutation_epoch:intent.expected_mutation_epoch};
-    const verify=async(tx:Tx):Promise<IntentView>=>{
+    const verify=async(tx:Tx,confirmation=false):Promise<IntentView>=>{
       const stored=await this.#intent(tx,context);
+      if(!stored&&confirmation)throw new ProviderUnavailable();
       if(!stored||Object.keys(intentRecord).some(key=>!TARGET.includes(key)&&key!=='intent_id'&&!exact(stored[key],intentRecord[key])))throw new IntegrityViolation();
       await this.#stageFacts(tx,context,data);
       return intent_view(stored);
     };
-    return this.#mutation(context,options,async tx=>{
+    const mutate=async(tx:Tx):Promise<IntentView>=>{
       const existing=await this.#intent(tx,context);
       if(existing)return verify(tx);
       const prior=await this.#document(tx,context,true);
@@ -869,7 +870,16 @@ export class PostgresQdrantWriter {
           ' AND revision_id=$4 AND generation_id=$5 AND chunk_id=$6',[record.revision_id,record.generation_id,member.chunk_id]);
       }
       return verify(tx);
-    },verify);
+    };
+    return this.#work(options,async lease=>{
+      try{return await this.#tx(context,lease,mutate,true);}
+      catch(error){
+        if(!(error instanceof CommitUnknown))throw error;
+        // Confirm immutable stage history once, without replaying its writes.
+        return this.#tx(context,lease,tx=>verify(tx,true),true,false,
+          {readOnly:true,check:()=>{parseOptions(lease);},invalidate:()=>{}});
+      }
+    });
   }
   async #stageFacts(tx:Tx,context:WriterContext,data:ReturnType<typeof stage_data>):Promise<void>{
     const record=data.record;

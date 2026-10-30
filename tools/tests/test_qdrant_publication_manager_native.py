@@ -22,6 +22,9 @@ def test_input_generations_preserve_original_fences_and_bounded_valid_plans():
         assert stage['intent']['initial_authorization'] is None
     assert stages['loser']['intent']['expected_active_generation_id'] == base['manifest']['generation_id']
     assert stages['winner']['intent']['expected_active_generation_id'] == base['manifest']['generation_id']
+    for key in ('stage_rollback', 'stage_ack_loss'):
+        assert stages[key]['intent']['expected_active_generation_id'] == base['manifest']['generation_id']
+        assert stages[key]['intent']['intent_id'] != base['intent']['intent_id']
     previous = stages['winner']['manifest']['generation_id']
     for key in ('prepared', 'commit', 'session', 'revoked'):
         assert stages[key]['intent']['expected_active_generation_id'] == previous
@@ -29,6 +32,15 @@ def test_input_generations_preserve_original_fences_and_bounded_valid_plans():
     assert stages['lost_ack']['intent']['expected_active_generation_id'] == stages['session']['manifest']['generation_id']
     assert stages['lost_ack']['intent']['expected_authorization_revision'] == 'auth-manager-2'
     assert stages['lost_ack']['intent']['expected_mutation_epoch'] == 2
+
+
+def test_stage_fault_fixture_describes_one_atomic_stage_boundary():
+    cases = json.loads((Path(__file__).resolve().parents[2] / 'contracts/fixtures/qdrant_publication.json').read_text())['cases']
+    by_id = {case['id']: case for case in cases}
+    rollback = by_id['source_commit_failed']['expected']
+    assert rollback['intent'] == rollback['source_revision'] == rollback['members'] == rollback['claims'] == 'absent'
+    assert by_id['source_ack_lost']['inject'] == 'atomic stage commit succeeds but acknowledgment is lost'
+    assert by_id['claim_ack_lost']['inject'] == 'atomic stage commit acknowledgment is lost after reserving claims'
 
 
 def test_success_requires_complete_public_cases_and_cannot_claim_process_recovery():

@@ -1218,7 +1218,37 @@ class PostgresQdrantWriter:
             if result is None:
                 raise IntegrityViolation()
             return result
-        return await self._run(ctx, deadline, stage)
+        try:
+            return await self._run(ctx, deadline, stage, detect_commit_unknown=True)
+        except _CommitUnknown:
+            async def confirm(connection: SessionConnection) -> Mapping[str, Any]:
+                columns = ('instance_id','action','payload_bytes','payload_sha256',
+                    'manifest_bytes','manifest_sha256','revision_id','generation_id',
+                    'expected_active_generation_id','expected_authorization_revision','expected_mutation_epoch')
+                rows = await self._query(connection, 'SELECT '+','.join(columns)
+                    +' FROM cragkit_qdrant.publication_intents WHERE '+_INTENT, _key(ctx))
+                if not rows:
+                    raise ProviderUnavailable()
+                expected = (self.instance_id,'stage',data.intent_encoding.encoded_bytes,
+                    data.intent_encoding.sha256,data.manifest_encoding.encoded_bytes,
+                    data.manifest_encoding.sha256,m.revision_id,m.generation_id,
+                    intent.expected_active_generation_id,intent.expected_authorization_revision,
+                    intent.expected_mutation_epoch)
+                if len(rows) != 1 or rows[0] != expected:
+                    raise IntegrityViolation()
+                loaded = stage_data(await self._load_stage(connection, ctx))
+                def replay_facts(graph: StageData) -> tuple[Any, ...]:
+                    return tuple(None if replay is None else
+                        (replay.blob,replay.blob_sha256,replay.input_sha256)
+                        for replay in (*graph.dense,*graph.sparse))
+                if (loaded.source != data.source or loaded.manifest != data.manifest
+                        or loaded.intent != data.intent or replay_facts(loaded) != replay_facts(data)):
+                    raise IntegrityViolation()
+                result = await self._inspect(connection, ctx)
+                if result is None:
+                    raise ProviderUnavailable()
+                return result
+            return await self._run(ctx, deadline, confirm, read_only=True)
 
     async def _lock(self, connection: SessionConnection, ctx: WriterContext, *, acquire: bool = False,
                     check_revision: bool = True, validate_owner: bool = True) -> tuple[int, dict[str, Any]]:

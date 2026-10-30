@@ -21,6 +21,8 @@ CHECKS = (
     'fresh_scope_terminal_replay_never_restores_initial_acl',
     'actual_lost_write_ack_stays_unknown_and_retry_does_not_resend',
     'manager_close_preserves_borrowed_dependencies',
+    'actual_atomic_stage_rollback_preserves_pointer_and_no_rows',
+    'actual_stage_commit_ack_loss_resumes_exact_graph_without_http',
 )
 ERRORS = frozenset(('IntegrityViolation', 'UnauthorizedScope', 'UnsupportedCapability',
     'InvalidRequest', 'ProviderUnavailable', 'DeadlineExceeded', 'IndexNotReady',
@@ -38,6 +40,8 @@ def publication_manager_input():
     inputs['collection_config'] = supervisor_input()['collection_config']
     stages = {}
     base = inputs['stage']['manifest']['generation_id']
+    stages['stage_rollback'] = successor_stage(inputs, 'manager-stage-rollback', base)
+    stages['stage_ack_loss'] = successor_stage(inputs, 'manager-stage-ack-loss', base)
     stages['loser'] = successor_stage(inputs, 'manager-loser', base)
     stages['winner'] = successor_stage(inputs, 'manager-winner', base)
     stages['denied_input'] = successor_stage(inputs, 'manager-denied-input', base)
@@ -64,21 +68,45 @@ class _PreparationAckConnection:
         return getattr(self.connection, key)
 
     async def execute(self, statement, params=()):
+        stage = self.observations.get('stage')
+        if (stage is not None and type(statement) is str
+                and statement.startswith(('INSERT INTO cragkit_qdrant.',
+                    'UPDATE cragkit_qdrant.', 'DELETE FROM cragkit_qdrant.'))):
+            stage['dml'] += 1
+        target = (stage is not None and type(statement) is str
+            and statement.startswith('INSERT INTO cragkit_qdrant.publication_intents ')
+            and stage['intent_id'] in params)
+        if target:
+            self.staging = True
+            stage['inserts'] += 1
+        result = await self.connection.execute(statement, params)
+        if target and stage['action'] == 'rollback':
+            from cragkit.errors import ProviderUnavailable
+            stage['fired'] += 1
+            stage['action'] = None
+            raise ProviderUnavailable()
         if (self.observations['armed'] and type(statement) is str
                 and statement.startswith('INSERT INTO cragkit_qdrant.preparations ')):
             self.preparing = True
-        return await self.connection.execute(statement, params)
+        return result
 
     def transaction(self):
         owner, transaction = self, self.connection.transaction()
         class Transaction:
             async def __aenter__(self):
                 owner.preparing = False
+                owner.staging = False
                 await transaction.__aenter__()
                 return self
 
             async def __aexit__(self, kind, error, traceback):
                 result = await transaction.__aexit__(kind, error, traceback)
+                stage = owner.observations.get('stage')
+                if kind is None and owner.staging and stage['action'] == 'ack_loss':
+                    stage.update(action=None, fired=stage['fired'] + 1,
+                        retired_connection=owner.connection)
+                    await owner.connection.close()
+                    raise ConnectionError('injected_stage_commit_ack_loss')
                 if kind is None and owner.preparing and owner.observations['armed']:
                     owner.observations.update(armed=False, fired=owner.observations['fired'] + 1,
                         retired_connection=owner.connection)
@@ -152,7 +180,7 @@ async def python_publication_manager_cases(value):
     target = '/collections/' + inputs['config']['physical_collection']
     managers, handles, checks, snapshots = [], [], [], []
     mode = dict(action=None, intent_id=None, fired=False)
-    network = dict(mutations=0, drop=False, completed_drop=False)
+    network = dict(mutations=0, requests=0, drop=False, completed_drop=False)
     endpoint = primary = manager = None
     supervisor_leases = 0
     original_supervisor_lease = supervisor_resource.lease
@@ -204,6 +232,7 @@ async def python_publication_manager_cases(value):
         def __init__(self, handle):
             self.handle = handle
         async def request(self, method, path, **options):
+            network['requests'] += 1
             mutation = method == 'PUT' and '/points?' in path
             if mutation:
                 network['mutations'] += 1
@@ -280,6 +309,35 @@ async def python_publication_manager_cases(value):
                     (selected_scope.tenant_id, collection, document_id))
                 return await cursor.fetchall()
 
+    async def stage_graph(stage):
+        from qdrant_publication_native import PublicationDatabase
+        connection = await PublicationDatabase._connect(value['observer_config'])
+        try:
+            async with connection.transaction():
+                await connection.execute('SET TRANSACTION READ ONLY')
+                await connection.execute("SET LOCAL statement_timeout='5000ms'")
+                manifest = stage['manifest']
+                prefix = (scope.tenant_id, collection, document_id)
+                graph = {}
+                for table, suffix, params in (
+                    ('publication_intents', 'intent_id=%s', (stage['intent']['intent_id'],)),
+                    ('document_revisions', 'revision_id=%s', (manifest['revision_id'],)),
+                    ('generations', 'generation_id=%s', (manifest['generation_id'],)),
+                    ('members', 'generation_id=%s', (manifest['generation_id'],)),
+                    ('point_claims', 'generation_id=%s', (manifest['generation_id'],)),
+                    ('vector_replays', 'generation_id=%s', (manifest['generation_id'],)),
+                    ('document_owners', 'intent_id=%s', (stage['intent']['intent_id'],))):
+                    cursor = await connection.execute('SELECT to_jsonb(t)::text FROM cragkit_qdrant.'
+                        + table + ' t WHERE tenant_id=%s AND collection=%s AND document_id=%s AND '
+                        + suffix + ' ORDER BY to_jsonb(t)::text', (*prefix, *params))
+                    graph[table] = await cursor.fetchall()
+                cursor = await connection.execute('SELECT active_generation_id FROM cragkit_qdrant.documents '
+                    'WHERE tenant_id=%s AND collection=%s AND document_id=%s', prefix)
+                graph['pointer'] = await cursor.fetchall()
+                return graph
+        finally:
+            await asyncio.wait_for(connection.close(), 3)
+
     try:
         await supervisor.initialize(deadline=deadline, provision=provision)
         endpoint = supervisor.identity()['endpoint']
@@ -339,6 +397,67 @@ async def python_publication_manager_cases(value):
         if (await current(stages['denied_input']))['intent'] is not None or network['mutations'] != writes:
             raise RuntimeError('manager_authorization_admitted_work')
         checks.append(CHECKS[5])
+        rollback = stages['stage_rollback']
+        stage_requests = network['requests']
+        acknowledgment['stage'] = dict(intent_id=rollback['intent']['intent_id'],
+            action='rollback', inserts=0, fired=0, dml=0)
+        await expect(ProviderUnavailable, lambda: stage_call(manager, rollback))
+        graph = await stage_graph(rollback)
+        if (acknowledgment['stage']['fired'] != 1 or acknowledgment['stage']['inserts'] != 1
+                or any(rows for table, rows in graph.items() if table != 'pointer')
+                or graph['pointer'] != [(base['manifest']['generation_id'],)]
+                or (await current(rollback))['intent'] is not None or network['mutations'] != writes
+                or network['requests'] != stage_requests):
+            raise RuntimeError('manager_atomic_stage_rollback')
+
+        ack_stage = stages['stage_ack_loss']
+        acknowledgment['stage'] = dict(intent_id=ack_stage['intent']['intent_id'],
+            action='ack_loss', inserts=0, fired=0, dml=0)
+        acknowledged = plain(await stage_call(manager, ack_stage))
+        fault = acknowledgment['stage']
+        stage_dml = fault['dml']
+        committed = await stage_graph(ack_stage)
+        if (acknowledged['state'] != 'staged' or acknowledged['authority_committed']
+                or fault['fired'] != 1 or fault['inserts'] != 1 or not fault['retired_connection'].closed
+                or committed['pointer'] != [(base['manifest']['generation_id'],)]
+                or any(len(committed[table]) != count for table, count in (
+                    ('publication_intents', 1), ('document_revisions', 1), ('generations', 1),
+                    ('members', len(ack_stage['manifest']['members'])),
+                    ('point_claims', len(ack_stage['manifest']['members'])),
+                    ('vector_replays', len(ack_stage['manifest']['members'])), ('document_owners', 0)))):
+            raise RuntimeError('manager_stage_ack_graph_missing')
+        # A genuinely new writer reconstructs the committed immutable graph.
+        resumed_writer = PostgresQdrantWriter(resource, inputs['config'], inputs['instance_id'])
+        await resumed_writer.initialize(deadline=deadline)
+        resumed_verifier = QdrantReconciliationVerifier(resumed_writer, supervisor)
+        resumed_recovery = PostgresQdrantRecovery(supervisor_resource, inputs['config'], supervisor, resumed_verifier)
+        resumed = QdrantPublicationManager(PostgresQdrantPublicationAuthority(resumed_writer, resumed_recovery),
+            transport, inputs['config'], supervisor, authorize)
+        managers.append(resumed)
+        try:
+            await resumed.initialize(deadline=deadline)
+            from cragkit._qdrant_writer_contract import prepare_stage, stage_data
+            actual = stage_data(await resumed_writer.load_stage(context(ack_stage), deadline=deadline))
+            expected = stage_data(prepare_stage(ack_stage))
+            def replay_facts(graph):
+                return tuple(None if replay is None else
+                    (replay.blob,replay.blob_sha256,replay.input_sha256)
+                    for replay in (*graph.dense,*graph.sparse))
+            if (actual.source != expected.source or actual.manifest != expected.manifest
+                    or actual.intent != expected.intent or replay_facts(actual) != replay_facts(expected)):
+                raise RuntimeError('manager_stage_ack_graph_changed')
+            outcome = plain(await stage_call(resumed, ack_stage))
+            if (outcome != acknowledged
+                    or fault['inserts'] != 1 or await stage_graph(ack_stage) != committed
+                    or fault['dml'] != stage_dml
+                    or network['mutations'] != writes or network['requests'] != stage_requests):
+                raise RuntimeError('manager_stage_ack_retry_changed_graph')
+        finally:
+            await resumed.close()
+            managers.remove(resumed)
+            await resumed_recovery.close()
+            await resumed_writer.close()
+        acknowledgment['stage'] = None
         save(await stage_call(manager, stages['loser']))
         save(await stage_call(manager, stages['winner']))
         save(await publish_call(manager, stages['winner']))
@@ -425,6 +544,7 @@ async def python_publication_manager_cases(value):
         if 'unknown' not in await journal_states():
             raise RuntimeError('manager_borrowed_recovery_changed_unknown')
         checks.append(CHECKS[13])
+        checks.extend(CHECKS[14:])
         if len(snapshots) != 19:
             raise RuntimeError('manager_public_snapshot_inventory')
         return dict(runtime='python', checks=checks, proof_scope='public_stage_publish_only',

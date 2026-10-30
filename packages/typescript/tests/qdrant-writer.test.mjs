@@ -737,9 +737,55 @@ test('atomic stage replay compares immutable facts and scope without adopting ch
 
 test('lost stage commit acknowledgment reconciles the same identity without duplicate generation',async()=>{
   const x=setup();await x.writer.initialize(opts());x.state.commitLost=true;
+  const start=x.state.queries.length;
   const result=await x.writer.stage(prepare_stage(input()),scope,stageOpts());
   assert.equal(result.state,'staged');assert.equal(x.state.tables.generations.length,1);assert.equal(x.state.tables.members.length,2);
+  const confirmation=confirmationQueries(x.state,start).map(query=>query.text);
+  assert.equal(confirmation.filter(sql=>sql.startsWith('BEGIN')).length,1);
+  assert.equal(confirmation[1],'SET TRANSACTION READ ONLY');
+  assert.equal(confirmation.some(sql=>/^(INSERT|UPDATE|DELETE) /.test(sql)||/FOR (UPDATE|SHARE)/.test(sql)),false);
   assert.ok(x.state.clients.some(client=>client.releases.includes(true)));await x.writer.close();await x.resource.close();
+});
+
+for(const fault of ['missing','payload','fence','source','member','claim','dense','sparse','later_authority'])test(`stage lost COMMIT confirmation handles ${fault} without mutation replay`,async()=>{
+  const x=setup();await x.writer.initialize(opts());
+  try{
+    x.state.commitLost=true;x.state.onLostCommit=()=>{
+      const tables=x.state.tables,row=tables.publication_intents[0];
+      if(fault==='missing')tables.publication_intents=[];
+      if(fault==='payload')row.payload_sha256='f'.repeat(64);
+      if(fault==='fence')row.expected_mutation_epoch=2;
+      if(fault==='source')tables.document_revisions[0].canonical_utf8=Buffer.from('different');
+      if(fault==='member')tables.members.pop();
+      if(fault==='claim')tables.point_claims[0].text_sha256='f'.repeat(64);
+      if(fault==='dense')tables.vector_replays[0].dense_blob=Buffer.from('different');
+      if(fault==='sparse')tables.vector_replays[0].sparse_blob=Buffer.from('different');
+      if(fault==='later_authority')Object.assign(tables.documents[0],{authorization_revision:'auth-2',mutation_epoch:2,active_generation_id:'later-generation'});
+    };
+    const start=x.state.queries.length,operation=x.writer.stage(prepare_stage(input()),scope,stageOpts());
+    if(fault==='later_authority'){
+      assert.equal((await operation).state,'staged');assert.equal(x.state.tables.documents[0].authorization_revision,'auth-2');
+      assert.equal(x.state.tables.documents[0].active_generation_id,'later-generation');
+    }else await assert.rejects(operation,fault==='missing'?ProviderUnavailable:IntegrityViolation);
+    const confirmation=confirmationQueries(x.state,start).map(query=>query.text);
+    assert.equal(confirmation[1],'SET TRANSACTION READ ONLY');
+    assert.equal(confirmation.some(sql=>/^(INSERT|UPDATE|DELETE) /.test(sql)||/FOR (UPDATE|SHARE)/.test(sql)),false);
+  }finally{await x.writer.close();await x.resource.close();}
+});
+
+for(const boundary of ['deadline','abort','statement_cancel','known_rollback'])test(`stage COMMIT ${boundary} never enters confirmation`,async()=>{
+  const x=setup();await x.writer.initialize(opts());
+  try{
+    x.state.commitError=boundary==='deadline'?new DeadlineExceeded():boundary==='abort'
+      ?new DOMException('Operation aborted.','AbortError'):Object.assign(new Error('private failure'),{code:boundary==='known_rollback'?'40001':'57014'});
+    const start=x.state.queries.length;
+    await assert.rejects(x.writer.stage(prepare_stage(input()),scope,stageOpts()),
+      boundary==='deadline'?DeadlineExceeded:boundary==='abort'?error=>error.name==='AbortError':ProviderUnavailable);
+    const queries=x.state.queries.slice(start);
+    assert.equal(queries.filter(query=>query.text.startsWith('BEGIN')).length,1);
+    assert.equal(queries.filter(query=>query.text==='COMMIT').length,1);
+    assert.equal(x.state.tables.publication_intents?.length??0,0);
+  }finally{await x.writer.close();await x.resource.close();}
 });
 
 test('reservation constructs complete immutable wire bytes and binds exact point set',async()=>{
