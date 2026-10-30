@@ -65,7 +65,7 @@ async function input() {
   }
   const value = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(chunks)));
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(['wrong_dense', 'wrong_sparse', 'wrong_profile'].includes(value.scenario) ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
+    || !isDeepStrictEqual(Object.keys(value).sort(), ['binary', 'inputs', 'observer_config', ...(['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse'].includes(value.scenario) ? ['scenario'] : []), 'supervisor_config', 'work_dir', 'writer_config'])
     || typeof value.binary !== 'string' || typeof value.work_dir !== 'string' || !value.inputs?.stages) throw new Error('input_shape');
   return value;
 }
@@ -114,7 +114,8 @@ async function cases(value) {
   const publicationFault = {armed:false,track:false,fired:0,destroyed:0,casWrites:0,dml:0};
   const http = {requests: 0, puts: 0, drop: false, dropped: 0};
   const wrongDense = {armed: false, fired: 0, observed: null};
-  const corruptionScenario = ['wrong_dense', 'wrong_sparse', 'wrong_profile'].includes(value.scenario) ? value.scenario : null;
+  const corruptionScenario = ['wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse'].includes(value.scenario) ? value.scenario : null;
+  const repairWrites = {active: false, bodies: [], completed: 0, fixture: 0};
   let address, primary, manager, callbackMode = null, supervisorLeases = 0;
   const target = '/collections/' + inputs.config.physical_collection;
   const context = (stage, scope = inputs.scope) => ({scope, collection: stage.manifest.collection,
@@ -133,7 +134,7 @@ async function cases(value) {
   }
   function save(result) {
     if (!result || !isDeepStrictEqual(Object.keys(result).sort(), [...RESULT_KEYS].sort())
-      || !['stage', 'publish'].includes(result.operation)
+      || !['stage', 'publish', 'repair'].includes(result.operation)
       || typeof result.intent_id !== 'string' || typeof result.state !== 'string'
       || !['revision_id', 'generation_id'].every(key => result[key] === null || typeof result[key] === 'string')
       || !RESULT_KEYS.slice(5).every(key => typeof result[key] === 'boolean')) throw new Error('public_result_shape');
@@ -277,7 +278,9 @@ async function cases(value) {
           http.requests++;
           const upsert = method === 'PUT' && path === target + '/points?wait=true&ordering=strong';
           if (upsert) http.puts++;
+          if (upsert && repairWrites.active) repairWrites.bodies.push(JSON.parse(Buffer.from(requestOptions.body).toString('utf8')));
           const response = await actual.request(method, path, requestOptions);
+          if (upsert && repairWrites.active) { completed(response); repairWrites.completed++; }
           if (upsert && wrongDense.armed) {
             const body = JSON.parse(Buffer.from(requestOptions.body).toString('utf8'));
             const ids = inputs.stages[corruptionScenario].manifest.members.map(member => member.point_id).sort();
@@ -297,13 +300,18 @@ async function cases(value) {
                   || sparse.indices.length !== sparse.values.length || sparse.values.length === 0
                   || !sparse.values.every(Number.isFinite)) throw new Error('wrong_sparse_basis_input');
                 sparse.values[0] += .25;
+              } else if (corruptionScenario === 'missing_sparse') {
+                if (!point.vector.sparse) throw new Error('missing_sparse_basis_input');
+                delete point.vector.sparse;
               } else if (corruptionScenario === 'wrong_profile') {
                 if (!point.payload?.dense_profile || typeof point.payload.dense_profile.model !== 'string'
                   || point.payload.dense_profile.model === 'wrong-profile') throw new Error('wrong_profile_basis_input');
                 point.payload.dense_profile.model = 'wrong-profile';
               } else point.vector.dense = dense.map((_, index) => index === 1 ? 1 : 0);
               completed(await actual.request('PUT', path, {...requestOptions, body: bytes({points: [point]})}));
-              wrongDense.observed = {point, ids, points: body.points.map(original => original.id === point.id ? point : original)};
+              repairWrites.fixture++;
+              wrongDense.observed = {point, ids, originalPoints: body.points,
+                points: body.points.map(original => original.id === point.id ? point : original)};
             }
           }
           if (upsert && http.drop) {
@@ -375,7 +383,55 @@ async function cases(value) {
       await active(inputs.stage.manifest.generation_id);
       checks.push({wrong_dense: 'wrong_dense_vector_public_publish_rejected',
         wrong_sparse: 'wrong_sparse_vector_public_publish_rejected',
-        wrong_profile: 'wrong_full_profile_public_publish_rejected'}[corruptionScenario]); step = checks.length;
+        wrong_profile: 'wrong_full_profile_public_publish_rejected',
+        missing_sparse: 'missing_sparse_vector_public_publish_rejected'}[corruptionScenario]); step = checks.length;
+      if (corruptionScenario === 'missing_sparse') {
+        const byId = points => points.map(({id, vector, payload}) => ({id, vector, payload})).sort((a, b) => a.id.localeCompare(b.id));
+        for (const [index, member] of successor.manifest.members.entries()) {
+          const point = stored.originalPoints.find(point => point.id === member.point_id);
+          if (!point || !isDeepStrictEqual(Object.keys(point.vector).sort(), ['dense', 'sparse'])
+            || !isDeepStrictEqual(point.vector.dense, successor.dense_vectors[index])
+            || !isDeepStrictEqual(point.vector.sparse, successor.sparse_vectors[index])
+            || !isDeepStrictEqual(point.payload.dense_profile, successor.manifest.dense_profile)
+            || !isDeepStrictEqual(point.payload.sparse_profile, successor.manifest.sparse_profile)) throw new Error('missing_sparse_original_vectors_changed');
+        }
+        let repaired;
+        repairWrites.active = true;
+        try { repaired = save(await call((book, opts) => manager.repair(reference(successor), inputs.scope, book, opts))); }
+        finally { repairWrites.active = false; }
+        if (repairWrites.fixture !== 1 || repairWrites.bodies.length !== 1 || repairWrites.completed !== 1 || http.puts !== 3
+          || !isDeepStrictEqual(byId(repairWrites.bodies[0].points), byId(stored.originalPoints))
+          || repaired.operation !== 'repair' || repaired.state !== 'published' || !repaired.published
+          || !repaired.replica_complete || !repaired.authority_committed || snapshots.length !== 4) throw new Error('missing_sparse_complete_repair_failed');
+        const repairedGraph = await observeStage(successor);
+        for (const key of ['document_revisions', 'members', 'point_claims', 'vector_replays']) {
+          if (!isDeepStrictEqual(before[key], repairedGraph[key])) throw new Error('missing_sparse_repair_immutable_graph_changed');
+        }
+        const expectedGenerations = structuredClone(before.generations);
+        for (const [generation] of expectedGenerations) { generation.published = true; generation.ever_published = true; }
+        const repairedJournal = await journal();
+        const repairedDispatches = repairedJournal.filter(row => row[0] === successor.intent.intent_id);
+        if (!isDeepStrictEqual(repairedGraph.generations, expectedGenerations)
+          || !isDeepStrictEqual(repairedGraph.pointer, [[successor.manifest.generation_id]])
+          || repairedGraph.publication_intents[0]?.[0]?.state !== 'published'
+          || repairedGraph.publication_intents[0]?.[0]?.replica_complete !== true
+          || repairedGraph.publication_intents[0]?.[0]?.authority_committed !== true
+          || repairedJournal.some(row => row[2] !== 'settled')
+          || repairedDispatches.length !== 2 || repairedDispatches.some(row => row[2] !== 'settled' || !/^[0-9a-f]{64}$/.test(row[3]))) throw new Error('missing_sparse_repair_fence_changed');
+        const repairedAttempt = supervisor.issue_attempt({intent_id: successor.intent.intent_id,
+          owner_token: current.owner.owner_token, epoch: current.backend.epoch,
+          dispatch_id: 'manager-missing-sparse-repaired-readback'}, options);
+        const repairedProbe = supervisor.transport_for(repairedAttempt);
+        let repairedPhysical;
+        try { repairedPhysical = JSON.parse(Buffer.from(await repairedProbe.request('POST', target + '/points',
+          {...options, body: bytes({ids: stored.ids, with_payload: true, with_vector: true})})).toString('utf8')); }
+        finally { await repairedProbe.close(); }
+        if (repairedPhysical.status !== 'ok' || !Array.isArray(repairedPhysical.result)
+          || !isDeepStrictEqual(byId(repairedPhysical.result), byId(stored.originalPoints))) throw new Error('missing_sparse_repair_physical_readback_changed');
+        await active(successor.manifest.generation_id);
+        checks.push('missing_sparse_vector_complete_repair_published'); step = checks.length;
+        return {runtime: 'typescript', checks, proof_scope: 'public_corruption_repair_only', public_snapshots_sha256: hash(bytes(snapshots))};
+      }
       return {runtime: 'typescript', checks, proof_scope: 'public_corruption_only', public_snapshots_sha256: hash(bytes(snapshots))};
     }
     checks.push(CHECKS[0]); step = checks.length;

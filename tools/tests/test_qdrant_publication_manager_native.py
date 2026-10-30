@@ -75,6 +75,26 @@ def test_corruption_modes_have_their_own_closed_evidence_scope(scenario, label):
         failure_observation(dict(ok=False, step=2, error='internal'), scenario)
 
 
+def test_missing_sparse_repair_requires_both_ordered_checks_and_its_own_scope():
+    value = dict(runtime='python', checks=[
+        'missing_sparse_vector_public_publish_rejected',
+        'missing_sparse_vector_complete_repair_published'],
+        proof_scope='public_corruption_repair_only', public_snapshots_sha256='a' * 64)
+    assert validate_result(value, 'python', 'missing-sparse') == value
+    for changed in (dict(value, checks=value['checks'][:1]),
+            dict(value, checks=list(reversed(value['checks']))),
+            dict(value, proof_scope='public_corruption_only'),
+            dict(value, runtime='typescript')):
+        with pytest.raises(RuntimeError, match='publication_manager_native_result_shape'):
+            validate_result(changed, 'python', 'missing-sparse')
+    with pytest.raises(RuntimeError, match='publication_manager_native_result_shape'):
+        validate_result(value, 'python')
+    assert failure_observation(dict(ok=False, step=2, error='IntegrityViolation'),
+        'missing-sparse') == dict(ok=False, step=2, error='IntegrityViolation')
+    with pytest.raises(RuntimeError, match='publication_manager_native_failure_shape'):
+        failure_observation(dict(ok=False, step=3, error='internal'), 'missing-sparse')
+
+
 def test_closed_failure_protocol_preserves_primary_and_cleanup_without_error_text():
     value = dict(ok=False, step=9, error='cleanup_failed', primary='ProviderUnavailable',
         cleanup=[dict(operation='manager_close', outcome='DeadlineExceeded'),

@@ -52,6 +52,7 @@ def publication_manager_input():
     stages['wrong_dense'] = successor_stage(inputs, 'manager-wrong-dense', base)
     stages['wrong_sparse'] = successor_stage(inputs, 'manager-wrong-sparse', base)
     stages['wrong_profile'] = successor_stage(inputs, 'manager-wrong-profile', base)
+    stages['missing_sparse'] = successor_stage(inputs, 'manager-missing-sparse', base)
     previous = stages['winner']['manifest']['generation_id']
     for key, suffix in (('prepared', 'manager-prepared'), ('commit', 'manager-commit'),
             ('session', 'manager-final-session'), ('revoked', 'manager-revoked')):
@@ -177,7 +178,7 @@ async def python_publication_manager_cases(value):
 
     inputs = value['inputs']
     scenario = value.get('scenario', 'default')
-    if scenario not in ('default', 'wrong_dense', 'wrong_sparse', 'wrong_profile'):
+    if scenario not in ('default', 'wrong_dense', 'wrong_sparse', 'wrong_profile', 'missing_sparse'):
         raise RuntimeError('manager_fixture_scenario')
     def pool_config(raw):
         raw = dict(raw)
@@ -207,7 +208,8 @@ async def python_publication_manager_cases(value):
     managers, handles, checks, snapshots = [], [], [], []
     mode = dict(action=None, intent_id=None, fired=False)
     network = dict(mutations=0, requests=0, drop=False, completed_drop=False)
-    dense_fault = dict(armed=False, fired=0, point=None, points=None)
+    dense_fault = dict(armed=False, fired=0, point=None, points=None, originals=None,
+        fixture_puts=0, repairing=False, repair_bodies=[], repair_completed=0)
     endpoint = primary = manager = None
     supervisor_leases = 0
     original_supervisor_lease = supervisor_resource.lease
@@ -263,7 +265,19 @@ async def python_publication_manager_cases(value):
             mutation = method == 'PUT' and '/points?' in path
             if mutation:
                 network['mutations'] += 1
+            if mutation and dense_fault['repairing']:
+                body = json.loads(bytes(options['body']))
+                points = body.get('points', [])
+                expected_points = {point['id']: point for point in dense_fault['originals']}
+                if (sorted(point['id'] for point in points) != sorted(expected_points)
+                        or any(set(point['vector']) != {'dense', 'sparse'}
+                            or point != expected_points[point['id']] for point in points)):
+                    raise RuntimeError('manager_missing_sparse_repair_body_incomplete')
+                dense_fault['repair_bodies'].append(deepcopy(points))
             raw = await self.handle.request(method, path, **options)
+            if mutation and dense_fault['repairing']:
+                completed(raw)
+                dense_fault['repair_completed'] += 1
             if (mutation and dense_fault['armed']
                     and path == target + '/points?wait=true&ordering=strong'):
                 body = json.loads(bytes(options['body']))
@@ -290,6 +304,8 @@ async def python_publication_manager_cases(value):
                         if point['payload']['dense_profile']['model'] == 'wrong-profile':
                             raise RuntimeError('manager_wrong_profile_fixture_basis')
                         point['payload']['dense_profile']['model'] = 'wrong-profile'
+                    elif scenario == 'missing_sparse':
+                        del point['vector']['sparse']
                     expected_points = deepcopy(body['points'])
                     expected_points = [point if original['id'] == point['id'] else original
                         for original in expected_points]
@@ -297,7 +313,8 @@ async def python_publication_manager_cases(value):
                     completed(await self.handle.request('PUT', path,
                         body=request_bytes({'points': [point]}), deadline=deadline))
                     dense_fault.update(fired=dense_fault['fired'] + 1, point=point,
-                        points=expected_points)
+                        points=expected_points, originals=deepcopy(body['points']),
+                        fixture_puts=dense_fault['fixture_puts'] + 1)
             if mutation and network['drop']:
                 completed(raw)
                 network.update(drop=False, completed_drop=True)
@@ -495,13 +512,77 @@ async def python_publication_manager_cases(value):
             if (physical.get('status') != 'ok' or sorted(row['id'] for row in rows) != ids
                     or any(corrupted.get(key) != point[key] for key in ('id', 'vector', 'payload'))):
                 raise RuntimeError('manager_wrong_dense_physical_observation')
-            if scenario in ('wrong_sparse', 'wrong_profile'):
+            if scenario in ('wrong_sparse', 'wrong_profile', 'missing_sparse'):
                 expected_points = {point['id']: point for point in dense_fault['points']}
                 if any(any(row.get(key) != expected_points[row['id']][key]
                         for key in ('id', 'vector', 'payload')) for row in rows):
                     raise RuntimeError('manager_corruption_exact_physical_observation')
             if len(snapshots) != 3:
                 raise RuntimeError('manager_wrong_dense_snapshot_inventory')
+            if scenario == 'missing_sparse':
+                checks.append('missing_sparse_vector_public_publish_rejected')
+                originals = {point['id']: point for point in dense_fault['originals']}
+                for member, dense, sparse in zip(successor['manifest']['members'],
+                        successor['dense_vectors'], successor['sparse_vectors'], strict=True):
+                    submitted = originals[member['point_id']]
+                    if (submitted['vector'] != dict(dense=dense, sparse=sparse)
+                            or any(submitted['payload'][key] != successor['manifest'][key]
+                                for key in ('dense_profile', 'sparse_profile'))):
+                        raise RuntimeError('manager_missing_sparse_immutable_replay_input')
+                dense_fault['repairing'] = True
+                try:
+                    repaired = save(await manager.repair(reference(successor), scope, ledger(),
+                        deadline=deadline))
+                finally:
+                    dense_fault['repairing'] = False
+                repaired_graph = await stage_graph(successor)
+                repaired_state = await current(successor)
+                repaired_generation = [json.loads(row[0]) for row in repaired_graph['generations']]
+                expected_generation = [json.loads(row[0]) for row in before['generations']]
+                for generation_row in expected_generation:
+                    generation_row.update(published=True, ever_published=True)
+                stable = ('document_revisions', 'members', 'point_claims', 'vector_replays')
+                if (repaired['operation'] != 'repair' or repaired['state'] != 'published'
+                        or not all(repaired[key] for key in
+                            ('published', 'replica_complete', 'authority_committed'))
+                        or repaired['generation_id'] != successor['manifest']['generation_id']
+                        or repaired['revision_id'] != successor['manifest']['revision_id']
+                        or dense_fault['fixture_puts'] != 1 or dense_fault['fired'] != 1
+                        or len(dense_fault['repair_bodies']) != 1 or dense_fault['repair_completed'] != 1
+                        or network['mutations'] != writes + 2
+                        or any(before[table] != repaired_graph[table] for table in stable)
+                        or repaired_graph['pointer'] != [(successor['manifest']['generation_id'],)]
+                        or repaired_generation != expected_generation
+                        or len(repaired_generation) != 1
+                        or repaired_generation[0]['published'] is not True
+                        or repaired_generation[0]['ever_published'] is not True
+                        or repaired_state['intent']['state'] != 'published'
+                        or repaired_state['pending'] or len(repaired_graph['dispatches']) != 2
+                        or any(row[0] != 'settled' or not isinstance(row[1], str)
+                            or len(row[1]) != 64 or any(char not in '0123456789abcdef' for char in row[1])
+                            for row in repaired_graph['dispatches'])
+                        or set(await journal_states()) != {'settled'} or len(snapshots) != 4):
+                    raise RuntimeError('manager_missing_sparse_repair_boundary')
+                repaired_probe_attempt = supervisor.issue_attempt(dict(
+                    intent_id=successor['intent']['intent_id'], owner_token=state['owner']['owner_token'],
+                    epoch=state['backend']['epoch'], dispatch_id='manager-missing-sparse-repaired-readback'),
+                    deadline=deadline)
+                repaired_probe = supervisor.transport_for(repaired_probe_attempt)
+                try:
+                    repaired_physical = json.loads(bytes(await repaired_probe.request('POST', target + '/points',
+                        body=request_bytes(dict(ids=ids, with_payload=True, with_vector=True)), deadline=deadline)))
+                finally:
+                    await repaired_probe.close()
+                repaired_rows = repaired_physical.get('result', [])
+                expected_points = {point['id']: point for point in dense_fault['originals']}
+                if (repaired_physical.get('status') != 'ok'
+                        or sorted(row['id'] for row in repaired_rows) != ids
+                        or any(any(row.get(key) != expected_points[row['id']][key]
+                            for key in ('id', 'vector', 'payload')) for row in repaired_rows)):
+                    raise RuntimeError('manager_missing_sparse_repaired_physical_observation')
+                checks.append('missing_sparse_vector_complete_repair_published')
+                return dict(runtime='python', checks=checks, proof_scope='public_corruption_repair_only',
+                    public_snapshots_sha256=sha256(request_bytes(snapshots)).hexdigest())
             label = dict(wrong_dense='wrong_dense_vector_public_publish_rejected',
                 wrong_sparse='wrong_sparse_vector_public_publish_rejected',
                 wrong_profile='wrong_full_profile_public_publish_rejected')[scenario]

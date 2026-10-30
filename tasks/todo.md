@@ -2463,3 +2463,40 @@ Learning practice unassessed. Twenty-two exact H IDs have accepted native
 evidence; H and V5 remain open. Next smallest action: an isolated
 `missing_sparse_vector` public fault followed by ordinary complete-vector
 repair, with previous-pointer and immutable-graph checks.
+
+H-S17 assignment (V5-04H matrix ID `missing_sparse_vector`): shared outcome
+is actual public refusal after one completed sparse removal, then ordinary
+same-intent complete-vector repair and publication. Contract `missing-sparse-r1`
+is frozen in ignored
+`artifacts/V5/V5-04H/missing-sparse-r1-protocol.md`. Sol
+`h_sparse_python` owns only `tools/qdrant_publication_manager_cases.py` and
+assembles; Sol `h_sparse_node` owns only
+`tools/check_typescript_qdrant_publication_manager.mjs`. Both do substantive
+native-consumer work and coordinate assertion parity directly. Root owns
+parent CLI/protocol guard, serial native checks, report/tracker, Git and final
+integration. Read-only dependencies: existing manager API, pinned fixture,
+QW-r1 and the frozen acceptance row. Product/schema/migrations/locks/seals/
+shared fixture/other consumers/user edits are protected. One test process,
+synthetic two-point fixture, serial runtimes, no worker processes, provider,
+model, hosted action or download. Escalate outcome/protected/other ownership
+changes to root and unresolved material decisions to Astra. State: assigned;
+H and V5 open.
+
+H-S17 final handoff: Sol Python and Node peers wrote separate native-consumer
+repair traces, resolved journal/profile assertion parity directly, and Python
+assembled. Both stopped before root integration. Root inspected the diffs,
+ran eight focused parent guards and syntax checks, then diagnosed the first
+native `UnsupportedCapability` at the publication-only fixture profile. The
+parent now installs the existing attestation migration only for this repair
+mode. The final native parent passed refusal and repair in both runtimes
+(four checks), matching snapshot hash and verified cleanup. Default manager
+passed 40 checks with its previous hash; wrong-sparse regression passed two.
+All 16 seals matched. [Checkpoint report](../evaluation/reports/V5/V5-04H-missing-sparse-repair.md).
+Changed files: parent, two consumers, protocol guard, report and tracker.
+No product/schema file/shared fixture/migration file/lockfile/provider/hosted
+action. Disk headroom 28 GiB, system memory free 52%; no task-owned service
+remains. The failed and diagnostic runs are retained as ignored evidence.
+Unrelated user edits remain outside scope. Learning practice unassessed.
+Twenty-three exact H IDs have accepted native evidence; H and V5 remain
+open. Next smallest action: isolated `equal_count_wrong_set` public refusal,
+including the required third-point sentinel and bounded enumeration check.

@@ -26,14 +26,24 @@ CORRUPTION_CHECKS = {
     'wrong-dense': ('wrong_dense_vector_public_publish_rejected',),
     'wrong-sparse': ('wrong_sparse_vector_public_publish_rejected',),
     'wrong-profile': ('wrong_full_profile_public_publish_rejected',),
+    'missing-sparse': ('missing_sparse_vector_public_publish_rejected',
+        'missing_sparse_vector_complete_repair_published'),
 }
+
+
+def proof_scope_for(scenario):
+    if scenario == 'default':
+        return 'public_stage_publish_only'
+    if scenario == 'missing-sparse':
+        return 'public_corruption_repair_only'
+    return 'public_corruption_only'
 
 
 def validate_result(value, runtime, scenario='default'):
     if scenario not in ('default', *CORRUPTION_CHECKS):
         raise RuntimeError('publication_manager_native_scenario')
     checks = CHECKS if scenario == 'default' else CORRUPTION_CHECKS[scenario]
-    proof_scope = 'public_stage_publish_only' if scenario == 'default' else 'public_corruption_only'
+    proof_scope = proof_scope_for(scenario)
     if (type(value) is not dict or set(value) != {'runtime', 'checks', 'proof_scope', 'public_snapshots_sha256'}
             or value['runtime'] != runtime or value['checks'] != list(checks)
             or type(value['public_snapshots_sha256']) is not str
@@ -129,7 +139,7 @@ async def node_publication_manager_cases(value):
 
 
 async def check(fixture, runtime, binary, work_dir, scenario='default'):
-    async with PublicationDatabase(fixture) as database:
+    async with PublicationDatabase(fixture, with_attestations=scenario == 'missing-sparse') as database:
         value = dict(binary=str(binary), work_dir=str(work_dir), inputs=publication_manager_input(),
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'),
             observer_config=database.fixture.config)
