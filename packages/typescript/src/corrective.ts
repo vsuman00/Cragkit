@@ -11,15 +11,27 @@ import { validate_plan, type ApprovedVariant, PlannerAdapter } from './planning.
 import { parse_request, parse_scope, type RetrievalRequest, type TrustedScope } from './requests.js';
 import { EvidenceSchema, ResultSchema, type Evidence, type RetrievalResult } from './results.js';
 import { deep_freeze, identity, integer, safe_number, valid_native_json } from './shared.js';
+import {QdrantPayloadSchema,point_id,payload_tuple} from './qdrant-contract.js';
 
 // Match native candidate wire boundaries without importing the optional database module.
 const base = z.strictObject({tenant_id: identity, collection: identity, document_id: identity, revision_id: identity,
   generation_id: identity, chunk_id: identity, start_byte: integer(0, Number.MAX_SAFE_INTEGER),
   end_byte: integer(1, Number.MAX_SAFE_INTEGER), text_sha256: z.string().regex(/^[0-9a-f]{64}$/), score: safe_number.min(0)});
+const nomination=z.strictObject({point_id:z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+  branch:z.enum(['dense','sparse']),score:safe_number,score_kind:z.enum(['cosine_similarity','dot_product']),
+  score_direction:z.literal('higher_is_better'),verification:z.literal('UNVERIFIED'),payload:QdrantPayloadSchema});
+const qdrantCandidate=base.extend({backend:z.literal('qdrant'),score:safe_number,nomination}).refine(candidate=>{
+  const n=candidate.nomination,p=n.payload;
+  return ['tenant_id','collection','document_id','revision_id','generation_id','chunk_id','start_byte','end_byte','text_sha256']
+    .every(key=>candidate[key as keyof typeof candidate]===p[key as keyof typeof p])
+    &&candidate.score===n.score&&n.point_id===point_id(payload_tuple(p))
+    &&p.dense_profile_id===p.dense_profile.profile_id&&p.sparse_profile_id===(p.sparse_profile?.profile_id??'')
+    &&(n.branch==='dense'?n.score_kind==='cosine_similarity'&&n.score>=-1.000001&&n.score<=1.000001:n.score_kind==='dot_product'&&p.sparse_profile!==null);
+});
 const CandidateSchema = z.union([base, base.extend({score: safe_number.min(0).max(2), embedding_profile: z.literal('fake_embedding_1536_v1'),
   score_direction: z.literal('lower_is_better'), score_kind: z.literal('cosine_distance')}),
 base.extend({score: z.literal(1), score_kind: z.literal('exact_identifier'), score_direction: z.literal('higher_is_better'),
-  identifier_profile: z.literal('identifier_ascii_v1')})]).refine(c => c.end_byte > c.start_byte && Buffer.byteLength(c.collection) <= 128);
+  identifier_profile: z.literal('identifier_ascii_v1')}),qdrantCandidate]).refine(c => c.end_byte > c.start_byte && Buffer.byteLength(c.collection) <= 128);
 export type CorrectiveCandidate = Readonly<z.infer<typeof CandidateSchema>>;
 export type CorrectiveBackendOptions = {scope: TrustedScope; deadline: number; ledger: ExecutionLedger; signal: AbortSignal};
 export interface CorrectiveBackend {

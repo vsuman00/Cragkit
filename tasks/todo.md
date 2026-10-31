@@ -3346,3 +3346,12 @@ No owned service or live provider. Learning practice unassessed. Next smallest
 action V5-07A2: native nomination candidate compatibility preserving similarity,
 scope, profiles, immutable source identity and exact span/digest mirrors. Then
 V5-07B adapter, C native backend/direct/tool/MCP matrix, V5-08/C3/EXIT remain.
+
+V5-07A2 pure candidate handoff passed: complete unverified nomination, native
+signed scores, exact immutable mirrors, UUID/profile/branch consistency and
+unchanged PostgreSQL forms. Focused checks passed 54 Python and 50 Node;
+strict types/build, 17 corrective parity cases and core import guard passed.
+[Evidence](../evaluation/reports/V5/V5-07A2.md). Changed: both corrective cores,
+two new focused tests, QCC-r1 status and tracker/report. No owned process.
+Learning unassessed. V5-07A is complete; next V5-07B optional native adapters,
+then C actual backend/direct/tool/MCP parity. V5-07 parent and full V5 open.

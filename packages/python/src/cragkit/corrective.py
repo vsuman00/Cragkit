@@ -6,9 +6,12 @@ import copy
 import hashlib
 import math
 import re
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, Awaitable, Callable, Literal, TypeVar
+
+from pydantic import Field, model_validator
 
 from ._postgres_session import DenseCandidate, IdentifierCandidate, LexicalCandidate
+from ._qdrant_contract import QdrantNomination
 from .assessment import _policy, assess_evidence
 from .context import Cl100kCounter, count_context
 from .contracts import Evidence, RetrievalRequest, RetrievalResult, TrustedScope, parse_request, parse_scope
@@ -23,6 +26,27 @@ from .planning import PlannerAdapter, validate_plan
 _T = TypeVar('_T')
 _KEYS = ('tenant_id', 'collection', 'document_id', 'revision_id', 'generation_id', 'chunk_id')
 _CAP = 16_777_216
+
+
+class QdrantCandidate(LexicalCandidate):
+    """Internal nomination handoff; source text remains unverified."""
+    backend: Literal['qdrant']
+    score: float = Field(ge=-MAX_SAFE_NUMBER,le=MAX_SAFE_NUMBER,allow_inf_nan=False)
+    nomination: QdrantNomination
+
+    @model_validator(mode='after')
+    def mirrored_identity(self) -> QdrantCandidate:
+        from ._qdrant_contract import identity_tuple, point_id
+        n=self.nomination;p=n.payload
+        fields=(*_KEYS,'start_byte','end_byte','text_sha256')
+        if (any(getattr(self,key)!=getattr(p,key) for key in fields) or self.score!=n.score
+                or n.point_id!=point_id(identity_tuple(p))
+                or p.dense_profile_id!=p.dense_profile.profile_id
+                or p.sparse_profile_id!=(p.sparse_profile.profile_id if p.sparse_profile else '')
+                or n.branch=='dense' and (n.score_kind!='cosine_similarity' or not -1.000001<=n.score<=1.000001)
+                or n.branch=='sparse' and (n.score_kind!='dot_product' or p.sparse_profile is None)):
+            raise ValueError('Invalid nomination handoff')
+        return self
 
 
 def _option_integer(value: object) -> int:
@@ -54,12 +78,12 @@ async def _bounded(work: Awaitable[_T], deadline: float) -> _T:
 
 def _candidate(value: Any, request: RetrievalRequest, scope: TrustedScope) -> LexicalCandidate:
     try:
-        if type(value) in (LexicalCandidate, DenseCandidate, IdentifierCandidate):
+        if type(value) in (LexicalCandidate, DenseCandidate, IdentifierCandidate, QdrantCandidate):
             value = value.model_dump(warnings=False)
         if type(value) is not dict:
             raise ValueError()
         native_json(value)
-        model = (DenseCandidate if 'embedding_profile' in value else
+        model = (QdrantCandidate if value.get('backend')=='qdrant' else DenseCandidate if 'embedding_profile' in value else
                  IdentifierCandidate if 'identifier_profile' in value else LexicalCandidate)
         item = model.model_validate(value)
         for key in _KEYS:
@@ -67,7 +91,7 @@ def _candidate(value: Any, request: RetrievalRequest, scope: TrustedScope) -> Le
         if item.tenant_id != scope.tenant_id or item.collection != request.collection or item.end_byte <= item.start_byte:
             raise ValueError()
         return item
-    except (ValueError, TypeError, OverflowError, RecursionError):
+    except (ValueError, TypeError, OverflowError, RecursionError, CragkitError):
         raise IntegrityViolation() from None
 
 
