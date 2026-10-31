@@ -70,7 +70,7 @@ def archive_files(path: Path) -> dict[str, bytes]:
 
 def inspect_wheel(path: Path) -> dict[str, bytes]:
     files = archive_files(path)
-    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py', 'cragkit/embeddings.py', 'cragkit/vector_ingestion.py', 'cragkit/reranking.py', 'cragkit/context.py', 'cragkit/packing.py', 'cragkit/assessment.py', 'cragkit/evidence.py', 'cragkit/execution.py', 'cragkit/planning.py', 'cragkit/corrective.py', 'cragkit/events.py', 'cragkit/postgres_corrective.py'} <= files.keys(), 'wheel_missing_core')
+    require({'cragkit/__init__.py', 'cragkit/py.typed', 'cragkit/contracts/__init__.py', 'cragkit/contracts/results.py', 'cragkit/errors.py', 'cragkit/postgres.py', 'cragkit/embeddings.py', 'cragkit/vector_ingestion.py', 'cragkit/reranking.py', 'cragkit/context.py', 'cragkit/packing.py', 'cragkit/assessment.py', 'cragkit/evidence.py', 'cragkit/execution.py', 'cragkit/planning.py', 'cragkit/corrective.py', 'cragkit/events.py', 'cragkit/postgres_corrective.py', 'cragkit/qdrant.py', 'cragkit/qdrant_source.py', 'cragkit/qdrant_corrective.py', 'cragkit/qdrant_publication.py'} <= files.keys(), 'wheel_missing_core')
     names = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(names) == 1, 'wheel_metadata')
     metadata = email.parser.BytesParser().parsebytes(files[names[0]])
@@ -79,7 +79,7 @@ def inspect_wheel(path: Path) -> dict[str, bytes]:
     core = [entry for entry in requirements if 'extra ==' not in entry]
     require(core == ['pydantic==2.14.1'], 'wheel_core_dependencies')
     optional = [entry for entry in requirements if 'extra ==' in entry]
-    require(all(('postgres' in entry and entry.startswith(('psycopg[', 'psycopg-pool'))) or ('tokenizers' in entry and entry.startswith('tiktoken==0.14.0')) for entry in optional), 'wheel_optional_dependencies')
+    require(all(('postgres' in entry and entry.startswith(('psycopg[', 'psycopg-pool'))) or ('tokenizers' in entry and entry.startswith('tiktoken==0.14.0')) or ('qdrant' in entry and entry.startswith('httpx==0.28.1')) for entry in optional), 'wheel_optional_dependencies')
     return files
 
 
@@ -89,7 +89,7 @@ def inspect_npm(path: Path) -> dict[str, bytes]:
     package = json.loads(files['package/package.json'])
     require(package['name'] == 'cragkit' and package['version'] == '0.0.0' and package.get('private') is True, 'npm_identity')
     require(package.get('dependencies') == {'zod': '4.6.7'}, 'npm_core_dependencies')
-    for name in ('.', './contracts', './errors', './postgres', './embeddings', './reranking', './context', './packing', './assessment', './evidence', './execution', './planning', './corrective', './events', './postgres-corrective'):
+    for name in ('.', './contracts', './errors', './postgres', './embeddings', './reranking', './context', './packing', './assessment', './evidence', './execution', './planning', './corrective', './events', './postgres-corrective', './qdrant', './qdrant-source', './qdrant-corrective', './qdrant-publication'):
         target = package.get('exports', {}).get(name, {})
         for kind, suffix in (('import', '.js'), ('types', '.d.ts')):
             value = target.get(kind)
@@ -118,14 +118,14 @@ def run(command: list[str], cwd: Path, commands: list[dict[str, Any]], timeout: 
 
 PYTHON_PROBE = r'''
 import importlib, importlib.metadata, importlib.util, json, pathlib, resource, sys, time
-optional = ('psycopg', 'psycopg_pool', 'torch', 'transformers', 'qdrant_client', 'langchain', 'langchain_core', 'mcp', 'tiktoken')
+optional = ('psycopg', 'psycopg_pool', 'torch', 'transformers', 'qdrant_client', 'langchain', 'langchain_core', 'mcp', 'tiktoken', 'httpx')
 assert all(importlib.util.find_spec(name) is None for name in optional)
 def audit(event, args):
     if event.startswith(('socket.', 'subprocess.')) or event in ('os.system', 'os.posix_spawn'):
         raise RuntimeError('Import attempted external I/O')
 sys.addaudithook(audit)
 start = time.perf_counter()
-modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres', 'cragkit.embeddings', 'cragkit.reranking', 'cragkit.context', 'cragkit.packing', 'cragkit.assessment', 'cragkit.evidence', 'cragkit.execution', 'cragkit.planning', 'cragkit.corrective', 'cragkit.events', 'cragkit.postgres_corrective')]
+modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres', 'cragkit.embeddings', 'cragkit.reranking', 'cragkit.context', 'cragkit.packing', 'cragkit.assessment', 'cragkit.evidence', 'cragkit.execution', 'cragkit.planning', 'cragkit.corrective', 'cragkit.events', 'cragkit.postgres_corrective', 'cragkit.qdrant', 'cragkit.qdrant_source', 'cragkit.qdrant_corrective', 'cragkit.qdrant_publication')]
 elapsed = time.perf_counter() - start
 assert modules[0].__version__ == '0.0.0'
 assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve()) for module in modules)
@@ -153,7 +153,7 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
 import http from 'node:http'; import https from 'node:https'; import net from 'node:net';
 import tls from 'node:tls'; import dns from 'node:dns'; import dgram from 'node:dgram'; import childProcess from 'node:child_process';
 const require = createRequire(import.meta.url);
-for (const name of ['pg', 'postgres', 'onnxruntime-node', '@qdrant/js-client-rest', 'langchain', '@langchain/core', '@modelcontextprotocol/sdk', 'tiktoken']) {
+for (const name of ['pg', 'postgres', 'onnxruntime-node', '@qdrant/js-client-rest', 'langchain', '@langchain/core', '@modelcontextprotocol/sdk', '@modelcontextprotocol/server', 'tiktoken']) {
   assert.throws(() => require.resolve(name));
 }
 const deny = () => { throw Error('Import attempted external I/O'); };
@@ -166,7 +166,7 @@ for (const [object, names] of [[http,['request','get','createServer']],[https,['
 syncBuiltinESMExports();
 const start = performance.now();
 const [core, contracts, errors, postgres, embeddings, reranking, context, packing, assessment, evidence] = await Promise.all([import('cragkit'), import('cragkit/contracts'), import('cragkit/errors'), import('cragkit/postgres'), import('cragkit/embeddings'), import('cragkit/reranking'), import('cragkit/context'), import('cragkit/packing'), import('cragkit/assessment'), import('cragkit/evidence')]);
-await Promise.all(['execution','planning','corrective','events','postgres-corrective'].map(name=>import('cragkit/'+name)));
+await Promise.all(['execution','planning','corrective','events','postgres-corrective','qdrant','qdrant-source','qdrant-corrective','qdrant-publication'].map(name=>import('cragkit/'+name)));
 const importSeconds = (performance.now()-start)/1000;
 assert.equal(core.version,'0.0.0');
 assert.equal(contracts.parse_result({request_id:'smoke',status:'insufficient'}).usage.cost_usd,null);

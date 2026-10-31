@@ -17,6 +17,9 @@ tokenizers = [
 
 [dependency-groups]
 dev = [
+    "httpx==0.28.1",
+    "psycopg[binary]==3.3.6",
+    "psycopg-pool==3.3.3",
     "pytest==9.1.1",
     "mypy==2.4.0",
     "build==1.6.1",

@@ -314,11 +314,11 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V5-07: [Backend and transport parity](versions/V5-integrations.md#v5-07-backend-and-transport-parity) — native matrix passed; [evidence](../evaluation/reports/V5/V5-07.md).
 
-- [ ] V5-08: [Beta installation and operations guide](versions/V5-integrations.md#v5-08-beta-installation-and-operations-guide) — evidence: pending.
+- [x] V5-08: [Beta installation and operations guide](versions/V5-integrations.md#v5-08-beta-installation-and-operations-guide) — [local artifacts and operations acceptance](../evaluation/reports/V5/V5-08.md).
 
-- [ ] V5-C3: Demonstration, relevant regression checks, learning review and resource note through V5-08.
+- [x] V5-C3: Full regression/contract/artifact checks, native recovery demonstration and resource note passed; [evidence](../evaluation/reports/V5/V5-exit.md). Learner practice unassessed.
 
-- [ ] V5-EXIT: Version acceptance complete; evidence and limitations recorded.
+- [x] V5-EXIT: Declared local/native version acceptance complete; [evidence and limitations](../evaluation/reports/V5/V5-exit.md). V6 release gates remain separate.
 
 ## V6: Release, validation and maintenance
 
@@ -3383,3 +3383,41 @@ common native fixture, parent, two runtime consumers, focused test, QCC status
 and tracker/report. No owned process remains. Learning practice unassessed.
 V5-07 parent is complete for its declared matrix. Next V5-08 clean optional
 artifacts, beta operations guide, C3 and full V5-EXIT verification.
+
+V5-08 assignment: one shared outcome, clean local optional artifacts and a
+truthful executable beta operations guide. Sol peer `v508_artifacts` owns new
+`tools/check_v5_artifacts.py`, `tools/probe_v5_installed.py`,
+`tools/probe_v5_installed.mjs` and `tools/tests/test_v5_artifacts.py`;
+Sol peer `v508_operations` owns new `docs/v5-operations.md`, optional
+`examples/v5_operations.py`/`.mjs` and the V5-08 report, and assembles their work.
+Both coordinate concrete dependencies directly under QCC-r1 and the accepted
+V5 native profiles. Primary owns shared contracts/manifests/locks, README,
+development guide, tracker, Git, final integration and escalation. No shared
+edits, live calls, new services or package publication. Test/install slots are
+serialized by primary; peers write while the existing full core/framework
+acceptance pipeline runs. Initial headroom: 33 GiB disk, 60 percent system
+memory free. State: running. User clarified Daybreak, not degree; the separate
+cybersecurity deliverable is outside this task, required library guards remain.
+
+V5-08/C3/EXIT final handoff: COMPLETE for the declared local/native milestone.
+Both Sol peers delivered substantive owned files and resolved the fresh-output
+preservation dependency directly; operations peer assembled, primary inspected
+and integrated. Changed scope: optional artifact runner/probes/seven tests,
+operations guide, existing core artifact validator, three already pinned Python
+development dependencies/lock metadata, README content within its existing
+structure, development commands, tracker and V5 reports. No runtime dependency
+expansion or product architecture change. The default development setup failures
+were traced to missing optional typing/test clients and fixed without weakening
+checks; an MCP probe expectation was corrected to its actual locked `httpx2`.
+Final evidence: 34-stage full core/framework pipeline, 3,146 Python/tool and
+1,582 Node tests, all shared fixtures/corpus/16 seals, 72/69 LangChain tests,
+strict types/builds, twelve clean optional-profile installs, 41/36 installed MCP
+tests, seven verifier negative tests and fourteen native recovery/shutdown
+checks. The V5-07 matrix passed 84 retrieval calls/16 forged-input refusals;
+all 43 H IDs and 42 retained native evidence digests rechecked. See
+[V5 exit](../evaluation/reports/V5/V5-exit.md). Final resources: 33 GiB disk,
+59 percent system memory free; serialized suites, no task-owned process remains.
+User-owned prose/audit edits preserved and excluded from the scoped commit.
+Learning practice remains unassessed. Next smallest action: V6-01 freeze the
+release matrix, baseline-backed thresholds and evidence owners before held-out
+evaluation. V6 is planned; no registry publication or production claim.

@@ -8,7 +8,7 @@ Source-linked evidence · Coverage estimates · Limitations · Execution diagnos
 
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](packages/python)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Node_26-3178C6?logo=typescript&logoColor=white)](packages/typescript)
-[![Status](https://img.shields.io/badge/Status-V5_In_Progress-yellow)](#current-status)
+[![Status](https://img.shields.io/badge/Status-V5_Local_Milestone_Complete-green)](#current-status)
 [![License](https://img.shields.io/badge/License-TBD-lightgrey)](#)
 
 </div>
@@ -44,11 +44,11 @@ The **npm** package runs natively in Node.js — no Python server required. The 
 | **V2** | Dense/identifier retrieval, rank fusion, hybrid orchestration, synthetic comparison | ✅ Complete | [V2 exit evidence](evaluation/reports/V2/V2-07-08-exit.md) · [HY-r1 config](contracts/HYBRID_V2.md) |
 | **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
 | **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [V4 exit evidence](evaluation/reports/V4/V4-08-exit.md) |
-| **V5** | Qdrant publication and repair, existing indexes and optional MCP | 🚧 In progress | [V5 plan](tasks/versions/V5-integrations.md) · [Latest accepted security-handoff checkpoint](evaluation/reports/V5/V5-04G2b2d5b.md) |
+| **V5** | Qdrant publication and repair, existing indexes and optional MCP | ✅ Complete for the declared local native milestone | [V5 exit evidence](evaluation/reports/V5/V5-exit.md) · [Install and operations guide](docs/v5-operations.md) |
 | **V6** | Evaluation and release | 🔲 Planned | [V6 plan](tasks/versions/V6-release.md) |
 
 > [!NOTE]
-> V3 calibration is curated in-sample evidence, not general semantic quality. The V3 exit checkpoint passed local, installed and native acceptance. V4 is complete for its internal native/synthetic milestone. V5 source authorization, profile-4 source/writer/recovery admission, private guarded graph validation, retired security settlement, current-payload recovery dispatch and initial security-owner handoff are verified for their recorded native profiles; repeated-update convergence and the remaining V5 gates are still in progress. Production acceptance is unvalidated.
+> V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. Live-model quality, hosted CI, production acceptance and registry publication remain separate V6 work.
 
 Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
 
@@ -124,6 +124,7 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 - [Neon migration plan](docs/neon-migration-plan.md) — Selected development PostgreSQL host
 - [Secure setup runbook](docs/neon.md) — Security requirements and acceptance gates
 - [Direct Neon acceptance](evaluation/reports/V2/DB-NEON-01.md) — Verified development transport and native checks, with production and pooling limits
+- [V5 installation and operations](docs/v5-operations.md) — Optional profiles, connection ownership, explicit migrations, recovery and local shutdown
 
 > Historical Supabase results do not establish Neon acceptance; see the tracker before hosted use.
 

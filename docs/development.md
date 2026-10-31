@@ -1426,3 +1426,26 @@ official MCP calls, including a real interrupted publication. See
 [the matrix report](../evaluation/reports/V5/V5-07.md) for exact combinations,
 provider-budget differences, cleanup and limits. Installed artifacts remain a
 separate gate.
+
+## V5 local optional artifacts and operations
+
+The [V5 operations guide](v5-operations.md) lists the six isolated installation
+profiles, required services, explicit migrations, borrowed connections and native
+shutdown/recovery example. Core still depends only on Pydantic or Zod. The Python
+development group includes the already pinned HTTP/PostgreSQL clients so a frozen
+default setup can typecheck and test optional modules; wheel runtime dependencies
+and extras remain separate.
+
+```sh
+python3 tools/check_v4.py --artifacts-dir artifacts/V5/V5-08/full-core-frameworks
+python3 tools/check_v5_artifacts.py --core-artifacts artifacts/V5/V5-08/full-core-frameworks/core --output-dir artifacts/V5/V5-08/artifacts-final-02
+```
+
+The first command checks core, shared fixtures and optional LangChain packages,
+then builds and installs local artifacts. The second complements it with MCP
+artifacts and separate core, PostgreSQL, candidate-only Qdrant, authoritative
+Qdrant, tokenizer and MCP environments in each runtime. It checks installed
+module locations, guarded imports, pinned dependencies and installed MCP suites.
+Use a fresh optional-artifact output directory; existing evidence is preserved.
+These are local installation checks, separate from native backend conformance,
+provider quality, hosted CI and registry publication.
