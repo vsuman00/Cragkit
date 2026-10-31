@@ -328,10 +328,13 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [ ] V6-02: [Held-out retrieval evaluation](versions/V6-release.md#v6-02-held-out-retrieval-evaluation) — evidence: pending.
   - [x] V6-02B: Explicit PostgreSQL profile storage and dispatch mechanics — [native acceptance and limits](../evaluation/reports/V6/V6-02B.md). Successful genuine-vector publication and the live comparison remain required by the parent task.
-  - [x] V6-02C1: Fixed HTTP, exact admission and approved-payload primitives — [offline acceptance](../evaluation/reports/V6/V6-02C-io.md). Sealed packet binding, durable recordings and live execution remain open.
-  - [x] V6-02C2/C3: Durable recording/sender and native Node provider replay — [mechanical acceptance](../evaluation/reports/V6/V6-02C-recording.md). Full native execution and genuine-provider quality remain open.
+  - [x] V6-02C1: Fixed HTTP, exact admission and approved-payload primitives — [offline acceptance](../evaluation/reports/V6/V6-02C-io.md). Later packet/recording/runtime prerequisites are accepted below; genuine live acceptance remains open.
+  - [x] V6-02C2/C3: Durable recording/sender and native Node provider replay — [mechanical acceptance](../evaluation/reports/V6/V6-02C-recording.md). Native execution is accepted below; genuine-provider quality remains open.
   - [x] V6-02D1-D3: Native five-mode workers and independent disposable acceptance — [execution evidence](../evaluation/reports/V6/V6-02D-execution.md). Genuine-provider evaluation remains open.
-  - [x] V6-02D4: Sealed original-packet binding and source-access gate — [binding evidence](../evaluation/reports/V6/V6-02D-packet.md). Clean candidate/compiled identity and genuine held-out execution remain open.
+  - [x] V6-02D4: Sealed original-packet binding and source-access gate — [binding evidence](../evaluation/reports/V6/V6-02D-packet.md). Clean execution identity is accepted below; genuine held-out execution remains open.
+  - [x] V6-02E1/E2: Runtime identity, independent same-shortlist scoring and bounded parent mechanics — [offline implementation](../evaluation/reports/V6/V6-02E-candidate-execution.md) and [actual clean-runtime acceptance](../evaluation/reports/V6/V6-02F-clean-runtime.md). No genuine quality claim.
+  - [x] V6-02F: Coherent RC metadata/engine identities and isolated execution preparation — [local artifacts](../evaluation/reports/V6/V6-02F-identity.md) and [clean identity](../evaluation/reports/V6/V6-02F-clean-runtime.md).
+  - [ ] V6-02E3: Secure provider configuration, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. OpenAI account/destination selection is pending; no paid call or original held-out interpretation has occurred.
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
