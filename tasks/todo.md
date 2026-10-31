@@ -328,6 +328,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [ ] V6-02: [Held-out retrieval evaluation](versions/V6-release.md#v6-02-held-out-retrieval-evaluation) — evidence: pending.
   - [x] V6-02B: Explicit PostgreSQL profile storage and dispatch mechanics — [native acceptance and limits](../evaluation/reports/V6/V6-02B.md). Successful genuine-vector publication and the live comparison remain required by the parent task.
+  - [x] V6-02C1: Fixed HTTP, exact admission and approved-payload primitives — [offline acceptance](../evaluation/reports/V6/V6-02C-io.md). Sealed packet binding, durable recordings and live execution remain open.
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -3593,3 +3594,43 @@ remains unassessed. Next: commit/push accepted mechanics, then implement bounded
 live HTTP/recording and the five-mode runner, obtain genuine-profile publication
 evidence and refreeze candidate identity before held-out access. Secure key
 target selection is pending. V6-03 through V6-09 remain required.
+
+
+V6-02C / LEIO-r1 assignment: RUNNING. Shared outcome: tested fixed-endpoint
+async HTTP and exact admission primitives for the frozen live comparison.
+Sol `rename_reference_audit` owns only `tools/provider_http.py` and its focused
+test file. Sol `v601_metrics` owns only `tools/live_evaluation_budget.py` and its
+focused tests, and assembles the pair. Root owns LEIO-r1, payload/journal wrapper,
+pricing/configuration, integration, tracker/Git and escalation. Existing provider
+mapping dataclasses are read-only; core/storage/schema/locks remain protected.
+Peers resolve concrete interface dependencies directly. Independent writes,
+one serial test slot (HTTP first), no live requests, keys, services or installs.
+Official sources rechecked 31 October 2026: OpenAI text-embedding-3-small and
+Cohere rerank-v5.0-fast each USD 0.02 per million input tokens. Frozen limits
+remain USD 0.02 total/USD 0.01 each, 60 dispatch attempts, concurrency one,
+zero retries. Reported usage may settle a conservative estimate; account billing
+stays unknown. Public-payload gating, durable recordings, genuine publication,
+five-mode execution and candidate refreeze remain required. No primitive or
+mock-I/O pass alone completes V6-02. Key target selection is still pending.
+
+
+V6-02C1 final handoff: COMPLETE offline primitives; parent V6-02C/V6-02 OPEN.
+Sol HTTP and budget peers delivered disjoint source/test pairs under LEIO-r1;
+budget peer assembled them and directly resolved retained HTTP exception
+contexts and malformed-body error classification. Root owns all files after
+transfer, added `tools/evaluation_payloads.py` plus tests, and covered sanitized
+client-close errors. No contract or public core/storage/lock boundary changed.
+Root inspected source and ran the final combined command: 112 passed (29
+payload, 25 budget, 32 HTTP, 26 provider adapter), zero skips, no live I/O.
+Owned whitespace, links and self-contained prose checks passed. Official model
+prices were rechecked before the dated admission implementation; account cost
+remains unknown. Recorded limits stay USD 0.02 total/0.01 each, 60 attempts,
+concurrency one and no retries. The pure payload gate uses issued pinned token
+counts and approved text snapshots; the runner must still verify packet origin.
+Report: `evaluation/reports/V6/V6-02C-io.md`. No keys, held-out labels, services,
+dependency installs or publication. Existing user prose/audits preserved.
+Headroom: 31 GiB disk, 47 percent memory free; no owned process. Learning remains
+unassessed. Next smallest action: durable pending/completed call journal and
+public sealed packet/five-mode orchestration, then genuine provider publication
+and bounded live/replay evaluation. Key target selection remains pending;
+no primitive result establishes live quality, TLS or release readiness.
