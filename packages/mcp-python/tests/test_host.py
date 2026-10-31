@@ -255,6 +255,18 @@ class Bytes:
     async def receive(self,size):return next(self.chunks,b'')
 
 
+def test_output_wrapper_closes_borrowed_stream_once():
+    from cragkit_mcp import _SafeWrite
+    class Stream:
+        closes=0
+        async def aclose(self):self.closes+=1
+    async def scenario():
+        stream=Stream()
+        await _SafeWrite(stream).aclose()
+        assert stream.closes==1
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize('chunks',[[b'x'*65536],[b'x'*40000,b'x'*25536],[b'\xff\n'],[b'{bad secret\n'],[b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'],[b'{}']])
 def test_stdio_rejects_oversized_malformed_utf8_json_and_incomplete_frames(chunks):
     async def scenario():

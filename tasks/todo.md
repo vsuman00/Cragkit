@@ -306,11 +306,11 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
     - [x] V5-04G3: Tombstone-bound scoped purge, late-write safety, cleanup and native acceptance. COMPLETE for the supported native single-node profile; [evidence](../evaluation/reports/V5/V5-04G3.md) records both runtimes, fault refusals and limits.
   - [x] V5-04H: All 43 exact native fault IDs accepted; [matrix and final regression evidence](../evaluation/reports/V5/V5-04H.md).
 
-- [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
+- [x] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — [final acceptance](../evaluation/reports/V5/V5-C2.md).
 
-- [ ] V5-06: [Optional MCP host](versions/V5-integrations.md#v5-06-optional-mcp-host) — evidence: pending.
+- [x] V5-06: [Optional MCP host](versions/V5-integrations.md#v5-06-optional-mcp-host) — [final acceptance](../evaluation/reports/V5/V5-C2.md).
 
-- [ ] V5-C2: Demonstration, relevant regression checks, learning review and resource note through V5-06.
+- [x] V5-C2: Demonstrations, core/shared regressions, optional-host suites/types and resource observations passed; [evidence](../evaluation/reports/V5/V5-C2.md), learner practice unassessed.
 
 - [ ] V5-07: [Backend and transport parity](versions/V5-integrations.md#v5-07-backend-and-transport-parity) — evidence: pending.
 
