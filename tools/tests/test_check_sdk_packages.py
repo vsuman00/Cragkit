@@ -10,7 +10,7 @@ import pytest
 def checker(monkeypatch):
     directory=Path(__file__).resolve().parents[1]
     monkeypatch.syspath_prepend(str(directory))
-    spec=importlib.util.spec_from_file_location('check_v4',directory/'check_v4.py')
+    spec=importlib.util.spec_from_file_location('check_sdk_packages',directory/'check_sdk_packages.py')
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

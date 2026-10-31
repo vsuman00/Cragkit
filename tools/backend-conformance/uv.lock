@@ -181,10 +181,30 @@ provides-extras = ["postgres", "qdrant", "tokenizers"]
 [package.metadata.requires-dev]
 dev = [
     { name = "build", specifier = "==1.6.1" },
+    { name = "httpx", specifier = "==0.28.1" },
     { name = "jsonschema", specifier = "==4.26.0" },
     { name = "mypy", specifier = "==2.4.0" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
+    { name = "psycopg-pool", specifier = "==3.3.3" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "tiktoken", specifier = "==0.14.0" },
+]
+
+[[package]]
+name = "cragkit-backend-conformance"
+version = "0.0.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "cragkit", extra = ["postgres", "qdrant", "tokenizers"] },
+    { name = "cragkit-langchain" },
+    { name = "cragkit-mcp" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cragkit", extras = ["postgres", "qdrant", "tokenizers"], editable = "../../packages/python" },
+    { name = "cragkit-langchain", editable = "../../packages/langchain-python" },
+    { name = "cragkit-mcp", editable = "../../packages/mcp-python" },
 ]
 
 [[package]]
@@ -229,23 +249,6 @@ dev = [
     { name = "mypy", specifier = "==2.4.0" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "tiktoken", specifier = "==0.14.0" },
-]
-
-[[package]]
-name = "cragkit-v5-conformance"
-version = "0.0.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "cragkit", extra = ["postgres", "qdrant", "tokenizers"] },
-    { name = "cragkit-langchain" },
-    { name = "cragkit-mcp" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cragkit", extras = ["postgres", "qdrant", "tokenizers"], editable = "../../packages/python" },
-    { name = "cragkit-langchain", editable = "../../packages/langchain-python" },
-    { name = "cragkit-mcp", editable = "../../packages/mcp-python" },
 ]
 
 [[package]]

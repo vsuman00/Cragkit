@@ -10,7 +10,7 @@ import {EmbeddingAdapter,FAKE_PROFILE} from '../packages/typescript/dist/embeddi
 import {RerankingAdapter} from '../packages/typescript/dist/reranking.js';
 import {Cl100kCounter} from '../packages/typescript/dist/context.js';
 import {parse_request,parse_scope} from '../packages/typescript/dist/contracts.js';
-import {encode} from '../evaluation/runners/synthetic-vectors.mjs';
+import {encode} from '../evaluation/runners/synthetic_vectors.mjs';
 import {verifyNeonResource} from './check_typescript_postgres.mjs';
 
 function privateJSON(path){

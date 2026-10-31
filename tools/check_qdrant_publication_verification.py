@@ -66,7 +66,7 @@ def failure_observation(value):
 async def node_publication_verification_cases(value):
     environment = {key: val for key, val in os.environ.items() if not key.startswith(('PG', 'QDRANT__'))
         and key not in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'RUST_LOG')}
-    process = await asyncio.create_subprocess_exec('node', str(ROOT / 'tools/qdrant_publication_verification_node.mjs'),
+    process = await asyncio.create_subprocess_exec('node', str(ROOT / 'tools/qdrant_publication_verification_cases.mjs'),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         env=environment, start_new_session=True, limit=65536)
     output = asyncio.create_task(read_bounded(process.stdout, 65536))

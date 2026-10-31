@@ -2,12 +2,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {retrieve_candidates} from '../examples/qdrant_dense.mjs';
-import {FAKE_PROFILE,OPENAI_PROFILE} from '../packages/typescript/dist/embeddings.js';
-import {ExecutionLedger,BudgetExhausted} from '../packages/typescript/dist/execution.js';
-import {ProviderUnavailable,UnsupportedCapability} from '../packages/typescript/dist/errors.js';
-import {QdrantSearchStore} from '../packages/typescript/dist/qdrant.js';
-const fixture=JSON.parse(readFileSync(new URL('../contracts/fixtures/qdrant_candidates.json',import.meta.url)));
+import {retrieve_candidates} from '../../../examples/qdrant_dense.mjs';
+import {FAKE_PROFILE,OPENAI_PROFILE} from '../dist/embeddings.js';
+import {ExecutionLedger,BudgetExhausted} from '../dist/execution.js';
+import {ProviderUnavailable,UnsupportedCapability} from '../dist/errors.js';
+import {QdrantSearchStore} from '../dist/qdrant.js';
+const fixture=JSON.parse(readFileSync(new URL('../../../contracts/fixtures/qdrant_candidates.json',import.meta.url)));
 async function setup(profile=FAKE_PROFILE,limits={max_candidates:2,max_provider_calls:1}){
   const calls=[];
   const transport={bounded_responses:true,cancellation_safe:true,async request(method,path,options){

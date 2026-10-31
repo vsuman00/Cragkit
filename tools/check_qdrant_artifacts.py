@@ -1,4 +1,4 @@
-"""Build local MCP archives and check isolated V5 optional installation profiles."""
+"""Build MCP archives and verify isolated backend, tokenizer and SDK installations."""
 from __future__ import annotations
 
 import argparse
@@ -96,7 +96,7 @@ def accept(root: Path, core: Path, output: Path) -> dict[str, Any]:
                 run(['uv', 'pip', 'install', '--python', str(python), '--require-hashes', '-r', str(requirements)], work, commands)
                 packages = [str(core_wheel)] + ([str(wheel)] if profile == 'mcp' else [])
                 run(['uv', 'pip', 'install', '--python', str(python), '--no-deps', *packages], work, commands)
-                probe = work / 'probe_v5_installed.py'; shutil.copyfile(root / 'tools/probe_v5_installed.py', probe)
+                probe = work / 'probe_qdrant_installed.py'; shutil.copyfile(root / 'tools/probe_qdrant_installed.py', probe)
                 report['profiles']['python'][profile] = json.loads(run([str(python), '-I', '-B', str(probe), '--profile', profile], work, commands))
                 if profile == 'mcp':
                     harness = work / 'python-tests/packages/mcp-python/tests'; harness.mkdir(parents=True)
@@ -119,7 +119,7 @@ def accept(root: Path, core: Path, output: Path) -> dict[str, Any]:
                 (consumer / 'package.json').write_text(json.dumps(dict(private=True, type='module', dependencies=dependencies, overrides=overrides)))
                 run(['npm', 'install', '--ignore-scripts', '--no-audit', '--no-fund'], consumer, commands)
                 check_node_lock(json.loads((consumer / 'package-lock.json').read_text())['packages'], expected)
-                shutil.copyfile(root / 'tools/probe_v5_installed.mjs', consumer / 'probe.mjs')
+                shutil.copyfile(root / 'tools/probe_qdrant_installed.mjs', consumer / 'probe.mjs')
                 report['profiles']['node'][profile] = json.loads(run(['node', 'probe.mjs', profile], consumer, commands))
                 if profile == 'mcp':
                     tests = consumer / 'packages/mcp-typescript/tests'; tests.mkdir(parents=True)

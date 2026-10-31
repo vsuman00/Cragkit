@@ -2,7 +2,7 @@
 
 State: COMPLETE for the requested local setup and mechanics verification on
 31 October 2026. Human observations remain blank in the
-[checklist](../../../examples/v5_rag/CHECKLIST.md). This is exploratory project
+[checklist](../../../examples/pilot_rag/CHECKLIST.md). This is exploratory project
 integration, not V6-05 independent usability acceptance or release readiness.
 
 For example, `ask cache ttl` returned both dated synthetic sources as exact

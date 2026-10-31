@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location('v6_metrics', Path(__file__).resolve().parents[2] / 'evaluation/runners/v6_metrics.py')
+SPEC = importlib.util.spec_from_file_location('benchmark_metrics', Path(__file__).resolve().parents[2] / 'evaluation/runners/benchmark_metrics.py')
 METRICS = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(METRICS)
 

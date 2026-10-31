@@ -1,4 +1,4 @@
-"""Run the local V0 acceptance checks sequentially."""
+"""Run core tests, shared conformance and clean package checks sequentially."""
 from __future__ import annotations
 
 import argparse
@@ -21,7 +21,7 @@ class Step(NamedTuple):
 class PipelineFailure(RuntimeError):
     def __init__(self, stage: str) -> None:
         self.stage = stage
-        super().__init__(f"Local V0 checks failed at stage: {stage}.")
+        super().__init__(f"Core checks failed at stage: {stage}.")
 
 
 def pipeline(root: Path, artifacts_dir: Path) -> tuple[Step, ...]:

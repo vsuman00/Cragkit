@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'evaluation/runners'))
-from v2_metrics import aggregate, score_question
+from dense_metrics import aggregate, score_question
 from check_evidence_native import reviewed_policy
 from check_hybrid import require, normalized, evaluation_profile, evaluation_limits
 

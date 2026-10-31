@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {replay,PROFILE} from '../../../tools/check_typescript_v3_calibration.mjs';
+import {replay,PROFILE} from '../../../tools/check_typescript_rerank_calibration.mjs';
 import {InvalidRequest} from '../dist/errors.js';
 import {RerankingAdapter} from '../dist/reranking.js';
 const sha=value=>createHash('sha256').update(value).digest('hex');
@@ -90,7 +90,7 @@ test('CLI executes through a symlink in a directory with spaces',async()=>{
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'cragkit replay '));
   try{
     const entry=path.join(directory,'linked replay.mjs'),payload=path.join(directory,'public.json');
-    fs.symlinkSync(fileURLToPath(new URL('../../../tools/check_typescript_v3_calibration.mjs',import.meta.url)),entry);
+    fs.symlinkSync(fileURLToPath(new URL('../../../tools/check_typescript_rerank_calibration.mjs',import.meta.url)),entry);
     const a=item('a','public synthetic evidence'),input=example('symlink-case',[a]);
     fs.writeFileSync(payload,JSON.stringify({cases:[input],recordings:{'symlink-case':recording([a])}}));
     const result=spawnSync(process.execPath,[entry,'--replay',payload],{encoding:'utf8',timeout:10000});

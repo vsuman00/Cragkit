@@ -66,7 +66,7 @@ Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
 ### Run Local Checks
 
 ```sh
-python3 tools/check_v0.py
+python3 tools/check_core_pipeline.py
 ```
 
 This runner:
@@ -136,6 +136,7 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 - [Agent instructions](AGENTS.md) — Bounded ownership and resource policy
 - [Coordination protocol](docs/agents/WORKFLOW.md) — Multi-agent coordination
 - [Version control](docs/version-control.md) — Scoped commits, immediate pushes and synchronization checks
+- [Tooling entry points](docs/tooling.md) — Current command roles and historical-name lookup
 - [First open-source release guide](docs/open-source-release-guide.md) — Learn package builds, testing, CI, publishing and maintenance
 
 </details>

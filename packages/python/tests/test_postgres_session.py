@@ -306,7 +306,11 @@ def test_malformed_deadline_is_rejected_before_lease():
 
 
 def harness_module():
-    path = Path(__file__).resolve().parents[3] / 'tools/check_python_postgres.py'
+    import sys
+    tools_dir = Path(__file__).resolve().parents[3] / 'tools'
+    if str(tools_dir) not in sys.path:
+        sys.path.insert(0, str(tools_dir))
+    path = tools_dir / 'check_python_postgres.py'
     spec = importlib.util.spec_from_file_location('runtime_harness', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

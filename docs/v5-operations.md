@@ -50,7 +50,7 @@ are focused regression checks, not a network security sandbox.
 
 ```sh
 python3 tools/check_artifacts.py --output-dir artifacts/V5/V5-08/core
-python3 tools/check_v5_artifacts.py --core-artifacts artifacts/V5/V5-08/core --output-dir artifacts/V5/V5-08/optional
+python3 tools/check_qdrant_artifacts.py --core-artifacts artifacts/V5/V5-08/core --output-dir artifacts/V5/V5-08/optional
 ```
 
 The first command builds and checks the core wheel, source distribution, rebuilt wheel

@@ -75,7 +75,7 @@ def normalize(raw, candidates):
 
 
 async def run(baseline_path, output_path):
-    from v3_calibration import prepare,replay,evaluate
+    from rerank_calibration import prepare,replay,evaluate
     baseline_bytes=baseline_path.read_bytes()
     baseline=json.loads(baseline_bytes.decode().splitlines()[-1])
     prepared=prepare(baseline)
@@ -154,7 +154,7 @@ async def node_parity(cases,recordings,results):
     with tempfile.TemporaryDirectory(prefix='cragkit-v3-replay-') as directory:
         payload=Path(directory)/'public.json'
         private_write(payload,dict(cases=cases,recordings=recordings))
-        node=subprocess.run(['node','tools/check_typescript_v3_calibration.mjs','--replay',str(payload)],
+        node=subprocess.run(['node','tools/check_typescript_rerank_calibration.mjs','--replay',str(payload)],
             cwd=ROOT,timeout=30,capture_output=True,text=True,check=False)
         if node.returncode or json.loads(node.stdout)!=results:raise ValueError()
 

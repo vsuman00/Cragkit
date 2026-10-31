@@ -17,7 +17,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'evaluation/runners'))
 from synthetic_vectors import encode
-from v2_metrics import aggregate, score_question
+from dense_metrics import aggregate, score_question
 
 
 class HybridCheckError(RuntimeError):

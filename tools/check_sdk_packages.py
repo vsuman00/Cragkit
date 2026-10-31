@@ -1,4 +1,4 @@
-"""Verify V4 core and optional SDK packages serially without live providers or databases."""
+"""Verify core and optional LangChain packages, including clean installed artifacts."""
 from __future__ import annotations
 
 import argparse
@@ -8,7 +8,7 @@ import subprocess
 import sys
 from typing import Any, Callable
 
-from check_v0 import PipelineFailure, Step, pipeline as core_pipeline, run_checks
+from check_core_pipeline import PipelineFailure, Step, pipeline as core_pipeline, run_checks
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None, *, runner: Callable[..., Any] = subproce
     try:
         count=run_checks(ROOT,output,runner,steps=pipeline(ROOT,output))
     except PipelineFailure as error:
-        print(f'Local V4 checks failed at stage: {error.stage}.',file=sys.stderr)
+        print(f'SDK package checks failed at stage: {error.stage}.',file=sys.stderr)
         return 1
     print(json.dumps({'state':'passed','steps':count,'artifacts_dir':str(output)}))
     return 0

@@ -5,7 +5,7 @@ import {PostgresSession} from '../packages/typescript/dist/postgres-session.js';
 import {parse_request,parse_scope} from '../packages/typescript/dist/contracts.js';
 import {ProviderUnavailable} from '../packages/typescript/dist/errors.js';
 import {now} from '../packages/typescript/dist/postgres-pool.js';
-import {encode} from '../evaluation/runners/synthetic-vectors.mjs';
+import {encode} from '../evaluation/runners/synthetic_vectors.mjs';
 let input='';for await(const part of process.stdin)input+=part;
 const fixture=JSON.parse(input),results=[];
 const original=PostgresSession.prototype.transaction;

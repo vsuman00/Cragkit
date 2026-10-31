@@ -10,7 +10,7 @@ import pytest
 from cragkit.assessment import assess_evidence
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location('v3_calibration', ROOT / 'evaluation/runners/v3_calibration.py')
+SPEC = importlib.util.spec_from_file_location('rerank_calibration', ROOT / 'evaluation/runners/rerank_calibration.py')
 CAL = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CAL)
 

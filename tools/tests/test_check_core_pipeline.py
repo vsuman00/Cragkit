@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location("check_v0", Path(__file__).resolve().parents[1] / "check_v0.py")
+SPEC = importlib.util.spec_from_file_location("check_core_pipeline", Path(__file__).resolve().parents[1] / "check_core_pipeline.py")
 assert SPEC and SPEC.loader
 CHECK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECK)

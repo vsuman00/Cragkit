@@ -55,7 +55,7 @@ def check_configuration(root: Path, configuration: dict[str, Any]) -> dict[str, 
             and live.get('max_calls') == 60, 'unfrozen_live_limits')
     inputs = configuration.get('inputs', {})
     required = {'evaluation/corpus/manifest.json', 'evaluation/questions/dev.json',
-                'evaluation/review/seal.json', 'evaluation/runners/v6_metrics.py',
+                'evaluation/review/seal.json', 'evaluation/runners/benchmark_metrics.py',
                 'evaluation/release/V6-metrics.md', 'evaluation/release/V6-baselines.json'}
     require(type(inputs) is dict and set(inputs) == required, 'missing_frozen_inputs')
     for name, digest in inputs.items():

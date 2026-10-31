@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 TOOLS = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location('v6_release', TOOLS / 'check_v6_release.py')
+SPEC = importlib.util.spec_from_file_location('check_release_readiness', TOOLS / 'check_release_readiness.py')
 CHECK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECK)
 ROOT = TOOLS.parent
@@ -41,7 +41,7 @@ def test_incomplete_or_leaked_candidate_is_not_accepted(field, value, code):
 
 
 def test_changed_policy_and_weakened_invariants_refused():
-    candidate = configuration(); candidate['inputs']['evaluation/runners/v6_metrics.py'] = '0'*64
+    candidate = configuration(); candidate['inputs']['evaluation/runners/benchmark_metrics.py'] = '0'*64
     with pytest.raises(CHECK.ReleaseConfigurationError, match='frozen_input_drift'):
         CHECK.check_configuration(ROOT, candidate)
     candidate = configuration(); candidate['quality_targets']['false_sufficient_count'] = 1

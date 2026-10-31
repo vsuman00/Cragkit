@@ -12,7 +12,7 @@ from cragkit.errors import ProviderUnavailable, UnsupportedCapability
 from cragkit.execution import BudgetExhausted, ExecutionLedger
 from cragkit.qdrant import QdrantSearchStore
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 _spec = importlib.util.spec_from_file_location('qdrant_dense_example', ROOT / 'examples/qdrant_dense.py')
 example = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(example)

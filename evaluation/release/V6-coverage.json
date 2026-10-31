@@ -100,8 +100,8 @@
         "packages/typescript/tests/results.test.mjs",
         "packages/python/tests/test_assessment.py",
         "packages/typescript/tests/assessment.test.mjs",
-        "packages/python/tests/test_retrieval_v3.py",
-        "packages/typescript/tests/retrieval-v3.test.mjs",
+        "packages/python/tests/test_retrieval_evidence.py",
+        "packages/typescript/tests/retrieval-evidence.test.mjs",
         "packages/python/tests/test_corrective.py",
         "packages/typescript/tests/corrective.test.mjs",
         "packages/typescript/src/results.ts",
@@ -252,8 +252,8 @@
         "evaluation/reports/V5/V5-exit.md",
         "packages/python/tests/test_import.py",
         "packages/typescript/tests/import.test.mjs",
-        "packages/python/tests/test_existing_index_example.py",
-        "packages/typescript/tests/existing-index-example.test.mjs"
+        "packages/python/tests/test_existing_index_adapter.py",
+        "packages/typescript/tests/existing-index-adapter.test.mjs"
       ],
       "state": "release_validation_pending",
       "limitations": [
@@ -451,8 +451,8 @@
         "packages/typescript/tests/postgres-pool.test.mjs",
         "packages/python/tests/test_qdrant.py",
         "packages/typescript/tests/qdrant.test.mjs",
-        "packages/python/tests/test_existing_index_example.py",
-        "packages/typescript/tests/existing-index-example.test.mjs",
+        "packages/python/tests/test_existing_index_adapter.py",
+        "packages/typescript/tests/existing-index-adapter.test.mjs",
         "evaluation/reports/V1/V1-10-12.md",
         "packages/typescript/src/postgres-pool.ts",
         "packages/python/src/cragkit/qdrant.py",
@@ -469,8 +469,8 @@
           "packages/typescript/tests/postgres-pool.test.mjs",
           "packages/python/tests/test_qdrant.py",
           "packages/typescript/tests/qdrant.test.mjs",
-          "packages/python/tests/test_existing_index_example.py",
-          "packages/typescript/tests/existing-index-example.test.mjs"
+          "packages/python/tests/test_existing_index_adapter.py",
+          "packages/typescript/tests/existing-index-adapter.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -1593,8 +1593,8 @@
         "tasks/EDGE_CASES.md",
         "packages/python/tests/test_assessment.py",
         "packages/typescript/tests/assessment.test.mjs",
-        "packages/python/tests/test_retrieval_v3.py",
-        "packages/typescript/tests/retrieval-v3.test.mjs",
+        "packages/python/tests/test_retrieval_evidence.py",
+        "packages/typescript/tests/retrieval-evidence.test.mjs",
         "evaluation/reports/V3/V3-08-exit.md",
         "packages/python/src/cragkit/assessment.py",
         "packages/typescript/src/assessment.ts"
@@ -1608,8 +1608,8 @@
         "unit_contract": [
           "packages/python/tests/test_assessment.py",
           "packages/typescript/tests/assessment.test.mjs",
-          "packages/python/tests/test_retrieval_v3.py",
-          "packages/typescript/tests/retrieval-v3.test.mjs"
+          "packages/python/tests/test_retrieval_evidence.py",
+          "packages/typescript/tests/retrieval-evidence.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -1627,8 +1627,8 @@
         "tasks/EDGE_CASES.md",
         "packages/python/tests/test_assessment.py",
         "packages/typescript/tests/assessment.test.mjs",
-        "packages/python/tests/test_retrieval_v3.py",
-        "packages/typescript/tests/retrieval-v3.test.mjs",
+        "packages/python/tests/test_retrieval_evidence.py",
+        "packages/typescript/tests/retrieval-evidence.test.mjs",
         "evaluation/reports/V3/V3-08-exit.md",
         "evaluation/reports/V0/V0-07.md",
         "evaluation/reports/V0/V0-05.md",
@@ -1644,8 +1644,8 @@
         "unit_contract": [
           "packages/python/tests/test_assessment.py",
           "packages/typescript/tests/assessment.test.mjs",
-          "packages/python/tests/test_retrieval_v3.py",
-          "packages/typescript/tests/retrieval-v3.test.mjs"
+          "packages/python/tests/test_retrieval_evidence.py",
+          "packages/typescript/tests/retrieval-evidence.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -1663,8 +1663,8 @@
         "tasks/EDGE_CASES.md",
         "packages/python/tests/test_assessment.py",
         "packages/typescript/tests/assessment.test.mjs",
-        "packages/python/tests/test_retrieval_v3.py",
-        "packages/typescript/tests/retrieval-v3.test.mjs",
+        "packages/python/tests/test_retrieval_evidence.py",
+        "packages/typescript/tests/retrieval-evidence.test.mjs",
         "evaluation/reports/V3/V3-08-exit.md",
         "packages/python/src/cragkit/assessment.py",
         "packages/typescript/src/assessment.ts"
@@ -1678,8 +1678,8 @@
         "unit_contract": [
           "packages/python/tests/test_assessment.py",
           "packages/typescript/tests/assessment.test.mjs",
-          "packages/python/tests/test_retrieval_v3.py",
-          "packages/typescript/tests/retrieval-v3.test.mjs"
+          "packages/python/tests/test_retrieval_evidence.py",
+          "packages/typescript/tests/retrieval-evidence.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -1697,8 +1697,8 @@
         "tasks/EDGE_CASES.md",
         "packages/python/tests/test_assessment.py",
         "packages/typescript/tests/assessment.test.mjs",
-        "packages/python/tests/test_retrieval_v3.py",
-        "packages/typescript/tests/retrieval-v3.test.mjs",
+        "packages/python/tests/test_retrieval_evidence.py",
+        "packages/typescript/tests/retrieval-evidence.test.mjs",
         "evaluation/reports/V3/V3-08-exit.md",
         "evaluation/reports/V4/V4-SECURITY-VERIFICATION.md",
         "packages/python/src/cragkit/assessment.py",
@@ -1713,8 +1713,8 @@
         "unit_contract": [
           "packages/python/tests/test_assessment.py",
           "packages/typescript/tests/assessment.test.mjs",
-          "packages/python/tests/test_retrieval_v3.py",
-          "packages/typescript/tests/retrieval-v3.test.mjs"
+          "packages/python/tests/test_retrieval_evidence.py",
+          "packages/typescript/tests/retrieval-evidence.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -1734,8 +1734,8 @@
         "packages/typescript/tests/context.test.mjs",
         "packages/python/tests/test_packing.py",
         "packages/typescript/tests/packing.test.mjs",
-        "packages/python/tests/test_retrieval_v3.py",
-        "packages/typescript/tests/retrieval-v3.test.mjs",
+        "packages/python/tests/test_retrieval_evidence.py",
+        "packages/typescript/tests/retrieval-evidence.test.mjs",
         "evaluation/reports/V3/V3-08-exit.md",
         "packages/python/src/cragkit/context.py",
         "packages/typescript/src/context.ts",
@@ -1753,8 +1753,8 @@
           "packages/typescript/tests/context.test.mjs",
           "packages/python/tests/test_packing.py",
           "packages/typescript/tests/packing.test.mjs",
-          "packages/python/tests/test_retrieval_v3.py",
-          "packages/typescript/tests/retrieval-v3.test.mjs"
+          "packages/python/tests/test_retrieval_evidence.py",
+          "packages/typescript/tests/retrieval-evidence.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -1774,8 +1774,8 @@
         "packages/typescript/tests/context.test.mjs",
         "packages/python/tests/test_packing.py",
         "packages/typescript/tests/packing.test.mjs",
-        "packages/python/tests/test_retrieval_v3.py",
-        "packages/typescript/tests/retrieval-v3.test.mjs",
+        "packages/python/tests/test_retrieval_evidence.py",
+        "packages/typescript/tests/retrieval-evidence.test.mjs",
         "evaluation/reports/V3/V3-08-exit.md",
         "packages/python/src/cragkit/context.py",
         "packages/typescript/src/context.ts",
@@ -1793,8 +1793,8 @@
           "packages/typescript/tests/context.test.mjs",
           "packages/python/tests/test_packing.py",
           "packages/typescript/tests/packing.test.mjs",
-          "packages/python/tests/test_retrieval_v3.py",
-          "packages/typescript/tests/retrieval-v3.test.mjs"
+          "packages/python/tests/test_retrieval_evidence.py",
+          "packages/typescript/tests/retrieval-evidence.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -1814,8 +1814,8 @@
         "packages/typescript/tests/context.test.mjs",
         "packages/python/tests/test_packing.py",
         "packages/typescript/tests/packing.test.mjs",
-        "packages/python/tests/test_retrieval_v3.py",
-        "packages/typescript/tests/retrieval-v3.test.mjs",
+        "packages/python/tests/test_retrieval_evidence.py",
+        "packages/typescript/tests/retrieval-evidence.test.mjs",
         "evaluation/reports/V3/V3-08-exit.md",
         "packages/python/src/cragkit/context.py",
         "packages/typescript/src/context.ts",
@@ -1833,8 +1833,8 @@
           "packages/typescript/tests/context.test.mjs",
           "packages/python/tests/test_packing.py",
           "packages/typescript/tests/packing.test.mjs",
-          "packages/python/tests/test_retrieval_v3.py",
-          "packages/typescript/tests/retrieval-v3.test.mjs"
+          "packages/python/tests/test_retrieval_evidence.py",
+          "packages/typescript/tests/retrieval-evidence.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -1854,8 +1854,8 @@
         "packages/typescript/tests/context.test.mjs",
         "packages/python/tests/test_packing.py",
         "packages/typescript/tests/packing.test.mjs",
-        "packages/python/tests/test_retrieval_v3.py",
-        "packages/typescript/tests/retrieval-v3.test.mjs",
+        "packages/python/tests/test_retrieval_evidence.py",
+        "packages/typescript/tests/retrieval-evidence.test.mjs",
         "evaluation/reports/V3/V3-08-exit.md",
         "evaluation/reports/V4/V4-SECURITY-VERIFICATION.md",
         "evaluation/reports/V4/V4-08-exit.md",
@@ -1875,8 +1875,8 @@
           "packages/typescript/tests/context.test.mjs",
           "packages/python/tests/test_packing.py",
           "packages/typescript/tests/packing.test.mjs",
-          "packages/python/tests/test_retrieval_v3.py",
-          "packages/typescript/tests/retrieval-v3.test.mjs"
+          "packages/python/tests/test_retrieval_evidence.py",
+          "packages/typescript/tests/retrieval-evidence.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -2242,8 +2242,8 @@
         "packages/typescript/tests/qdrant-publication.test.mjs",
         "packages/python/tests/test_qdrant_source.py",
         "packages/typescript/tests/qdrant-source.test.mjs",
-        "packages/python/tests/test_existing_index_example.py",
-        "packages/typescript/tests/existing-index-example.test.mjs",
+        "packages/python/tests/test_existing_index_adapter.py",
+        "packages/typescript/tests/existing-index-adapter.test.mjs",
         "evaluation/reports/V5/V5-04H.md",
         "packages/python/src/cragkit/qdrant_publication.py",
         "packages/typescript/src/qdrant-publication.ts",
@@ -2261,8 +2261,8 @@
           "packages/typescript/tests/qdrant-publication.test.mjs",
           "packages/python/tests/test_qdrant_source.py",
           "packages/typescript/tests/qdrant-source.test.mjs",
-          "packages/python/tests/test_existing_index_example.py",
-          "packages/typescript/tests/existing-index-example.test.mjs"
+          "packages/python/tests/test_existing_index_adapter.py",
+          "packages/typescript/tests/existing-index-adapter.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -2282,8 +2282,8 @@
         "packages/typescript/tests/qdrant-publication.test.mjs",
         "packages/python/tests/test_qdrant_source.py",
         "packages/typescript/tests/qdrant-source.test.mjs",
-        "packages/python/tests/test_existing_index_example.py",
-        "packages/typescript/tests/existing-index-example.test.mjs",
+        "packages/python/tests/test_existing_index_adapter.py",
+        "packages/typescript/tests/existing-index-adapter.test.mjs",
         "evaluation/reports/V5/V5-04H.md",
         "packages/python/src/cragkit/qdrant_publication.py",
         "packages/typescript/src/qdrant-publication.ts",
@@ -2301,8 +2301,8 @@
           "packages/typescript/tests/qdrant-publication.test.mjs",
           "packages/python/tests/test_qdrant_source.py",
           "packages/typescript/tests/qdrant-source.test.mjs",
-          "packages/python/tests/test_existing_index_example.py",
-          "packages/typescript/tests/existing-index-example.test.mjs"
+          "packages/python/tests/test_existing_index_adapter.py",
+          "packages/typescript/tests/existing-index-adapter.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",
@@ -2322,8 +2322,8 @@
         "packages/typescript/tests/qdrant-publication.test.mjs",
         "packages/python/tests/test_qdrant_source.py",
         "packages/typescript/tests/qdrant-source.test.mjs",
-        "packages/python/tests/test_existing_index_example.py",
-        "packages/typescript/tests/existing-index-example.test.mjs",
+        "packages/python/tests/test_existing_index_adapter.py",
+        "packages/typescript/tests/existing-index-adapter.test.mjs",
         "evaluation/reports/V5/V5-04H.md",
         "packages/python/src/cragkit/qdrant_publication.py",
         "packages/typescript/src/qdrant-publication.ts",
@@ -2341,8 +2341,8 @@
           "packages/typescript/tests/qdrant-publication.test.mjs",
           "packages/python/tests/test_qdrant_source.py",
           "packages/typescript/tests/qdrant-source.test.mjs",
-          "packages/python/tests/test_existing_index_example.py",
-          "packages/typescript/tests/existing-index-example.test.mjs"
+          "packages/python/tests/test_existing_index_adapter.py",
+          "packages/typescript/tests/existing-index-adapter.test.mjs"
         ],
         "native_integration": "Historical report/index only; inspect named report commands and target.",
         "live_provider": "Not established by unit doubles or synthetic native inputs.",

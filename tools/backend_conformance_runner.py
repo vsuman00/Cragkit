@@ -27,7 +27,7 @@ async def run(value):
         QdrantReconciliationVerifier,PostgresQdrantRecovery,PostgresQdrantPublicationAuthority,
         ManagedQdrantPublicationTransport,QdrantPublicationManager)
     from qdrant_supervisor_cases import plain,request_bytes,observed_listener
-    from v5_conformance_fixture import cases
+    from backend_conformance_fixture import cases
     inputs=value['inputs'];end=asyncio.get_running_loop().time()+120
     scope=parse_scope(inputs['scope']);objects=[];pools=[];address=None
     def pool(raw):

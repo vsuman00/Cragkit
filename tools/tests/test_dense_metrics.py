@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    'v2_metrics', Path(__file__).resolve().parents[2] / 'evaluation/runners/v2_metrics.py'
+    'dense_metrics', Path(__file__).resolve().parents[2] / 'evaluation/runners/dense_metrics.py'
 )
 assert SPEC and SPEC.loader
 METRICS = importlib.util.module_from_spec(SPEC)

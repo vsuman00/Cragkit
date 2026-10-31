@@ -3491,3 +3491,37 @@ access/live call/service/model download. Existing user-owned dirty files
 remain excluded. Next V6-02: implement the actual five-mode native comparison,
 then deliberate frozen held-out execution; dedicated OpenAI secure setup is
 pending, so no fake result may close live-quality acceptance. V6 remains active.
+
+## REF-01: Role-based tooling rename validation
+
+State: running, user-requested maintenance. The broader V6 goal is paused;
+no detached OpenAI-profile feature work is authorized by this validation task.
+Sol `rename_runtime` owns stale executable references in tools and calibration
+runners; Sol `rename_tests` owns test harness repairs and assembles the pair.
+Primary owns pipeline/artifact/release checks, current docs, manifests/locks,
+final serial integration, tracker and Git. Peers delivered four source fixes
+and a lazy-import regression without overlapping edits. Initial collection
+found 3,196 tests; focused renamed surfaces passed 161 tests. One test process
+at a time, fake providers, no paid calls or held-out scoring. Headroom: 31 GiB
+disk and 39 percent system memory free. Existing unrelated prose/audit edits
+and paused detached-worktree drafts are preserved. Acceptance: renamed core/SDK
+pipelines, optional installed artifacts, actual backend conformance, pilot
+smoke and explicit PostgreSQL prerequisite command; current documentation and
+frozen metric/path integrity verified separately from historical evidence.
+
+REF-01 final handoff: COMPLETE for the original checkout. Repaired lazy imports,
+subprocess/probe paths, actual native ESM resolution, renamed workspace metadata,
+current docs and frozen path/digest references. Added entry-point regressions;
+[validation report](../evaluation/reports/REFACTOR-VALIDATION.md) and structured
+results record actual evidence. Final checks: 3,199 Python/tool, 1,590 Node,
+72/69 LangChain, twelve isolated install profiles with 41/36 installed MCP,
+84 native retrieval calls/16 boundary refusals, 38 native publication checks,
+genuine PostgreSQL/pgvector prerequisite and 21 installed pilot smoke checks.
+All native cleanup verified; 16 seals and benchmark byte identity preserved;
+release settings unchanged. Initial native failure traced to bare package
+imports before repair; no trial-and-error provider runs. Final resources:
+31 GiB disk/39 percent memory free; serial checks, no owned service remains.
+Unrelated user prose/audits and paused detached-worktree drafts preserved.
+V6 is PAUSED by user; this maintenance acceptance does not resume or complete it.
+On explicit resume, reconcile detached profile drafts with the new paths before
+continuing V6-02; do not assume their unrun tests or live-provider gates passed.

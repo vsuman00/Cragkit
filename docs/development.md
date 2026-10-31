@@ -166,7 +166,7 @@ The user explicitly approved all 30 labels on 19 October 2026. After recording t
 Verified from the project root:
 
 ```sh
-python3 tools/check_v0.py
+python3 tools/check_core_pipeline.py
 ```
 
 All 12 stages passed: frozen setup, both typechecks, 155 Python/tool tests, 78 TypeScript tests/build, four schema checks, 66 native conformance cases, approved development-corpus validation, sealed input integrity and clean package verification. See [the CI profile](ci.md) for the stage policy and future hosted-job definition. Git was initialized afterward and the private [GitHub repository](https://github.com/vsuman00/Cragkit) was created under GIT-01. Hosted CI remains unrun; see [version control](version-control.md) for the current workflow.
@@ -465,7 +465,7 @@ Run the focused Node checks after building, then the shared checker from the roo
 npm --prefix packages/typescript run build
 node --test --test-concurrency=1 packages/typescript/tests/embeddings.test.mjs
 uv run --project packages/python --frozen python tools/check_embeddings.py
-python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-C1-final
+python3 tools/check_core_pipeline.py --artifacts-dir artifacts/V2/V2-C1-final
 ```
 
 The full profile now includes embedding parity and clean artifacts with both optional embedding entry points. It runs serially and may access registries for frozen dependency setup. [V2-03/V2-C1 evidence](../evaluation/reports/V2/V2-03-C1.md) records 41 shared synthetic cases and final local results. These checks do not call OpenAI or establish semantic quality/billing. Both runtimes explicitly reject excessive response depth/numeric-token length, duplicate keys, floating-point index/usage tokens and malformed vectors. Vector storage and reindex are next under V2-04.
@@ -526,7 +526,7 @@ uv run --project packages/python --frozen --no-sync --extra postgres python tool
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --vectors --typescript
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --lifecycle
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_neon_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --confirm-dedicated-target --check --vector-storage --allow-managed-vector-primitives --integration --security --allow-test-writes
-python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-04-final
+python3 tools/check_core_pipeline.py --artifacts-dir artifacts/V2/V2-04-final
 ```
 
 Run native checks before the final checkpoint: its frozen default Python installation removes optional drivers. Restore only the locked postgres extra when needed. Native fixtures require the accepted empty dedicated development target, verified TLS and private owner-only configuration outside Git. They use synthetic documents, temporary restricted roles/policies and at most two clients including the owner. Owner RPC actions are fixed fixture operations; no administrative credentials reach Node.
@@ -549,7 +549,7 @@ npm --prefix packages/typescript run build
 node --test --test-concurrency=1 packages/typescript/tests/dense.test.mjs
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_dense_contract.py
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --dense --typescript
-python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-05-final
+python3 tools/check_core_pipeline.py --artifacts-dir artifacts/V2/V2-05-final
 ```
 
 The explicit dense native fixture provisions only temporary restricted roles/policies and synthetic records on the accepted empty dedicated target. It reuses the optional profile/setup grants, holds at most two native clients including the owner, closes Python before Node and accepts only fixed local owner actions. No administrator credential reaches the child. Do native checks before the final frozen default checkpoint removes optional Python drivers; restore only the locked postgres extra if needed.
@@ -565,14 +565,14 @@ Pure fusion uses distinct ranks, keeps raw scores as provenance, normalizes fami
 Run from the root, serially:
 
 ```sh
-uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_fusion.py packages/python/tests/test_postgres_identifiers.py tools/tests/test_check_identifier_fusion.py tools/tests/test_check_v0.py -q
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_fusion.py packages/python/tests/test_postgres_identifiers.py tools/tests/test_check_identifier_fusion.py tools/tests/test_check_core_pipeline.py -q
 npm --prefix packages/typescript run build
 node --test --test-concurrency=1 packages/typescript/tests/fusion.test.mjs packages/typescript/tests/postgres-identifiers.test.mjs
 uv run --project packages/python --frozen --no-sync python tools/check_identifier_fusion.py
 uv sync --project packages/python --frozen --extra postgres
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --dense --typescript
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --vectors --typescript
-python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-06-final
+python3 tools/check_core_pipeline.py --artifacts-dir artifacts/V2/V2-06-final
 ```
 
 The dense native fixture now includes actual identifier storage/search, scope and filters before limits, grant-only access, source revocation/tombstones, common snapshots and actual three-branch fusion arithmetic in both runtimes. The vector fixture separately asserts that Node lexical and vector writers populate exact arrays. They use only synthetic data, restricted temporary roles, fixed owner actions and at most two database clients; their Node children receive restricted configuration only. The base legacy fixture has a separate administrator-negative check design under security follow-up; do not generalize these children's credential boundary to every harness.
@@ -590,14 +590,14 @@ Dense/hybrid reserve one embedding boundary invocation before a candidate lease.
 Run the following from the repository root, one command at a time:
 
 ```sh
-uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_hybrid.py packages/python/tests/test_hybrid_savepoint.py packages/python/tests/test_role_guards.py tools/tests/test_v2_metrics.py tools/tests/test_check_hybrid_contract.py tools/tests/test_check_python_postgres.py tools/tests/test_check_v0.py -q
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_hybrid.py packages/python/tests/test_hybrid_savepoint.py packages/python/tests/test_role_guards.py tools/tests/test_dense_metrics.py tools/tests/test_check_hybrid_contract.py tools/tests/test_check_python_postgres.py tools/tests/test_check_core_pipeline.py -q
 npm --prefix packages/typescript run build
 node --test --test-concurrency=1 packages/typescript/tests/hybrid.test.mjs packages/typescript/tests/hybrid-savepoint.test.mjs packages/typescript/tests/role-guards.test.mjs
 uv run --project packages/python --frozen --no-sync python tools/check_hybrid_contract.py
 uv sync --project packages/python --frozen --extra postgres
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --hybrid --typescript
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --typescript
-python3 tools/check_v0.py --artifacts-dir artifacts/V2/V2-exit
+python3 tools/check_core_pipeline.py --artifacts-dir artifacts/V2/V2-exit
 ```
 
 The explicit hybrid native command includes the V2-08 development ablation: nine approved document revisions, six question IDs frozen in the shared fixture before measurement, three modes and 18 requests per runtime. It reads no held-out labels. Python and Node compare full results after timing normalization; the label-blind hash encoder is a synthetic mechanics baseline. Historical logical revision filters map to generated physical IDs without changing labels. Active-generation candidate search intentionally misses a historical-only target; the report retains that regression. [Evaluation protocol](../evaluation/protocol.md#v2-development-ablation) and [V2 exit report](../evaluation/reports/V2/V2-07-08-exit.md).
@@ -620,7 +620,7 @@ npm --prefix packages/typescript run typecheck
 npm --prefix packages/typescript run build
 node --test --test-concurrency=1 packages/typescript/tests/reranking.test.mjs
 uv run --project packages/python --frozen --no-sync python tools/check_reranking.py
-python3 tools/check_v0.py --artifacts-dir artifacts/V3/V3-02/final
+python3 tools/check_core_pipeline.py --artifacts-dir artifacts/V3/V3-02/final
 ```
 
 Focused results: 26 Python tests and eight Node tests. The final checkpoint passed 18 stages, 870 Python/tool tests, 701 Node tests, 11 shared recorded adapter cases and four clean artifacts with three guarded installed import samples. Default installations imported the reranker modules without database/model extras or external I/O. These are native/synthetic checks; no real-model inference or relevance quality was evaluated. [Evidence and remaining gate](../evaluation/reports/V3/V3-02.md).
@@ -696,9 +696,9 @@ Shared reviewed examples are development lookup checks, not unseen semantic qual
 The optional `cragkit.evidence` / `cragkit/evidence` entry point combines [EP-r1](../contracts/EVIDENCE_PIPELINE_V3.md) packing and reassessment. `pack_and_assess` uses only emitted spans and allows one explicitly configured rebalance. A trusted PostgreSQL constructor `evidence_options` enables this pipeline; the request must declare renderer `cragkit.context.v2`. Legacy constructor defaults retain V1/V2 behavior.
 
 ```sh
-uv run --project packages/python --frozen pytest packages/python/tests/test_evidence.py packages/python/tests/test_retrieval_v3.py -q
+uv run --project packages/python --frozen pytest packages/python/tests/test_evidence.py packages/python/tests/test_retrieval_evidence.py -q
 npm --prefix packages/typescript run build
-node --test --test-concurrency=1 packages/typescript/tests/evidence.test.mjs packages/typescript/tests/retrieval-v3.test.mjs
+node --test --test-concurrency=1 packages/typescript/tests/evidence.test.mjs packages/typescript/tests/retrieval-evidence.test.mjs
 uv run --project packages/python --frozen python tools/check_evidence_pipeline.py
 uv sync --project packages/python --frozen --extra postgres
 uv run --project packages/python --frozen --no-sync --extra postgres python tools/check_python_postgres.py --config "$HOME/.config/cragkit/neon/admin-config.json" --allow-test-writes --neon --hybrid --evidence --typescript
@@ -711,11 +711,11 @@ Constructor options are policy, counter, rebalance, surrounding_bytes, reranker,
 The [frozen protocol](../evaluation/policies/V3-reviewed-span-v1.json) compares the same two authorized development candidates before and after reranking. [Observed results](../evaluation/reports/V3/V3-07.md) include raw-score recordings, independent label-based false-sufficient checks and separate pre-packing/packed metrics. The five hosted calls already completed; routine work must replay them rather than redispatch.
 
 ```sh
-uv run --project packages/python --frozen pytest tools/tests/test_v3_calibration.py tools/tests/test_run_v3_calibration.py -q
+uv run --project packages/python --frozen pytest tools/tests/test_rerank_calibration.py tools/tests/test_run_rerank_calibration.py -q
 node --test --test-concurrency=1 packages/typescript/tests/calibration-replay.test.mjs
 ```
 
-`tools/run_v3_calibration.py` refuses dispatch without `--allow-live`. Its explicit baseline/output arguments select a verified native baseline and task-owned report. A new live run requires its own recorded budget/rationale; it is not part of routine acceptance. Parent-bounded serial children read the private Cohere key, retain redacted call/failure accounting and never retry automatically. Node replay takes an explicit `--replay` local public JSON payload and never accesses credentials or the network.
+`tools/run_rerank_calibration.py` refuses dispatch without `--allow-live`. Its explicit baseline/output arguments select a verified native baseline and task-owned report. A new live run requires its own recorded budget/rationale; it is not part of routine acceptance. Parent-bounded serial children read the private Cohere key, retain redacted call/failure accounting and never retry automatically. Node replay takes an explicit `--replay` local public JSON payload and never accesses credentials or the network.
 
 ## V3 installed evidence release checkpoint
 
@@ -754,7 +754,7 @@ Verified focused commands from the repository root, one suite at a time:
 
 ```sh
 uv sync --project packages/python --frozen --extra qdrant
-uv run --project packages/python --frozen --no-sync --extra qdrant pytest packages/python/tests/test_qdrant.py packages/python/tests/test_qdrant_transport.py packages/python/tests/test_qdrant_embeddings.py tools/tests/test_check_qdrant.py tools/tests/test_qdrant_dense_example.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant pytest packages/python/tests/test_qdrant.py packages/python/tests/test_qdrant_transport.py packages/python/tests/test_qdrant_embeddings.py tools/tests/test_check_qdrant.py packages/python/tests/test_qdrant_dense_retrieval.py -q
 uv run --project packages/python --frozen --no-sync --extra qdrant mypy --config-file packages/python/pyproject.toml packages/python/src
 ```
 
@@ -768,7 +768,7 @@ uv run --project packages/python --frozen --no-sync --extra qdrant python tools/
 
 The checker creates one owned loopback process, private administrative/read-only keys and eight synthetic points. It runs the native runtimes serially and compares all returned nominations and ledger snapshots. It verifies write denial for the read-only key, deletes its collection, confirms an empty inventory, terminates the process and removes private config/data. Generated artifacts contain synthetic records only. Explicit clients must close the store and then their owned transport; borrowed resources are not closed by the store. Remote endpoints require verified HTTPS. Plain HTTP is allowed only for explicitly configured `127.0.0.1` or `::1` development endpoints; proxy/TLS bypass settings are unsupported.
 
-The [dense composition examples](../examples/qdrant_dense.md) connect E-r1 batch output to candidate search and preserve separate provider/candidate work. After Node build, the root command `node --test --test-concurrency=1 tools/test_qdrant_dense_example.mjs` checks their accounting and cancellation. The Python example checks are included in the focused command above. Real-profile tests inject routing spies; they make no paid calls or real-profile writes.
+The [dense composition examples](../examples/qdrant_dense.md) connect E-r1 batch output to candidate search and preserve separate provider/candidate work. After Node build, the root command `node --test --test-concurrency=1 packages/typescript/tests/qdrant-dense-retrieval.test.mjs` checks their accounting and cancellation. The Python example checks are included in the focused command above. Real-profile tests inject routing spies; they make no paid calls or real-profile writes.
 
 Add `--dense-only` to the native checker and select a separate artifact directory, such as `--artifacts-dir artifacts/V5/native-dense-only`, to verify a genuine dense-only collection. This mode uses fake E-r1 inference and batch binding before each actual scoped backend query. The accepted OpenAI configuration exposes dense only; no sparse model is required. [V5-02E evidence](../evaluation/reports/V5/V5-02E.md) records both deployment modes and their limits.
 
@@ -798,7 +798,7 @@ The optional `cragkit.corrective` / `cragkit/corrective` modules accept a truste
 Verified serial checkpoint:
 
 ```sh
-python3 tools/check_v0.py --artifacts-dir artifacts/V4/checkpoint-core
+python3 tools/check_core_pipeline.py --artifacts-dir artifacts/V4/checkpoint-core
 ```
 
 It runs 27 stages, including complete execution, planning, corrective and event parity. Clean installed archives also run the 44 V4 shared state-machine cases outside the checkout. The optional framework packages have separate environments; they are not installed by this core command. Internal core archives retain version 0.0.0; V4 is an implementation milestone, and public alpha publication remains separate.
@@ -810,7 +810,7 @@ Event exporters are cooperative async application callbacks. Retrieval only queu
 The separate `packages/langchain-python` project pins LangChain Core 1.7.0; `packages/langchain-typescript` pins `@langchain/core` 1.3.0 and LangSmith 0.11.1. Their locks include SDK dependencies; core manifests remain framework-free. See [the adapter guide](integrations/langchain.md).
 
 ```sh
-python3 tools/check_v4.py --artifacts-dir artifacts/V4/acceptance
+python3 tools/check_sdk_packages.py --artifacts-dir artifacts/V4/acceptance
 ```
 
 This serial entrypoint runs the 27 core stages followed by frozen SDK installs, both adapter typechecks, real SDK tests and clean optional archives/install tests: 34 stages total. It requires registry access for missing pinned dependencies. It does not run a live model or touch a database. Hosted CI remains unconfigured/unrun. For a focused SDK pass, run each command separately:
@@ -1415,8 +1415,8 @@ QCC-r1 preserves native score semantics and gives candidate admission one owner.
 uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_corrective.py packages/python/tests/test_qdrant_corrective_candidates.py -q
 npm --prefix packages/typescript run build
 node --test --test-concurrency=1 packages/typescript/tests/qdrant-corrective.test.mjs packages/typescript/tests/qdrant-corrective-candidates.test.mjs
-uv sync --project tools/v5-conformance --frozen
-uv run --project tools/v5-conformance --frozen --no-sync python tools/check_v5_conformance.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-07/conformance-both-final-02
+uv sync --project tools/backend-conformance --frozen
+uv run --project tools/backend-conformance --frozen --no-sync python tools/check_backend_conformance.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-07/conformance-both-final-02
 ```
 
 Choose a fresh artifact directory per native run. The locked tool environment
@@ -1437,8 +1437,8 @@ default setup can typecheck and test optional modules; wheel runtime dependencie
 and extras remain separate.
 
 ```sh
-python3 tools/check_v4.py --artifacts-dir artifacts/V5/V5-08/full-core-frameworks
-python3 tools/check_v5_artifacts.py --core-artifacts artifacts/V5/V5-08/full-core-frameworks/core --output-dir artifacts/V5/V5-08/artifacts-final-02
+python3 tools/check_sdk_packages.py --artifacts-dir artifacts/V5/V5-08/full-core-frameworks
+python3 tools/check_qdrant_artifacts.py --core-artifacts artifacts/V5/V5-08/full-core-frameworks/core --output-dir artifacts/V5/V5-08/artifacts-final-02
 ```
 
 The first command checks core, shared fixtures and optional LangChain packages,
@@ -1452,14 +1452,14 @@ provider quality, hosted CI and registry publication.
 
 ## V5 installed-package manual pilot
 
-[V5-PILOT-01](../examples/v5_rag/README.md) installs the existing V5 core wheel
+[V5-PILOT-01](../examples/pilot_rag/README.md) installs the existing V5 core wheel
 with its PostgreSQL extra into a separate application environment. From the
 repository root, the verified initial setup is:
 
 ```sh
-uv venv --python 3.14 examples/v5_rag/.venv
-uv pip install --python examples/v5_rag/.venv/bin/python 'artifacts/V5/V5-08/full-core-frameworks/core/python/cragkit-0.0.0-py3-none-any.whl[postgres]'
-uv run --project packages/python --frozen --no-sync python examples/v5_rag/session.py --smoke
+uv venv --python 3.14 examples/pilot_rag/.venv
+uv pip install --python examples/pilot_rag/.venv/bin/python 'artifacts/V5/V5-08/full-core-frameworks/core/python/cragkit-0.0.0-py3-none-any.whl[postgres]'
+uv run --project packages/python --frozen --no-sync python examples/pilot_rag/session.py --smoke
 ```
 
 Omit `--smoke` to start the interactive CLI. The launcher explicitly provisions
@@ -1468,8 +1468,8 @@ roles, then runs the installed application with Python isolated mode. It closes
 the setup administrator before opening the two max-one application pools and
 verifies database cleanup on normal exit. No hosted target or inference provider
 is used. Use `--corpus /absolute/private/pilot-corpus.json` for caller documents;
-the [guide](../examples/v5_rag/README.md) defines bounds and session lifetime.
-The [manual checklist](../examples/v5_rag/CHECKLIST.md) remains for human review.
+the [guide](../examples/pilot_rag/README.md) defines bounds and session lifetime.
+The [manual checklist](../examples/pilot_rag/CHECKLIST.md) remains for human review.
 See [actual pilot evidence](../evaluation/reports/V5/V5-PILOT-01.md); this is
 exploratory feedback, separate from V6 release and independent usability gates.
 
@@ -1481,8 +1481,8 @@ evaluation. The following command verifies configuration only and never opens
 held-out labels. It cannot establish release readiness.
 
 ```sh
-uv run --project packages/python --frozen --no-sync pytest tools/tests/test_v6_release.py tools/tests/test_v6_metrics.py -q
-python3 tools/check_v6_release.py
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_check_release_readiness.py tools/tests/test_benchmark_metrics.py -q
+python3 tools/check_release_readiness.py
 ```
 
 The [beginner release guide](open-source-release-guide.md) explains local

@@ -28,6 +28,7 @@ The user's current instructions control project scope, subject to the tool/platf
 ## Small, explainable changes
 
 - Follow the active version and task dependencies. Do not silently add a dashboard, cloud service, OCR pipeline, multi-hop engine or other later research.
+- Name new implementation and test files for their roles, such as `check_backend_conformance.py`; keep milestone labels in plans, evidence and versioned contracts.
 - Keep each slice reviewable in one focused session. Split a task if it expands beyond roughly five implementation/test files or introduces independent subsystems.
 - Preserve README.md's section order, centered banner, status table, callouts and collapsible guide. Update content within that structure unless the user requests a redesign.
 - Preserve user-owned edits and unrelated files. Do not reset, clean, stage, commit, push or publish without authorization covering that action.

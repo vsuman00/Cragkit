@@ -1,17 +1,17 @@
 # V0 local CI profile
 
-The V0 check entrypoint is `python3 tools/check_v0.py`, run from a checkout with Python 3.14, Node 26.5 or later in the declared 26.x range, npm and uv available. Local compatibility evidence is limited to the exact versions recorded in [development.md](development.md). The private [GitHub repository](https://github.com/vsuman00/Cragkit) and local `main` branch were created after V0 acceptance. Hosted CI and branch protection remain unconfigured and unrun; repository creation alone does not establish either.
+The V0 check entrypoint is `python3 tools/check_core_pipeline.py`, run from a checkout with Python 3.14, Node 26.5 or later in the declared 26.x range, npm and uv available. Local compatibility evidence is limited to the exact versions recorded in [development.md](development.md). The private [GitHub repository](https://github.com/vsuman00/Cragkit) and local `main` branch were created after V0 acceptance. Hosted CI and branch protection remain unconfigured and unrun; repository creation alone does not establish either.
 
 The runner installs from the frozen Python and npm locks, verifies the explicit pinned tokenizer asset, then runs typing, Python/tool tests, TypeScript tests/build, schema drift, native execution/planning/corrective/event and request/result/embedding and vector-generation/dense/identifier-fusion/hybrid/reranker/context/packing/assessment/evidence-pipeline parity, approved development-corpus checks, sealed-input integrity and clean package verification. The 27 stages execute one subprocess at a time and stop at the first failed or timed-out stage. Failed checks return nonzero; a success summary appears only after every stage passes.
 
 ```sh
-python3 tools/check_v0.py
+python3 tools/check_core_pipeline.py
 ```
 
 Generated archives and verification reports go under ignored `artifacts/V0/`. To choose a different task-owned output directory:
 
 ```sh
-python3 tools/check_v0.py --artifacts-dir /tmp/cragkit-v0-artifacts
+python3 tools/check_core_pipeline.py --artifacts-dir /tmp/cragkit-v0-artifacts
 ```
 
 The artifact verifier builds a Python wheel and source distribution plus an npm tarball, inspects their contents, and checks fresh installations outside the source checkout. Dependency installation may access package registries. Import checks block networking and exclude optional database/model/framework packages. These are local package checks, not registry publication or live-provider evidence. Import timings and memory observations are scoped process samples, not retrieval performance or universal hardware budgets.
@@ -28,4 +28,4 @@ Cross-platform execution, hosted runner behavior and branch protection remain un
 
 ## V4 optional SDK checkpoint
 
-`python3 tools/check_v4.py --artifacts-dir artifacts/V4/acceptance` runs the 27 core stages and seven optional SDK stages serially. Optional SDK installs have their own frozen locks; they do not change the default core import/dependency gate. The final stage builds and installs optional adapter archives outside the checkout, checks SDK versions/integrities and reruns the real SDK tests against installed products. Database acceptance remains an explicit separate run with private configuration and test-write authorization. A passing local V4 command does not establish hosted CI or registry publication.
+`python3 tools/check_sdk_packages.py --artifacts-dir artifacts/V4/acceptance` runs the 27 core stages and seven optional SDK stages serially. Optional SDK installs have their own frozen locks; they do not change the default core import/dependency gate. The final stage builds and installs optional adapter archives outside the checkout, checks SDK versions/integrities and reruns the real SDK tests against installed products. Database acceptance remains an explicit separate run with private configuration and test-write authorization. A passing local V4 command does not establish hosted CI or registry publication.

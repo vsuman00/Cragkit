@@ -16,7 +16,7 @@ from cragkit.contracts._validation import identity, native_json, text
 from cragkit.evidence import pack_and_assess
 from cragkit.reranking import RerankProfile, RerankingAdapter
 
-_SPEC = importlib.util.spec_from_file_location('cragkit_v2_metrics', Path(__file__).with_name('v2_metrics.py'))
+_SPEC = importlib.util.spec_from_file_location('cragkit_dense_metrics', Path(__file__).with_name('dense_metrics.py'))
 assert _SPEC is not None and _SPEC.loader is not None
 _METRICS = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_METRICS)

@@ -1,12 +1,13 @@
 """Offline response mapping and live-command admission regressions."""
 import importlib.util
+import asyncio
 import json
 from pathlib import Path
 import sys
 
 import pytest
 
-SPEC=importlib.util.spec_from_file_location('run_v3_calibration',Path(__file__).resolve().parents[1]/'run_v3_calibration.py')
+SPEC=importlib.util.spec_from_file_location('run_rerank_calibration',Path(__file__).resolve().parents[1]/'run_rerank_calibration.py')
 MOD=importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MOD)
 
@@ -33,9 +34,16 @@ def test_duplicate_json_keys_rejected():
 
 
 def test_live_dispatch_is_refused_without_explicit_flag(monkeypatch,capsys):
-    monkeypatch.setattr(sys,'argv',['run_v3_calibration.py'])
+    monkeypatch.setattr(sys,'argv',['run_rerank_calibration.py'])
     assert MOD.main()==2
     assert json.loads(capsys.readouterr().out)['code']=='explicit_live_opt_in_required'
+
+
+def test_run_imports_renamed_calibration_before_reading_baseline(tmp_path):
+    baseline = tmp_path / 'missing baseline.json'
+    with pytest.raises(FileNotFoundError) as caught:
+        asyncio.run(MOD.run(baseline, tmp_path / 'unused output.json'))
+    assert caught.value.filename == str(baseline)
 
 
 @pytest.mark.parametrize('kind',['credential','http'])

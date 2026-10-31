@@ -30,8 +30,8 @@
     "evaluation/corpus/manifest.json": "bf8a5a5701f84c5df594cccc22b25c0f6f50a85a319a58e08c42f65501746c3e",
     "evaluation/questions/dev.json": "bb2258d0b9fda1ac8874d7389a298906ba4934376b049d19aec9c7492ccd2de4",
     "evaluation/review/seal.json": "210ddce9237847d271db35dbff1d7c74a1ba1f30323a3f4119f939a604a83f81",
-    "evaluation/runners/v6_metrics.py": "c7478fd304d0b4c2b72e506e0080119a05ab34068566208b314c9b6a6fee99e8",
-    "evaluation/release/V6-metrics.md": "65f2b593821caa4cd105872bfefb03a98e56f49073dfbd43af783b2f6696221e",
+    "evaluation/runners/benchmark_metrics.py": "c7478fd304d0b4c2b72e506e0080119a05ab34068566208b314c9b6a6fee99e8",
+    "evaluation/release/V6-metrics.md": "0577b6cf382254904ee206b46994a0389eb6574f096f18dc594bf9ad2247ef87",
     "evaluation/release/V6-baselines.json": "434aadac17c4ccbe56f7950551f26bc5cff9bca774541e2b7f5efd32e97fc43f"
   },
   "held_out": {

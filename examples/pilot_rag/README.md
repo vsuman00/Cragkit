@@ -9,17 +9,17 @@ This is V5-PILOT-01, a local installed-artifact beta trial. V5 is a milestone la
 Run these commands from the repository root. They require `uv`, Python 3.14, the existing local wheel below and the existing PostgreSQL 17.11 binaries at `/opt/homebrew/opt/postgresql@17/bin`. The launcher requires that exact PostgreSQL version; it does not download a server or a model. If the wheel is absent, follow the operations guide and inspect the local build evidence before installing it.
 
 ```sh
-uv venv --python 3.14 examples/v5_rag/.venv
-uv pip install --python examples/v5_rag/.venv/bin/python 'artifacts/V5/V5-08/full-core-frameworks/core/python/cragkit-0.0.0-py3-none-any.whl[postgres]'
-uv run --project packages/python --frozen --no-sync python examples/v5_rag/session.py
+uv venv --python 3.14 examples/pilot_rag/.venv
+uv pip install --python examples/pilot_rag/.venv/bin/python 'artifacts/V5/V5-08/full-core-frameworks/core/python/cragkit-0.0.0-py3-none-any.whl[postgres]'
+uv run --project packages/python --frozen --no-sync python examples/pilot_rag/session.py
 ```
 
-The launcher uses the repository development environment only to provision the explicit disposable TLS database. Its child application runs in `examples/v5_rag/.venv` and imports the installed wheel, without importing the product from the checkout. Inspect the startup import origin. The application seeds [corpus.json](corpus.json) automatically into collection `manual-pilot` and starts as `alice`.
+The launcher uses the repository development environment only to provision the explicit disposable TLS database. Its child application runs in `examples/pilot_rag/.venv` and imports the installed wheel, without importing the product from the checkout. Inspect the startup import origin. The application seeds [corpus.json](corpus.json) automatically into collection `manual-pilot` and starts as `alice`.
 
 Append `--smoke` to the launcher command for automated mechanics verification:
 
 ```sh
-uv run --project packages/python --frozen --no-sync python examples/v5_rag/session.py --smoke
+uv run --project packages/python --frozen --no-sync python examples/pilot_rag/session.py --smoke
 ```
 
 A smoke run does not complete the [manual checklist](CHECKLIST.md) or measure model quality. The session owns a disposable database and destroys it on exit. Interactive sessions end after at most one hour; smoke runs have a three-minute cap. Edits saved to `corpus.json` persist as files; database-only changes do not survive a new session. Do not point fixture provisioning at an existing database.
@@ -31,7 +31,7 @@ The launcher explicitly applies the existing checksummed migrations to its new l
 First complete the synthetic baseline. Then copy `corpus.json` to a private location outside the repository, replace entries with your own Markdown or plain-text content in the `text` field, and pass its absolute path:
 
 ```sh
-uv run --project packages/python --frozen --no-sync python examples/v5_rag/session.py --corpus /absolute/private/pilot-corpus.json
+uv run --project packages/python --frozen --no-sync python examples/pilot_rag/session.py --corpus /absolute/private/pilot-corpus.json
 ```
 
 The file is a JSON list of objects with exactly `id`, `title`, `tenant` and `text` string fields. Use unique lowercase slug IDs, `team` or `other` as tenant, and nonempty text. The limits are 20 documents, 16 KiB of UTF-8 text per document and 256 KiB for the JSON file. Markdown is ingested as plain text in this pilot; PDF/OCR is unsupported. Start a fresh session after adding IDs or changing tenants. Within a session, save a text/title edit and use `reload DOCUMENT_ID` as its owner. Keep private content and manual results outside Git. `--smoke` uses only the bundled synthetic corpus.

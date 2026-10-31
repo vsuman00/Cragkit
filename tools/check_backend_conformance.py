@@ -14,8 +14,8 @@ from qdrant_native import REFERENCE_BINARY_SHA256
 from qdrant_authority_schema import ROOT
 from qdrant_source_native import PostgresSourceFixture
 from qdrant_publication_native import PublicationDatabase
-from v5_conformance_fixture import conformance_input,install_core,cases
-from v5_conformance_python import CHECKS
+from backend_conformance_fixture import conformance_input,install_core,cases
+from backend_conformance_runner import CHECKS
 
 
 def validate_result(value,runtime):
@@ -53,7 +53,7 @@ async def check(fixture,runtime,binary,work):
         await database.release_admin()
         environment={key:val for key,val in os.environ.items() if not key.startswith(('PG','QDRANT__','LANGCHAIN','LANGSMITH','OTEL_'))
             and key not in ('NODE_OPTIONS','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NODE_USE_ENV_PROXY')}
-        command=[sys.executable,str(ROOT/'tools/v5_conformance_python.py')] if runtime=='python' else ['node',str(ROOT/'tools/check_typescript_v5_conformance.mjs')]
+        command=[sys.executable,str(ROOT/'tools/backend_conformance_runner.py')] if runtime=='python' else ['node',str(ROOT/'tools/check_typescript_backend_conformance.mjs')]
         process=await asyncio.create_subprocess_exec(*command,stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,env=environment,start_new_session=True)
         output=asyncio.create_task(read_bounded(process.stdout,262144));errors=asyncio.create_task(read_bounded(process.stderr,65536))
@@ -61,7 +61,13 @@ async def check(fixture,runtime,binary,work):
             process.stdin.write(json.dumps(value,ensure_ascii=False).encode());await process.stdin.drain();process.stdin.close()
             async with asyncio.timeout(150):
                 stdout,stderr=await asyncio.gather(output,errors);await process.wait()
-            result=json.loads(stdout)
+            try:
+                result=json.loads(stdout)
+            except (UnicodeError,json.JSONDecodeError):
+                failure=dict(runtime=runtime,code='child_result_not_json',returncode=process.returncode,
+                    stdout_bytes=len(stdout),stderr_bytes=len(stderr))
+                (work.parent/'failure.json').write_text(json.dumps(failure)+'\n')
+                raise RuntimeError('backend_conformance_child_protocol') from None
             if process.returncode or stderr:
                 (work.parent/'failure.json').write_text(json.dumps(result)+'\n')
                 raise RuntimeError('v5_conformance_native_failed')
