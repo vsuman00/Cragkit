@@ -61,6 +61,7 @@ def test_mismatched_nomination_handoff_fails_integrity(field):
 
 def test_handoff_snapshots_nested_nomination_and_refuses_foreign_scope():
     value=candidate();accepted=_candidate(value,parse_request(FIXTURE['request']),parse_scope(FIXTURE['scope']))
+    assert _candidate(accepted,parse_request(FIXTURE['request']),parse_scope(FIXTURE['scope']))==accepted
     value['nomination']['payload']['principal_ids'].clear()
     assert accepted.nomination.payload.principal_ids==('reader-a',)
     scope=dict(FIXTURE['scope'],tenant_id='foreign')

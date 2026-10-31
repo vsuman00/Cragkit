@@ -14,7 +14,7 @@ Existing trusted backends use outer candidate accounting by default. A backend m
 
 ## Optional native adapter
 
-Separate optional Python and TypeScript Qdrant corrective entry points compose an initialized candidate store, an initialized source store and an explicitly supplied embedding adapter. Imports perform no I/O. Resources remain caller-owned. Dense search is the initial supported mode; unsupported lexical/hybrid capability is explicit. The exact store profile must match the embedder before calls. No model download, implicit key discovery or paid default is introduced.
+Separate optional Python and TypeScript Qdrant corrective entry points compose initialized candidate/source stores and an explicitly supplied embedding transport, counter and policy. They construct the existing E-r1 adapter locally so provider accounting occurs at actual transport invocation. Imports perform no I/O. Resources remain caller-owned. Dense search is initially supported; lexical/hybrid capability is explicitly unsupported. Candidate/source profiles must match before calls, and E-r1 validates model responses. No model download, implicit key discovery or paid default is introduced.
 
 Search uses the real QC-r1 store and shared execution ledger. Capture opens a fresh QS-r1 request handle, verifies each nomination, obtains exact authoritative source bytes, reauthorizes final release, preserves stale/budget diagnostics and closes the handle. Repeated captures accumulate actual bytes through the outer request ceiling. Source/operational failures cannot become an empty successful search. No SQL lease spans model work or HTTP. Native similarity values remain private diagnostics and do not imply coverage.
 

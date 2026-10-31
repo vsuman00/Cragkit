@@ -79,7 +79,7 @@ async def _bounded(work: Awaitable[_T], deadline: float) -> _T:
 def _candidate(value: Any, request: RetrievalRequest, scope: TrustedScope) -> LexicalCandidate:
     try:
         if type(value) in (LexicalCandidate, DenseCandidate, IdentifierCandidate, QdrantCandidate):
-            value = value.model_dump(warnings=False)
+            value = value.model_dump(mode='json',warnings=False)
         if type(value) is not dict:
             raise ValueError()
         native_json(value)

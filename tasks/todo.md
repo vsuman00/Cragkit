@@ -3355,3 +3355,12 @@ strict types/build, 17 corrective parity cases and core import guard passed.
 two new focused tests, QCC-r1 status and tracker/report. No owned process.
 Learning unassessed. V5-07A is complete; next V5-07B optional native adapters,
 then C actual backend/direct/tool/MCP parity. V5-07 parent and full V5 open.
+
+V5-07B1 Python optional backend implemented with explicit model transport,
+counter/policy, single native candidate charge and fresh bounded source release.
+Ten adapter cases and related handoff/core cases passed (52 total); strict
+mypy passed 50 files. [Evidence](../evaluation/reports/V5/V5-07B1.md).
+Changed: new optional Python module/test, candidate JSON round-trip fix and
+regression, QCC-r1 accounting detail, tracker/report. No owned process or live
+provider. Native integration remains unvalidated. TypeScript B2 is next, then
+actual backend/direct/tool/MCP matrix C and V5-08/C3/EXIT.
