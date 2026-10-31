@@ -1,0 +1,120 @@
+{
+  "revision": "EVX-r1",
+  "documents": [
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "retry-policy",
+      "revision_id": "r1",
+      "active": false,
+      "text": "ERR-17 allowed one retry in the old policy.\n",
+      "canonical_sha256": "cc1036cb1feb8894af13e23decaee4fcf5011b3f47a3f6ecfc4723dc68887e97"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "retry-policy",
+      "revision_id": "r2",
+      "active": true,
+      "text": "ERR-17 allows two retries and preserves tenant scope.\n",
+      "canonical_sha256": "eb96011286b27a70ddfb14d62727a56ab2275ee73bced3039caae0a4afb3299a"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "document_id": "cache-policy",
+      "revision_id": "r1",
+      "active": true,
+      "text": "CACHE-2 entries expire after fifteen minutes. café 😀 remains exact.\n",
+      "canonical_sha256": "9a5aad8d83e2a2129d8f1f7aa33ada6817e64c1b48cbf07368757ae86a29d1d8"
+    },
+    {
+      "tenant_id": "tenant-b",
+      "collection": "engineering",
+      "document_id": "foreign-only",
+      "revision_id": "r1",
+      "active": true,
+      "text": "foreignonlytoken is private to tenant-b.\n",
+      "canonical_sha256": "f746906cc7fdbf795dbe22062fc6a9b84b04dc78932d293460ff924fc263418b"
+    }
+  ],
+  "queries": [
+    {
+      "question_id": "current",
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "query": "ERR-17 retries",
+      "required_filters": []
+    },
+    {
+      "question_id": "cache",
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "query": "CACHE-2 expiry",
+      "required_filters": [
+        {
+          "op": "eq",
+          "field": "document_id",
+          "value": "cache-policy"
+        }
+      ]
+    },
+    {
+      "question_id": "historical",
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "query": "ERR-17",
+      "required_filters": [
+        {
+          "op": "eq",
+          "field": "document_id",
+          "value": "retry-policy"
+        },
+        {
+          "op": "eq",
+          "field": "revision_id",
+          "value": "r1"
+        }
+      ]
+    },
+    {
+      "question_id": "foreign",
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "query": "foreignonlytoken",
+      "required_filters": [
+        {
+          "op": "eq",
+          "field": "document_id",
+          "value": "foreign-only"
+        }
+      ]
+    },
+    {
+      "question_id": "missing",
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "query": "absent policy",
+      "required_filters": [
+        {
+          "op": "eq",
+          "field": "document_id",
+          "value": "absent-document"
+        }
+      ]
+    },
+    {
+      "question_id": "unicode",
+      "tenant_id": "tenant-a",
+      "collection": "engineering",
+      "query": "café 😀",
+      "required_filters": [
+        {
+          "op": "eq",
+          "field": "document_id",
+          "value": "cache-policy"
+        }
+      ]
+    }
+  ]
+}

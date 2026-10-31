@@ -1525,3 +1525,27 @@ python3 tools/check_release_readiness.py
 The [beginner release guide](open-source-release-guide.md) explains local
 packages, CI and registry publication as separate steps. MIT is selected; exact
 release-candidate metadata and artifacts remain V6-06 work.
+
+## Native five-mode evaluation mechanics
+
+The [EVX-r1 execution contract](../contracts/EVALUATION_EXECUTION_V6.md) keeps
+reviewed labels out of native retrieval. The following focused checks use
+synthetic input and no live provider calls. Run them serially:
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_retrieval_evaluation.py tools/tests/test_check_native_evaluation.py -q
+node --test --test-concurrency=1 tools/tests/retrieval-evaluation.test.mjs tools/tests/provider_replay.test.mjs
+```
+
+The native check needs the existing prepared PostgreSQL 17.11/pgvector 0.8.0
+prefix and an unused output directory. It starts and closes one disposable
+database per language; it does not install PostgreSQL or a model:
+
+```sh
+uv run --project packages/python --frozen --no-sync python tools/check_native_evaluation.py --prepared-postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --artifacts-dir artifacts/V6/V6-02D/native-mechanics-03 --allow-local-processes
+```
+
+Use a fresh directory when repeating that command. The checker validates source
+bytes, scope, filters, strict context accounting and cleanup before comparing
+the 30 result rows per runtime. See [actual execution evidence](../evaluation/reports/V6/V6-02D-execution.md).
+This mechanics pass does not establish genuine embedding or reranking quality.

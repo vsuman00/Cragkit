@@ -1,0 +1,128 @@
+{
+  "task": "V6-02D1-D3",
+  "state": "passed",
+  "contract": "EVX-r1",
+  "evidence_kind": "synthetic_mechanics",
+  "test_results": {
+    "python_worker": 23,
+    "node_worker": 24,
+    "independent_checker": 16,
+    "python_core_and_tools": 3433,
+    "expected_serializer_warnings": 4,
+    "node_execution_and_replay": 65,
+    "skipped": 0,
+    "native_rows_per_runtime": 30,
+    "native_receipts_per_runtime": 4
+  },
+  "native": {
+    "state": "passed",
+    "revision": "EVX-r1",
+    "evidence_kind": "synthetic_mechanics",
+    "packet_sha256": "3e418271afe9a8d942dc25be39e5b3325da639d6ad4083fdb91893bcffc71a92",
+    "runtimes": [
+      {
+        "runtime": "python",
+        "rows": 30,
+        "receipts": 4,
+        "sha256": "690fb968de8875ea190a10c881b9d6b2304a13be279049f4f7c89f26d63c3e8c"
+      },
+      {
+        "runtime": "node",
+        "rows": 30,
+        "receipts": 4,
+        "sha256": "a824d1d0c77e7bc4a2b8254530a6f8b4bc3b87db6aa13277caece9e52d2f13ae"
+      }
+    ],
+    "normalized_sha256": "e58600f67d415740241e99347c8279897a23df6667cbd40233eda2db33aadf54",
+    "cleanup_verified": true,
+    "live_inference": false,
+    "held_out_opened": false
+  },
+  "commands": [
+    "uv run --project packages/python --frozen --no-sync pytest tools/tests/test_retrieval_evaluation.py -q",
+    "uv run --project packages/python --frozen --no-sync pytest tools/tests/test_check_native_evaluation.py tools/tests/test_retrieval_evaluation.py -q",
+    "uv run --project packages/python --frozen --no-sync pytest packages/python/tests tools/tests -q",
+    "node --test --test-concurrency=1 tools/tests/retrieval-evaluation.test.mjs",
+    "node --test --test-concurrency=1 tools/tests/retrieval-evaluation.test.mjs tools/tests/provider_replay.test.mjs",
+    "uv run --project packages/python --frozen --no-sync python tools/check_native_evaluation.py --prepared-postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --artifacts-dir artifacts/V6/V6-02D/native-mechanics-03 --allow-local-processes"
+  ],
+  "evidence": {
+    "artifacts/V6/V6-02D/native-mechanics-03/results.json": {
+      "sha256": "f83e274ff0b7fa63aee42b3919688c48f41429188a8d0986d31029a9a5409f3c"
+    },
+    "artifacts/V6/V6-02D/native-mechanics-03/python-observations.json": {
+      "sha256": "690fb968de8875ea190a10c881b9d6b2304a13be279049f4f7c89f26d63c3e8c"
+    },
+    "artifacts/V6/V6-02D/native-mechanics-03/node-observations.json": {
+      "sha256": "a824d1d0c77e7bc4a2b8254530a6f8b4bc3b87db6aa13277caece9e52d2f13ae"
+    },
+    "artifacts/V6/V6-02D/logs/native-evaluation-01.log": {
+      "sha256": "c80a54b63f874d6b798d331468f1d087463eeb50ad1a227b622e65fb8cdb6c2e"
+    },
+    "artifacts/V6/V6-02D/logs/native-evaluation-02.log": {
+      "sha256": "9e23e762ca825b033f5fec20afb26230c34714789097e9b27d9958bd02397c1b"
+    },
+    "artifacts/V6/V6-02D/logs/native-evaluation-03.log": {
+      "sha256": "efb07e3ad87d265ad5dfcac6dda4188d92bb2ce457d40a76b9d9b54294bb85c3"
+    },
+    "artifacts/V6/V6-02D/logs/native-evaluation-checker.log": {
+      "sha256": "7d79dbdd92b95508ac801051a21ce47663454c0efdc85fcc1838d3be594f9392"
+    },
+    "artifacts/V6/V6-02D/logs/native-evaluation-focused.log": {
+      "sha256": "20ab5060e50b37fcdcd2e5428e277926b8559ac97bd98f1d42fd28b6e8330a2d"
+    },
+    "artifacts/V6/V6-02D/logs/native-evaluation-node-final.log": {
+      "sha256": "9c0111122c37d0e794d840ab6897023ae173a57291b24bb43e360d0e7cb5a806"
+    },
+    "artifacts/V6/V6-02D/logs/native-evaluation-python-full.log": {
+      "sha256": "8c5db9e5c9a4bc640167c57cdfb5f105eac1f97ea0c212b33658b9a2b620a768"
+    },
+    "artifacts/V6/V6-02D/logs/retrieval-evaluation-node.log": {
+      "sha256": "70653e94577e90df16bd35ccf86f3e2c3960edb52d33ce22010a6f3de5b69232"
+    }
+  },
+  "initial_failure": {
+    "path": "artifacts/V6/V6-02D/native-mechanics-01/failure.json",
+    "cause": "Independent checker expected a lexical hit for expiry against expire under pg_catalog.simple. Corrected only that synthetic checker expectation; packet, source and retrieval implementation unchanged."
+  },
+  "resource_observations": {
+    "disk_free_gib": 30,
+    "system_memory_free_percent": 47,
+    "execution": "One test/native process at a time; fresh database per language; owned processes closed."
+  },
+  "limitations": [
+    "D4 sealed original-packet binding remains open.",
+    "Synthetic unit vectors are stored only under the fake embedding profile. No genuine-vector publication or live quality established.",
+    "No keys, provider requests, held-out label access, model downloads, global PostgreSQL modifications, hosted CI or package publication.",
+    "Exact release candidate identity and later V6 gates remain open."
+  ],
+  "execution_inputs": {
+    "tools/retrieval_evaluation.py": {
+      "sha256": "5c15ddc21cc247c48697250bfbae9e0c9368da234aa044e6dde21c6137b8dd03"
+    },
+    "tools/typescript_retrieval_evaluation.mjs": {
+      "sha256": "f733f2ad9771269aea20fb7428f05b8f276b667b51ca2322f71a857afe463e57"
+    },
+    "tools/check_native_evaluation.py": {
+      "sha256": "701dff2cb0203ae645746c273fde9f193afcfe0331a4a11ceb37d7d5fe23123a"
+    },
+    "tools/tests/test_retrieval_evaluation.py": {
+      "sha256": "ad6c27350099eb415b6be10f3f3a623e1770fb0de515687208246965f80add90"
+    },
+    "tools/tests/retrieval-evaluation.test.mjs": {
+      "sha256": "5a5c0dd099d1b8775739732e27d2c58ae3006958189a6adf3404a71ce2f9496b"
+    },
+    "tools/tests/test_check_native_evaluation.py": {
+      "sha256": "cffc772d3c7240ad7515a385713f6fb79647823bba02c9f9080f87eb424bf8e8"
+    },
+    "contracts/EVALUATION_EXECUTION_V6.md": {
+      "sha256": "52ee4d064ea32de59e4cb0a51ef22af155405b765a4244c1f885b265466fc45b"
+    },
+    "contracts/fixtures/retrieval_evaluation.json": {
+      "sha256": "3e418271afe9a8d942dc25be39e5b3325da639d6ad4083fdb91893bcffc71a92"
+    }
+  },
+  "integration_corrections": [
+    "Node symlink entry-point reproduction exited0 without output; realpath guard plus subprocess regression fixed silent execution omission. Final native03 reproduced the normalized result hash."
+  ]
+}

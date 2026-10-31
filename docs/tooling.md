@@ -41,6 +41,13 @@ They do not discover credentials or form a live evaluation CLI. The
 [recording checks](development.md#evaluation-recording-and-provider-replay)
 run without paid inference.
 
+Native evaluation uses `retrieval_evaluation.py` and
+`typescript_retrieval_evaluation.mjs`; the latter has a bounded stdin CLI.
+`check_native_evaluation.py` runs their shared synthetic packet against fresh
+disposable PostgreSQL fixtures and checks source/accounting invariants before
+cross-runtime parity. It requires explicit local-process admission and a
+prepared database prefix. See [verified commands](development.md#native-five-mode-evaluation-mechanics).
+
 ## Historical-name lookup
 
 Historical reports retain the command names actually executed at the time. They are evidence records, not current command references. Use this map when reproducing an old report; use the current filenames for new code and documentation.

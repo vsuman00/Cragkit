@@ -330,6 +330,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V6-02B: Explicit PostgreSQL profile storage and dispatch mechanics — [native acceptance and limits](../evaluation/reports/V6/V6-02B.md). Successful genuine-vector publication and the live comparison remain required by the parent task.
   - [x] V6-02C1: Fixed HTTP, exact admission and approved-payload primitives — [offline acceptance](../evaluation/reports/V6/V6-02C-io.md). Sealed packet binding, durable recordings and live execution remain open.
   - [x] V6-02C2/C3: Durable recording/sender and native Node provider replay — [mechanical acceptance](../evaluation/reports/V6/V6-02C-recording.md). Full native execution and genuine-provider quality remain open.
+  - [x] V6-02D1-D3: Native five-mode workers and independent disposable acceptance — [execution evidence](../evaluation/reports/V6/V6-02D-execution.md). D4 sealed-packet binding and genuine-provider evaluation remain open.
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -3696,6 +3697,22 @@ and remaining V6 gates. No mechanical pass establishes live TLS/model quality
 or release readiness; the full V6 objective remains active.
 
 
+V6-02D / EVX-r1 assignment: COMPLETE native execution mechanics (D1-D3); D4 binding remains pending. Sol Python
+owns `tools/retrieval_evaluation.py` and its focused tests, and assembles the
+pair. Sol Node owns `tools/typescript_retrieval_evaluation.mjs` and its focused
+Node tests. Root owns EVX-r1, shared synthetic packet, sealed-packet binding,
+disposable native parent, metrics, tracker/Git and final integration. No core,
+storage, locks, provider primitives or targets may change without escalation.
+Both workers consume documents and query/scope/filter input only, never reviewed
+facets/support/answerability. Mechanics uses fake profiles in real PostgreSQL;
+provider/replay selection is trusted parent configuration, never agent input.
+Native/units serialized; no key reads, live calls, installs or held-out access.
+Acceptance: 30 rows each runtime, normalized parity, receipt/filter aliases,
+foreign/missing/history behavior, exact Unicode spans, unknown coverage,
+operational failure denominators and owned cleanup. Parent live quality remains
+open. Direct peer dependency resolution, root final integrator/escalation owner.
+
+
 ## REF-01-R3: Current-checkout rename verification
 
 State: COMPLETE. Outcome: verify the user-provided role-based names in the current
@@ -3735,3 +3752,37 @@ the report explains the module identity failure. Next product action: V6-02D's
 native executors under the recorded contract, followed by the existing provider,
 evaluation and release gates. This rename check does not complete V6 or refreeze
 its candidate.
+
+
+V6-02D resumed after REF-01-R3. Child D1: Sol `v601_metrics` owns Python
+worker/test and assembles. Child D2: Sol `postgres_node_finish` owns Node
+worker/test; root owns D3 disposable native parent/test, EVX-r1, shared packet,
+tracker/Git and integration. D4 sealed original-packet binding follows the
+mechanics checkpoint. The shared 900-second worker bound and native-only Node
+AbortSignal option are frozen; CLI rejects signal fields and owns cancellation.
+Synthetic parent bound: 180 seconds per runtime, fresh database per runtime.
+One test slot, existing prepared PostgreSQL only, no live calls or key access.
+Current required proof: 30 result rows per runtime, exact normalized parity,
+source/scope/filter/budget and cleanup checks; parent V6-02 remains open.
+
+
+V6-02D1-D3 final handoff: COMPLETE native mechanics; V6-02 remains OPEN.
+Sol Python `v601_metrics` owned its worker/test pair and assembled Node
+`postgres_node_finish`'s worker/test pair through direct coordination. Root
+owned EVX-r1, shared synthetic packet, native parent/checker tests, combined
+verification, docs/tracker and Git. All files transferred before integration.
+Python/Node worker tests passed 23 / 24; independent checker passed 16; complete
+Python/tool suite passed 3,433 with four intentional serializer warnings; combined
+Node execution/replay passed 65 without skips. Real PostgreSQL 17.11/pgvector
+0.8.0 runs produced four receipts and 30 rows each, exact normalized parity,
+source/scope/filter checks, independent strict token counts and verified cleanup.
+The initial parent expectation for cache lexical retrieval was wrong: expiry
+does not match expire under pg_catalog.simple. Root changed only that checker
+expectation; source/query/core stayed unchanged and failure evidence is retained.
+No fake vectors used a genuine model identity. No provider/key/held-out access,
+installation, hosted CI or registry publication. User edits preserved. Reports:
+`evaluation/reports/V6/V6-02D-execution.md` and `V6-02D-verification.json`.
+Resource observation: 30 GiB disk, 47 percent system memory free; serial suites,
+owned processes closed. Learning practice unassessed. Next smallest action: D4
+sealed original-packet binding, exact candidate freeze, secure key destination
+and genuine live/replay comparison, then every remaining V6 gate.
