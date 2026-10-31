@@ -3694,3 +3694,44 @@ five-mode Python/Node executor and sealed packet binding, then secure key target
 selection, genuine-profile publication, frozen held-out live/replay evaluation
 and remaining V6 gates. No mechanical pass establishes live TLS/model quality
 or release readiness; the full V6 objective remains active.
+
+
+## REF-01-R3: Current-checkout rename verification
+
+State: COMPLETE. Outcome: verify the user-provided role-based names in the current
+checkout, repair reproducible rename failures, and preserve unrelated V6 drafts.
+Shared constraints: no provider calls, held-out scoring, package publication,
+new services beyond disposable native fixtures, or changes to sealed definitions.
+Sol `rename_reference_audit` owns read-only executable/reference inspection and
+its report at `/tmp/cragkit-rename-reference-r3.md`; Sol `postgres_node_finish`
+owns read-only manifest/evidence/Node entry-point inspection and its report at
+`/tmp/cragkit-rename-evidence-r3.md`, and assembles the pair. Peers coordinate
+dependencies directly; changes outside these paths require root ownership.
+Root owns shared files, fixes, serial acceptance checks, tracker, Git and final
+integration. Contract: current role-based paths and frozen release/input seals.
+Acceptance: current SDK/package pipeline, optional installation probes, native
+backend parity, renamed entry points, release seals and reference audit pass.
+Resources: one test process; local fake/recorded providers and existing assets;
+31 GiB disk and 44 percent system memory free at entry.
+
+REF-01-R3 final handoff: COMPLETE. The single owned test change is
+`tools/tests/test_provider_adapters.py`: canonical provider imports plus a
+synthetic gate/recording/HTTP regression. The Sol reference peer implemented it;
+the Node/evidence peer assembled and reviewed; root integrated and verified it.
+The initial run exposed five identity failures after 3,155 passes and was
+interrupted for diagnosis. The isolated sender suite passed 21 tests; corrected
+collection passed 159. All 34 SDK stages then passed, including 3,394 Python/tool,
+1,615 Node core and 72 Python / 69 Node SDK tests. Twelve isolated profiles,
+installed MCP (41 Python / 36 Node), 84 native calls / 16 refusals, 38 publication
+checks, three prerequisite checks and 21 moved-pilot checks passed with cleanup.
+Release checks verified six digests, 10 requirements / 105 edge paths, 16 seals
+and the offline conformance lock. Report: `evaluation/reports/REFACTOR-VALIDATION.md`;
+current evidence: `evaluation/reports/REFACTOR-CURRENT-results.json`. Runtime
+guards, sealed definitions, README structure and dependencies were preserved.
+Unrelated edits and untracked V6 drafts remain excluded. Serial runs ended with
+31 GiB disk and 44 percent system memory free. No live-model, hosted-write,
+hosted-CI or publication result is claimed. Learning practice remains unassessed;
+the report explains the module identity failure. Next product action: V6-02D's
+native executors under the recorded contract, followed by the existing provider,
+evaluation and release gates. This rename check does not complete V6 or refreeze
+its candidate.

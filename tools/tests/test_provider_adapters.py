@@ -1,6 +1,5 @@
 """Injected synthetic provider bytes test mappings, never retrieval quality."""
 import asyncio
-import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -8,10 +7,8 @@ import time
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location('provider_adapters', Path(__file__).resolve().parents[1] / 'provider_adapters.py')
-M = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = M
-SPEC.loader.exec_module(M)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import provider_adapters as M
 
 
 def encoded(value):
@@ -219,3 +216,40 @@ def test_cohere_fractional_billed_units_are_preserved():
     transport = M.CohereRerankTransport(sender(response))
     call(transport, rerank_body())
     assert transport.observations[0]['usage'] == {'search_units': 1.0, 'input_tokens': None}
+
+
+def test_canonical_request_crosses_gate_recording_and_fake_http():
+    """Collection must not replace the request class held by other boundaries."""
+    import httpx
+    import evaluation_payloads
+    import provider_http
+    import provider_recordings
+
+    assert M.ProviderRequest is evaluation_payloads.ProviderRequest
+    assert M.ProviderRequest is provider_recordings.ProviderRequest
+    assert M.ProviderRequest is provider_http.ProviderRequest
+    request, ids = M.CohereRerankTransport(lambda: None)._prepare(rerank_body())
+    gate = evaluation_payloads.EvaluationPayloadGate(['alpha beta'], ['tiny query'])
+    assert gate.admission_ceiling(request) == 2 * 32768
+    assert provider_recordings.request_metadata(request)['response_items'] == len(ids)
+    raw = encoded(rerank_response())
+    calls = []
+
+    class ResponseStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield raw
+
+    def handler(sent):
+        calls.append(sent)
+        assert sent.content == request.body
+        return httpx.Response(200, headers={'content-type': 'application/json'}, stream=ResponseStream())
+
+    async def run():
+        async with provider_http.HttpProviderSend({'cohere': 'synthetic-test-key'},
+                transport=httpx.MockTransport(handler)) as send:
+            response = await send(request, deadline=time.monotonic()+2, max_response_bytes=4096)
+        assert provider_recordings.validate_recording(request.provider, request.model, response,
+            expected_items=len(ids)) == 19
+
+    asyncio.run(run())
+    assert len(calls) == 1

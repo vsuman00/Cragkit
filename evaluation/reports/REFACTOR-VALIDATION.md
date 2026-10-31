@@ -1,6 +1,6 @@
 # Role-based filename refactor validation
 
-State: COMPLETE for the renamed original checkout. Date: 31 October 2026. The broader V6 implementation remains paused.
+State: COMPLETE for the filename refactor. Latest verification: REF-01-R3 below, 31 October 2026. V6 release acceptance remains open. Earlier sections retain their original run snapshots.
 
 For example, Python test collection succeeded while a renamed TypeScript native runner could not resolve `cragkit/*` from the tools directory. Executing that entry point exposed the missing dependency path before any query ran. This is why collection, installed artifacts and actual native entry points need separate checks.
 
@@ -84,3 +84,36 @@ uv lock --project tools/backend-conformance --check --offline
 ```
 
 The full-suite, installed-package and native database results above remain retained evidence from the original validation; they were not rerun in this follow-up. No live API call, service startup, installation or held-out scoring occurred. Existing unrelated edits and detached V6 feature drafts were preserved. Final headroom: 31 GiB disk and 46 percent system memory free; no task-owned background process. Role-based implementation and test names are required by AGENTS.md for subsequent versions, including V6. Learning practice remains unassessed; the exercise above is optional. This follow-up completes rename validation, not V6 release acceptance.
+
+## Current-checkout verification
+
+REF-01-R3, 31 October 2026: COMPLETE for the filename refactor on the current checkout, based on `cc9a3ee` plus the preserved workspace edits. This supersedes the earlier follow-up's runtime snapshot. It does not complete V6 or establish that the current package tree matches the frozen release candidate.
+
+Two Sol peers inspected executable references and manifest/Node resolution independently, communicated directly and assembled their findings. Root inspected the combined evidence and ran acceptance serially. All 39 destinations recorded in the rename commit exist. No stale active import, subprocess target, installed-probe copy source or moved example path required another repair. Historical command records and stable protocol identifiers remain unchanged. The existing role-based naming rule in `AGENTS.md` applies to future implementation and tests, including V6.
+
+Fresh execution did expose a test-harness defect in `tools/tests/test_provider_adapters.py`. During collection it replaced the canonical `provider_adapters` module through `sys.modules`. Previously collected consumers retained the original `ProviderRequest` class; later requests used a different class and failed exact-type admission. Five tests failed after 3,155 passed, and a cancellation test waited for a mock transport that could never be reached. Root interrupted that owned run after 89 seconds to obtain the tracebacks. All 21 sender tests passed in isolation, confirming that isolated success was insufficient.
+
+The repair uses the normal canonical import. A new regression checks shared request identity and exercises approved synthetic text through payload admission, recording metadata, fake HTTP and strict response validation. Production admission, authorization and type checks were not relaxed. The six related suites then passed together in the collection order that exposed the defect: 159 tests.
+
+Fresh acceptance after the repair:
+
+| Check | Result |
+| --- | --- |
+| SDK/core pipeline | All 34 stages passed |
+| Python core and tooling | 3,394 passed; four intentional malformed-model serializer warnings |
+| Node core | 1,615 passed; no skips |
+| LangChain | 72 Python / 69 Node passed; clean installed artifacts passed |
+| Optional installed profiles | Six Python / six Node passed; installed MCP tests 41 Python / 36 Node passed |
+| Native PostgreSQL/Qdrant direct, LangChain and MCP | 84 calls, 16 forged-input refusals, parsed cross-runtime parity and verified cleanup |
+| Native publication verifier | 38 checks passed across Python/Node; cleanup verified |
+| Prepared PostgreSQL prerequisite entry point | Three genuine pgvector/restricted-role checks passed; cleanup verified |
+| Moved pilot using its existing installed wheel | All 21 smoke checks passed; disposable database and private credentials cleaned |
+| Release metadata and sealed inputs | Six preregistration digests, 10 requirement / 105 edge paths, all 16 seals and the offline conformance lock check passed |
+
+The renamed benchmark remains byte-identical to its pre-rename implementation, SHA-256 `c7478fd304d0b4c2b72e506e0080119a05ab34068566208b314c9b6a6fee99e8`. The peer audit also verified all 58 third-party conformance lock records against the pre-rename lock, 26 relative Node targets, 1,079 coverage-path occurrences, six retained result hashes and twelve nested archive hashes. Retained-file integrity is separate from the fresh execution above.
+
+[Structured results](REFACTOR-CURRENT-results.json) record the actual commands and hashes of the fresh acceptance files and logs. Raw outputs remain under ignored `artifacts/refactor-validation/` and `/tmp/cragkit-rename-*.log`. Suites ran serially on local macOS arm64, Python 3.14.6 and Node 26.5.0. Final observed headroom was 31 GiB disk and 44 percent system memory free. Task-owned native processes closed.
+
+No live inference, held-out scoring, hosted database write, hosted CI or package publication occurred. Models were fake or recorded. Current clean package installs were tested separately from the pilot's reused installed environment. Existing source/doc edits, audit reports and untracked V6 execution drafts were preserved and excluded from this change. V6 evaluation, candidate refreezing and release gates remain separately tracked.
+
+Optional exercise: explain why importing the same file into two module objects can break an exact-type check even when the class names match. Learning practice remains unassessed.
