@@ -1,0 +1,290 @@
+{
+  "task": "REF-01-R4",
+  "state": "passed",
+  "base_commit": "c0c3b5854c95406da93acdc20dbcaacc80b3c939",
+  "date": "2026-10-31",
+  "scope": "Current dirty-checkout role-based rename verification; no new source defect found. V6 release acceptance remains open.",
+  "source_snapshot": {
+    "kind": "tracked and nonignored untracked tools, evaluation runners, packages, examples and contracts; includes preserved drafts",
+    "file_count": 617,
+    "manifest_entries_sha256": "04c78aa30e428c4fd581e025a45a9fcfb872b8d90bd17d135016fe2e015a1dde",
+    "manifest_path": "artifacts/rename-validation-r4/tested-source-manifest.json",
+    "candidate_execution_identity_verified": false
+  },
+  "test_results": {
+    "full_sdk_pipeline_steps": 34,
+    "python_core_and_tools": 3580,
+    "expected_serializer_warnings": 4,
+    "node_core": 1615,
+    "node_evaluation_tools": 65,
+    "langchain_python": 72,
+    "langchain_node": 69,
+    "isolated_install_profiles": 12,
+    "installed_mcp_python": 41,
+    "installed_mcp_node": 36,
+    "native_backend_calls": 84,
+    "native_boundary_refusals": 16,
+    "native_publication_checks": 38,
+    "native_postgres_prerequisite_checks": 3,
+    "installed_pilot_smoke_checks": 21
+  },
+  "integrity": {
+    "requested_destination_paths": 22,
+    "requested_destinations_exist": true,
+    "corresponding_old_paths_absent": true,
+    "benchmark_code_sha256": "c7478fd304d0b4c2b72e506e0080119a05ab34068566208b314c9b6a6fee99e8",
+    "sealed_inputs_verified": 16,
+    "release_input_digests_verified": 6,
+    "coverage_requirements": 10,
+    "coverage_edge_cases": 105,
+    "held_out_interpreted_or_scored": false,
+    "protected_unrelated_files_unchanged": 9
+  },
+  "mapping_clarifications": [
+    "The historical check_v4.py implementation is now check_sdk_packages.py; check_postgres_prerequisites.py is a separate native database prerequisite checker. Both passed.",
+    "check_qdrant_artifacts.py validates optional package and MCP artifacts/install profiles; native Qdrant publication is verified separately."
+  ],
+  "commands": [
+    {
+      "command": [
+        "python3",
+        "tools/check_sdk_packages.py",
+        "--artifacts-dir",
+        "artifacts/rename-validation-r4/sdk"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "python3",
+        "tools/check_qdrant_artifacts.py",
+        "--core-artifacts",
+        "artifacts/rename-validation-r4/sdk/core",
+        "--output-dir",
+        "artifacts/rename-validation-r4/optional"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "tools/backend-conformance",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "tools/check_backend_conformance.py",
+        "--postgres-bin",
+        "/opt/homebrew/opt/postgresql@17/bin",
+        "--server-binary",
+        "artifacts/V5/V5-02A/server-binary/qdrant",
+        "--binary-sha256",
+        "830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3",
+        "--allow-local-processes",
+        "--runtime",
+        "all",
+        "--artifacts-dir",
+        "artifacts/rename-validation-r4/backend"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "publication",
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "packages/python",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "tools/check_qdrant_publication_verification.py",
+        "--postgres-bin",
+        "/opt/homebrew/opt/postgresql@17/bin",
+        "--server-binary",
+        "artifacts/V5/V5-02A/server-binary/qdrant",
+        "--binary-sha256",
+        "830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3",
+        "--allow-local-processes",
+        "--runtime",
+        "all",
+        "--artifacts-dir",
+        "artifacts/rename-validation-r4/publication"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 7.735,
+      "log": "artifacts/rename-validation-r4/logs/publication.log"
+    },
+    {
+      "name": "prerequisites",
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "packages/python",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "tools/check_postgres_prerequisites.py",
+        "--prepared-postgres-bin",
+        "artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin",
+        "--allow-local-processes",
+        "--artifacts-dir",
+        "artifacts/rename-validation-r4/prerequisites"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.215,
+      "log": "artifacts/rename-validation-r4/logs/prerequisites.log"
+    },
+    {
+      "name": "pilot",
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "packages/python",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "examples/pilot_rag/session.py",
+        "--smoke"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.442,
+      "log": "artifacts/rename-validation-r4/logs/pilot.log"
+    },
+    {
+      "name": "node-evaluation",
+      "command": [
+        "node",
+        "--test",
+        "--test-concurrency=1",
+        "tools/tests/retrieval-evaluation.test.mjs",
+        "tools/tests/provider_replay.test.mjs"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.456,
+      "log": "artifacts/rename-validation-r4/logs/node-evaluation.log"
+    },
+    {
+      "name": "release",
+      "command": [
+        "python3",
+        "tools/check_release_readiness.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.077,
+      "log": "artifacts/rename-validation-r4/logs/release.log"
+    },
+    {
+      "name": "seal",
+      "command": [
+        "python3",
+        "tools/check_seal.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.04,
+      "log": "artifacts/rename-validation-r4/logs/seal.log"
+    },
+    {
+      "name": "backend-lock",
+      "command": [
+        "uv",
+        "lock",
+        "--project",
+        "tools/backend-conformance",
+        "--check",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.02,
+      "log": "artifacts/rename-validation-r4/logs/backend-lock.log"
+    }
+  ],
+  "evidence": {
+    "artifacts/rename-validation-r4/sdk/core/acceptance.json": {
+      "sha256": "42f3e7c7442252e935cf41db9f6fa78d1ed050e67dd912e2501bd38feb6ee6ab"
+    },
+    "artifacts/rename-validation-r4/sdk/frameworks/acceptance.json": {
+      "sha256": "902e7b7ebde50e3156812c5c75207fc94afe45e466fab9d8028623d1b5ae17c5"
+    },
+    "artifacts/rename-validation-r4/optional/acceptance.json": {
+      "sha256": "ddccc9b40a0015b289ebd12cec1d9ed7158429a9de7ddaa48f00fe83eb9121df"
+    },
+    "artifacts/rename-validation-r4/backend/results.json": {
+      "sha256": "bfcbabf1b30955929b29524f6cedac093f3e5c1a261efb5b64f8cd1aa5d688f4"
+    },
+    "artifacts/rename-validation-r4/publication/results.json": {
+      "sha256": "ebe0dc15b9a47389a520fcc9baed44c149b6a67946d3e0e1bb6c7f66d0ba9510"
+    },
+    "artifacts/rename-validation-r4/prerequisites/results.json": {
+      "sha256": "8ff49f789d88550f87688e314d56fdcba41639d3333ea7312e0e12fcddbb0917"
+    },
+    "artifacts/rename-validation-r4/serial-checks.json": {
+      "sha256": "c4109ec59b5e16c860bb0ac33aae57c28ce1207a67a50fcff1d8bb3d13dc7f2a"
+    },
+    "artifacts/rename-validation-r4/tested-source-manifest.json": {
+      "sha256": "0c68cbbd3d5668ae55edb07b0ef5ff221345f365f45d13fc8e367fa4d7ccd98a"
+    },
+    "artifacts/rename-validation-r4/logs/backend-lock.log": {
+      "sha256": "95e3fdfb4fb7d29a7d130d91283a737819c645a4314d9471d7473cabf6ebb7e8"
+    },
+    "artifacts/rename-validation-r4/logs/backend.log": {
+      "sha256": "b01fb0fcb7a27133eddd52843eae292e31a9962e5c6be5f995a5357dd2cac86f"
+    },
+    "artifacts/rename-validation-r4/logs/node-evaluation.log": {
+      "sha256": "c79b2946525d43a23fef1510dc49ddeb820f741b085d1e7343a2dd9dc7a018d6"
+    },
+    "artifacts/rename-validation-r4/logs/optional.log": {
+      "sha256": "3ac0cd7b552c2293fc98ebc881d52e08dc374c3b4ce0dd1a497a0b73a623ad66"
+    },
+    "artifacts/rename-validation-r4/logs/pilot.log": {
+      "sha256": "d1ddd40a0be60d651ca7f4a833412f4af8f132a20dd99f41419f58f410f8be54"
+    },
+    "artifacts/rename-validation-r4/logs/prerequisites.log": {
+      "sha256": "36ce66d54ff9d321e92100200ff5b0b496ecae4b9998a7d109ebe780d66d644b"
+    },
+    "artifacts/rename-validation-r4/logs/publication.log": {
+      "sha256": "5a026c0c3005a532b23d564315b9581eb61e3d709ef91aa20ea4ef5236c563ae"
+    },
+    "artifacts/rename-validation-r4/logs/release.log": {
+      "sha256": "00277f049e9f2fd5b0c9ec4dcba5c7db239e752de9d12515902376c75697eeaf"
+    },
+    "artifacts/rename-validation-r4/logs/sdk.log": {
+      "sha256": "12ef41a7c0df53045752e48995ee137319907b320cc6263b95d6940f4625dbbf"
+    },
+    "artifacts/rename-validation-r4/logs/seal.log": {
+      "sha256": "cea038716fbbe8613b5db7ea9c134bff4b00b6bc1906890058e0250672446eb3"
+    },
+    "artifacts/rename-validation-r4/audit-runtime.md": {
+      "sha256": "e8913a0afa1836f7885624e77cd7138ad28b5fb7d8d628663d6274660b893272"
+    },
+    "artifacts/rename-validation-r4/audit-evidence.md": {
+      "sha256": "c57e2b7db6edeb4e6c941df4f8fdb8c7005cf60448094f64c0c4e879085a7ed5"
+    },
+    "artifacts/rename-validation-r4/audit-assembled.md": {
+      "sha256": "8c1a8fc0ddb628329f9a61b96a3ae685bc84586ac08d3c430de9e26370a63d0d"
+    }
+  },
+  "cleanup_verified": true,
+  "resource_observations": {
+    "platform": "darwin-arm64",
+    "python": "3.14.6",
+    "node": "26.5.0",
+    "npm": "11.17.0",
+    "uv": "0.11.8",
+    "disk_free_gib_before": 31,
+    "disk_free_gib_after": 31,
+    "system_memory_free_percent_before": 58,
+    "system_memory_free_percent_after": 54,
+    "test_processes": "serial"
+  },
+  "limitations": [
+    "Local current-platform verification; no hosted CI or cross-platform result.",
+    "Native databases and SDK routes are real; inference uses fake or recorded responses. No paid call, held-out scoring, hosted write or publication.",
+    "Pilot reuses its existing installed wheel; current clean artifact installations are checked separately.",
+    "Existing source/doc edits, audit reports and unfinished V6 drafts remain preserved and outside this validation commit.",
+    "Frozen preregistration identity remains historical; rename acceptance does not establish candidate execution identity or V6 release readiness."
+  ]
+}

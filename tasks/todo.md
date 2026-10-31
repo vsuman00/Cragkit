@@ -3830,3 +3830,45 @@ suites and temporary Git children closed. Learning practice unassessed. Next:
 prepare an isolated clean candidate and compiled/runtime identity, integrate
 the genuine live/recorded/replay parent with spend/text gates, finish secure
 provider setup, then held-out comparison and all remaining V6 gates.
+
+## REF-01-R4: Rename validation against the current checkout
+
+State: COMPLETE. Outcome: validate the user-provided role-based file names,
+imports, subprocess paths, release references and native execution; fix only
+reproduced failures. Existing V6 candidate/runtime/scoring drafts and unrelated
+user edits remain protected. Contract: current renamed paths, existing native
+contracts, frozen metric bytes and sealed inputs.
+Sol `rename_reference_audit` owns read-only executable/import/reference audit
+and `/tmp/cragkit-rename-runtime-r4.md`. Sol `postgres_node_finish` owns read-only
+manifest, evidence, command and destination inventory plus
+`/tmp/cragkit-rename-evidence-r4.md`; it assembles the pair in
+`/tmp/cragkit-rename-assembled-r4.md`. Both coordinate dependencies directly;
+root owns repository fixes, shared files, tracker, serial validation and Git.
+Escalate outcome/protected-boundary/ownership changes to root, and unresolved
+material decisions through root to Astra. Acceptance: full core/SDK pipeline,
+relevant renamed entry points, actual native backend parity, manifest/digest
+and seal checks. One test process, existing prepared native binaries and fake
+providers only; no held-out interpretation, paid calls, hosted writes or
+publication. Reports are evidence for root's final integration, not acceptance.
+
+REF-01-R4 final handoff: COMPLETE for current-checkout filename validation.
+No source repair was required. Root integrated the two read-only Sol audits and
+fresh serial acceptance: all 34 core/SDK stages, 3,580 Python/tool tests,
+1,615 Node core / 65 Node evaluation tests, 72 Python / 69 Node LangChain tests,
+twelve isolated install profiles, 41 Python / 36 Node installed MCP tests,
+84 native retrieval calls / 16 boundary refusals, 38 publication checks,
+three PostgreSQL prerequisites and 21 pilot checks passed. Native fixtures and
+temporary installations closed. Six input digests, 10 requirements / 105 edge
+paths, all 16 seals and the offline backend lock passed; benchmark bytes unchanged.
+Changed files: this R4 handoff, `evaluation/reports/REFACTOR-VALIDATION.md` and
+`evaluation/reports/REFACTOR-CHECKOUT-results.json`. The report explains the
+SDK/prerequisite role distinction, actual commands, bound evidence and limits.
+No model call, held-out interpretation, hosted write/CI or publication occurred.
+Resource observations: 31 GiB disk; memory free 58 percent before / 54 after;
+one test process. Unrelated user edits (including pre-existing whitespace),
+reports and unfinished V6-02E drafts remain preserved and excluded. Learning
+practice unassessed; the report offers an optional lazy-import exercise.
+Next smallest product action: resume V6-02E candidate/runtime/scoring integration,
+resolve candidate-version sequencing before source refreeze, then validate the
+isolated candidate under the existing provider/evaluation/release gates. Rename
+validation does not complete V6 or approve a candidate identity transition.

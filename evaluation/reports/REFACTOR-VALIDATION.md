@@ -1,6 +1,6 @@
 # Role-based filename refactor validation
 
-State: COMPLETE for the filename refactor. Latest verification: REF-01-R3 below, 31 October 2026. V6 release acceptance remains open. Earlier sections retain their original run snapshots.
+State: COMPLETE for the filename refactor. Latest verification: REF-01-R4 below, 31 October 2026. V6 release acceptance remains open. Earlier sections retain their original run snapshots.
 
 For example, Python test collection succeeded while a renamed TypeScript native runner could not resolve `cragkit/*` from the tools directory. Executing that entry point exposed the missing dependency path before any query ran. This is why collection, installed artifacts and actual native entry points need separate checks.
 
@@ -117,3 +117,63 @@ The renamed benchmark remains byte-identical to its pre-rename implementation, S
 No live inference, held-out scoring, hosted database write, hosted CI or package publication occurred. Models were fake or recorded. Current clean package installs were tested separately from the pilot's reused installed environment. Existing source/doc edits, audit reports and untracked V6 execution drafts were preserved and excluded from this change. V6 evaluation, candidate refreezing and release gates remain separately tracked.
 
 Optional exercise: explain why importing the same file into two module objects can break an exact-type check even when the class names match. Learning practice remains unassessed.
+
+## Latest checkout verification
+
+REF-01-R4, 31 October 2026: COMPLETE for the filename refactor. This fresh run
+checked `c0c3b58` plus the preserved working-tree changes, including unfinished
+V6 evaluation tooling. No additional source repair was necessary.
+
+Two Sol peers independently audited executable references and manifest/evidence
+paths, coordinated directly and assembled their findings. Root inspected the
+reports and ran all acceptance processes serially. All 22 requested destination
+paths exist and their corresponding old paths are absent. Current imports,
+lazy loaders, subprocess targets, probe-copy paths, moved pilot paths and
+calibration symlink execution passed inspection and execution checks. Historical
+commands and stable protocol identifiers retain their original names.
+
+The former `check_v4.py` is the SDK pipeline now called
+`check_sdk_packages.py`; `check_postgres_prerequisites.py` is a separate native
+database prerequisite checker. Both passed separately. The role of
+`check_qdrant_artifacts.py` is optional package/MCP artifact verification;
+actual Qdrant publication was also tested separately.
+
+| Fresh check | Result |
+| --- | --- |
+| Core/SDK pipeline | All 34 stages passed, including Python/TypeScript types, builds, shared conformance, corpus and installed artifacts |
+| Python core/tool suite | 3,580 passed; four deliberate malformed-model serializer warnings |
+| Node core / evaluation tooling | 1,615 / 65 passed; no skips |
+| LangChain | 72 Python / 69 Node passed, including clean installed-artifact checks |
+| Optional installations / MCP | Twelve isolated profiles passed; 41 Python / 36 Node installed MCP tests passed |
+| Native PostgreSQL/Qdrant direct, LangChain and MCP | 84 retrieval calls, 16 boundary refusals and cross-runtime parity passed; cleanup verified |
+| Native publication / PostgreSQL prerequisite | 38 publication checks and three genuine pgvector/restricted-role checks passed; cleanup verified |
+| Moved installed pilot | All 21 smoke checks passed; disposable database and credentials cleaned |
+| Release definitions | Six input digests, 10 requirements / 105 edge paths, all 16 sealed inputs and the offline conformance lock check passed |
+
+[Structured results](REFACTOR-CHECKOUT-results.json) record exact commands,
+current source-manifest identity, result/log hashes and limitations. Raw
+artifacts and serial logs are under ignored `artifacts/rename-validation-r4/`.
+The benchmark code retains SHA-256
+`c7478fd304d0b4c2b72e506e0080119a05ab34068566208b314c9b6a6fee99e8`.
+The peer audit independently verified all 1,079 coverage-path occurrences, six
+retained result hashes and twelve nested archive hashes. Retained evidence
+integrity is separate from this run's fresh execution.
+
+Validation ran on local macOS arm64, Python 3.14.6 and Node 26.5.0, one test
+process at a time. Disk remained at 31 GiB free; observed system memory free
+changed from 58 to 54 percent. Task-owned services and installation environments
+closed. No live inference, original held-out interpretation/scoring, hosted
+write, hosted CI or package publication occurred. The pilot reused its existing
+installed wheel; current clean packages were tested separately.
+
+Unrelated source/prose edits, audit reports and V6 candidate/runtime/scoring
+work remain untouched and excluded from the validation commit. Existing
+whitespace findings in user-owned files were preserved. README structure,
+dependencies, metric algorithms, sealed labels and release targets did not
+change. Role-based implementation and test names are already required by
+AGENTS.md and documented in [the tooling guide](../../docs/tooling.md), including
+future V6 work. This acceptance does not complete V6 or establish that its
+historical frozen candidate matches the current checkout.
+
+Optional exercise: identify why a renamed file can pass collection yet fail
+when a lazy import executes. Learning practice remains unassessed.
