@@ -3966,3 +3966,10 @@ identity edits in memory. Existing prose/audits/old tracker draft stay excluded;
 local archives contain working-tree prose and are not final publication bytes.
 F4 next: source commit/refreeze, fresh isolated candidate, exact frozen install
 and ECR prepare/verify. V6-06 acceptance and all later gates stay pending.
+
+V6-02F4 source refreeze: committed source cbca5d8908bcbca679d8d8199ed522d0c3473f0b,
+package tree05fdc769488f496ef71ec6b988383fa8d1f18b1c. Only those two fields changed
+in the preregistration; all models, targets, corpus/label/seal/metric digests,
+limits and gate snapshots remain unchanged. Configuration6digests/105edges and
+16sealed files pass without held-out interpretation. Next actual run uses a fresh
+isolated checkout, not the dirty original; no user caches or prose are removed.

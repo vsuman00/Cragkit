@@ -1,8 +1,8 @@
 {
   "revision": "V6-release-r1",
   "configuration_state": "frozen_before_held_out_run",
-  "source_commit": "0c7f14bb4c8a2113e7e633e80bddc3d55123bf3a",
-  "package_tree": "37338a63360d279033eaa3569785bfbdded0e5b9",
+  "source_commit": "cbca5d8908bcbca679d8d8199ed522d0c3473f0b",
+  "package_tree": "05fdc769488f496ef71ec6b988383fa8d1f18b1c",
   "candidate_versions": {
     "python": "1.0.0rc1",
     "npm": "1.0.0-rc.1"
