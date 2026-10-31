@@ -31,6 +31,16 @@ python3 tools/check_release_readiness.py
 
 [Development commands](development.md) list explicit native setup and admission flags. [The validation report](../evaluation/reports/REFACTOR-VALIDATION.md) records commands actually executed and their limits. These commands do not publish packages.
 
+## Evaluation helpers
+
+Evaluation-only helpers live in `tools/`: `provider_recordings.py` validates
+provider wire data, `provider_journal.py` retains durable private tapes,
+`recorded_provider.py` composes text/admission/HTTP boundaries, and
+`provider_replay.mjs` replays the same tape through native Node adapters.
+They do not discover credentials or form a live evaluation CLI. The
+[recording checks](development.md#evaluation-recording-and-provider-replay)
+run without paid inference.
+
 ## Historical-name lookup
 
 Historical reports retain the command names actually executed at the time. They are evidence records, not current command references. Use this map when reproducing an old report; use the current filenames for new code and documentation.

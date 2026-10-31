@@ -329,6 +329,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-02: [Held-out retrieval evaluation](versions/V6-release.md#v6-02-held-out-retrieval-evaluation) — evidence: pending.
   - [x] V6-02B: Explicit PostgreSQL profile storage and dispatch mechanics — [native acceptance and limits](../evaluation/reports/V6/V6-02B.md). Successful genuine-vector publication and the live comparison remain required by the parent task.
   - [x] V6-02C1: Fixed HTTP, exact admission and approved-payload primitives — [offline acceptance](../evaluation/reports/V6/V6-02C-io.md). Sealed packet binding, durable recordings and live execution remain open.
+  - [x] V6-02C2/C3: Durable recording/sender and native Node provider replay — [mechanical acceptance](../evaluation/reports/V6/V6-02C-recording.md). Full native execution and genuine-provider quality remain open.
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -3634,3 +3635,62 @@ unassessed. Next smallest action: durable pending/completed call journal and
 public sealed packet/five-mode orchestration, then genuine provider publication
 and bounded live/replay evaluation. Key target selection remains pending;
 no primitive result establishes live quality, TLS or release readiness.
+
+
+V6-02C2 / EREC-r1 assignment: RUNNING. Outcome: durable pending/completed
+provider recording and an integrated approved-text/budget/HTTP sender; no
+implicit paid retry after uncertainty. Sol `rename_reference_audit` owns only
+`tools/provider_journal.py` and its focused tests. Sol `v601_metrics` owns only
+`tools/recorded_provider.py` and its focused tests, and assembles the pair.
+Root owns shared `tools/provider_recordings.py` validation/tests, EREC-r1,
+tracker/Git and final integration. Existing LEIO primitives, provider dataclasses,
+core/storage/schema/locks/release limits are read-only. Direct peer dependency
+resolution; changes to outcome/protected boundaries/other ownership escalate
+to root, then Astra if unresolved. One serial test slot, journal first after
+root's helper tests. Mock HTTP only; no key reads, services, installs or held-out
+access. Root integrates failure/replay evidence and preserves unrelated edits.
+
+
+V6-02C3 provider replay assignment: Sol `postgres_node_finish` owns only
+`tools/provider_replay.mjs` and its focused Node test. Root owns the synthetic
+fixture and frozen EREC-r1 replay interface. Outcome: native Node embedding/
+rerank replay consumes the same ordered provider tape and request fingerprints
+as Python, with no HTTP, Python server or inference. Source/runtime/locks remain
+read-only. Writes are independent of the recording pair; tests wait for that
+pair's slot release. Root is final integrator/tracker/Git owner. Unknown/reordered
+calls and mutable/unsafe or oversized recordings must fail. Synthetic parity
+is not live-quality acceptance. Direct dependencies go to sender assembler;
+protected/outcome changes escalate to root.
+
+
+V6-02C2/C3 final handoff: COMPLETE recording/replay mechanics; V6-02 OPEN.
+Sol journal owned its journal/test pair, Sol sender owned the integrated
+sender/test pair and assembled them, Sol Node owned the native replay/test
+pair. Root owned shared validators/tests, the synthetic cross-runtime fixture,
+EREC-r1, integration, documentation and Git. Direct peer dependencies resolved;
+all files transferred before root corrections. No unresolved escalation.
+Root corrected metadata hash/parse double reads, bounded close to two seconds,
+rejected missing local keys before admission, preserved usage after disk failure
+and retained the HTTP primitive's fixed close diagnostic. A durable seal is
+recording integrity evidence; failed final cleanup still fails the sender.
+
+Final combined Python scope: 183 passed, zero skips; Node scope: 41 passed,
+zero skips, including actual native adapters and Python-generated fingerprints.
+Tests covered an actual subprocess crash after pending fsync, partial writes,
+fsync/completion faults, altered/missing/extra/symlink/hardlink files, private
+permissions, foreign/duplicate tickets, full 60-attempt tapes, missing keys,
+unknown/overrun usage, cancellations, hung/cancellation-resistant cleanup,
+ordered duplicate calls and astral Unicode/newline/quote/backslash identities.
+Fixture remains explicitly synthetic mechanics. No live request, real key,
+held-out data, database service, install or publication was used. Existing core,
+storage, locks, sealed data and targets unchanged; user edits preserved.
+Source and tests are `tools/provider_recordings.py`, `provider_journal.py`,
+`recorded_provider.py`, `provider_replay.mjs` and their owned tests. Report:
+`evaluation/reports/V6/V6-02C-recording.md`; commands synchronized in development
+and tooling guides. Owned links, whitespace and prose checks passed. Headroom:
+31 GiB disk, 45 percent memory free; serial tests, crash child closed, no owned
+process remains. Learning practice unassessed. Next smallest action: native
+five-mode Python/Node executor and sealed packet binding, then secure key target
+selection, genuine-profile publication, frozen held-out live/replay evaluation
+and remaining V6 gates. No mechanical pass establishes live TLS/model quality
+or release readiness; the full V6 objective remains active.

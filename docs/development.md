@@ -1,5 +1,22 @@
 # Cragkit development
 
+## Evaluation recording and provider replay
+
+The [recording contract](../contracts/EVALUATION_RECORDING_V6.md) separates
+pending dispatch, captured responses, usage estimates and healthy cleanup.
+These helpers are internal evaluation tooling; their tests make no live call.
+Use the existing development environment and a current TypeScript build, then
+run these checks serially from the root:
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_recorded_provider.py tools/tests/test_provider_journal.py tools/tests/test_provider_recordings.py tools/tests/test_provider_http.py tools/tests/test_live_evaluation_budget.py tools/tests/test_evaluation_payloads.py tools/tests/test_provider_adapters.py -q
+node --test --test-concurrency=1 tools/tests/provider_replay.test.mjs
+```
+
+[Recorded acceptance](../evaluation/reports/V6/V6-02C-recording.md) distinguishes
+mock HTTP/native adapter replay from genuine provider and held-out quality
+evidence. A journal seal alone does not prove a healthy evaluation exit.
+
 ## Explicit PostgreSQL embedding-profile upgrade
 
 [The profile guide](postgres-embedding-profiles.md) explains the optional OpenAI
