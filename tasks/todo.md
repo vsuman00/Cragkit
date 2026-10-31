@@ -3421,3 +3421,46 @@ User-owned prose/audit edits preserved and excluded from the scoped commit.
 Learning practice remains unassessed. Next smallest action: V6-01 freeze the
 release matrix, baseline-backed thresholds and evidence owners before held-out
 evaluation. V6 is planned; no registry publication or production claim.
+
+## V5-PILOT-01: Installed-package manual RAG pilot
+
+State: COMPLETE for local setup and mechanics; human testing pending. User-requested exploratory application after V5-EXIT; this
+adds no V6 acceptance or release claim. Root owns `examples/v5_rag/app.py`,
+`examples/v5_rag/session.py`, focused integration verification, development
+commands, evidence and tracker. Sol peer `v5_pilot_guide` owns
+`examples/v5_rag/corpus.json`, `examples/v5_rag/README.md` and
+`examples/v5_rag/CHECKLIST.md`. Frozen pilot contract: Python installed V5 wheel,
+PostgreSQL lexical retrieval, no inference; disposable local TLS PostgreSQL via
+existing development fixture. App commands: `docs`, `ask QUERY`, `prompt QUERY`,
+`user alice|bob|outside`, `reload DOCUMENT_ID`, `delete DOCUMENT_ID`, `budget N`,
+`help`, `quit`. Corpus JSON is a list of `{id,title,tenant,text}` objects;
+tenant is `team` or `other`, IDs are unique lowercase slugs, ten short synthetic
+engineering documents. Scope is fixed in application code, never query input;
+team owner is alice, bob has no grants, foreign reader is outside. Reads show unknown
+coverage honestly. Guide/checklist can run independently of app implementation.
+Acceptance: installed origin, ingest/replay, useful and absent evidence, scope
+isolation, immutable update, tombstone, context-budget failure and shutdown
+against actual isolated PostgreSQL; documentation links/prose reviewed. One
+serial test process, two max-one runtime pools after closing the setup client,
+no hosted mutation, provider call or model download. Root is final integrator,
+tracker/Git owner and escalation owner. Existing dirty source/audits preserved.
+Initial headroom: 30 GiB disk; 16 GiB physical RAM. Learning pending.
+
+Final handoff: [V5-PILOT-01 evidence](../evaluation/reports/V5/V5-PILOT-01.md).
+Sol delivered the synthetic corpus, README and checklist, then transferred
+ownership to root and reviewed app/session read-only. Root integrated and
+verified the installed `0.0.0` wheel's retained SHA-256, native TLS PostgreSQL,
+21 smoke observations, terminal commands and five custom-corpus interactive
+checks. Initial combined-role retrieval failed correctly; separate restricted
+read/write logins fixed the example without weakening the library. Reviewer
+findings led to recoverable missing-corpus command handling and documented
+one-hour session expiry. Private caller JSON is supported separately from the
+synthetic smoke corpus. Owned changes: five `examples/v5_rag/` files,
+development guide, this tracker and evidence report. Compilation, owned links,
+scoped whitespace and self-contained prose checks passed. Existing dirty core,
+adapter, storage prose and audit files remain excluded. Final headroom: 30 GiB
+disk, 38 percent system memory free; serial runs, no owned process remains.
+No paid/live inference, hosted mutation, release or model-quality claim.
+Learning practice and all human checklist results remain pending. Next smallest
+action: user runs the checklist, then tries private real documents and records
+failures; formal next release task remains V6-01.

@@ -1449,3 +1449,26 @@ module locations, guarded imports, pinned dependencies and installed MCP suites.
 Use a fresh optional-artifact output directory; existing evidence is preserved.
 These are local installation checks, separate from native backend conformance,
 provider quality, hosted CI and registry publication.
+
+## V5 installed-package manual pilot
+
+[V5-PILOT-01](../examples/v5_rag/README.md) installs the existing V5 core wheel
+with its PostgreSQL extra into a separate application environment. From the
+repository root, the verified initial setup is:
+
+```sh
+uv venv --python 3.14 examples/v5_rag/.venv
+uv pip install --python examples/v5_rag/.venv/bin/python 'artifacts/V5/V5-08/full-core-frameworks/core/python/cragkit-0.0.0-py3-none-any.whl[postgres]'
+uv run --project packages/python --frozen --no-sync python examples/v5_rag/session.py --smoke
+```
+
+Omit `--smoke` to start the interactive CLI. The launcher explicitly provisions
+disposable local PostgreSQL 17.11 with TLS and separate restricted reader/writer
+roles, then runs the installed application with Python isolated mode. It closes
+the setup administrator before opening the two max-one application pools and
+verifies database cleanup on normal exit. No hosted target or inference provider
+is used. Use `--corpus /absolute/private/pilot-corpus.json` for caller documents;
+the [guide](../examples/v5_rag/README.md) defines bounds and session lifetime.
+The [manual checklist](../examples/v5_rag/CHECKLIST.md) remains for human review.
+See [actual pilot evidence](../evaluation/reports/V5/V5-PILOT-01.md); this is
+exploratory feedback, separate from V6 release and independent usability gates.
