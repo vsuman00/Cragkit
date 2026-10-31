@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from functools import cmp_to_key
 from hashlib import sha256
 import json
+import inspect
 from pathlib import Path
 import re
 import time
@@ -198,11 +200,15 @@ def _config(value):
     return result
 
 
-async def run_evaluation(packet, *, reader_config, writer_config, tokenizer_path, kind='mechanics', send=None):
+async def run_evaluation(packet, *, reader_config, writer_config, tokenizer_path, kind='mechanics', send=None,
+                         on_rerank_input=None):
     packet = validate_packet(packet)
     if type(kind) is not str or kind not in ('mechanics', 'provider') or (kind == 'mechanics' and send is not None) or (kind == 'provider' and not callable(send)):
         raise EvaluationExecutionError('invalid_evaluation_configuration')
+    if on_rerank_input is not None and (not callable(on_rerank_input) or inspect.iscoroutinefunction(on_rerank_input)):
+        raise EvaluationExecutionError('invalid_evaluation_configuration')
     reader, writer = _Resource(_config(reader_config)), _Resource(_config(writer_config))
+    request_context = ContextVar('evaluation_rerank_context', default=None)
     counter = None
     rows, receipts, failure = [], [], None
     try:
@@ -212,6 +218,27 @@ async def run_evaluation(packet, *, reader_config, writer_config, tokenizer_path
             def no_lease():
                 if reader.active or writer.active:
                     raise InvalidRequest()
+            def audit_rerank(body):
+                if on_rerank_input is None:
+                    return
+                context = request_context.get()
+                if context is None:
+                    raise EvaluationExecutionError('invalid_evaluation_audit_context')
+                value = json.loads(body)
+                event = dict(question_id=context[0], mode=context[1],
+                    query_sha256=sha256(value['query'].encode('utf-8')).hexdigest(),
+                    profile_id=value['profile']['profile_id'], candidates=[
+                        dict(candidate_id=row['candidate_id'], text_sha256=sha256(row['text'].encode('utf-8')).hexdigest())
+                        for row in value['candidates']])
+                returned = on_rerank_input(event)
+                if returned is not None:
+                    if inspect.iscoroutine(returned):
+                        returned.close()
+                    elif isinstance(returned, asyncio.Future):
+                        returned.cancel()
+                        returned.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+                    raise EvaluationExecutionError('invalid_evaluation_audit_callback')
+                no_lease()
             async def fake_embed(body, *, deadline, max_response_bytes):
                 no_lease()
                 value = json.loads(body)
@@ -220,6 +247,7 @@ async def run_evaluation(packet, *, reader_config, writer_config, tokenizer_path
                     usage=dict(prompt_tokens=0, total_tokens=0)))
             async def fake_rank(body, *, deadline, max_response_bytes):
                 no_lease()
+                audit_rerank(body)
                 value = json.loads(body)
                 return _compact([dict(candidate_id=item['candidate_id'], raw_score=1/(index+1))
                                  for index, item in enumerate(value['candidates'])])
@@ -233,6 +261,7 @@ async def run_evaluation(packet, *, reader_config, writer_config, tokenizer_path
                     return await embedding_transport(body, **options)
                 async def ranked(body, **options):
                     no_lease()
+                    audit_rerank(body)
                     return await rank_transport(body, **options)
                 embedder = EmbeddingAdapter(embedded, _Counter(counter), profile=profile,
                     policy=EmbeddingPolicy(allow_live=True, max_cost_usd=.01, usd_per_million_tokens=.02))
@@ -272,6 +301,7 @@ async def run_evaluation(packet, *, reader_config, writer_config, tokenizer_path
                 filters = translate_filters(query['required_filters'], receipts, query['tenant_id'], query['collection'])
                 for mode in MODES:
                     started = time.perf_counter()
+                    context_token = request_context.set((query['question_id'], mode))
                     try:
                         request = parse_request(dict(request_id='eval-'+sha256(_compact([query['question_id'],mode])).hexdigest(),
                             query=query['query'], collection=query['collection'], required_filters=filters,
@@ -297,6 +327,8 @@ async def run_evaluation(packet, *, reader_config, writer_config, tokenizer_path
                         result = dict(operational_failure=True, error_code=error.code)
                     except Exception:
                         result = dict(operational_failure=True, error_code='evaluation_execution_failed')
+                    finally:
+                        request_context.reset(context_token)
                     rows.append(dict(question_id=query['question_id'], mode=mode, result=result,
                                      latency_ms=(time.perf_counter()-started)*1000))
     except BaseException as error:

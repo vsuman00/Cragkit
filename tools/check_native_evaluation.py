@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import socket
 import sys
+import shutil
 
 from check_qdrant_writer import read_bounded
 from postgres_vector_fixture import V6PostgresFixture
@@ -137,9 +138,12 @@ async def _node(packet, options):
     environment = {key: value for key, value in os.environ.items()
                    if not key.startswith(('PG', 'QDRANT__')) and key not in {
                        'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'OPENAI_API_KEY', 'COHERE_API_KEY',
+                       'NODE_PATH', 'PYTHONPATH', 'PYTHONHOME',
                        'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'}}
+    node = shutil.which('node')
+    require(node is not None, 'evaluation_node_missing')
     process = await asyncio.create_subprocess_exec(
-        'node', str(ROOT/'tools/typescript_retrieval_evaluation.mjs'),
+        str(Path(node).resolve()), str(ROOT/'tools/typescript_retrieval_evaluation.mjs'),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE, env=environment)
     output = asyncio.create_task(read_bounded(process.stdout, 16*1024*1024))

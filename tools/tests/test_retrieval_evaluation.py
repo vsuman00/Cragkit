@@ -159,6 +159,73 @@ def test_worker_preserves_cancellation_and_closes_both_pools(monkeypatch):
     assert len(resources)==2 and all(resource.closed for resource in resources)
 
 
+def test_rerank_audit_captures_request_local_hashes_without_mutating_transport(monkeypatch):
+    fake_native(monkeypatch)
+    original = E.PostgresRetriever
+    class AuditedRetriever(original):
+        def __init__(self, resource, **options):
+            super().__init__(resource, **options)
+            self.reranker = options['evidence_options'].get('reranker')
+        async def retrieve(self, request, **options):
+            if self.reranker is not None:
+                ranked = await self.reranker.rank(request.query,
+                    [dict(candidate_id='evidence-1', text='authorized synthetic source')],
+                    deadline=options['deadline'], max_provider_calls=1)
+                assert ranked['order'] == ['evidence-1']
+            return await super().retrieve(request, **options)
+    monkeypatch.setattr(E, 'PostgresRetriever', AuditedRetriever)
+    events = []
+    def audit(event):
+        events.append(copy.deepcopy(event))
+        event['candidates'].clear()
+    output = asyncio.run(E.run_evaluation(PACKET, reader_config=CONFIG, writer_config=CONFIG,
+        tokenizer_path='mock', on_rerank_input=audit))
+    assert len(events) == len(PACKET['queries'])
+    assert all(event['mode'] == 'reranked_hybrid' for event in events)
+    for event, query in zip(events, PACKET['queries'], strict=True):
+        assert set(event) == {'question_id', 'mode', 'query_sha256', 'profile_id', 'candidates'}
+        assert event['question_id'] == query['question_id']
+        assert event['query_sha256'] == sha256(query['query'].encode()).hexdigest()
+        assert event['candidates'] == [dict(candidate_id='evidence-1',
+            text_sha256=sha256(b'authorized synthetic source').hexdigest())]
+        assert 'authorized synthetic source' not in json.dumps(event)
+    assert not any(row['result'].get('operational_failure') for row in output['rows'])
+
+
+def test_invalid_audit_callback_is_refused_before_resources(monkeypatch):
+    monkeypatch.setattr(E, '_Resource', lambda *args:pytest.fail('Unexpected resource'))
+    with pytest.raises(E.EvaluationExecutionError, match='configuration'):
+        asyncio.run(E.run_evaluation(PACKET, reader_config=None, writer_config=None,
+            tokenizer_path='unused', on_rerank_input=object()))
+
+
+def test_audit_failure_keeps_mode_denominators_and_closes_callback_coroutines(monkeypatch):
+    fake_native(monkeypatch)
+    original = E.PostgresRetriever
+    class AuditedRetriever(original):
+        def __init__(self, resource, **options):
+            super().__init__(resource, **options)
+            self.reranker = options['evidence_options'].get('reranker')
+        async def retrieve(self, request, **options):
+            if self.reranker is not None:
+                await self.reranker.rank(request.query, [dict(candidate_id='evidence', text='public')],
+                    deadline=options['deadline'], max_provider_calls=1)
+            return await super().retrieve(request, **options)
+    monkeypatch.setattr(E, 'PostgresRetriever', AuditedRetriever)
+    returned = []
+    async def callback_result():
+        raise AssertionError('Async callback must not run')
+    def audit(event):
+        result = callback_result();returned.append(result)
+        return result
+    output = asyncio.run(E.run_evaluation(PACKET, reader_config=CONFIG, writer_config=CONFIG,
+        tokenizer_path='mock', on_rerank_input=audit))
+    assert len(output['rows']) == 30
+    assert all(row['result'].get('operational_failure')
+               for row in output['rows'] if row['mode'] == 'reranked_hybrid')
+    assert all(E.inspect.getcoroutinestate(value) == 'CORO_CLOSED' for value in returned)
+
+
 def test_cleanup_failure_cannot_claim_verified_completion(monkeypatch):
     resources,*_=fake_native(monkeypatch,cleanup_failure=True)
     with pytest.raises(E.EvaluationExecutionError):
