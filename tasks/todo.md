@@ -4019,3 +4019,26 @@ execution. Unrelated user prose/audits/old tracker draft remain preserved.
 Clean-preparation resource observation:31GiB disk free,51percent system memory
 free after completion; test/native processes remained serialized. Learning practice
 is unassessed; the clean-runtime report offers an optional identity exercise.
+
+V6-02E3 external dependency revalidated: the secure setup launch has no confirmed
+widget-authored account target yet, and silent environment/.env.local/.env checks
+still find no OpenAI key. No form was reopened, secret created, live call issued
+or test rerun. The user was asked to complete the existing account selection or
+report a missing form. No later task is dependency-ready under the active plan.
+Code and accepted clean identity remain unchanged; no service/process started.
+Next: receive the confirmed picker follow-up, then confirm the private destination.
+This is an external-input wait, not additional implementation progress; V6 stays
+open. The prior handoff's resource/learning observations remain the last samples.
+
+V6 blocked audit: the same unconfirmed secure OpenAI target/key dependency has
+now persisted across three consecutive goal turns, including the setup launch
+and two revalidations. The preceding turn was no progress: status/credential
+revalidation only, with no completed implementation or new acceptance evidence.
+Current silent checks still find no key; no confirmed widget selection arrived.
+The plan requires V6-02 before V6-03 and each later gate in sequence, so there is
+no remaining dependency-ready implementation without that external input.
+Mark the full goal BLOCKED on provider setup, not complete. Preserve the verified
+candidate, reports, dirty user work and pending question. Next: confirmed app
+selection, then private destination confirmation and the bounded genuine run.
+No tests, models, services or paid calls ran for this audit; prior resource and
+learning observations remain scoped to the accepted clean-preparation run.
