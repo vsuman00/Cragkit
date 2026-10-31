@@ -8,8 +8,8 @@ Source-linked evidence · Coverage estimates · Limitations · Execution diagnos
 
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](packages/python)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Node_26-3178C6?logo=typescript&logoColor=white)](packages/typescript)
-[![Status](https://img.shields.io/badge/Status-V5_Local_Milestone_Complete-green)](#current-status)
-[![License](https://img.shields.io/badge/License-TBD-lightgrey)](#)
+[![Status](https://img.shields.io/badge/Status-V6_In_Progress-yellow)](#current-status)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 </div>
 
@@ -20,7 +20,7 @@ Cragkit is a retrieval library with native Python and TypeScript packages. It re
 Coverage remains unknown unless the application configures a suitable assessment policy.
 
 > [!IMPORTANT]
-> Package version `0.0.0` and the `cragkit` package names are provisional. Registry publication, license selection and hosted CI evidence remain separate.
+> Package version `0.0.0` and the `cragkit` package names are provisional. The project uses MIT; registry publication and hosted CI evidence remain separate.
 
 ## What Cragkit Does
 
@@ -45,7 +45,7 @@ The **npm** package runs natively in Node.js — no Python server required. The 
 | **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
 | **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [V4 exit evidence](evaluation/reports/V4/V4-08-exit.md) |
 | **V5** | Qdrant publication and repair, existing indexes and optional MCP | ✅ Complete for the declared local native milestone | [V5 exit evidence](evaluation/reports/V5/V5-exit.md) · [Install and operations guide](docs/v5-operations.md) |
-| **V6** | Evaluation and release | 🔲 Planned | [V6 plan](tasks/versions/V6-release.md) |
+| **V6** | Evaluation and release | 🚧 In progress; preregistration complete | [V6 plan](tasks/versions/V6-release.md) · [Release freeze](evaluation/reports/V6/V6-01.md) |
 
 > [!NOTE]
 > V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. Live-model quality, hosted CI, production acceptance and registry publication remain separate V6 work.
@@ -136,6 +136,7 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 - [Agent instructions](AGENTS.md) — Bounded ownership and resource policy
 - [Coordination protocol](docs/agents/WORKFLOW.md) — Multi-agent coordination
 - [Version control](docs/version-control.md) — Scoped commits, immediate pushes and synchronization checks
+- [First open-source release guide](docs/open-source-release-guide.md) — Learn package builds, testing, CI, publishing and maintenance
 
 </details>
 

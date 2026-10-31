@@ -1472,3 +1472,19 @@ the [guide](../examples/v5_rag/README.md) defines bounds and session lifetime.
 The [manual checklist](../examples/v5_rag/CHECKLIST.md) remains for human review.
 See [actual pilot evidence](../evaluation/reports/V5/V5-PILOT-01.md); this is
 exploratory feedback, separate from V6 release and independent usability gates.
+
+## V6 release preregistration
+
+[Decision 0004](decisions/0004-v6-release-freeze.md) freezes the candidate
+configuration, independent metrics, input digests and limits before held-out
+evaluation. The following command verifies configuration only and never opens
+held-out labels. It cannot establish release readiness.
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_v6_release.py tools/tests/test_v6_metrics.py -q
+python3 tools/check_v6_release.py
+```
+
+The [beginner release guide](open-source-release-guide.md) explains local
+packages, CI and registry publication as separate steps. MIT is selected; exact
+release-candidate metadata and artifacts remain V6-06 work.

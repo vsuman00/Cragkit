@@ -324,7 +324,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 [Version plan](versions/V6-release.md)
 
-- [ ] V6-01: [Freeze release scope and thresholds](versions/V6-release.md#v6-01-freeze-release-scope-and-thresholds) — evidence: pending.
+- [x] V6-01: [Freeze release scope and thresholds](versions/V6-release.md#v6-01-freeze-release-scope-and-thresholds) — [preregistration acceptance](../evaluation/reports/V6/V6-01.md).
 
 - [ ] V6-02: [Held-out retrieval evaluation](versions/V6-release.md#v6-02-held-out-retrieval-evaluation) — evidence: pending.
 
@@ -351,6 +351,22 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
 
 ## Session handoff
+
+V6-01 assignment (running): freeze supported candidate/evaluation scope before
+held-out access. Sol `v601_coverage` owns new
+`evaluation/release/V6-coverage.json` and
+`evaluation/reports/V6/V6-01-coverage.md`; Sol `v601_metrics` owns new
+`evaluation/runners/v6_metrics.py`, `tools/tests/test_v6_metrics.py` and
+`evaluation/release/V6-metrics.md`. Coverage peer assembles; peers coordinate
+concrete dependencies directly. Primary owns the shared release manifest,
+threshold decisions, tracker, final integration, Git and escalation. No peer
+opens held-out labels, starts tests/services, installs or makes live calls.
+One serialized test slot, small public fixtures, 30 GiB disk/41 percent system
+memory free initially. Existing dirty prose/audit files remain user-owned.
+License decision requested while independent engineering continues. Acceptance:
+BRD/edge-case evidence audit, exact metric denominators and independent label
+checks, development-only baseline-backed targets, frozen digests/matrix and
+explicit unresolved release gates. Full V6 objective remains unchanged.
 
 ### V5-04G0: Current-epoch preparation attestations
 
@@ -3464,3 +3480,14 @@ No paid/live inference, hosted mutation, release or model-quality claim.
 Learning practice and all human checklist results remain pending. Next smallest
 action: user runs the checklist, then tries private real documents and records
 failures; formal next release task remains V6-01.
+
+V6-01 handoff: COMPLETE preregistration, with 16 focused metric/preflight tests
+and 10 BR/105 edge owners indexed. Sol peers resolved outage/rank semantics
+directly; primary integrated frozen digests, zero-invariant/paired-quality
+targets, prior-baseline resource budgets and trial criteria. MIT chosen by
+user; root added LICENSE and preserved README structure. New beginner release
+guide is verified documentation, not publication evidence. No held-out
+access/live call/service/model download. Existing user-owned dirty files
+remain excluded. Next V6-02: implement the actual five-mode native comparison,
+then deliberate frozen held-out execution; dedicated OpenAI secure setup is
+pending, so no fake result may close live-quality acceptance. V6 remains active.
