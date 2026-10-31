@@ -1,8 +1,9 @@
 # Candidate execution and scoring checkpoint
 
 V6-02E offline implementation checkpoint: PASS. Actual clean-candidate runtime
-preparation is IMPLEMENTED_UNVALIDATED. Original held-out quality and V6 release
-acceptance remain open.
+preparation was IMPLEMENTED_UNVALIDATED at this snapshot; the later
+[clean-runtime report](V6-02F-clean-runtime.md) records its actual acceptance.
+Original held-out quality and V6 release acceptance remain open.
 
 For example, a worker that omits the corrective row must fail the entire stage
 with all five mode denominators. It cannot disappear from the benchmark. The

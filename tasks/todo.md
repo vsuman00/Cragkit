@@ -3926,7 +3926,7 @@ all later V6 tasks. Learning practice unassessed; report gives denominator exerc
 
 ## V6-02F: RC identity preparation prerequisite
 
-State: RUNNING. Root accepted the Sol pair's A1 resolution and recorded
+State: COMPLETE for the preparation prerequisite. Root accepted the Sol pair's A1 resolution and recorded
 `docs/decisions/0005-release-candidate-identity.md`, amending ADR0004 and the V6
 plan before metadata edits. Frozen contract: package Python `1.0.0rc1`, npm
 `1.0.0-rc.1`, native result engine and MCP server `1.0.0-rc.1`, schema `0.1`.
@@ -3988,3 +3988,31 @@ was removed, no model/target/label/package-tree change or paid call occurred.
 The npm probe fix also passed the final complete Python/tool suite:3,621 tests,
 four intentional serializer warnings. This is a tools-only correction; package
 bytes/tree remain unchanged. Re-freeze its new source commit before clean ECR.
+
+V6-02F4 actual clean acceptance: COMPLETE. ECR prepare and independent verify
+passed in `artifacts/V6/candidate-rc1`, at checkout9c227411ce86e1e79372f2bf6a7bf3a8d8aec00e
+with source16f70cfc2d0400706056eb24745cccd40c1403e3 and unchanged package tree.
+Receipt identity51f3525a40076eccec0fca739675eadb82b6335c27a9ccde4139c884398fc8a4
+binds9,411files,100Node emitted files, tokenizer and exact runtime versions.
+Directory0700/file0600 verified. Frozen offline installations were reused only
+across the tools-only fast-forward with identical package tree. Parent reran in
+that clean checkout with the prepared receipt:120rows/nine receipts per runtime,
+exactRCengine, parity/same-shortlist targets and cleanup all pass; final source
+status is empty. The development packet's own flags remain false by design;
+parent-level ECR identity supplies the separately verified execution proof.
+No paid call or original held-out interpretation. Current full Python3,621 and
+Node1,617 evidence remains scoped; report V6-02F-clean-runtime.md and structured
+V6-02F-clean-verification.json bind actual commands, identities and raw hashes.
+This closes E's actual clean-runtime prerequisite, not V6-02 genuine quality.
+Next: finish the secure OpenAI target/destination flow, then the bounded original
+held-out live comparison and healthy native replay. The prior new-key decision
+is already resolved; do not ask it again. OpenAI key presence checks found none;
+existing Cohere file passed only local format/permission checks, no API claim.
+Provider access remains disabled until configured; no plaintext key in chat/logs.
+Do not repeatedly reopen the target picker without its confirmed app follow-up.
+Later V6-03 through V6-09 and all checkpoints remain required; goal stays active.
+Task-owned processes closed; clean checkout is intentionally retained for live
+execution. Unrelated user prose/audits/old tracker draft remain preserved.
+Clean-preparation resource observation:31GiB disk free,51percent system memory
+free after completion; test/native processes remained serialized. Learning practice
+is unassessed; the clean-runtime report offers an optional identity exercise.

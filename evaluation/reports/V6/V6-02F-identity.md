@@ -1,8 +1,9 @@
 # RC identity and local artifact preparation
 
-V6-02F local preparation checkpoint: PASS. Clean source/runtime preparation is
-still pending the source commit, preregistration refreeze and isolated checkout.
-This does not complete V6-02 or the later V6-06 release gate.
+V6-02F local preparation checkpoint: PASS. Clean source/runtime preparation was
+pending at this snapshot; the later [clean-runtime report](V6-02F-clean-runtime.md)
+records its actual acceptance. This does not complete V6-02 or the later V6-06
+release gate.
 
 For example, a result parsed from an older recording may still declare engine
 `0.0.0`. A newly built RC must declare `1.0.0-rc.1`. Accepting historical wire

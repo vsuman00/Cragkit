@@ -1,0 +1,157 @@
+{
+  "task": "V6-02F4",
+  "state": "passed",
+  "clean_checkout": "artifacts/V6/candidate-rc1",
+  "checkout_commit": "9c227411ce86e1e79372f2bf6a7bf3a8d8aec00e",
+  "source_commit": "16f70cfc2d0400706056eb24745cccd40c1403e3",
+  "package_tree": "05fdc769488f496ef71ec6b988383fa8d1f18b1c",
+  "configuration_sha256": "c4296d7b6ebdd1228ccba20fa351bc11c3a2754b1b1fdb6a8947dc7c4671a774",
+  "runtime_identity_sha256": "51f3525a40076eccec0fca739675eadb82b6335c27a9ccde4139c884398fc8a4",
+  "runtime_versions": {
+    "node": "26.5.0",
+    "npm": "11.17.0",
+    "python": "3.14.6",
+    "python_bytecode_writes": false,
+    "typescript": "7.0.2"
+  },
+  "runtime_inventory_files": 9411,
+  "node_emitted_files": 100,
+  "tokenizer_sha256": "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7",
+  "source_status_clean": true,
+  "receipt_permissions": "0700 directory / 0600 file",
+  "install_provenance": "Explicit frozen offline installs in new checkout; package tree unchanged across tools-only npm probe fix and fast-forward.",
+  "initial_failed_attempt": {
+    "stage": "npm-version-probe",
+    "reason": "npm refuses one /dev/null config for both user and global roles",
+    "receipt_created": false,
+    "held_out_opened": false
+  },
+  "verification_commands": [
+    {
+      "name": "runtime-prepare",
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "packages/python",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "-B",
+        "tools/evaluation_runtime.py",
+        "prepare",
+        "--output",
+        "artifacts/V6/runtime-identity"
+      ],
+      "cwd": "artifacts/V6/candidate-rc1",
+      "exit_code": 0,
+      "elapsed_seconds": 3.882
+    },
+    {
+      "name": "runtime-verify",
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "packages/python",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "-B",
+        "tools/evaluation_runtime.py",
+        "verify",
+        "--receipt",
+        "artifacts/V6/runtime-identity/runtime.json"
+      ],
+      "cwd": "artifacts/V6/candidate-rc1",
+      "exit_code": 0,
+      "elapsed_seconds": 2.683
+    },
+    {
+      "name": "native-parent",
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "packages/python",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "-B",
+        "tools/run_release_evaluation.py",
+        "--mode",
+        "mechanics",
+        "--runtime-receipt",
+        "artifacts/V6/runtime-identity/runtime.json",
+        "--prepared-postgres-bin",
+        "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin",
+        "--output",
+        "artifacts/V6/mechanics",
+        "--allow-local-processes"
+      ],
+      "cwd": "artifacts/V6/candidate-rc1",
+      "exit_code": 0,
+      "elapsed_seconds": 21.939
+    },
+    {
+      "name": "source-status",
+      "command": [
+        "git",
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        "--",
+        "packages",
+        "tools",
+        "contracts",
+        "evaluation/runners",
+        "evaluation/release"
+      ],
+      "cwd": "artifacts/V6/candidate-rc1",
+      "exit_code": 0,
+      "elapsed_seconds": 0.022
+    }
+  ],
+  "native_rows": {
+    "python_mechanics": {
+      "rows": 120,
+      "receipts": 9
+    },
+    "node_mechanics": {
+      "rows": 120,
+      "receipts": 9
+    }
+  },
+  "normalized_parity": true,
+  "same_shortlist_verified": true,
+  "live_quality_accepted": false,
+  "live_http_calls": 0,
+  "held_out_interpreted": false,
+  "cleanup_verified": true,
+  "evidence": {
+    "artifacts/V6/V6-02F/clean-checks/commands.json": "a1c7ae4babe070408c15fbea7b9112b74b5c18b4826d9c456163ae0b9f1d731f",
+    "artifacts/V6/V6-02F/clean-checks/node-build.log": "5105a57f3a42826969b1fa4317509f0095eff591af2a60e3252b80aa70601525",
+    "artifacts/V6/V6-02F/clean-checks/node-frozen-install.log": "54b349e73254c3cad9a0a472ebc2b6b0a97278484c458a798553b7b0219002a7",
+    "artifacts/V6/V6-02F/clean-checks/python-frozen-install.log": "470bd6791aa91fc99ee43f66aefa08cda932b26acde4884761f05c0aee25a08e",
+    "artifacts/V6/V6-02F/clean-checks/runtime-prepare.log": "6dfc19dd1c341a20fec921e179fb66692a330fd9fbfeccdf139f24a3f27e6f84",
+    "artifacts/V6/V6-02F/clean-verification/commands.json": "dcdbd0fd44e8c90fb2c71e0a3a4d872fd68e323b298c40891fa7f006dcd402b9",
+    "artifacts/V6/V6-02F/clean-verification/native-parent.log": "523e12ca5437f37e3f8c6a0a43d714a890934d149fd8342a6c2ae94dcb73993a",
+    "artifacts/V6/V6-02F/clean-verification/runtime-prepare.log": "4e0a8255003ae8542c2cc0e5ec5f4c96a6ffcde08821c568e0371d8feab86121",
+    "artifacts/V6/V6-02F/clean-verification/runtime-verify.log": "6918ea395bbd7fb90a676da6a6317be04a3cc1308a60bc3f54ba0c918d5458d1",
+    "artifacts/V6/V6-02F/clean-verification/source-status.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/V6/candidate-rc1/artifacts/V6/mechanics/node_mechanics-raw.json": "c6470a2a687ac1e1d1cb7f7f6fa7b6e4dd4915da110c8bf29bb844200ba091fd",
+    "artifacts/V6/candidate-rc1/artifacts/V6/mechanics/node_mechanics.json": "c6470a2a687ac1e1d1cb7f7f6fa7b6e4dd4915da110c8bf29bb844200ba091fd",
+    "artifacts/V6/candidate-rc1/artifacts/V6/mechanics/python_mechanics-raw.json": "8b6af6e8800cbc1e10a7db8bea775dcac4e8473953518ce32cacd24b0a20cefd",
+    "artifacts/V6/candidate-rc1/artifacts/V6/mechanics/python_mechanics.json": "8b6af6e8800cbc1e10a7db8bea775dcac4e8473953518ce32cacd24b0a20cefd",
+    "artifacts/V6/candidate-rc1/artifacts/V6/mechanics/rerank-inputs.json": "52d5d676b04ceb68c95c9fbb5cf758abf6c576f36930c37740e172281470a02e",
+    "artifacts/V6/candidate-rc1/artifacts/V6/mechanics/results.json": "0ec7d1f5631169b3a4ea9dd43adc2973f236a259aa7894d11821b59c9cf14286",
+    "artifacts/V6/candidate-rc1/artifacts/V6/mechanics/run-binding.json": "7e2cadfba7e1f57ec50e05ae89e5af6bd56936df044c43abe0c7c37c1dba57f9",
+    "artifacts/V6/candidate-rc1/artifacts/V6/mechanics/scores.json": "a8c92035a1640f65c6f1df6bfae69755987239b70d2c659d0934788be9dcd569",
+    "artifacts/V6/candidate-rc1/artifacts/V6/runtime-identity/runtime.json": "b24efb89c1fc971e9c015b41229ac364941a04f849be67b56f136795efd7d6a2"
+  },
+  "limits": [
+    "Actual clean source/runtime preparation, not published artifact/hosted CI evidence.",
+    "Development packet provenance retains source/compiled false because the packet binder is separate; the independently verified ECR identity is explicitly recorded at parent level.",
+    "Genuine hosted model/held-out quality evaluation and all later V6 release gates remain open."
+  ]
+}
