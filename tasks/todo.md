@@ -3228,3 +3228,83 @@ focused parent tests, this tracker and report. Ignored native result:
 no owned process remains and no provider call ran. Full package regressions
 last passed at H-S30. Learning practice unassessed. Next smallest action:
 exact H fault `lease_expiry_not_fencing`. H/V5 remain open.
+
+H-S34 assignment (V5-04H exact ID `lease_expiry_not_fencing`): one shared
+outcome is an actual live old HTTP capability after the owner loses authority
+access, followed by expiry of the configured operation deadline and continued
+successor refusal until managed fencing. Audit contract QW-r1, fixture row,
+QD-P03 acceptance and existing H-S28/H-S30/H-S31 native traces before code.
+Sol `h_lease_python` owns read-only Python/product/native audit and writes only
+ignored `artifacts/V5/V5-04H/lease-expiry-python-audit.md`; it assembles.
+Sol `h_lease_node` owns read-only TypeScript/product/native audit and writes
+only ignored `artifacts/V5/V5-04H/lease-expiry-node-audit.md`. Direct peer
+messages resolve concrete seams. Root owns contract/acceptance decision,
+protocol, later implementation, serial verification, tracker/report/Git and
+Astra escalation if unresolved. Product, schema/migrations, shared fixture,
+contracts, locks, existing consumers and user-owned edits are protected.
+No peer tests/services/network/DB/Git; fake providers only. State: read-only
+audit assigned; H/V5 open.
+
+H-S34 pair audits and bounded Astra review resolved the missing timed-lease
+wording. The proposed fixture/acceptance clarification uses original operation
+deadline expiry with one test-owned same-request socket. Frozen ignored protocol:
+`artifacts/V5/V5-04H/lease-expiry-r2-protocol.md`. Sol Python now owns only
+new `tools/qdrant_lease_expiry_cases.py` and assembles; Sol Node owns only
+new `tools/check_typescript_qdrant_lease_expiry.mjs`. Root owns parent routing,
+closed result tests, shared wording, serial acceptance and tracker/report/Git.
+State: implementation assigned; H/V5 open.
+
+H-S34 implementation handoff: automatic worker safety review rejected the
+delayed authenticated-socket implementation request. No H-S34 consumer exists
+or native pass is claimed. Proposed shared wording remains only in the ignored
+protocol until native acceptance. Root is preserving the exact outcome and proceeding with the
+independent final H fault while assessing a safer high-level request fixture.
+
+H-S35 assignment (V5-04H exact ID `supervisor_crash_blocks`): shared outcome
+is actual supervisor loss/pause while a writer has an admitted capability,
+with successor supervisor and dispatch admission refused. Sol Python owns
+read-only Python supervisor/worker audit and ignored
+`artifacts/V5/V5-04H/supervisor-loss-python-audit.md`, and assembles. Sol Node
+owns corresponding TypeScript audit and ignored
+`artifacts/V5/V5-04H/supervisor-loss-node-audit.md`. They coordinate directly.
+Root owns outcome/contract decisions, protocol, later native verification,
+tracker/report/Git and escalation. All product/schema/contracts/fixtures and
+existing consumers are read-only. No peer runtime commands, tests, services,
+network, DB or Git actions. State: audit assigned; H/V5 open.
+
+Regression checkpoint after H-S33: root ran the actual current checkout with
+`uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests tools/tests -q`
+and passed 3,109 tests with four existing Pydantic serializer warnings. Then
+`npm test` in `packages/typescript` passed the strict build and all 1,557 tests.
+These runs include user-owned dirty source files, which were preserved and
+are excluded from commits. No native integration service ran in parallel.
+H-S34/H-S35 and V5 parent/downstream acceptance remain open. The next action
+is integrate H-S35 audit evidence, then implement its smallest native trace;
+H-S34 still needs an allowed request-continuity implementation. No full V5
+completion or production readiness is claimed.
+
+H-S35 Node audit found the exact reversible pause path needs a dedicated
+supervisor-owning child; healthy competing-controller and paused-writer traces
+do not suffice. Python peer audit was unavailable after automatic review
+rejection. Primary (Sol) takes Python consumer/parent/test ownership; Sol Node
+owns only new `tools/check_typescript_qdrant_supervisor_pause.mjs` and
+assembles against the primary's Python lane. Frozen ignored protocol:
+`artifacts/V5/V5-04H/supervisor-loss-r2-protocol.md`. Root remains final
+integrator/tracker/Git owner. All product/schema/contracts/shared fixtures
+remain protected. No peer runtime commands. State: implementation assigned.
+Python strict typecheck also passed all 49 source files at this checkpoint.
+
+H-S35 accepted for exact `supervisor_crash_blocks` using its pause alternative.
+Actual supervisor suspension, original server identity, competitor and owner
+refusal, unchanged uncertainty/pointer and verified cleanup passed. Final native
+run passed 14 checks with matching witness
+`8f03426ad01a73d256c1b1d698064a397e1120339c5ddaac9294d2845a63ec62`.
+Four focused tests, syntax/compilation and 16 seals passed.
+[Checkpoint report](../evaluation/reports/V5/V5-04H-supervisor-pause.md).
+Changed scope: two consumers, worker parent, focused test, development command,
+tracker and report. Ignored result:
+`artifacts/V5/V5-04H/supervisor-pause-both-02/results.json`. No owned process
+remains. Learning practice unassessed. H-S34 is the final unaccepted exact H
+case; V5 parent/downstream gates remain open. User clarified Daybreak access
+was meant; normal development and required consistency checks continue.
+Delegation tools are unavailable this turn; primary integrated existing peer work.

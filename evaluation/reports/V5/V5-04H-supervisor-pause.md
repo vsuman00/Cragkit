@@ -1,0 +1,11 @@
+# V5-04H: Supervisor pause blocks takeover
+
+State: COMPLETE for exact `supervisor_crash_blocks`, using its pause alternative. V5-04H and V5 remain open.
+
+For example, an unresponsive supervisor may still own a running Qdrant server and an admitted writer. A replacement must preserve that ownership and the unresolved dispatch.
+
+Each native test starts an isolated process owning the actual supervisor and publication worker host. It publishes a baseline, stages two successors, then holds the real worker after capability delivery and durable dispatch. The outer observer pauses the supervisor process and verifies its stopped state while the original Qdrant listener remains alive. A same-directory supervisor cannot initialize or provision a server. An independent writer cannot acquire the competing successor's owner. Repeated observations preserve the original owner, dispatch and active pointer. The same supervisor resumes solely to terminate its worker and close resources; the old worker does not publish.
+
+Python-only and TypeScript-only cases each passed seven checks. The final combined native run passed 14 with matching witness SHA-256 `8f03426ad01a73d256c1b1d698064a397e1120339c5ddaac9294d2845a63ec62` and verified cleanup. Ignored evidence: `artifacts/V5/V5-04H/supervisor-pause-both-02/results.json`. Four focused protocol tests, Python compilation, Node syntax and all 16 input seals passed. Earlier checkout regressions passed 3,109 Python/tool tests, 1,557 Node tests with strict build, and Python strict typechecking over 49 files; those preceded these new consumers.
+
+The initial Python fixture called cleanup on an object without a close method and masked a missing pool-open prerequisite. Root stopped the two resulting task-owned servers, made cleanup continue through every resource, and opened pools before initialization. Subsequent native runs passed, including listener identity and pool-close checks. No product, schema, shared fixture or user-owned source change was made. This is local single-node evidence for the permitted pause alternative. Automatic recovery after supervisor death and production readiness remain unproven. Learning practice remains unassessed: explain why resuming the original owner for cleanup differs from admitting a replacement.

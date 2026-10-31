@@ -1381,3 +1381,16 @@ original identities and digests and checks every managed body and erasure
 marker. A completed retry must avoid HTTP, DML and body loading. Native results
 and remaining acceptance gaps belong in the G3 report and tracker; this command
 does not establish the complete H fault matrix or production readiness.
+
+### Supervisor pause acceptance
+
+The isolated pause scenario holds a real admitted publication worker while its
+supervisor process is stopped. It checks independent controller and SQL owner
+refusal, then resumes the same owner for cleanup. Run both runtimes serially:
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_worker.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --scenario supervisor_pause --runtime all --artifacts-dir artifacts/V5/V5-04H/supervisor-pause-both-02
+```
+
+Choose a fresh artifact directory for each run. The command proves the pause
+alternative only; it does not implement automatic supervisor takeover.

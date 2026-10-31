@@ -52,3 +52,18 @@ def test_failure_keeps_primary_and_cleanup_codes_without_raw_error_text():
             dict(observed, cleanup=[dict(operation='raw-secret', outcome='internal')])):
         with pytest.raises(RuntimeError, match='publication_worker_native_failure_shape'):
             failure_observation(deepcopy(changed))
+
+
+def test_supervisor_pause_evidence_has_its_own_closed_scope():
+    from qdrant_supervisor_pause_cases import CHECKS as PAUSE_CHECKS, PROOF_SCOPE
+    assert len(PAUSE_CHECKS)==len(set(PAUSE_CHECKS))==7
+    value=dict(runtime='python',checks=list(PAUSE_CHECKS),proof_scope=PROOF_SCOPE,
+        public_results_sha256='c'*64)
+    assert validate_result(value,'python',scenario='supervisor_pause')==value
+    for changed in (dict(value,checks=list(PAUSE_CHECKS[:-1])),dict(value,private='data'),
+                    dict(value,proof_scope='full_H_matrix'),dict(value,runtime='typescript')):
+        with pytest.raises(RuntimeError):validate_result(changed,'python',scenario='supervisor_pause')
+    with pytest.raises(RuntimeError):validate_result(value,'python')
+    assert failure_observation(dict(ok=False,step=7,error='ProviderUnavailable'),scenario='supervisor_pause')['step']==7
+    with pytest.raises(RuntimeError):
+        failure_observation(dict(ok=False,step=8,error='ProviderUnavailable'),scenario='supervisor_pause')
