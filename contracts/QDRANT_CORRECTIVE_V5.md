@@ -2,7 +2,7 @@
 
 Task: V5-07. This contract extends the trusted backend handoff used by the native corrective engines. It does not change the request or result wire schemas.
 
-State: accounting/candidate handoffs and both optional adapters are implemented with deterministic boundary checks. Actual native backend/transport conformance remains V5-07C; clean installed artifacts remain V5-08.
+State: accounting/candidate handoffs, both optional adapters and the declared native backend/transport matrix are accepted under V5-07. Clean installed artifacts remain V5-08. See [native evidence](../evaluation/reports/V5/V5-07.md) for tested profiles and limits.
 
 For example, PostgreSQL cosine distance 0 and Qdrant cosine similarity 1 can describe the same direction. Keep each backend's score semantics rather than converting a nomination into a PostgreSQL distance candidate.
 

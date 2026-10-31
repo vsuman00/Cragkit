@@ -312,7 +312,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V5-C2: Demonstrations, core/shared regressions, optional-host suites/types and resource observations passed; [evidence](../evaluation/reports/V5/V5-C2.md), learner practice unassessed.
 
-- [ ] V5-07: [Backend and transport parity](versions/V5-integrations.md#v5-07-backend-and-transport-parity) — evidence: pending.
+- [x] V5-07: [Backend and transport parity](versions/V5-integrations.md#v5-07-backend-and-transport-parity) — native matrix passed; [evidence](../evaluation/reports/V5/V5-07.md).
 
 - [ ] V5-08: [Beta installation and operations guide](versions/V5-integrations.md#v5-08-beta-installation-and-operations-guide) — evidence: pending.
 
@@ -3372,3 +3372,14 @@ Changed: new optional TypeScript module/test, package export, QCC-r1 state and
 tracker/report. No new dependency or owned process. Learning unassessed.
 V5-07B deterministic implementation checks are complete; C remains required
 for actual PostgreSQL/Qdrant direct/tool/MCP combinations, followed by V5-08.
+
+V5-07C accepted: actual PostgreSQL lexical/Qdrant dense profiles through direct,
+LangChain and official MCP entry points in both runtimes passed 84 retrieval
+calls and 16 boundary refusals, exact parsed cross-runtime results and cleanup.
+Actual 8+1 partial publication fault preserves SQL uncertainty/old pointer;
+all routes deny unpublished source. Four parent protocol guards passed.
+[Evidence](../evaluation/reports/V5/V5-07.md). Changed: locked tool environment,
+common native fixture, parent, two runtime consumers, focused test, QCC status
+and tracker/report. No owned process remains. Learning practice unassessed.
+V5-07 parent is complete for its declared matrix. Next V5-08 clean optional
+artifacts, beta operations guide, C3 and full V5-EXIT verification.

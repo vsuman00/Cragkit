@@ -1402,3 +1402,27 @@ managed recovery. Use a fresh artifact directory, for example
 `artifacts/V5/V5-04H/deadline-both-02`, with the command above and replace
 `--scenario supervisor_pause` with `--scenario deadline`. The original and
 reserved scenarios remain `--scenario ordinary` and `--scenario reserved`.
+
+## V5 corrective adapters and native transport matrix
+
+The optional Python `cragkit.qdrant_corrective` and Node
+`cragkit/qdrant-corrective` entries compose initialized candidate/source stores
+with an explicit embedding transport, counter and policy. They borrow stores
+and support dense retrieval; unsupported lexical/hybrid modes fail locally.
+QCC-r1 preserves native score semantics and gives candidate admission one owner.
+
+```sh
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres pytest packages/python/tests/test_qdrant_corrective.py packages/python/tests/test_qdrant_corrective_candidates.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-corrective.test.mjs packages/typescript/tests/qdrant-corrective-candidates.test.mjs
+uv sync --project tools/v5-conformance --frozen
+uv run --project tools/v5-conformance --frozen --no-sync python tools/check_v5_conformance.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V5/V5-07/conformance-both-final-02
+```
+
+Choose a fresh artifact directory per native run. The locked tool environment
+collects the optional SDKs/drivers only for development. Its representative
+PostgreSQL lexical and Qdrant dense profiles each execute direct, LangChain and
+official MCP calls, including a real interrupted publication. See
+[the matrix report](../evaluation/reports/V5/V5-07.md) for exact combinations,
+provider-budget differences, cleanup and limits. Installed artifacts remain a
+separate gate.
