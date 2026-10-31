@@ -250,7 +250,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V5-C1: Native demonstration, 1725 Python/tool and 980 Node package regressions, strict types/build and scoped security checks passed; learning practice unassessed. [Evidence](../evaluation/reports/V5/V5-03D.md).
 
-- [ ] V5-04: [Publication and repair](versions/V5-integrations.md#v5-04-publication-and-repair) — implementation and native fault acceptance pending.
+- [x] V5-04: [Publication and repair](versions/V5-integrations.md#v5-04-publication-and-repair) — supported native single-node profile accepted; [final evidence](../evaluation/reports/V5/V5-04H.md).
   - [x] V5-04A: QW-r1 publication/recovery boundary, 43 fault scenarios, 14 numeric cases and computed cross-runtime goldens; [design acceptance](../evaluation/reports/V5/V5-04A.md).
   - [x] V5-04B1: Pure native vector encoders and readback validators; 71 focused Python/25 Node cases, 1796 Python/tool and 1005 Node regressions, strict types and 21 cross-runtime comparisons passed. [Evidence](../evaluation/reports/V5/V5-04B1.md).
   - [x] V5-04B2: Immutable generation/intent manifests and portable replay serialization; 41 focused Python/27 Node cases, 1837 Python/tool and 1032 Node regressions, strict types and 33 parity cases passed. [Evidence](../evaluation/reports/V5/V5-04B2.md).
@@ -272,7 +272,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
         - [x] V5-04F2a2ii: Bounded native transport and public stage/publish operations; 2,207 Python/tool and 1,136 Node regressions, strict types/build, 28 actual public-manager cases with nineteen-result parity and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2a2ii.md).
       - [x] V5-04F2b: Native ordinary-worker channel for a surviving supervisor; 2,245 Python/tool and 1,160 Node regressions, strict types/build, 18 actual process checks with result parity, 44 native manager/source regressions and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F2b.md). Installed artifacts and full H remain separate.
     - [x] V5-04F3: Native staged-publication source acceptance and previous-generation preservation; 16 actual native checks, exact source-observation parity, 167 affected Python/tool and 73 Node regressions, TypeScript build and 16 seals passed. [Evidence](../evaluation/reports/V5/V5-04F3.md). Full process/fault acceptance remains H.
-  - [ ] V5-04G: Repair, current security convergence, tombstones and scoped purge.
+  - [x] V5-04G: Repair, current security convergence, tombstones and scoped purge; all child gates accepted.
     - [x] V5-04G0: Additive append-only current-epoch preparation attestations and exact authority compatibility, before cross-epoch prepared repair.
     - [x] V5-04G1a: Public native repair for prepared and verified complete uncertain stages; 18 native cases, full local suites and 46 manager/worker regressions passed. [Evidence](../evaluation/reports/V5/V5-04G1a.md).
     - [x] V5-04G1b: Journaled recovery dispatch for genuinely partial replicas; exact old-write fencing and same-intent completion. [Evidence](../evaluation/reports/V5/V5-04G1b-B2b-B3.md).
@@ -304,7 +304,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
             - [x] D5c: Repeated-update recovery anchored to a previous/current security owner and ownerless bootstrap; [evidence](../evaluation/reports/V5/V5-04G2b2d5c.md).
       - [x] G2c: Journaled full-point replica convergence and actual native failure/source acceptance; [evidence](../evaluation/reports/V5/V5-04G2c.md).
     - [x] V5-04G3: Tombstone-bound scoped purge, late-write safety, cleanup and native acceptance. COMPLETE for the supported native single-node profile; [evidence](../evaluation/reports/V5/V5-04G3.md) records both runtimes, fault refusals and limits.
-  - [ ] V5-04H: Complete actual native QW fault matrix and final publication/repair acceptance.
+  - [x] V5-04H: All 43 exact native fault IDs accepted; [matrix and final regression evidence](../evaluation/reports/V5/V5-04H.md).
 
 - [ ] V5-05: [Existing-index contract example](versions/V5-integrations.md#v5-05-existing-index-contract-example) — evidence: pending.
 
@@ -3323,3 +3323,5 @@ and acceptance wording, development command, tracker/report. Learning practice
 unassessed. Next action: audit all 43 exact H IDs against current evidence,
 run affected full regressions, accept H/V5-04 only if the parent gate passes,
 then complete V5-05/06/C2, V5-07/08/C3 and V5-EXIT. Full V5 is still open.
+
+V5-04 parent acceptance: inspected all 43 exact fixture IDs, 33 checkpoint reports and 42 successful native result files with both runtimes and cleanup. Final full regressions/types passed as recorded in [H acceptance](../evaluation/reports/V5/V5-04H.md). G/H and V5-04 are complete within the selected single-node profile. V5-05/06/C2 refresh is next; full V5 remains open. No owned processes remain; learner practice unassessed.
