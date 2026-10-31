@@ -56,6 +56,28 @@ test('no plan and unassessed coverage remain explicit',async()=>{
   assert.equal(b.diagnostics.stop_reason,'coverage_unknown');assert.equal(b.result.status,'partial');
 });
 
+test('native backend candidate accounting is charged exactly once',async()=>{
+  const b=backend(),search=b.search.bind(b);b.candidate_accounting='backend';
+  b.search=async(r,o)=>{const token=o.ledger.reserve({candidates:o.limit});o.ledger.dispatch(token);o.ledger.reconcile(token);return search(r,o);};
+  const result=await new CorrectiveRetriever({backend:b,batch_size:1}).retrieve(request({limits:{max_candidates:1,max_attempts:1}}),options());
+  assert.equal(result.diagnostics.candidate_work,1);assert.equal(result.result.evidence.length,1);
+});
+
+test('successful backend candidate undercharge fails integrity',async()=>{
+  const b=backend();b.candidate_accounting='backend';
+  await assert.rejects(new CorrectiveRetriever({backend:b,batch_size:1}).retrieve(request(),options()),IntegrityViolation);
+});
+
+test('accounting snapshot keeps real retry charges and rejects invalid declarations',async()=>{
+  const b=backend(),search=b.search.bind(b);let attempts=0;b.candidate_accounting='backend';
+  b.search=async(r,o)=>{const token=o.ledger.reserve({candidates:o.limit});o.ledger.dispatch(token);o.ledger.reconcile(token);
+    if(++attempts===1)throw new ProviderUnavailable();return search(r,o);};
+  const engine=new CorrectiveRetriever({backend:b,batch_size:1,max_retries:1});b.candidate_accounting='outer';
+  const result=await engine.retrieve(request({limits:{max_candidates:2,max_attempts:2}}),options());
+  assert.equal(attempts,2);assert.equal(result.diagnostics.candidate_work,2);assert.equal(result.result.evidence.length,1);
+  for(const invalid of ['invalid',null,true]){b.candidate_accounting=invalid;assert.throws(()=>new CorrectiveRetriever({backend:b}),InvalidRequest);}
+});
+
 test('fresh capture prevents returning evidence revoked during correction',async()=>{
   const b=backend({afterCapture:(v,n)=>n===1?v:{...v,evidence:v.evidence.filter(e=>e.document_id!=='a'),sources:v.sources.filter(s=>s.document_id!=='a'),stale:true}});
   const r=await new CorrectiveRetriever({backend:b,policy,variants,planner:planner()}).retrieve(request(),options());

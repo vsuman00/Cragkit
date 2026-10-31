@@ -25,6 +25,53 @@ REQUEST = dict(request_id='req', query='question', collection='c',
                output_profile=dict(renderer='cragkit.context.v2', envelope_reserve_tokens=0))
 
 
+def test_native_backend_candidate_accounting_is_charged_once():
+    class Charged(Backend):
+        candidate_accounting='backend'
+        async def search(self,request,*,scope,deadline,limit,ledger):
+            token=ledger.reserve(candidates=limit);ledger.dispatch(token);ledger.reconcile(token)
+            return await super().search(request,scope=scope,deadline=deadline,limit=limit,ledger=ledger)
+    async def scenario():
+        backend=Charged();engine=CorrectiveRetriever(backend,batch_size=1)
+        result=await engine.retrieve(dict(REQUEST,limits=dict(max_candidates=1,max_attempts=1)),scope=SCOPE,
+            deadline=asyncio.get_running_loop().time()+2)
+        assert result['diagnostics']['candidate_work']==1
+        assert result['result']['evidence']
+    asyncio.run(scenario())
+
+
+def test_backend_candidate_undercharge_fails_integrity():
+    class Uncharged(Backend):candidate_accounting='backend'
+    async def scenario():
+        with pytest.raises(IntegrityViolation):
+            await CorrectiveRetriever(Uncharged(),batch_size=1).retrieve(REQUEST,scope=SCOPE,
+                deadline=asyncio.get_running_loop().time()+2)
+    asyncio.run(scenario())
+
+
+def test_backend_accounting_snapshot_preserves_retry_charges():
+    from cragkit.errors import ProviderUnavailable,InvalidRequest
+    class Charged(Backend):
+        candidate_accounting='backend'
+        attempts=0
+        async def search(self,request,*,scope,deadline,limit,ledger):
+            token=ledger.reserve(candidates=limit);ledger.dispatch(token);ledger.reconcile(token)
+            self.attempts+=1
+            if self.attempts==1:raise ProviderUnavailable()
+            return await super().search(request,scope=scope,deadline=deadline,limit=limit,ledger=ledger)
+    async def scenario():
+        backend=Charged();engine=CorrectiveRetriever(backend,batch_size=1,max_retries=1)
+        backend.candidate_accounting='outer'
+        result=await engine.retrieve(dict(REQUEST,limits=dict(max_candidates=2,max_attempts=2)),scope=SCOPE,
+            deadline=asyncio.get_running_loop().time()+2)
+        assert result['diagnostics']['candidate_work']==2 and backend.attempts==2
+        assert result['result']['evidence']
+    asyncio.run(scenario())
+    for invalid in ('invalid',None,True):
+        backend=Backend();backend.candidate_accounting=invalid
+        with pytest.raises(InvalidRequest):CorrectiveRetriever(backend)
+
+
 def policy():
     facets = []
     for name, item in [('first', A[1]), ('second', B[1])]:

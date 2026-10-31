@@ -23,6 +23,7 @@ base.extend({score: z.literal(1), score_kind: z.literal('exact_identifier'), sco
 export type CorrectiveCandidate = Readonly<z.infer<typeof CandidateSchema>>;
 export type CorrectiveBackendOptions = {scope: TrustedScope; deadline: number; ledger: ExecutionLedger; signal: AbortSignal};
 export interface CorrectiveBackend {
+  readonly candidate_accounting?: 'outer'|'backend';
   search(request: RetrievalRequest, options: CorrectiveBackendOptions & {limit: number}): Promise<unknown>;
   capture(candidates: readonly CorrectiveCandidate[], options: CorrectiveBackendOptions & {request: RetrievalRequest; max_source_bytes: number}): Promise<unknown>;
 }
@@ -44,6 +45,7 @@ function checked<T>(schema: z.ZodType<T>, value: unknown): T {
 }
 export class CorrectiveRetriever {
   readonly #backend: CorrectiveBackend;
+  readonly #candidateAccounting:'outer'|'backend';
   readonly #policy: unknown;
   readonly #variants: unknown;
   readonly #planner: PlannerAdapter | null;
@@ -59,6 +61,10 @@ export class CorrectiveRetriever {
     const b = o.backend as CorrectiveBackend;
     if (!b || typeof b.search !== 'function' || typeof b.capture !== 'function'
       || (o.planner != null && (!(o.planner instanceof PlannerAdapter) || Object.getPrototypeOf(o.planner)!==PlannerAdapter.prototype))) throw new InvalidRequest();
+    const declaredAccounting=b.candidate_accounting;
+    const accounting=declaredAccounting===undefined?'outer':declaredAccounting;
+    if(accounting!=='outer'&&accounting!=='backend')throw new InvalidRequest();
+    this.#candidateAccounting=accounting;
     const c = checked(z.strictObject({policy: z.unknown().default(null), variants: z.array(z.unknown()).max(16).default([]),
       batch_size: integer(1,64).default(16), max_retries: integer(0,2).default(0), backoff_ms: integer(0,1000).default(0),
       no_progress_limit: integer(1,3).default(1)}), Object.fromEntries(Object.entries(o).filter(([key]) => !['backend','planner','counter','event_sink'].includes(key))));
@@ -158,13 +164,15 @@ export class CorrectiveRetriever {
         const state=ledger.snapshot(), limit=Math.min(this.#batch,request.limits.max_candidates-state.candidates,64-retained.size);
         if(limit<=0){if(failure)throw failure;return false;}
         let token;
-        try{token=ledger.reserve({attempts:1,candidates:limit});}
+        try{token=ledger.reserve({attempts:1,candidates:this.#candidateAccounting==='backend'?0:limit});}
         catch(error){if(error instanceof BudgetExhausted){if(failure)throw failure;return false;}throw error;}
         try{ledger.dispatch(token);}catch(error){ledger.abandon(token);throw error;}
         if(!executed.has(queryKey(query))){executed.add(queryKey(query));queries++;}
         event('search');
+        const candidateStart=ledger.snapshot().candidates;
         try{
           const raw=await bounded(()=>this.#backend.search(deep_freeze({...request,query}),{...backendOptions,limit}));
+          if(this.#candidateAccounting==='backend'&&ledger.snapshot().candidates-candidateStart!==limit)throw new IntegrityViolation();
           let batch;
           try{batch=checked(z.strictObject({candidates:z.array(CandidateSchema).max(limit),degraded:z.boolean()}),raw);}
           catch{throw new IntegrityViolation();}

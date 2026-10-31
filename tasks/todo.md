@@ -3325,3 +3325,24 @@ run affected full regressions, accept H/V5-04 only if the parent gate passes,
 then complete V5-05/06/C2, V5-07/08/C3 and V5-EXIT. Full V5 is still open.
 
 V5-04 parent acceptance: inspected all 43 exact fixture IDs, 33 checkpoint reports and 42 successful native result files with both runtimes and cleanup. Final full regressions/types passed as recorded in [H acceptance](../evaluation/reports/V5/V5-04H.md). G/H and V5-04 are complete within the selected single-node profile. V5-05/06/C2 refresh is next; full V5 remains open. No owned processes remain; learner practice unassessed.
+
+V5-C2 accepted after refreshed V5-05/06 demos/tests/types and shared contracts;
+see [C2 evidence](../evaluation/reports/V5/V5-C2.md). Next V5-07A resolves the
+explicit QS-r1 corrective-candidate/accounting integration dependency. Frozen
+[QCC-r1 handoff](../contracts/QDRANT_CORRECTIVE_V5.md) splits A core handoff,
+B optional native adapter and C actual backend/direct/tool/MCP conformance.
+Primary owns shared contract, core handoff and tests as a single writer while
+delegation tools remain unavailable. Product architecture and request/result
+wire schemas remain protected. Verification: focused signed-score/identity and
+single-charge cases in both runtimes, then prior corrective/native checks.
+State: V5-07A implementation next; V5-07/08/C3/EXIT remain open.
+
+V5-07A1 accounting handoff implemented in both cores: exact backend-owned
+candidate charges, outer attempts, snapshotted declaration and retained retry
+usage. Focused corrective/PostgreSQL checks passed 42 Python and 38 Node tests;
+strict build and Python mypy passed. [Evidence](../evaluation/reports/V5/V5-07A1.md).
+Changed: corrective core/test in each runtime, QCC-r1 contract and tracker/report.
+No owned service or live provider. Learning practice unassessed. Next smallest
+action V5-07A2: native nomination candidate compatibility preserving similarity,
+scope, profiles, immutable source identity and exact span/digest mirrors. Then
+V5-07B adapter, C native backend/direct/tool/MCP matrix, V5-08/C3/EXIT remain.

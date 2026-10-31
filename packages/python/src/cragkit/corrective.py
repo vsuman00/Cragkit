@@ -90,6 +90,10 @@ class CorrectiveRetriever:
                 or (event_sink is not None and type(event_sink) is not EventSink)):
             raise InvalidRequest()
         self._backend, self._planner, self._counter = backend, planner, counter
+        accounting=getattr(backend,'candidate_accounting','outer')
+        if type(accounting) is not str or accounting not in ('outer','backend'):
+            raise InvalidRequest()
+        self._candidate_accounting=accounting
         if event_sink is not None:
             try:
                 EventSink.snapshot(event_sink)
@@ -272,7 +276,7 @@ class CorrectiveRetriever:
                 try:
                     if size <= 0:
                         raise BudgetExhausted()
-                    token = ledger.reserve(attempts=1, candidates=size)
+                    token = ledger.reserve(attempts=1, candidates=0 if self._candidate_accounting=='backend' else size)
                 except BudgetExhausted:
                     if last_error is not None:
                         raise last_error
@@ -288,10 +292,13 @@ class CorrectiveRetriever:
                     started = True
                 attempt = req.model_copy(update={'query': query})
                 emit('search', None)
+                candidate_start=ledger.snapshot()['candidates']
                 try:
                     try:
                         raw = await _bounded(self._backend.search(attempt, scope=trusted, deadline=deadline,
                             limit=size, ledger=ledger), deadline)
+                        if self._candidate_accounting=='backend' and ledger.snapshot()['candidates']-candidate_start!=size:
+                            raise IntegrityViolation()
                     finally:
                         ledger.reconcile(token)
                 except ProviderUnavailable as error:
