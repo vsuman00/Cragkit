@@ -3364,3 +3364,11 @@ Changed: new optional Python module/test, candidate JSON round-trip fix and
 regression, QCC-r1 accounting detail, tracker/report. No owned process or live
 provider. Native integration remains unvalidated. TypeScript B2 is next, then
 actual backend/direct/tool/MCP matrix C and V5-08/C3/EXIT.
+
+V5-07B2 TypeScript optional backend implemented/exported. Ten adapter cases
+and 124 affected Node cases pass with strict build; Python affected checks pass
+211 tests and strict mypy over 50 files. [Evidence](../evaluation/reports/V5/V5-07B2.md).
+Changed: new optional TypeScript module/test, package export, QCC-r1 state and
+tracker/report. No new dependency or owned process. Learning unassessed.
+V5-07B deterministic implementation checks are complete; C remains required
+for actual PostgreSQL/Qdrant direct/tool/MCP combinations, followed by V5-08.
