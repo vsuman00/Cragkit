@@ -1,0 +1,157 @@
+{
+  "task": "V6-02E",
+  "revision": "ECR-r1",
+  "state": "offline_checkpoint_passed",
+  "runtime_preparation": "IMPLEMENTED_UNVALIDATED_on_actual_clean_candidate",
+  "held_out_or_live_evaluation": "not_run",
+  "focused_tests": 161,
+  "full_python_tool_tests": 3598,
+  "expected_serializer_warnings": 4,
+  "node_evaluation_tests": 65,
+  "node_evaluation_evidence": "artifacts/rename-validation-r4/logs/node-evaluation.log",
+  "commands": [
+    {
+      "name": "native-parent",
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "packages/python",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "-B",
+        "tools/run_release_evaluation.py",
+        "--mode",
+        "mechanics",
+        "--prepared-postgres-bin",
+        "artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin",
+        "--output",
+        "artifacts/V6/V6-02E/mechanics-03",
+        "--allow-local-processes"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 7.642
+    },
+    {
+      "name": "python-tools",
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "packages/python",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "-B",
+        "-m",
+        "pytest",
+        "packages/python/tests",
+        "tools/tests",
+        "-q"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 18.89
+    }
+  ],
+  "native_mechanics": {
+    "python_mechanics": {
+      "question_count": 24,
+      "row_count": 120,
+      "receipts": 9,
+      "same_shortlist_verified": true,
+      "counts": {
+        "authorization_violations": 0,
+        "false_sufficient": 0,
+        "fidelity_violations": 0,
+        "identity_violations": 0,
+        "invariant_violations": 0,
+        "operational_failures": 0
+      },
+      "paired_deltas": {
+        "corrective_support_recall_minus_reranked": {
+          "denominator": 18,
+          "expected_denominator": 18,
+          "mean": 0.0
+        },
+        "hybrid_document_recall_minus_lexical": {
+          "denominator": 18,
+          "expected_denominator": 18,
+          "mean": 0.8888888888888888
+        },
+        "reranked_mrr_minus_same_shortlist_hybrid": {
+          "denominator": 18,
+          "expected_denominator": 18,
+          "mean": 0.0
+        }
+      }
+    },
+    "node_mechanics": {
+      "question_count": 24,
+      "row_count": 120,
+      "receipts": 9,
+      "same_shortlist_verified": true,
+      "counts": {
+        "authorization_violations": 0,
+        "false_sufficient": 0,
+        "fidelity_violations": 0,
+        "identity_violations": 0,
+        "invariant_violations": 0,
+        "operational_failures": 0
+      },
+      "paired_deltas": {
+        "corrective_support_recall_minus_reranked": {
+          "denominator": 18,
+          "expected_denominator": 18,
+          "mean": 0.0
+        },
+        "hybrid_document_recall_minus_lexical": {
+          "denominator": 18,
+          "expected_denominator": 18,
+          "mean": 0.8888888888888888
+        },
+        "reranked_mrr_minus_same_shortlist_hybrid": {
+          "denominator": 18,
+          "expected_denominator": 18,
+          "mean": 0.0
+        }
+      }
+    }
+  },
+  "live_http_calls": 0,
+  "cleanup_verified": true,
+  "source_files": {
+    "contracts/EVALUATION_CANDIDATE_V6.md": "9d6adc774536fb09c3ec2f916befb634c0e49b6d8b84390fddee991ccb6c3837",
+    "contracts/EVALUATION_EXECUTION_V6.md": "ffb7419049530d93879c3dbe850d51fd781ef302256180678562bacf9af51d70",
+    "tools/evaluation_runtime.py": "7d7b4f4da8d6df813e14ecb81131513addd9c89a519ae018e3b8f08d099177b7",
+    "tools/evaluation_scoring.py": "16569eaf3478192661fa9c637c0fa8ef29c93521510829993db7622ac7594618",
+    "tools/evaluation_pricing.py": "43d9972fa2aebbf645b70e80651fdfe412bbe8084545c202a5613d5b24f0ed09",
+    "tools/run_release_evaluation.py": "926b509b0e3087ea3d9c67bc18d06a5c27c6df4767e8dcddb821e5e40adada5c",
+    "tools/retrieval_evaluation.py": "cade5779a494c779082ab6197fa8d4728d5fcc0203b545b6a15d8c12aa944ae2",
+    "tools/check_native_evaluation.py": "de5690ae0a960e6354d9df0ce510ad626b074121645ff8f6730fea733c822114",
+    "tools/tests/test_evaluation_runtime.py": "eee5937a7699c9c3954138f03d9c1ad23fcbe24d1e8b9c1740549c1aa2ec8060",
+    "tools/tests/test_evaluation_scoring.py": "0156feab65ee2a93b9ef7d19ecdbe84e86a4aba11bb5331c218885ac239de7fb",
+    "tools/tests/test_evaluation_pricing.py": "3c3e4f24062056940276ff66d08aa0879ec0328fa6fa25a2e80feeab728b6455",
+    "tools/tests/test_run_release_evaluation.py": "a2a7cbc1dc0ab5ab5f399cc390a6e1a71639c9a9346372426e9759f08afa1b95",
+    "tools/tests/test_retrieval_evaluation.py": "8e96d7e001087917825fc678141d01d3c140f2d37545991c042c24e74bff23a4"
+  },
+  "evidence": {
+    "artifacts/V6/V6-02E/final-checks/commands.json": "c322e56e16be1a04152cf2d92c123e8451757388ad7daad71e001e8a192857a8",
+    "artifacts/V6/V6-02E/final-checks/focused.log": "2d2d1e3a612a5ddd97c2af40166e095ac93241255c3638ce1c689a9a485cb3b1",
+    "artifacts/V6/V6-02E/final-checks/native-parent.log": "10982ba9a3c0eeb0fc95a0fb6cf63dac97e1a9f8a556f631c1c65e12e692a69c",
+    "artifacts/V6/V6-02E/final-checks/python-tools.log": "7a23212e9838854c1b38bc1a72c9c5437403c89f7cf3a86ba66bfa8caeac3cf9",
+    "artifacts/V6/V6-02E/mechanics-03/node_mechanics-raw.json": "4c2a6b5f27a20ceb61da72472ae0a20427e97331c2f830fe084e793d49c0cf75",
+    "artifacts/V6/V6-02E/mechanics-03/node_mechanics.json": "4c2a6b5f27a20ceb61da72472ae0a20427e97331c2f830fe084e793d49c0cf75",
+    "artifacts/V6/V6-02E/mechanics-03/python_mechanics-raw.json": "2555daf6a13343718880cf48679caecf7c6f5b6a553baa5ed51df3594fe5bdec",
+    "artifacts/V6/V6-02E/mechanics-03/python_mechanics.json": "2555daf6a13343718880cf48679caecf7c6f5b6a553baa5ed51df3594fe5bdec",
+    "artifacts/V6/V6-02E/mechanics-03/rerank-inputs.json": "52d5d676b04ceb68c95c9fbb5cf758abf6c576f36930c37740e172281470a02e",
+    "artifacts/V6/V6-02E/mechanics-03/results.json": "e05eb2d71c50394dd6e531430e51e97572482c7f231631e08c22aacafdbcd96d",
+    "artifacts/V6/V6-02E/mechanics-03/run-binding.json": "53494432b5d81bc27d47c1a9fa90af07d9a656c78d107bb2fa2a10a91538196b",
+    "artifacts/V6/V6-02E/mechanics-03/scores.json": "0034d1ead86ab465e2874c22c86bae10b5ffc1974e2ee43da76f4298f2e85230"
+  },
+  "limits": [
+    "All native evaluation data is approved development or synthetic test data; no original held-out interpretation or real provider request.",
+    "Clean execution identity requires RC version preparation and an isolated fresh checkout; current dirty source does not match the frozen candidate.",
+    "Fake ranking/support deltas establish harness behavior only; no live quality, billing, publication, performance or full V6 readiness result."
+  ]
+}

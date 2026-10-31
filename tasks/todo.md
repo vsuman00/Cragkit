@@ -3831,6 +3831,21 @@ prepare an isolated clean candidate and compiled/runtime identity, integrate
 the genuine live/recorded/replay parent with spend/text gates, finish secure
 provider setup, then held-out comparison and all remaining V6 gates.
 
+
+V6-02E / ECR-r1 assignment: RUNNING candidate/runtime/scoring integration.
+Shared outcome: execution identity and independent same-shortlist scoring for
+the genuine live/replay parent. Sol `postgres_node_finish` owns runtime helper
+and tests; Sol `v601_metrics` owns scoring adapter/tests and assembles. Root owns
+ECR-r1, shared fixtures, Python audit callback, parent, candidate refreeze, docs,
+tracker/Git and combined acceptance. Both peers use separate paths, communicate
+directly and escalate protected changes. No original held-out labels, provider
+calls, keys, installations or lock/metric/target edits during implementation.
+One test/build slot. Root will preserve current dirty work and prepare a separate
+clean checkout only after the runner is committed. Acceptance: stale/forged
+runtime refusal, actual compile identity, complete scoring denominators, exact
+alias views and same authorized shortlist proof; then native mechanical parent
+and explicit genuine-provider acceptance. All later V6 gates remain open.
+
 ## REF-01-R4: Rename validation against the current checkout
 
 State: COMPLETE. Outcome: validate the user-provided role-based file names,
@@ -3872,3 +3887,39 @@ Next smallest product action: resume V6-02E candidate/runtime/scoring integratio
 resolve candidate-version sequencing before source refreeze, then validate the
 isolated candidate under the existing provider/evaluation/release gates. Rename
 validation does not complete V6 or approve a candidate identity transition.
+
+V6-02E resumed after REF-01-R4 under the active full-V6 goal. Final pair review:
+Sol `postgres_node_finish` owns runtime helper/test and a read-only candidate
+version sequencing analysis; Sol `v601_metrics` owns scoring helper/test,
+read-only parent review and assembly. Both resolve the sequencing dependency
+directly; root owns parent, contracts, metadata decisions, tracker/Git and final
+integration. No metadata change until the plan/source identity conflict is
+resolved. One test slot; root runs a fresh development mechanics parent with
+fake providers. Original held-out labels, keys and paid calls remain unused.
+Acceptance: final parent/gates/denominators, actual runtime preparation and clean
+candidate identity, then separately genuine inference and every later V6 gate.
+
+V6-02E offline checkpoint: PASS; actual clean preparation and genuine live
+acceptance remain OPEN. Sol runtime/scoring returned ownership after direct
+peer resolution; root integrated their helpers, label-free wire validation,
+pricing review and explicit parent. Final review reproduced a missing-mode
+reporting gap: root now validates the complete matrix before accepting a stage,
+retains raw output separately and records every failure denominator. Six parent
+regressions and five label-free cases cover this boundary; seven runtime CLI
+cases cover safe prepare/verify dispatch. Combined focused tests: 161 passed.
+Fresh full Python/tool suite: 3,598 passed, four deliberate serializer warnings.
+Final native `mechanics-03`: original development 24 questions / nine revisions,
+120 rows per runtime, matching wires, verified actual same-shortlist baselines,
+zero observed invariant/operational failures and verified cleanup. No HTTP or
+held-out interpretation; fake deltas cannot establish live model quality.
+Changed owned source: ECR contract, additive EVX hook, runtime/scoring/pricing
+helpers and tests, parent/tests, Node launcher environment resolution, development
+guide and V6-02E report/verification JSON. Existing user source/prose/audits and
+old tracker draft remain excluded. Tests serialized on the existing small-machine
+configuration; no persistent service or model installation. Actual E1 preparation
+is IMPLEMENTED_UNVALIDATED until the isolated candidate passes. The pair agrees
+on explicit RC package/engine identity preparation before held-out access; no
+Astra dispute remains. Root must record the plan/ADR amendment before metadata
+edits; later V6-06 and publication gates remain pending. Next: V6-02F identity
+prerequisite, clean ECR preparation, secure OpenAI setup, genuine evaluation and
+all later V6 tasks. Learning practice unassessed; report gives denominator exercise.

@@ -1,5 +1,30 @@
 # Cragkit development
 
+## Candidate execution identity and comparison
+
+The [ECR-r1 contract](../contracts/EVALUATION_CANDIDATE_V6.md) and
+[offline checkpoint](../evaluation/reports/V6/V6-02E-candidate-execution.md)
+separate runtime preparation from genuine model-quality acceptance. Use a fresh
+isolated checkout for candidate preparation: Python `-B` still reads existing
+bytecode, so checkout caches are refused. The runtime helper makes no install,
+network or model request. Candidate source/versions must be aligned before its
+real preparation commands can pass.
+
+Verified focused commands, run serially from the repository root:
+
+```sh
+uv run --project packages/python --frozen --no-sync python -B -m pytest tools/tests/test_run_release_evaluation.py tools/tests/test_retrieval_evaluation.py tools/tests/test_evaluation_runtime.py tools/tests/test_evaluation_scoring.py tools/tests/test_evaluation_pricing.py -q
+uv run --project packages/python --frozen --no-sync python -B tools/run_release_evaluation.py --mode mechanics --prepared-postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --output artifacts/V6/V6-02E/mechanics-03 --allow-local-processes
+```
+
+Use a fresh output directory for another run. Mechanics uses approved development
+input and fake providers; it does not validate live quality. The parent rejects
+incomplete mode matrices before independent scoring, preserving every failed
+question/mode denominator. Live and replay modes additionally require matching
+prepared runtime identity and held-out packet binding. Live mode needs explicit
+private key paths, dated official-price review and a durable single-use admission;
+it never discovers keys or retries dispatch automatically.
+
 ## Evaluation recording and provider replay
 
 The [recording contract](../contracts/EVALUATION_RECORDING_V6.md) separates
