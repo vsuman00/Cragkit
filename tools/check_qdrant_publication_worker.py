@@ -20,15 +20,16 @@ from qdrant_publication_worker_cases import (CHECKS, ERRORS, NativePublicationWo
     python_publication_worker_cases, publication_worker_input)
 from qdrant_reserved_worker_cases import CHECKS as RESERVED_CHECKS, python_reserved_worker_cases
 from qdrant_supervisor_pause_cases import CHECKS as PAUSE_CHECKS, PROOF_SCOPE as PAUSE_SCOPE, python_supervisor_pause_cases
+from qdrant_deadline_cases import CHECKS as DEADLINE_CHECKS, PROOF_SCOPE as DEADLINE_SCOPE, python_deadline_cases
 from qdrant_source_native import PostgresSourceFixture
 from runtime_diagnostics import CleanupFailure, describe_error
 
 
 def validate_result(value, runtime, *, scenario='ordinary'):
-    if scenario not in ('ordinary', 'reserved', 'supervisor_pause'):
+    if scenario not in ('ordinary', 'reserved', 'supervisor_pause', 'deadline'):
         raise RuntimeError('publication_worker_native_scenario')
-    checks = CHECKS if scenario == 'ordinary' else PAUSE_CHECKS if scenario == 'supervisor_pause' else RESERVED_CHECKS
-    proof_scope = 'ordinary_worker_process_only' if scenario == 'ordinary' else PAUSE_SCOPE if scenario == 'supervisor_pause' else 'reserved_worker_process_only'
+    checks = DEADLINE_CHECKS if scenario == 'deadline' else CHECKS if scenario == 'ordinary' else PAUSE_CHECKS if scenario == 'supervisor_pause' else RESERVED_CHECKS
+    proof_scope = DEADLINE_SCOPE if scenario == 'deadline' else 'ordinary_worker_process_only' if scenario == 'ordinary' else PAUSE_SCOPE if scenario == 'supervisor_pause' else 'reserved_worker_process_only'
     if (type(value) is not dict or set(value) != {'runtime', 'checks', 'proof_scope', 'public_results_sha256'}
             or value['runtime'] != runtime or value['checks'] != list(checks)
             or type(value['public_results_sha256']) is not str
@@ -39,9 +40,9 @@ def validate_result(value, runtime, *, scenario='ordinary'):
 
 
 def failure_observation(value, *, scenario='ordinary'):
-    if scenario not in ('ordinary', 'reserved', 'supervisor_pause'):
+    if scenario not in ('ordinary', 'reserved', 'supervisor_pause', 'deadline'):
         raise RuntimeError('publication_worker_native_scenario')
-    checks = CHECKS if scenario == 'ordinary' else PAUSE_CHECKS if scenario == 'supervisor_pause' else RESERVED_CHECKS
+    checks = DEADLINE_CHECKS if scenario == 'deadline' else CHECKS if scenario == 'ordinary' else PAUSE_CHECKS if scenario == 'supervisor_pause' else RESERVED_CHECKS
     if (type(value) is not dict or value.get('ok') is not False or type(value.get('step')) is not int
             or not 0 <= value['step'] <= len(checks) or type(value.get('error')) is not str):
         raise RuntimeError('publication_worker_native_failure_shape')
@@ -68,7 +69,7 @@ def failure_observation(value, *, scenario='ordinary'):
 async def node_publication_worker_cases(value, *, scenario='ordinary'):
     environment = {key: val for key, val in os.environ.items() if not key.startswith(('PG', 'QDRANT__'))
         and key not in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'RUST_LOG')}
-    script = ('check_typescript_qdrant_publication_worker.mjs' if scenario == 'ordinary'
+    script = ('check_typescript_qdrant_deadline.mjs' if scenario == 'deadline' else 'check_typescript_qdrant_publication_worker.mjs' if scenario == 'ordinary'
         else 'check_typescript_qdrant_supervisor_pause.mjs' if scenario == 'supervisor_pause'
         else 'check_typescript_qdrant_reserved_worker.mjs')
     process = await asyncio.create_subprocess_exec('node', str(ROOT / 'tools' / script),
@@ -130,7 +131,7 @@ async def node_publication_worker_cases(value, *, scenario='ordinary'):
 async def check(fixture, runtime, binary, work_dir, *, scenario='ordinary'):
     # Ordinary recovery replays and verifies dispatched writes through the
     # already-owned attestation profile; reserved crash keeps its base profile.
-    async with PublicationDatabase(fixture, with_attestations=scenario in ('ordinary','supervisor_pause')) as database:
+    async with PublicationDatabase(fixture, with_attestations=scenario in ('ordinary','supervisor_pause','deadline')) as database:
         cursor = await database.admin.execute("SELECT current_setting('max_connections')::int,"
             "current_setting('superuser_reserved_connections')::int,"
             "current_setting('reserved_connections')::int")
@@ -142,13 +143,13 @@ async def check(fixture, runtime, binary, work_dir, *, scenario='ordinary'):
             reserved_connections=reserved, runtime_client_ceiling=3), indent=2) + '\n')
         value = dict(binary=str(binary), work_dir=str(work_dir), inputs=publication_worker_input(),
             writer_config=database.config('writer'), supervisor_config=database.config('supervisor'))
-        if scenario == 'supervisor_pause':
+        if scenario in ('supervisor_pause','deadline'):
             from qdrant_writer_cases import successor_stage
             value['observer_config']=fixture.config
             value['inputs']['competing_successor']=successor_stage({'stage':value['inputs']['stage']},'supervisor-pause-competing',value['inputs']['stage']['manifest']['generation_id'])
         await database.release_admin()
         if runtime == 'python':
-            runner = python_publication_worker_cases if scenario == 'ordinary' else python_supervisor_pause_cases if scenario == 'supervisor_pause' else python_reserved_worker_cases
+            runner = python_deadline_cases if scenario == 'deadline' else python_publication_worker_cases if scenario == 'ordinary' else python_supervisor_pause_cases if scenario == 'supervisor_pause' else python_reserved_worker_cases
             result = await runner(value)
         else:
             result = await node_publication_worker_cases(value, scenario=scenario)
@@ -162,7 +163,7 @@ def main(argv=None):
     parser.add_argument('--binary-sha256', required=True)
     parser.add_argument('--artifacts-dir', type=Path, required=True)
     parser.add_argument('--runtime', choices=('python', 'typescript', 'all'), default='all')
-    parser.add_argument('--scenario', choices=('ordinary', 'reserved', 'supervisor_pause'), default='ordinary')
+    parser.add_argument('--scenario', choices=('ordinary', 'reserved', 'supervisor_pause', 'deadline'), default='ordinary')
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
     args = parser.parse_args(argv)
     try:

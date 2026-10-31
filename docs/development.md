@@ -1394,3 +1394,11 @@ uv run --project packages/python --frozen --no-sync --extra qdrant --extra postg
 
 Choose a fresh artifact directory for each run. The command proves the pause
 alternative only; it does not implement automatic supervisor takeover.
+
+The same worker checker supports `--scenario deadline` for the operation-expiry
+case. It uses one independently owned streamed request against the disposable
+local server, preserves product deadlines, and verifies successor refusal until
+managed recovery. Use a fresh artifact directory, for example
+`artifacts/V5/V5-04H/deadline-both-02`, with the command above and replace
+`--scenario supervisor_pause` with `--scenario deadline`. The original and
+reserved scenarios remain `--scenario ordinary` and `--scenario reserved`.

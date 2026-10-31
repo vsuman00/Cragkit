@@ -3308,3 +3308,18 @@ remains. Learning practice unassessed. H-S34 is the final unaccepted exact H
 case; V5 parent/downstream gates remain open. User clarified Daybreak access
 was meant; normal development and required consistency checks continue.
 Delegation tools are unavailable this turn; primary integrated existing peer work.
+
+H-S34 accepted for exact `lease_expiry_not_fencing` with the profile's operation
+deadline clarified. Standard HTTP clients hold one test-owned streamed request
+across the original deadline; owner pool closure and actual backend disappearance,
+successor refusal, exact late completion, unchanged journal and genuine managed
+repair/fencing pass in both runtimes. Final native result passed 14 checks with
+matching witness `fa5ef2a56c07cdd183123887ff6cba153637e6f596b7cbc0c2bee3b6dc97583c`.
+Ordinary/reserved worker regressions passed 24/14 native checks; five focused
+tests and 16 seals passed. [Checkpoint report](../evaluation/reports/V5/V5-04H-deadline-not-fencing.md).
+Ignored result: `artifacts/V5/V5-04H/deadline-both-final-01/results.json`. No owned
+process remains. Changed: two new consumers, worker parent/test, exact fixture
+and acceptance wording, development command, tracker/report. Learning practice
+unassessed. Next action: audit all 43 exact H IDs against current evidence,
+run affected full regressions, accept H/V5-04 only if the parent gate passes,
+then complete V5-05/06/C2, V5-07/08/C3 and V5-EXIT. Full V5 is still open.

@@ -67,3 +67,14 @@ def test_supervisor_pause_evidence_has_its_own_closed_scope():
     assert failure_observation(dict(ok=False,step=7,error='ProviderUnavailable'),scenario='supervisor_pause')['step']==7
     with pytest.raises(RuntimeError):
         failure_observation(dict(ok=False,step=8,error='ProviderUnavailable'),scenario='supervisor_pause')
+
+
+def test_deadline_evidence_cannot_claim_other_native_scenarios():
+    from qdrant_deadline_cases import CHECKS as DEADLINE_CHECKS, PROOF_SCOPE
+    value=dict(runtime='python',checks=list(DEADLINE_CHECKS),proof_scope=PROOF_SCOPE,
+        public_results_sha256='d'*64)
+    assert validate_result(value,'python',scenario='deadline')==value
+    for changed in (dict(value,checks=value['checks'][:-1]),dict(value,private='data'),
+                    dict(value,proof_scope='full_H_matrix')):
+        with pytest.raises(RuntimeError):validate_result(changed,'python',scenario='deadline')
+    with pytest.raises(RuntimeError):validate_result(value,'python',scenario='supervisor_pause')
