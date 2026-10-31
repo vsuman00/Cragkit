@@ -25,13 +25,13 @@ The returned nominations remain text-free and `UNVERIFIED`. They are not an answ
 From the repository root, with the development dependencies and optional Python Qdrant extra installed, run these checks serially:
 
 ```sh
-uv run --project packages/python --frozen --no-sync --extra qdrant pytest tools/tests/test_qdrant_dense_example.py -q
+uv run --project packages/python --frozen --no-sync --extra qdrant pytest packages/python/tests/test_qdrant_dense_retrieval.py -q
 ```
 
 Build Node with `npm run build` in `packages/typescript`, then run from the root:
 
 ```sh
-node --test --test-concurrency=1 tools/test_qdrant_dense_example.mjs
+node --test --test-concurrency=1 packages/typescript/tests/qdrant-dense-retrieval.test.mjs
 ```
 
 The isolated real-backend command and pinned binary requirements are in [development.md](../docs/development.md#v5-native-qdrant-candidates). Select `--dense-only` to exercise fake E-r1 inference, complete batch binding and actual dense-only backend queries. The integration harness provisions and removes only its temporary collection/process/configuration.

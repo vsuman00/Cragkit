@@ -3525,3 +3525,26 @@ Unrelated user prose/audits and paused detached-worktree drafts preserved.
 V6 is PAUSED by user; this maintenance acceptance does not resume or complete it.
 On explicit resume, reconcile detached profile drafts with the new paths before
 continuing V6-02; do not assume their unrun tests or live-provider gates passed.
+
+
+REF-01-R2 final handoff: COMPLETE rename follow-up. Sol
+`rename_reference_audit` owned read-only executable reference inspection; Sol
+`rename_evidence_audit` owned retained evidence/manifests and assembled the pair.
+Root owned the three guide repairs, report, serial acceptance, tracker and Git.
+Shared constraints: preserve existing edits, historical records, schemas, metric
+bytes and release targets; no live API calls, installs or services. Peers
+communicated findings directly; no unresolved escalation or overlapping edits.
+Four stale documentation locations repaired in `examples/qdrant_dense.md`,
+`examples/existing_index.md` and `docs/releases/V4.md`; no remaining stale
+executable references found. Fresh 131 tooling + 32 Python example/retrieval
+checks and 35 Node checks passed; TypeScript typecheck/build, preregistration,
+16 seals and offline lock checks passed. Root verified six retained evidence
+hashes, benchmark identity and twelve documentation targets; assembler also
+verified twelve archive hashes. Prior full/native results were inspected,
+not rerun. See [follow-up evidence](../evaluation/reports/REFACTOR-VALIDATION.md#follow-up-reference-audit).
+Prose/whitespace checks passed. Headroom: 31 GiB disk, 46 percent memory free;
+no task-owned process. Unrelated source/storage prose, audit files and detached
+V6 feature drafts preserved. Learning practice remains unassessed. Next action:
+continue the separately tracked V6 task under its existing gates; rename
+acceptance does not establish release readiness. Future implementation/test
+filenames follow AGENTS.md's role-based convention.

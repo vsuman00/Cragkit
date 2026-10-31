@@ -59,3 +59,28 @@ Verification used the inspected working tree, including preserved pre-existing r
 Suites ran serially on local macOS arm64, Python3.14.6 and Node26.5.0. Final headroom was 31 GiB disk and 39 percent system memory free. Native PostgreSQL, Qdrant and SDK boundaries were real; model responses were fake or recorded. No live inference, private document disclosure, hosted write, registry publication or hosted CI run occurred. Native fixtures and temporary installation environments closed. These results establish the stated local refactor behavior, not production or V6 release readiness.
 
 Learning exercise: explain why an installed probe should import a package by name while a repository-owned development runner needs a resolvable checkout path. Learning practice remains unassessed. V6 stays paused until the user resumes it.
+
+## Follow-up reference audit
+
+REF-01-R2, 31 October 2026: COMPLETE. Two Sol peers independently inspected executable references and retained evidence; the evidence peer assembled their findings, and root performed the final checks. No remaining stale executable imports, subprocess targets or installed-probe copy paths were found in the inspected tooling, runners, examples and package tests. Four active documentation locations still used moved paths: two commands in `examples/qdrant_dense.md`, the test references in `examples/existing_index.md`, and the SDK command in `docs/releases/V4.md`. Root corrected them. Historical executed-command records and protocol identifiers remain unchanged.
+
+Fresh checks, run serially:
+
+- The eleven renamed tooling suites listed below passed 131 tests.
+- The Python retrieval-evidence, existing-index-adapter and Qdrant example suites passed 32 tests.
+- TypeScript typecheck/build passed; the four affected Node suites passed 35 tests without skips.
+- Release preregistration verified six input digests and all 105 edge-case paths; all 16 input seals and the offline conformance lock check passed.
+- Root independently verified all six retained native/artifact evidence digests, the benchmark identity against both the report and candidate manifest, and twelve local documentation targets. The evidence peer also verified twelve nested archive digests. Scoped whitespace and prose checks passed.
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_check_core_pipeline.py tools/tests/test_check_sdk_packages.py tools/tests/test_backend_conformance.py tools/tests/test_check_qdrant_artifacts.py tools/tests/test_check_release_readiness.py tools/tests/test_dense_metrics.py tools/tests/test_benchmark_metrics.py tools/tests/test_rerank_calibration.py tools/tests/test_run_rerank_calibration.py tools/tests/test_postgres_vector_fixture.py tools/tests/test_provider_adapters.py -q
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_retrieval_evidence.py packages/python/tests/test_existing_index_adapter.py packages/python/tests/test_qdrant_dense_retrieval.py -q
+npm run typecheck --prefix packages/typescript
+npm run build --prefix packages/typescript
+node --test --test-concurrency=1 packages/typescript/tests/calibration-replay.test.mjs packages/typescript/tests/retrieval-evidence.test.mjs packages/typescript/tests/existing-index-adapter.test.mjs packages/typescript/tests/qdrant-dense-retrieval.test.mjs
+python3 tools/check_release_readiness.py
+python3 tools/check_seal.py
+uv lock --project tools/backend-conformance --check --offline
+```
+
+The full-suite, installed-package and native database results above remain retained evidence from the original validation; they were not rerun in this follow-up. No live API call, service startup, installation or held-out scoring occurred. Existing unrelated edits and detached V6 feature drafts were preserved. Final headroom: 31 GiB disk and 46 percent system memory free; no task-owned background process. Role-based implementation and test names are required by AGENTS.md for subsequent versions, including V6. Learning practice remains unassessed; the exercise above is optional. This follow-up completes rename validation, not V6 release acceptance.
