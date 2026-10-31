@@ -20,7 +20,7 @@ export const EmbeddingBatchSchema = z.strictObject({ profile: EmbeddingProfileSc
 export type EmbeddingBatch = z.infer<typeof EmbeddingBatchSchema>;
 export interface TokenCounter { readonly name: string; count(text: string): number }
 export type EmbeddingTransport = (body: Uint8Array, options: { deadline: number; signal: AbortSignal; max_response_bytes: number }) => Promise<Uint8Array>;
-export interface EmbeddingOptions { deadline: number; signal?: AbortSignal }
+export interface EmbeddingOptions { deadline: number; signal?: AbortSignal; on_dispatch?: () => void }
 
 // Decimal coefficients keep admission exact even for subnormal configured prices.
 function decimal(value: number): { coefficient: bigint; scale: number } {
@@ -166,7 +166,8 @@ export class EmbeddingAdapter {
   async embed_query(text: string, options: EmbeddingOptions): Promise<EmbeddingBatch> { return this.embed_batch([text], options); }
   async embed_batch(texts: readonly string[], options: EmbeddingOptions): Promise<EmbeddingBatch> {
     if (!options || typeof options.deadline !== 'number' || !Number.isFinite(options.deadline) || (options.signal !== undefined && !(options.signal instanceof AbortSignal))) throw new InvalidRequest();
-    const { deadline, signal } = options;
+    const { deadline, signal, on_dispatch } = options;
+    if (on_dispatch !== undefined && (typeof on_dispatch !== 'function' || on_dispatch.constructor.name === 'AsyncFunction')) throw new InvalidRequest();
     this.check(deadline, signal);
     if (this.inflight) throw new ProviderUnavailable();
     this.inflight = true;
@@ -190,6 +191,15 @@ export class EmbeddingAdapter {
       let raw: unknown;
       try {
         if (state.failure === 'deadline') throw new DeadlineExceeded();
+        // Admission observers run immediately before dispatch, outside provider error mapping.
+        this.check(deadline,signal);
+        if (on_dispatch !== undefined) {
+          const observed: unknown=on_dispatch();
+          if (observed !== undefined) {
+            void Promise.resolve(observed).catch(()=>{});
+            throw new InvalidRequest();
+          }
+        }
         // Caller-owned callbacks must cooperate with abort; settlement precedes reuse.
         try { raw = await this.transport(body, { deadline, signal: controller.signal, max_response_bytes: this.limits.max_response_bytes }); }
         catch (error) {

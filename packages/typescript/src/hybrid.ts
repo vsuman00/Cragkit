@@ -4,7 +4,8 @@ import { Cl100kCounter } from './context.js';
 import { RerankingAdapter } from './reranking.js';
 import { assess_evidence } from './assessment.js';
 import { isDeepStrictEqual } from 'node:util';
-import { EmbeddingAdapter, EmbeddingProfileSchema, FAKE_PROFILE, type EmbeddingBatch } from './embeddings.js';
+import { EmbeddingAdapter, EmbeddingProfileSchema, FAKE_PROFILE, type EmbeddingBatch, type EmbeddingProfile, type EmbeddingUsage } from './embeddings.js';
+import { snapshot_profile } from './postgres-profiles.js';
 import { CandidateCleanupFailure, dense_batch, type PostgresSession, type LexicalCandidate, type DenseCandidate, type IdentifierCandidate } from './postgres-session.js';
 import { fuse } from './fusion.js';
 import { extract_identifiers } from './identifiers.js';
@@ -13,7 +14,7 @@ import { bounded, check_options, now, type LeaseOptions } from './postgres-pool.
 import type { RetrievalRequest, TrustedScope } from './contracts.js';
 import { EmbeddingProfileMismatch, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability } from './errors.js';
 export type EvidenceConfiguration = Readonly<{policy: unknown; counter: Cl100kCounter | null; rebalance: boolean; surrounding_bytes: number; reranker: RerankingAdapter | null; rerank_fallback: boolean; rerank_limit: number}>;
-export interface RetrieverOptions { mode?: 'lexical'|'dense'|'hybrid'; embedder?: EmbeddingAdapter; allow_degraded?: boolean; identifiers?: boolean; evidence_options?: Partial<EvidenceConfiguration> | null }
+export interface RetrieverOptions { mode?: 'lexical'|'dense'|'hybrid'; embedding_profile?: EmbeddingProfile; embedder?: EmbeddingAdapter; allow_degraded?: boolean; identifiers?: boolean; evidence_options?: Partial<EvidenceConfiguration> | null }
 function evidence_configuration(input: unknown): EvidenceConfiguration | null {
   if (input === null) return null;
   if (!input || typeof input !== 'object' || Object.getPrototypeOf(input) !== Object.prototype || Object.getOwnPropertySymbols(input).length) throw new InvalidRequest();
@@ -32,27 +33,28 @@ function evidence_configuration(input: unknown): EvidenceConfiguration | null {
   }
   return Object.freeze({policy:deep_freeze(snapshot),counter,reranker,rebalance:value.rebalance ?? false,surrounding_bytes:value.surrounding_bytes ?? 256,rerank_fallback:value.rerank_fallback ?? false,rerank_limit:value.rerank_limit ?? 40});
 }
-export function configuration(input: RetrieverOptions): {mode:'lexical'|'dense'|'hybrid'; allow_degraded:boolean; identifiers:boolean; embedder?:EmbeddingAdapter; evidence_options:EvidenceConfiguration|null} {
+export function configuration(input: RetrieverOptions): {mode:'lexical'|'dense'|'hybrid'; allow_degraded:boolean; identifiers:boolean; embedder?:EmbeddingAdapter; embedding_profile:EmbeddingProfile; evidence_options:EvidenceConfiguration|null} {
   if (input === null || typeof input !== 'object' || Array.isArray(input) || ![Object.prototype,null].includes(Object.getPrototypeOf(input))) throw new InvalidRequest();
   const descriptors = Object.getOwnPropertyDescriptors(input);
-  if (Object.getOwnPropertySymbols(input).length || Object.entries(descriptors).some(([key,d]) => !['mode','embedder','allow_degraded','identifiers','evidence_options'].includes(key) || !('value' in d) || !d.enumerable)) throw new InvalidRequest();
-  const json = Object.fromEntries(Object.entries(descriptors).filter(([key])=>key!=='embedder' && key!=='evidence_options').map(([key,d])=>[key,d.value]));
+  if (Object.getOwnPropertySymbols(input).length || Object.entries(descriptors).some(([key,d]) => !['mode','embedder','allow_degraded','identifiers','evidence_options','embedding_profile'].includes(key) || !('value' in d) || !d.enumerable)) throw new InvalidRequest();
+  const json = Object.fromEntries(Object.entries(descriptors).filter(([key])=>key!=='embedder' && key!=='evidence_options' && key!=='embedding_profile').map(([key,d])=>[key,d.value]));
   if (!valid_native_json(json) || (Object.hasOwn(json,'mode') && typeof json.mode !== 'string') || ['allow_degraded','identifiers'].some(key=>Object.hasOwn(json,key) && typeof json[key] !== 'boolean')) throw new InvalidRequest();
   const mode = input.mode ?? 'lexical', allow_degraded = input.allow_degraded ?? false, identifiers = input.identifiers ?? true;
   if (!['lexical','dense','hybrid'].includes(mode) || typeof allow_degraded !== 'boolean' || typeof identifiers !== 'boolean'
     || (Object.hasOwn(input,'mode') && input.mode === undefined) || (Object.hasOwn(input,'embedder') && !(input.embedder instanceof EmbeddingAdapter))
     || (mode === 'lexical' ? input.embedder !== undefined || allow_degraded : !(input.embedder instanceof EmbeddingAdapter))
     || (mode === 'dense' && allow_degraded)) throw new InvalidRequest();
-  return Object.freeze({mode,allow_degraded,identifiers,embedder:input.embedder,evidence_options:Object.hasOwn(input,'evidence_options')?evidence_configuration(input.evidence_options):null});
+  const selected=snapshot_profile(input.embedding_profile);
+  return Object.freeze({mode,allow_degraded,identifiers,embedding_profile:selected,embedder:input.embedder,evidence_options:Object.hasOwn(input,'evidence_options')?evidence_configuration(input.evidence_options):null});
 }
-export function profile_snapshot(embedder: EmbeddingAdapter) {
+export function profile_snapshot(embedder: EmbeddingAdapter, selected: EmbeddingProfile = FAKE_PROFILE) {
   let snapshot;
   try { snapshot = EmbeddingProfileSchema.parse(embedder.profile); } catch { throw new InvalidRequest(); }
-  if (!isDeepStrictEqual(snapshot,FAKE_PROFILE)) throw new EmbeddingProfileMismatch();
+  if (!isDeepStrictEqual(snapshot,snapshot_profile(selected))) throw new EmbeddingProfileMismatch();
   return snapshot;
 }
 type Candidate = LexicalCandidate|DenseCandidate|IdentifierCandidate;
-export async function select(session: PostgresSession, request: RetrievalRequest, bound: LeaseOptions & {scope:TrustedScope}, config:ReturnType<typeof configuration>, snapshot: ReturnType<typeof profile_snapshot>) {
+export async function select(session: PostgresSession, request: RetrievalRequest, bound: LeaseOptions & {scope:TrustedScope}, config:ReturnType<typeof configuration>, snapshot: ReturnType<typeof profile_snapshot>, on_dispatch?:()=>void, on_usage?:(usage:EmbeddingUsage)=>void) {
   const stages: {stage:string;duration_ms:number}[] = [];
   const token = config.mode === 'hybrid' && config.identifiers ? extract_identifiers(request.query)[0] : undefined;
   const families: ('dense'|'lexical'|'identifier')[] = config.mode === 'dense' ? ['dense'] : token === undefined ? ['dense','lexical'] : ['dense','lexical','identifier'];
@@ -67,16 +69,24 @@ export async function select(session: PostgresSession, request: RetrievalRequest
     firstFailure ??= error; degraded = true;
     stages.push({stage:`${family}_failed_${(error as ProviderUnavailable).code}`,duration_ms:Math.min(300000,(now()-start)*1000)});
   };
+  const live=snapshot.provider!=='fake';
+  let dispatched=0;
+  if (live) {
+    if (request.limits.max_spend_usd!==null) throw new UnsupportedCapability();
+    await session.admit_embedding(request,bound);
+  }
   let start = now();
   try {
-    const raw = await bounded(config.embedder!.embed_query(request.query,bound),bound);
+    const raw = await bounded(config.embedder!.embed_query(request.query,live ? {...bound,on_dispatch:()=>{on_dispatch?.();dispatched++;}} : bound),bound);
     check_options(bound);
-    batch = dense_batch(raw);
+    batch = dense_batch(raw,snapshot);
     if (!isDeepStrictEqual(batch.profile,snapshot)) throw new EmbeddingProfileMismatch();
     const usage = batch.usage;
     if ([usage.prompt_tokens,usage.total_tokens].some(value=>value !== null && (!Number.isSafeInteger(value) || value < 0))
       || (usage.prompt_tokens !== null && usage.total_tokens !== null && usage.total_tokens < usage.prompt_tokens)
-      || usage.cost_kind !== 'known' || usage.cost_usd !== 0 || !batch.synthetic) throw new InvalidRequest();
+      || (usage.cost_usd!==null && (!Number.isFinite(usage.cost_usd)||usage.cost_usd<0))
+      || (live ? !['estimated','unknown'].includes(usage.cost_kind) || batch.synthetic : usage.cost_kind !== 'known' || usage.cost_usd !== 0 || !batch.synthetic)) throw new InvalidRequest();
+    if (live) on_usage?.(usage);
     stages.push({stage:'embedding_complete',duration_ms:Math.min(300000,(now()-start)*1000)});
   } catch(error) { failed('embedding',error,start); }
   const lists: {list_id:string;facet_id:string;family:'dense'|'lexical'|'identifier';weight:number;candidates:readonly Candidate[]}[] = [];
@@ -97,5 +107,8 @@ export async function select(session: PostgresSession, request: RetrievalRequest
   });
   if (!lists.length) throw firstFailure;
   const candidates = fuse(lists,{max_candidates:cap}).map(item=>item.candidate as Candidate);
-  return {candidates:candidates.slice(0,65),truncated:candidates.length>64,degraded,stages,input_tokens:batch?.usage.prompt_tokens ?? null};
+  const output_tokens=live && dispatched!==0 ? batch!==undefined && batch.usage.total_tokens!==null && batch.usage.prompt_tokens!==null
+    ? batch.usage.total_tokens-batch.usage.prompt_tokens : null : 0;
+  return {candidates:candidates.slice(0,65),truncated:candidates.length>64,degraded,stages,input_tokens:live && dispatched===0 ? 0 : batch?.usage.prompt_tokens ?? null,
+    output_tokens,provider_calls:live?dispatched:1,cost_usd:live&&dispatched?null:0,cost_kind:live&&dispatched?'unknown' as const:'known' as const};
 }

@@ -2,10 +2,11 @@
 
 import asyncio
 import json
+import inspect
 import math
 import time
 from decimal import Context, Decimal, localcontext
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Any, Callable, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -255,10 +256,14 @@ class EmbeddingAdapter:
             synthetic=synthetic,
         )
 
-    async def embed_query(self, text: str, *, deadline: float) -> EmbeddingBatch:
-        return await self.embed_batch([text], deadline=deadline)
+    async def embed_query(self, text: str, *, deadline: float,
+                          on_dispatch: Callable[[], None] | None = None) -> EmbeddingBatch:
+        return await self.embed_batch([text], deadline=deadline, on_dispatch=on_dispatch)
 
-    async def embed_batch(self, texts: list[str] | tuple[str, ...], *, deadline: float) -> EmbeddingBatch:
+    async def embed_batch(self, texts: list[str] | tuple[str, ...], *, deadline: float,
+                          on_dispatch: Callable[[], None] | None = None) -> EmbeddingBatch:
+        if on_dispatch is not None and (not callable(on_dispatch) or inspect.iscoroutinefunction(on_dispatch)):
+            raise InvalidRequest()
         if type(deadline) not in (float, int):
             raise InvalidRequest()
         valid_deadline = False
@@ -283,6 +288,26 @@ class EmbeddingAdapter:
             body = json.dumps({"model": self.profile.model, "dimensions": self.profile.dimensions,
                                "encoding_format": "float", "input": snapshot},
                               ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            self._check_deadline(deadline)
+            if on_dispatch is not None:
+                dispatch_result = on_dispatch()
+                if dispatch_result is not None:
+                    if inspect.isawaitable(dispatch_result):
+                        if asyncio.isfuture(dispatch_result):
+                            def observe_invalid_future(completed: asyncio.Future[Any]) -> None:
+                                if not completed.cancelled():
+                                    completed.exception()
+                            if dispatch_result.done():
+                                observe_invalid_future(dispatch_result)
+                            else:
+                                dispatch_result.add_done_callback(observe_invalid_future)
+                                dispatch_result.cancel()
+                        else:
+                            awaitable = dispatch_result if inspect.iscoroutine(dispatch_result) else dispatch_result.__await__()
+                            close = getattr(awaitable, 'close', None)
+                            if callable(close):
+                                close()
+                    raise InvalidRequest()
             raw: object = None
             failure: type[DeadlineExceeded] | type[ProviderUnavailable] | None = None
             try:

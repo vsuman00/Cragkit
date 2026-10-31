@@ -18,6 +18,8 @@ from ._postgres_filters import compile_filters
 from ._postgres_pool import PoolResource
 from ._postgres_source import SourceFetch, _SOURCE_SQL, verify_source
 from .contracts import RetrievalRequest, TrustedScope, parse_request, parse_scope
+from .embeddings import EmbeddingProfile, FAKE_PROFILE
+from ._postgres_profiles import snapshot_profile, profile_table, validate_profile_storage
 from .errors import (
     CragkitError, DeadlineExceeded, EmbeddingProfileMismatch, IntegrityViolation, InvalidRequest, ProviderUnavailable,
     UnauthorizedScope, UnsupportedCapability,
@@ -294,10 +296,10 @@ class LexicalCandidate(BaseModel):
 
 
 class DenseCandidate(LexicalCandidate):
-    """Exact cosine distance under the provisioned synthetic embedding profile."""
+    """Exact cosine distance under the explicitly selected embedding profile."""
 
     score: float = Field(ge=0, le=2, allow_inf_nan=False)
-    embedding_profile: Literal['fake_embedding_1536_v1'] = 'fake_embedding_1536_v1'
+    embedding_profile: Literal['fake_embedding_1536_v1', 'openai_te3small_1536_r1'] = 'fake_embedding_1536_v1'
     score_direction: Literal['lower_is_better'] = 'lower_is_better'
     score_kind: Literal['cosine_distance'] = 'cosine_distance'
 
@@ -323,7 +325,9 @@ class ScopedSession:
     """A task-bound read handle that expires when its transaction exits."""
 
     def __init__(self, connection: SessionConnection, request: RetrievalRequest,
-                 scope: TrustedScope, deadline: float, predicate: str, parameters: tuple[object, ...]) -> None:
+                 scope: TrustedScope, deadline: float, predicate: str, parameters: tuple[object, ...],
+                 embedding_profile: EmbeddingProfile = FAKE_PROFILE) -> None:
+        self._profile = snapshot_profile(embedding_profile)
         self._connection = connection
         self._request = request
         self._scope = scope
@@ -490,7 +494,7 @@ class ScopedSession:
             raise InvalidRequest()
         if batch.synthetic != (batch.profile.provider == 'fake'):
             raise InvalidRequest()
-        if batch.profile != FAKE_PROFILE or len(batch.vectors[0]) != FAKE_PROFILE.dimensions:
+        if batch.profile != self._profile or len(batch.vectors[0]) != self._profile.dimensions:
             raise EmbeddingProfileMismatch()
         vector = batch.vectors[0]
         if any(not math.isfinite(value) for value in vector):
@@ -502,17 +506,11 @@ class ScopedSession:
         encoded = json.dumps(vector, separators=(',', ':'), allow_nan=False)
         effective_limit = min(limit, self._request.limits.max_candidates)
         _remaining(self._deadline)
-        if await _query(self._connection, _VECTOR_CAPABILITY_SQL, None, self._deadline) != [(True,)]:
-            raise UnsupportedCapability()
-        if tuple(await _query(self._connection, _SETUP_HISTORY_SQL, None, self._deadline)) != EXPECTED_VECTOR_HISTORY:
-            raise UnsupportedCapability()
-        profile = FAKE_PROFILE
-        if await _query(self._connection, _PROFILE_SQL, None, self._deadline) != [(
-            profile.profile_id, profile.provider, profile.model, profile.dimensions,
-            profile.tokenizer, profile.normalization, 'chunk_vectors_fake_1536',
-        )]:
-            raise UnsupportedCapability()
-        rows = await _query(self._connection, _DENSE_SQL.format(predicate=self._predicate), (
+        async def query(sql: str) -> list[tuple[object, ...]]:
+            return await _query(self._connection, sql, None, self._deadline)
+        profile = self._profile
+        await validate_profile_storage(query, profile, _VECTOR_CAPABILITY_SQL)
+        rows = await _query(self._connection, _DENSE_SQL.replace('chunk_vectors_fake_1536', profile_table(profile)).format(predicate=self._predicate), (
             encoded, profile.profile_id, self._scope.tenant_id, self._request.collection,
             self._scope.authorization_revision, self._scope.authorization_revision,
             self._scope.principal_id, list(self._scope.grant_ids), *self._parameters, effective_limit,
@@ -528,7 +526,7 @@ class ScopedSession:
             if row[-2:] != (profile.profile_id, 'native_fts.v1'):
                 raise UnsupportedCapability()
             try:
-                candidate = DenseCandidate.model_validate(dict(zip(fields, row[:-2], strict=True)))
+                candidate = DenseCandidate.model_validate(dict(zip(fields, row[:-2], strict=True), embedding_profile=profile.profile_id))
                 identities = (candidate.tenant_id, candidate.collection, candidate.document_id,
                               candidate.revision_id, candidate.generation_id, candidate.chunk_id)
                 if (candidate.tenant_id != self._scope.tenant_id or candidate.collection != self._request.collection
@@ -592,7 +590,8 @@ class ScopedSession:
 class PostgresSession:
     """Validate each leased connection and bind immutable scope within read-only work."""
 
-    def __init__(self, resource: PoolResource) -> None:
+    def __init__(self, resource: PoolResource, *, embedding_profile: EmbeddingProfile = FAKE_PROFILE) -> None:
+        self._profile = snapshot_profile(embedding_profile)
         self._resource = resource
 
     @asynccontextmanager
@@ -671,6 +670,14 @@ class PostgresSession:
         async with self._transaction(deadline) as connection:
             await _validate(connection, deadline)
 
+    async def preauthorize_embedding(self, request: RetrievalRequest, *, scope: TrustedScope,
+                                     deadline: float) -> None:
+        from .vector_ingestion import _VECTOR_CAPABILITY_SQL
+        async with self.transaction(request, scope=scope, deadline=deadline) as handle:
+            async def query(sql: str) -> list[tuple[object, ...]]:
+                return await _query(handle._connection, sql, None, deadline)
+            await validate_profile_storage(query, self._profile, _VECTOR_CAPABILITY_SQL)
+
     @asynccontextmanager
     async def transaction(self, request: RetrievalRequest, *, scope: TrustedScope,
                           deadline: float) -> AsyncIterator[ScopedSession]:
@@ -698,7 +705,7 @@ class PostgresSession:
             ), deadline)
             if await _query(connection, _COLLECTION_SQL, (scope.tenant_id, request.collection), deadline) != [('0.1', 'native_fts.v1')]:
                 raise UnsupportedCapability()
-            session = ScopedSession(connection, request, scope, deadline, predicate, parameters)
+            session = ScopedSession(connection, request, scope, deadline, predicate, parameters, self._profile)
             try:
                 yield session
             finally:

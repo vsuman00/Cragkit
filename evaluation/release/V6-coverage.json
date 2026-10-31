@@ -813,7 +813,6 @@
         "packages/typescript/tests/packing.test.mjs",
         "evaluation/reports/V1/V1-10-12.md",
         "evaluation/reports/V1/V1-08.md",
-        "evaluation/reports/V1/SECURITY-EVALUATION.md",
         "packages/python/src/cragkit/retrieval.py",
         "packages/typescript/src/retrieval.ts",
         "packages/python/src/cragkit/packing.py",

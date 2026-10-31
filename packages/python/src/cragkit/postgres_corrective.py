@@ -2,16 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+from types import MappingProxyType
 import math
 import copy
-from typing import Any
+from typing import Any, Mapping
 
 from ._hybrid import profile_snapshot, select
 from ._identifiers import extract_identifiers
 from ._postgres_pool import PoolResource
 from ._postgres_session import PostgresSession, LexicalCandidate, DenseCandidate, IdentifierCandidate, _check_deadline
 from .contracts import RetrievalRequest, TrustedScope, parse_request, parse_scope
-from .embeddings import EmbeddingAdapter
+from .embeddings import EmbeddingAdapter, EmbeddingProfile, EmbeddingUsage, FAKE_PROFILE
+from ._postgres_profiles import snapshot_profile
 from .reranking import RerankingAdapter, RerankProfile
 from .execution import BudgetExhausted, ExecutionLedger
 from .errors import IntegrityViolation, InvalidRequest, DeadlineExceeded
@@ -39,16 +41,24 @@ def _candidates(value: Any, request: RetrievalRequest, scope: TrustedScope) -> l
 
 class PostgresCorrectiveBackend:
     def __init__(self, resource: PoolResource, *, mode: str = 'lexical',
-                 embedder: EmbeddingAdapter | None = None, reranker: RerankingAdapter | None = None) -> None:
+                 embedder: EmbeddingAdapter | None = None, embedding_profile: EmbeddingProfile = FAKE_PROFILE, reranker: RerankingAdapter | None = None) -> None:
         if (type(mode) is not str or mode not in ('lexical', 'dense', 'hybrid')
                 or (mode == 'lexical' and embedder is not None)
                 or (mode != 'lexical' and not isinstance(embedder, EmbeddingAdapter))
                 or (reranker is not None and not isinstance(reranker, RerankingAdapter))):
             raise InvalidRequest()
-        self._session = PostgresSession(resource)
+        selected = snapshot_profile(embedding_profile)
+        self._session = PostgresSession(resource, embedding_profile=selected)
         self._mode, self._embedder, self._reranker = mode, embedder, reranker
-        self._profile = profile_snapshot(embedder) if embedder else None
+        self._profile = profile_snapshot(embedder, selected) if embedder else None
         self._rerank_profile = RerankProfile.model_validate(reranker.profile.model_dump()) if reranker else None
+
+    @property
+    def result_versions(self) -> Mapping[str, str] | None:
+        if self._profile is None or self._profile.provider == 'fake':
+            return None
+        return MappingProxyType(dict(model=self._profile.model,
+            index='dense_openai.v1' if self._mode == 'dense' else 'hybrid_rrf.v1'))
 
     async def search(self, request: RetrievalRequest, *, scope: TrustedScope, deadline: float,
                      limit: int, ledger: ExecutionLedger) -> dict[str, Any]:
@@ -72,15 +82,34 @@ class PostgresCorrectiveBackend:
                 candidates = await handle.lexical_candidates(limit=min(64, limit))
             return dict(candidates=_candidates(candidates, request, scope), degraded=False)
         assert self._embedder is not None and self._profile is not None
-        token = ledger.reserve(provider_calls=1, cost_upper_usd=0)
-        ledger.dispatch(token)
+        live = self._profile.provider != 'fake'
+        token = None
+        settled = False
+        if not live:
+            token = ledger.reserve(provider_calls=1, cost_upper_usd=0)
+            ledger.dispatch(token)
+        def dispatch() -> None:
+            nonlocal token
+            token = ledger.reserve(provider_calls=1, cost_upper_usd=None)
+            ledger.dispatch(token)
+        def usage_reported(usage: EmbeddingUsage) -> None:
+            nonlocal settled
+            assert token is not None
+            outputs = usage.total_tokens - usage.prompt_tokens if usage.total_tokens is not None and usage.prompt_tokens is not None else None
+            settled = True
+            ledger.reconcile(token, input_tokens=usage.prompt_tokens, output_tokens=outputs, cost_usd=None)
         try:
             candidates, degraded, tokens, _ = await select(self._session, bounded_request, scope, deadline,
-                mode=self._mode, embedder=self._embedder, allow_degraded=False, identifiers=True, profile=self._profile)
+                mode=self._mode, embedder=self._embedder, allow_degraded=False, identifiers=True,
+                profile=profile_snapshot(self._embedder, self._profile),
+                on_dispatch=dispatch if live else None, on_usage=usage_reported if live else None)
         except BaseException:
-            ledger.abandon(token)
+            if token is not None and not settled:
+                ledger.abandon(token)
             raise
-        ledger.reconcile(token, input_tokens=tokens, output_tokens=0, cost_usd=0)
+        if not live:
+            assert token is not None
+            ledger.reconcile(token, input_tokens=tokens, output_tokens=0, cost_usd=0)
         return dict(candidates=_candidates(candidates[:64], request, scope), degraded=degraded)
 
     async def capture(self, candidates: Any, *, request: RetrievalRequest, scope: TrustedScope,

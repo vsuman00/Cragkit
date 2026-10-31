@@ -7,7 +7,8 @@ import { PoolResource, bounded, check_options, type LeaseOptions, type PgClient 
 import { EXPECTED_HISTORY, _CATALOG_SQL, _HISTORY_SQL, _SCOPE_SQL, _COLLECTION_SQL } from './postgres-session.js';
 import { canonicalize, type CanonicalDocument, type CanonicalOptions } from './canonical.js';
 import { parse_scope, type TrustedScope } from './contracts.js';
-import { EmbeddingAdapter, EmbeddingBatchSchema, FAKE_PROFILE, type EmbeddingBatch, type EmbeddingUsage } from './embeddings.js';
+import { EmbeddingAdapter, EmbeddingBatchSchema, FAKE_PROFILE, type EmbeddingBatch, type EmbeddingUsage, type EmbeddingProfile } from './embeddings.js';
+import { snapshot_profile, profile_sql, validate_profile_storage } from './postgres-profiles.js';
 import * as lexical from './ingestion.js';
 import { EmbeddingProfileMismatch, IndexNotReady, IntegrityViolation, InvalidRequest, UnauthorizedScope, UnsupportedCapability } from './errors.js';
 
@@ -28,7 +29,7 @@ export const _GRANTS_SQL = "SELECT EXISTS(SELECT 1 FROM cragkit.document_grants 
 export const _VECTOR_INSERT_SQL = "INSERT INTO cragkit.chunk_vectors_fake_1536\n(tenant_id,collection_id,document_id,revision_id,generation_id,embedding_profile,chunk_id,embedding)\nSELECT $1,$2,$3,$4,$5,$6,x.chunk_id,x.embedding::cragkit_vector.vector(1536)\nFROM jsonb_to_recordset($7::jsonb) AS x(chunk_id text,embedding text)\nON CONFLICT DO NOTHING RETURNING chunk_id" as const;
 
 const hash = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const profile_values = Object.values(FAKE_PROFILE);
+
 const identity = (maximum = 256) => z.string().refine(value => /[^ \t\r\n\f\v]/.test(value)
   && !/[\0\uD800-\uDFFF]/u.test(value) && Buffer.byteLength(value) <= maximum);
 const OptionsSchema = z.strictObject({
@@ -57,17 +58,21 @@ const chunk_rows = (d: CanonicalDocument) => d.chunks.map(c => ({ chunk_id: c.ch
 
 export class PostgresVectorIndexer {
   private inflight = false;
+  private readonly profile: EmbeddingProfile;
+  private readonly profile_values: readonly unknown[];
   private readonly max_batches: number;
   private readonly max_attempts: number;
   constructor(private readonly resource: PoolResource, private readonly authorize_write: lexical.WriteAuthorizer,
-    private readonly embedder: EmbeddingAdapter, limits: { max_batches?: number; max_attempts?: number } = {}) {
+    private readonly embedder: EmbeddingAdapter, limits: { max_batches?: number; max_attempts?: number; embedding_profile?: EmbeddingProfile } = {}) {
     try {
       if (!plain_data(limits) || typeof authorize_write !== 'function' || !(embedder instanceof EmbeddingAdapter)) throw new InvalidRequest();
       const parsed = z.strictObject({ max_batches: z.number().int().min(1).max(128).default(128),
-        max_attempts: z.number().int().min(1).max(8).default(8) }).parse(limits);
+        max_attempts: z.number().int().min(1).max(8).default(8), embedding_profile: z.unknown().optional() }).parse(limits);
+      this.profile=snapshot_profile(parsed.embedding_profile as EmbeddingProfile | undefined);
+      this.profile_values=Object.values(this.profile);
       this.max_batches = parsed.max_batches; this.max_attempts = parsed.max_attempts;
     } catch { throw new InvalidRequest(); }
-    if (!equal(embedder.profile, FAKE_PROFILE)) throw new UnsupportedCapability();
+    if (!equal(embedder.profile, this.profile)) throw new UnsupportedCapability();
   }
   private async authorize(p: Prepared): Promise<void> {
     const allowed = await bounded(Promise.resolve().then(() => this.authorize_write(p.scope, p.receipt.collection, p.receipt.document_id)), p.options);
@@ -100,12 +105,12 @@ export class PostgresVectorIndexer {
     const expected = parsed.expected_generation_id ?? null;
     const [base, revision] = lexical.identifiers(document, scope, parsed.collection, parsed.document_id, parsed.intent_id,
       parsed.source_locator, metadata_hash, expected);
-    const payload = hash(['cragkit.vector-ingest.v1', base, profile_values]);
+    const payload = hash(['cragkit.vector-ingest.v1', base, this.profile_values]);
     const receipt: VectorIngestionReceipt = Object.freeze({ tenant_id: scope.tenant_id, collection: parsed.collection,
       document_id: parsed.document_id, intent_id: parsed.intent_id, revision_id: revision,
       generation_id: hash(['cragkit.vector-generation.v1', payload]), payload_sha256: payload,
       canonical_sha256: document.canonical_sha256, chunk_count: document.chunks.length, replayed: false,
-      embedding_profile: FAKE_PROFILE.profile_id, provider_calls: 0, usage: Object.freeze([]) });
+      embedding_profile: this.profile.profile_id, provider_calls: 0, usage: Object.freeze([]) });
     return { document, receipt, scope, locator: parsed.source_locator, metadata_json, expected, options, hook: parsed.before_publish };
   }
   private async transaction(p: Prepared, work: (client: PgClient, options: LeaseOptions) => Promise<VectorIngestionReceipt>): Promise<VectorIngestionReceipt> {
@@ -119,8 +124,7 @@ export class PostgresVectorIndexer {
     const q = (sql: string, values?: readonly unknown[]) => lexical.query(client, sql, values, options);
     if (!equal(await q(lexical._WRITER_ROLE_SQL), [[true]])) throw new UnauthorizedScope();
     if (!equal(await q(_CATALOG_SQL), [[true]]) || !equal(await q(_HISTORY_SQL), EXPECTED_HISTORY)) throw new UnsupportedCapability();
-    if (!equal(await q(_VECTOR_CAPABILITY_SQL), [[true]]) || !equal(await q(_SETUP_HISTORY_SQL), EXPECTED_VECTOR_HISTORY)
-      || !equal(await q(_PROFILE_SQL), [[...profile_values, 'chunk_vectors_fake_1536']])) throw new UnsupportedCapability();
+    await validate_profile_storage(q,this.profile,_VECTOR_CAPABILITY_SQL,true);
     const scope = p.scope;
     const grants = [...new Set(scope.grant_ids)].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
     await q(_SCOPE_SQL, [scope.tenant_id, scope.principal_id, scope.authorization_revision, JSON.stringify(grants)]);
@@ -141,7 +145,7 @@ export class PostgresVectorIndexer {
     const q = (sql: string, values?: readonly unknown[]) => lexical.query(client, sql, values, options);
     const r = p.receipt, d = p.document, k = key(p);
     if (!equal(await q(_VECTOR_REVISION_SQL, [...k, r.revision_id]), [[d.source_sha256, d.canonical_sha256, p.locator, d.parser_id, d.canonical_text]])) throw new IntegrityViolation();
-    if (!equal(await q(_VECTOR_GENERATION_SQL, [...k, r.generation_id]), [[r.revision_id, ready ? 'ready' : 'staging', r.chunk_count, FAKE_PROFILE.profile_id, d.chunker_profile, 'native_fts.v1']])) throw new IntegrityViolation();
+    if (!equal(await q(_VECTOR_GENERATION_SQL, [...k, r.generation_id]), [[r.revision_id, ready ? 'ready' : 'staging', r.chunk_count, this.profile.profile_id, d.chunker_profile, 'native_fts.v1']])) throw new IntegrityViolation();
     const actual = await q(_MANIFEST_SQL, [...k, r.generation_id]);
     const expected = chunk_rows(d).map(row => Object.values(row));
     // Native pg returns bigint spans as strings; normalize only exact safe decimal integers.
@@ -186,7 +190,7 @@ export class PostgresVectorIndexer {
     const result = await this.transaction(p, async (client, options) => {
       const r = await this.stage_initial(client, p, options);
       if (!r.replayed) {
-        const rows = await lexical.query(client, _MISSING_SQL, [...key(p), r.generation_id], options);
+        const rows = await lexical.query(client, profile_sql(_MISSING_SQL,this.profile), [...key(p), r.generation_id], options);
         if (rows.some(row => row.length !== 1 || typeof row[0] !== 'string')) throw new IntegrityViolation();
         missing = rows.map(row => row[0] as string);
       }
@@ -204,24 +208,30 @@ export class PostgresVectorIndexer {
       await this.transaction(p, async (client, options) => {
         await this.authorized(client, p, options, true); await this.manifest(client, p, options);
         const rows = ids.map((id, index) => ({ chunk_id: id, embedding: JSON.stringify(response.vectors[index]) }));
-        await lexical.query(client, _VECTOR_INSERT_SQL, [...key(p), p.receipt.revision_id, p.receipt.generation_id,
-          FAKE_PROFILE.profile_id, JSON.stringify(rows)], options);
+        await lexical.query(client, profile_sql(_VECTOR_INSERT_SQL,this.profile), [...key(p), p.receipt.revision_id, p.receipt.generation_id,
+          this.profile.profile_id, JSON.stringify(rows)], options);
         return p.receipt;
       });
     }
     if (!result.replayed) await this.transaction(p, async (client, options) => {
       await this.authorized(client, p, options, true); await this.manifest(client, p, options);
-      if (!equal(await lexical.query(client, _VECTOR_COUNTS_SQL, [...key(p), p.receipt.generation_id, FAKE_PROFILE.profile_id], options), [[p.receipt.chunk_count]])) throw new IntegrityViolation();
+      if (!equal(await lexical.query(client, profile_sql(_VECTOR_COUNTS_SQL,this.profile), [...key(p), p.receipt.generation_id, this.profile.profile_id], options), [[p.receipt.chunk_count]])) throw new IntegrityViolation();
       return p.receipt;
     });
     return Object.freeze({ ...result, provider_calls: usage.length, usage: Object.freeze(usage) });
   }
   private validate_batch(response: EmbeddingBatch, count: number): void {
-    if (!response || !equal(response.profile, FAKE_PROFILE)) throw new EmbeddingProfileMismatch();
+    if (!response || !equal(response.profile, this.profile)) throw new EmbeddingProfileMismatch();
     const checked = EmbeddingBatchSchema.safeParse(response);
     if (!checked.success) throw new IntegrityViolation();
-    if (checked.data.vectors.some(v => v.length !== FAKE_PROFILE.dimensions)) throw new EmbeddingProfileMismatch();
-    if (checked.data.vectors.length !== count || !checked.data.synthetic || checked.data.provider_calls !== 1
+    if (checked.data.vectors.some(v => v.length !== this.profile.dimensions)) throw new EmbeddingProfileMismatch();
+    const usage=checked.data.usage;
+    if ([usage.prompt_tokens,usage.total_tokens].some(value=>value!==null && (!Number.isSafeInteger(value)||value<0))
+      || usage.prompt_tokens!==null && usage.total_tokens!==null && usage.total_tokens<usage.prompt_tokens
+      || usage.cost_usd!==null && (!Number.isFinite(usage.cost_usd)||usage.cost_usd<0)) throw new IntegrityViolation();
+    if (this.profile.provider==='fake' ? usage.cost_kind!=='known' || usage.cost_usd!==0
+      : !['estimated','unknown'].includes(usage.cost_kind)) throw new IntegrityViolation();
+    if (checked.data.vectors.length !== count || checked.data.synthetic !== (this.profile.provider==='fake') || checked.data.provider_calls !== 1
       || checked.data.vectors.some(v => v.some(x => !Number.isFinite(x)) || Math.abs(Math.sqrt(v.reduce((s, x) => s + x * x, 0)) - 1) > 0.001)) throw new IntegrityViolation();
   }
   private async stage_initial(client: PgClient, p: Prepared, options: LeaseOptions): Promise<VectorIngestionReceipt> {
@@ -234,7 +244,7 @@ export class PostgresVectorIndexer {
       const succeeded = jobs[0][2] === 'succeeded';
       await this.authorized(client, p, options, !succeeded); await this.manifest(client, p, options, succeeded);
       if (succeeded) {
-        if (!equal(await q(_VECTOR_COUNTS_SQL, [...k, r.generation_id, FAKE_PROFILE.profile_id]), [[r.chunk_count]])) throw new IntegrityViolation();
+        if (!equal(await q(profile_sql(_VECTOR_COUNTS_SQL,this.profile), [...k, r.generation_id, this.profile.profile_id]), [[r.chunk_count]])) throw new IntegrityViolation();
         return Object.freeze({ ...r, replayed: true });
       }
       const stored_attempt = jobs[0][4];
@@ -254,7 +264,7 @@ export class PostgresVectorIndexer {
     await this.authorized(client, p, options);
     await q("INSERT INTO cragkit.ingestion_jobs(tenant_id,collection_id,document_id,intent_id,payload_sha256,generation_id,state,attempt_count) VALUES ($1,$2,$3,$4,$5,$6,'running',1) RETURNING 1", [...k, r.intent_id, r.payload_sha256, r.generation_id]);
     await q('INSERT INTO cragkit.document_revisions(tenant_id,collection_id,document_id,revision_id,source_sha256,source_locator,canonical_text,canonical_sha256,parser_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING revision_id', [...k, r.revision_id, d.source_sha256, p.locator, d.canonical_text, d.canonical_sha256, d.parser_id]);
-    await q("INSERT INTO cragkit.index_generations(tenant_id,collection_id,document_id,revision_id,generation_id,chunker_profile,lexical_profile,embedding_profile,status,expected_chunk_count) VALUES ($1,$2,$3,$4,$5,$6,'native_fts.v1',$7,'staging',$8) RETURNING 1", [...k, r.revision_id, r.generation_id, d.chunker_profile, FAKE_PROFILE.profile_id, r.chunk_count]);
+    await q("INSERT INTO cragkit.index_generations(tenant_id,collection_id,document_id,revision_id,generation_id,chunker_profile,lexical_profile,embedding_profile,status,expected_chunk_count) VALUES ($1,$2,$3,$4,$5,$6,'native_fts.v1',$7,'staging',$8) RETURNING 1", [...k, r.revision_id, r.generation_id, d.chunker_profile, this.profile.profile_id, r.chunk_count]);
     await q(lexical._CHUNKS_SQL, [...k, r.revision_id, r.generation_id, JSON.stringify(chunk_rows(d))]);
     await q(lexical._LEXICAL_SQL, [...k, r.generation_id, JSON.stringify(Object.fromEntries(d.chunks.map(chunk => [chunk.chunk_id, extract_identifiers(chunk.text)])))]);
     await this.manifest(client, p, options);
@@ -280,7 +290,7 @@ export class PostgresVectorIndexer {
       const barrier = async (): Promise<void> => {
         await this.authorized(client, p, options, !succeeded);
         await this.manifest(client, p, options, succeeded);
-        if (!equal(await q(_VECTOR_COUNTS_SQL, [...k, r.generation_id, FAKE_PROFILE.profile_id]), [[r.chunk_count]])) throw new IntegrityViolation();
+        if (!equal(await q(profile_sql(_VECTOR_COUNTS_SQL,this.profile), [...k, r.generation_id, this.profile.profile_id]), [[r.chunk_count]])) throw new IntegrityViolation();
       };
       await barrier();
       if (succeeded) return Object.freeze({ ...r, replayed: true });
@@ -288,7 +298,7 @@ export class PostgresVectorIndexer {
       check_options(options);
       await this.authorize(p);
       await barrier();
-      if (!equal(await q("UPDATE cragkit.index_generations SET status='ready' WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4 AND status='staging' AND embedding_profile=$5 RETURNING 1", [...k, r.generation_id, FAKE_PROFILE.profile_id]), [[1]])) throw new IntegrityViolation();
+      if (!equal(await q("UPDATE cragkit.index_generations SET status='ready' WHERE tenant_id=$1 AND collection_id=$2 AND document_id=$3 AND generation_id=$4 AND status='staging' AND embedding_profile=$5 RETURNING 1", [...k, r.generation_id, this.profile.profile_id]), [[1]])) throw new IntegrityViolation();
       if (!equal(await q('UPDATE cragkit.documents SET active_generation_id=$1,metadata=$2::jsonb WHERE tenant_id=$3 AND collection_id=$4 AND document_id=$5 AND active_generation_id IS NOT DISTINCT FROM $6 AND NOT tombstoned AND authorization_revision=$7 RETURNING 1', [r.generation_id, p.metadata_json, ...k, p.expected, p.scope.authorization_revision]), [[1]])) throw new IndexNotReady();
       if (!equal(await q("UPDATE cragkit.ingestion_jobs SET state='succeeded' WHERE tenant_id=$1 AND collection_id=$2 AND intent_id=$3 AND payload_sha256=$4 AND generation_id=$5 AND state='running' RETURNING 1", [...k.slice(0, 2), r.intent_id, r.payload_sha256, r.generation_id]), [[1]])) throw new IntegrityViolation();
       return r;

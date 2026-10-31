@@ -1,0 +1,219 @@
+{
+  "revision": "PGO-r1",
+  "migration_sha256": "9f909b14e690112fbc4c8671f7e758e839e615e68aad33f927b400ea04eb9f16",
+  "columns": [
+    [
+      "tenant_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "collection_id",
+      "cragkit.collection_text",
+      true
+    ],
+    [
+      "document_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "revision_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "generation_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "chunk_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "embedding_profile",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "embedding",
+      "cragkit_vector.vector(1536)",
+      true
+    ]
+  ],
+  "constraints": [
+    [
+      "chunk_vectors_openai_te3smal_tenant_id_collection_id_docu_fkey1",
+      "f",
+      true,
+      false,
+      false,
+      "FOREIGN KEY (tenant_id, collection_id, document_id, revision_id, generation_id, embedding_profile) REFERENCES cragkit.index_generations(tenant_id, collection_id, document_id, revision_id, generation_id, embedding_profile) ON DELETE CASCADE"
+    ],
+    [
+      "chunk_vectors_openai_te3small_1536_embedding_check",
+      "c",
+      true,
+      false,
+      false,
+      "CHECK (abs(cragkit_vector.vector_norm(embedding) - 1.0::double precision) <= 0.001::double precision)"
+    ],
+    [
+      "chunk_vectors_openai_te3small_1536_embedding_profile_check",
+      "c",
+      true,
+      false,
+      false,
+      "CHECK (embedding_profile::text = 'openai_te3small_1536_r1'::text)"
+    ],
+    [
+      "chunk_vectors_openai_te3small_1536_embedding_profile_fkey",
+      "f",
+      true,
+      false,
+      false,
+      "FOREIGN KEY (embedding_profile) REFERENCES cragkit.embedding_profiles(profile_id)"
+    ],
+    [
+      "chunk_vectors_openai_te3small_1536_pkey",
+      "p",
+      true,
+      false,
+      false,
+      "PRIMARY KEY (tenant_id, collection_id, document_id, revision_id, generation_id, chunk_id)"
+    ],
+    [
+      "chunk_vectors_openai_te3small_tenant_id_collection_id_docu_fkey",
+      "f",
+      true,
+      false,
+      false,
+      "FOREIGN KEY (tenant_id, collection_id, document_id, revision_id, generation_id, chunk_id) REFERENCES cragkit.chunks(tenant_id, collection_id, document_id, revision_id, generation_id, chunk_id) ON DELETE CASCADE"
+    ]
+  ],
+  "registry": [
+    [
+      "fake_embedding_1536_v1",
+      "fake",
+      "fake_embedding_model_v1",
+      1536,
+      "fake-byte-v1",
+      "l2",
+      "chunk_vectors_fake_1536"
+    ],
+    [
+      "openai_te3small_1536_r1",
+      "openai",
+      "text-embedding-3-small",
+      1536,
+      "cl100k_base",
+      "l2",
+      "chunk_vectors_openai_te3small_1536"
+    ]
+  ],
+  "registry_checks": [
+    [
+      "embedding_profiles_supported_profile_check",
+      "CHECK (profile_id::text = 'fake_embedding_1536_v1'::text AND provider::text = 'fake'::text AND model::text = 'fake_embedding_model_v1'::text AND dimensions = 1536 AND tokenizer::text = 'fake-byte-v1'::text AND normalization::text = 'l2'::text AND storage_table::text = 'chunk_vectors_fake_1536'::text OR profile_id::text = 'openai_te3small_1536_r1'::text AND provider::text = 'openai'::text AND model::text = 'text-embedding-3-small'::text AND dimensions = 1536 AND tokenizer::text = 'cl100k_base'::text AND normalization::text = 'l2'::text AND storage_table::text = 'chunk_vectors_openai_te3small_1536'::text)",
+      true
+    ]
+  ],
+  "interrupted_upgrade_rolled_back": true,
+  "lexical_history_unchanged": true,
+  "cleanup_verified": true,
+  "fake_columns": [
+    [
+      "tenant_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "collection_id",
+      "cragkit.collection_text",
+      true
+    ],
+    [
+      "document_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "revision_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "generation_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "chunk_id",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "embedding_profile",
+      "cragkit.identity_text",
+      true
+    ],
+    [
+      "embedding",
+      "cragkit_vector.vector(1536)",
+      true
+    ]
+  ],
+  "fake_constraints": [
+    [
+      "chunk_vectors_fake_1536_embedding_check",
+      "c",
+      true,
+      false,
+      false,
+      "CHECK (abs(cragkit_vector.vector_norm(embedding) - 1.0::double precision) <= 0.001::double precision)"
+    ],
+    [
+      "chunk_vectors_fake_1536_embedding_profile_check",
+      "c",
+      true,
+      false,
+      false,
+      "CHECK (embedding_profile::text = 'fake_embedding_1536_v1'::text)"
+    ],
+    [
+      "chunk_vectors_fake_1536_embedding_profile_fkey",
+      "f",
+      true,
+      false,
+      false,
+      "FOREIGN KEY (embedding_profile) REFERENCES cragkit.embedding_profiles(profile_id)"
+    ],
+    [
+      "chunk_vectors_fake_1536_pkey",
+      "p",
+      true,
+      false,
+      false,
+      "PRIMARY KEY (tenant_id, collection_id, document_id, revision_id, generation_id, chunk_id)"
+    ],
+    [
+      "chunk_vectors_fake_1536_tenant_id_collection_id_document__fkey1",
+      "f",
+      true,
+      false,
+      false,
+      "FOREIGN KEY (tenant_id, collection_id, document_id, revision_id, generation_id, embedding_profile) REFERENCES cragkit.index_generations(tenant_id, collection_id, document_id, revision_id, generation_id, embedding_profile) ON DELETE CASCADE"
+    ],
+    [
+      "chunk_vectors_fake_1536_tenant_id_collection_id_document_i_fkey",
+      "f",
+      true,
+      false,
+      false,
+      "FOREIGN KEY (tenant_id, collection_id, document_id, revision_id, generation_id, chunk_id) REFERENCES cragkit.chunks(tenant_id, collection_id, document_id, revision_id, generation_id, chunk_id) ON DELETE CASCADE"
+    ]
+  ],
+  "fake_catalog_cleanup_verified": true
+}

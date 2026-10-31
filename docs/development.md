@@ -1,5 +1,25 @@
 # Cragkit development
 
+## Explicit PostgreSQL embedding-profile upgrade
+
+[The profile guide](postgres-embedding-profiles.md) explains the optional OpenAI
+storage upgrade and runtime selection. This administrative setup remains
+separate from library imports and key/provider configuration. The native check
+uses an already prepared, genuinely pinned PostgreSQL17.11/pgvector0.8.0 prefix;
+it never downloads or replaces the machine's extension installation.
+
+```sh
+python3 tools/check_postgres_profiles.py --check --confirm-dedicated-target
+uv run --project packages/python --frozen --no-sync python tools/check_postgres_profile_storage.py --prepared-postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --artifacts-dir artifacts/V6/profile-storage-check --allow-local-processes
+```
+
+Use a fresh artifact directory and build TypeScript first. Run one native suite
+at a time. The checker uses at most two runtime connections, releases setup
+connections before model callbacks and verifies owned process cleanup. Fake
+vectors remain fake; injected OpenAI dispatch failures return no vector data.
+See [V6-02B evidence](../evaluation/reports/V6/V6-02B.md) for actual results and
+the remaining live-quality boundary.
+
 ## Current development database: Neon
 
 On 22 October 2026 the user selected a new dedicated Neon development project in VAIBHAV's Free organization, Singapore, PostgreSQL 17, and authorized the [migration plan](neon-migration-plan.md). Follow the [Neon setup and security runbook](neon.md) for current target preparation. Direct Neon native Python/TypeScript security and integration acceptance passed on the dedicated synthetic target. [DB-NEON-01 evidence](../evaluation/reports/V2/DB-NEON-01.md) records 47 native groups, final local regressions and cleanup. Private development fixture configuration uses that endpoint; applications still supply restricted roles and scoped policies.

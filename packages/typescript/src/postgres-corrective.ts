@@ -6,7 +6,7 @@ import { PostgresSession, DenseCandidateSchema, IdentifierCandidateSchema, type 
 import { source_snapshot } from './postgres-source.js';
 import { type PoolResource, bounded, check_options, type LeaseOptions } from './postgres-pool.js';
 import { parse_request, parse_scope, type RetrievalRequest, type TrustedScope } from './contracts.js';
-import { EmbeddingAdapter } from './embeddings.js';
+import { EmbeddingAdapter, type EmbeddingProfile } from './embeddings.js';
 import { RerankingAdapter, RerankProfileSchema, type RerankResult } from './reranking.js';
 import { extract_identifiers } from './identifiers.js';
 import { BudgetExhausted, ExecutionLedger } from './execution.js';
@@ -29,16 +29,18 @@ function candidates(input:unknown, request:RetrievalRequest, scope:TrustedScope)
   } catch { throw new IntegrityViolation(); }
 }
 export class PostgresCorrectiveBackend {
+  readonly result_versions?:Readonly<{model:string|null;index:string|null}>;
   private readonly session:PostgresSession;
   private readonly config:ReturnType<typeof configuration>;
   private readonly profile:ReturnType<typeof profile_snapshot>|null;
   private readonly reranker:RerankingAdapter|null;
   private readonly rerankProfile:ReturnType<typeof RerankProfileSchema.parse>|null;
-  constructor(options:{resource:PoolResource;mode?:'lexical'|'dense'|'hybrid';embedder?:EmbeddingAdapter;reranker?:RerankingAdapter}) {
-    if(!options||Object.getOwnPropertySymbols(options).length||Object.entries(Object.getOwnPropertyDescriptors(options)).some(([key,d])=>!['resource','mode','embedder','reranker'].includes(key)||!('value'in d)||!d.enumerable))throw new InvalidRequest();
+  constructor(options:{resource:PoolResource;mode?:'lexical'|'dense'|'hybrid';embedder?:EmbeddingAdapter;embedding_profile?:EmbeddingProfile;reranker?:RerankingAdapter}) {
+    if(!options||Object.getOwnPropertySymbols(options).length||Object.entries(Object.getOwnPropertyDescriptors(options)).some(([key,d])=>!['resource','mode','embedder','reranker','embedding_profile'].includes(key)||!('value'in d)||!d.enumerable))throw new InvalidRequest();
     const {resource,reranker,...config}=options;
     if(reranker!==undefined&&!(reranker instanceof RerankingAdapter))throw new InvalidRequest();
-    this.config=configuration(config);this.session=new PostgresSession(resource);this.profile=this.config.embedder?profile_snapshot(this.config.embedder):null;
+    this.config=configuration(config);this.session=new PostgresSession(resource,this.config.embedding_profile);this.profile=this.config.embedder?profile_snapshot(this.config.embedder,this.config.embedding_profile):null;
+    if(this.profile?.provider==='openai') this.result_versions=Object.freeze({model:this.profile.model,index:this.config.mode==='dense'?'dense_openai.v1':'hybrid_rrf.v1'});
     this.reranker=reranker??null;this.rerankProfile=reranker?deep_freeze(RerankProfileSchema.parse(reranker.profile)):null;
   }
   async search(input:RetrievalRequest, options:Bound & {limit:number}) {
@@ -55,11 +57,19 @@ export class PostgresCorrectiveBackend {
       const raw=await this.session.transaction(selectedRequest,bound,h=>h.lexical_candidates({limit:Math.min(64,options.limit)}));
       return deep_freeze({candidates:candidates(raw,request,scope),degraded:false});
     }
-    const token=options.ledger.reserve({provider_calls:1,cost_upper_usd:0});options.ledger.dispatch(token);
+    const live=this.profile!.provider!=='fake';
+    let token:ReturnType<ExecutionLedger['reserve']>|undefined, settled=false;
+    const dispatch=()=>{token=options.ledger.reserve({provider_calls:1,cost_upper_usd:live?null:0});options.ledger.dispatch(token);};
+    const reported=(usage:import('./embeddings.js').EmbeddingUsage)=>{
+      if (!token) throw new IntegrityViolation();
+      settled=true;
+      options.ledger.reconcile(token,{input_tokens:usage.prompt_tokens,output_tokens:usage.total_tokens!==null&&usage.prompt_tokens!==null?usage.total_tokens-usage.prompt_tokens:null,cost_usd:null});
+    };
+    if (!live) dispatch();
     let selection:Awaited<ReturnType<typeof select>>;
-    try {selection=await select(this.session,selectedRequest,bound,this.config,this.profile!);}
-    catch(error){options.ledger.abandon(token);throw error;}
-    options.ledger.reconcile(token,{input_tokens:selection.input_tokens,output_tokens:0,cost_usd:0});
+    try {selection=await select(this.session,selectedRequest,bound,this.config,this.profile!,live?dispatch:undefined,live?reported:undefined);}
+    catch(error){if(token&&!settled)options.ledger.abandon(token);throw error;}
+    if(token&&!settled) options.ledger.reconcile(token,{input_tokens:selection.input_tokens,output_tokens:selection.output_tokens,cost_usd:selection.cost_usd});
     return deep_freeze({candidates:candidates(selection.candidates.slice(0,64),request,scope),degraded:selection.degraded});
   }
   async capture(input:readonly LexicalCandidate[], options:Bound & {request:RetrievalRequest;max_source_bytes:number}) {

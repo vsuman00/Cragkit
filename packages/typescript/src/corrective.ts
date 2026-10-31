@@ -9,7 +9,7 @@ import { ExecutionLedger, BudgetExhausted } from './execution.js';
 import { CragkitError, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability } from './errors.js';
 import { validate_plan, type ApprovedVariant, PlannerAdapter } from './planning.js';
 import { parse_request, parse_scope, type RetrievalRequest, type TrustedScope } from './requests.js';
-import { EvidenceSchema, ResultSchema, type Evidence, type RetrievalResult } from './results.js';
+import { EvidenceSchema, ResultSchema, VersionsSchema, type Evidence, type RetrievalResult } from './results.js';
 import { deep_freeze, identity, integer, safe_number, valid_native_json } from './shared.js';
 import {QdrantPayloadSchema,point_id,payload_tuple} from './qdrant-contract.js';
 
@@ -28,7 +28,7 @@ const qdrantCandidate=base.extend({backend:z.literal('qdrant'),score:safe_number
     &&p.dense_profile_id===p.dense_profile.profile_id&&p.sparse_profile_id===(p.sparse_profile?.profile_id??'')
     &&(n.branch==='dense'?n.score_kind==='cosine_similarity'&&n.score>=-1.000001&&n.score<=1.000001:n.score_kind==='dot_product'&&p.sparse_profile!==null);
 });
-const CandidateSchema = z.union([base, base.extend({score: safe_number.min(0).max(2), embedding_profile: z.literal('fake_embedding_1536_v1'),
+const CandidateSchema = z.union([base, base.extend({score: safe_number.min(0).max(2), embedding_profile: z.enum(['fake_embedding_1536_v1','openai_te3small_1536_r1']),
   score_direction: z.literal('lower_is_better'), score_kind: z.literal('cosine_distance')}),
 base.extend({score: z.literal(1), score_kind: z.literal('exact_identifier'), score_direction: z.literal('higher_is_better'),
   identifier_profile: z.literal('identifier_ascii_v1')}),qdrantCandidate]).refine(c => c.end_byte > c.start_byte && Buffer.byteLength(c.collection) <= 128);
@@ -36,6 +36,7 @@ export type CorrectiveCandidate = Readonly<z.infer<typeof CandidateSchema>>;
 export type CorrectiveBackendOptions = {scope: TrustedScope; deadline: number; ledger: ExecutionLedger; signal: AbortSignal};
 export interface CorrectiveBackend {
   readonly candidate_accounting?: 'outer'|'backend';
+  readonly result_versions?: Readonly<{model:string|null;index:string|null}>;
   search(request: RetrievalRequest, options: CorrectiveBackendOptions & {limit: number}): Promise<unknown>;
   capture(candidates: readonly CorrectiveCandidate[], options: CorrectiveBackendOptions & {request: RetrievalRequest; max_source_bytes: number}): Promise<unknown>;
 }
@@ -57,6 +58,7 @@ function checked<T>(schema: z.ZodType<T>, value: unknown): T {
 }
 export class CorrectiveRetriever {
   readonly #backend: CorrectiveBackend;
+  readonly #resultVersions:Readonly<{model:string|null;index:string|null}>;
   readonly #candidateAccounting:'outer'|'backend';
   readonly #policy: unknown;
   readonly #variants: unknown;
@@ -77,6 +79,14 @@ export class CorrectiveRetriever {
     const accounting=declaredAccounting===undefined?'outer':declaredAccounting;
     if(accounting!=='outer'&&accounting!=='backend')throw new InvalidRequest();
     this.#candidateAccounting=accounting;
+    const declaredVersions=b.result_versions;
+    if (declaredVersions===undefined) this.#resultVersions=Object.freeze({model:null,index:null});
+    else {
+      const selected=optionsObject(declaredVersions,['model','index']);
+      if (Object.keys(selected).length!==2) throw new InvalidRequest();
+      const wire=checked(VersionsSchema,selected);
+      this.#resultVersions=Object.freeze({model:wire.model,index:wire.index});
+    }
     const c = checked(z.strictObject({policy: z.unknown().default(null), variants: z.array(z.unknown()).max(16).default([]),
       batch_size: integer(1,64).default(16), max_retries: integer(0,2).default(0), backoff_ms: integer(0,1000).default(0),
       no_progress_limit: integer(1,3).default(1)}), Object.fromEntries(Object.entries(o).filter(([key]) => !['backend','planner','counter','event_sink'].includes(key))));
@@ -259,7 +269,7 @@ export class CorrectiveRetriever {
       let result:RetrievalResult;
       try {result=ResultSchema.parse({request_id:request.request_id,status:p.status,execution:degraded?'degraded':'complete',evidence:p.evidence,facets:p.facets,context:p.context,limitations,
         usage:{attempt_count:usage.attempts,provider_calls:usage.provider_calls,provider_input_tokens:usage.input_tokens,provider_output_tokens:usage.output_tokens,cost_usd:usage.cost_usd,cost_kind:usage.cost_kind,
-          context_tokens:p.context_tokens,context_counting:p.counting_mode},versions:{engine:'0.0.0',policy:p.policy,model:null,index:null,tokenizer:p.tokenizer}});}catch{throw new IntegrityViolation();}
+          context_tokens:p.context_tokens,context_counting:p.counting_mode},versions:{engine:'0.0.0',policy:p.policy,model:this.#resultVersions.model,index:this.#resultVersions.index,tokenizer:p.tokenizer}});}catch{throw new IntegrityViolation();}
       check();
       event('stop',reason);
       const events=this.#events&&trace?{trace_id:trace,...EventSink.prototype.snapshot.call(this.#events)}:null;

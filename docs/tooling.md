@@ -11,6 +11,8 @@ Use role-based filenames for implementation and tests. Milestone names remain ap
 | `tools/check_core_pipeline.py` | Serial core typing/tests, shared conformance, corpus/seals and clean core artifacts |
 | `tools/check_sdk_packages.py` | Core pipeline plus optional LangChain typing/tests and installed SDK artifacts |
 | `tools/check_postgres_prerequisites.py` | Explicit opt-in check of a prepared private PostgreSQL/pgvector environment and cleanup |
+| `tools/check_postgres_profiles.py` | Explicit atomic upgrade/read-only verification of the two-profile PostgreSQL catalog; no automatic grants or inference |
+| `tools/check_postgres_profile_storage.py` | Disposable native legacy/upgraded profile, rollback, permission and Python/Node mechanics checks |
 | `tools/check_backend_conformance.py` | Explicit disposable PostgreSQL/Qdrant direct, LangChain and MCP native conformance |
 | `tools/check_qdrant_artifacts.py` | MCP archives and six isolated core/backend/tokenizer/MCP installation profiles; this does not start a Qdrant server |
 | `tools/check_release_readiness.py` | Frozen release preregistration and evidence-path integrity; configuration verification alone does not establish release readiness |

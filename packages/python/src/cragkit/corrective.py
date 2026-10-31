@@ -16,7 +16,7 @@ from .assessment import _policy, assess_evidence
 from .context import Cl100kCounter, count_context
 from .contracts import Evidence, RetrievalRequest, RetrievalResult, TrustedScope, parse_request, parse_scope
 from .contracts._validation import MAX_SAFE_NUMBER, identity, integer, native_json
-from .contracts.results import digest
+from .contracts.results import digest, Versions
 from .errors import CragkitError, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability
 from .evidence import pack_and_assess
 from .execution import BudgetExhausted, ExecutionLedger
@@ -113,6 +113,17 @@ class CorrectiveRetriever:
                 or (counter is not None and type(counter) is not Cl100kCounter)
                 or (event_sink is not None and type(event_sink) is not EventSink)):
             raise InvalidRequest()
+        try:
+            configured_versions = getattr(backend, 'result_versions', None)
+            if configured_versions is None:
+                self._backend_versions = Versions()
+            else:
+                from collections.abc import Mapping
+                if not isinstance(configured_versions, Mapping) or set(configured_versions) != {'model', 'index'}:
+                    raise ValueError()
+                self._backend_versions = Versions.model_validate(dict(configured_versions))
+        except Exception:
+            raise InvalidRequest() from None
         self._backend, self._planner, self._counter = backend, planner, counter
         accounting=getattr(backend,'candidate_accounting','outer')
         if type(accounting) is not str or accounting not in ('outer','backend'):
@@ -447,7 +458,8 @@ class CorrectiveRetriever:
             result = RetrievalResult.model_validate(dict(request_id=req.request_id, status=packed['status'],
                 execution='degraded' if degraded else 'complete', evidence=packed['evidence'], facets=packed['facets'],
                 context=packed['context'], limitations=limitations,
-                versions=dict(policy=packed['policy'], tokenizer=packed['tokenizer']),
+                versions=dict(policy=packed['policy'], tokenizer=packed['tokenizer'],
+                    **self._backend_versions.model_dump(include={'model', 'index'})),
                 usage=dict(attempt_count=usage['attempts'], provider_calls=usage['provider_calls'],
                     provider_input_tokens=usage['input_tokens'], provider_output_tokens=usage['output_tokens'],
                     cost_usd=usage['cost_usd'], cost_kind=usage['cost_kind'], context_tokens=packed['context_tokens'],

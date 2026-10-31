@@ -2,7 +2,8 @@
 import { validate_identifier } from './identifiers.js';
 import { z } from 'zod';
 import { isDeepStrictEqual } from 'node:util';
-import { EmbeddingBatchSchema, FAKE_PROFILE, type EmbeddingBatch } from './embeddings.js';
+import { snapshot_profile, profile_sql, validate_profile_storage } from './postgres-profiles.js';
+import { EmbeddingBatchSchema, FAKE_PROFILE, type EmbeddingBatch, type EmbeddingProfile } from './embeddings.js';
 import { valid_native_json } from './shared.js';
 import { verify_source, type SourceFetch } from './postgres-source.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -262,7 +263,7 @@ const CandidateSchema = z.strictObject({
 });
 export const DenseCandidateSchema = CandidateSchema.extend({
   score: z.number().finite().min(0).max(2),
-  embedding_profile: z.literal('fake_embedding_1536_v1'),
+  embedding_profile: z.enum(['fake_embedding_1536_v1','openai_te3small_1536_r1']),
   score_direction: z.literal('lower_is_better'), score_kind: z.literal('cosine_distance'),
 });
 export const IdentifierCandidateSchema = CandidateSchema.extend({
@@ -276,7 +277,7 @@ const candidate_identity = (candidate: LexicalCandidate): boolean =>
     candidate.generation_id, candidate.chunk_id].every(value => Buffer.byteLength(value) <= 256
       && /[^ \t\r\n\f\v]/.test(value) && !/[\0\uD800-\uDFFF]/u.test(value))
   && Buffer.byteLength(candidate.collection) <= 128 && candidate.end_byte > candidate.start_byte;
-export function dense_batch(input: unknown): EmbeddingBatch {
+export function dense_batch(input: unknown, profile: EmbeddingProfile = FAKE_PROFILE): EmbeddingBatch {
   try {
     if (!valid_native_json(input)) throw new InvalidRequest();
     const batch = z.strictObject({ profile: z.strictObject({ profile_id: z.string(), provider: z.string(),
@@ -287,8 +288,8 @@ export function dense_batch(input: unknown): EmbeddingBatch {
     const parsed = EmbeddingBatchSchema.safeParse(batch.data);
     if (!parsed.success) throw new InvalidRequest();
     if (parsed.data.vectors.length !== 1 || parsed.data.synthetic !== (parsed.data.profile.provider === 'fake')) throw new InvalidRequest();
-    if (!isDeepStrictEqual(parsed.data.profile, FAKE_PROFILE)) throw new EmbeddingProfileMismatch();
-    if (parsed.data.vectors[0].length !== FAKE_PROFILE.dimensions) throw new EmbeddingProfileMismatch();
+    if (!isDeepStrictEqual(parsed.data.profile, snapshot_profile(profile))) throw new EmbeddingProfileMismatch();
+    if (parsed.data.vectors[0].length !== profile.dimensions) throw new EmbeddingProfileMismatch();
     const norm = Math.sqrt(parsed.data.vectors[0].reduce((sum, value) => sum + value * value, 0));
     if (!Number.isFinite(norm) || Math.abs(norm - 1) > 0.001) throw new InvalidRequest();
     return parsed.data;
@@ -361,7 +362,7 @@ export class ScopedSession {
   constructor(private readonly client: PgClient, private readonly request: RetrievalRequest,
               private readonly scope: TrustedScope, private readonly options: LeaseOptions,
               private readonly predicate: string, private readonly parameters: readonly unknown[],
-              private readonly token: symbol) {}
+              private readonly token: symbol, private readonly profile: EmbeddingProfile = FAKE_PROFILE) {}
   invalidate(): void { this.active = false; }
   async candidate_branch<T>(operation: () => Promise<T>): Promise<T> {
     if (!this.active || this.busy || this.branching || context.getStore() !== this.token || typeof operation !== 'function') throw new InvalidRequest();
@@ -415,6 +416,7 @@ export class ScopedSession {
     if (!parsed.success || parsed.data.end_byte <= parsed.data.start_byte || identityValues.some(value => value.length > 256 || !/[^ \t\r\n\f\v]/.test(value) || value.includes('\0') || /[\uD800-\uDFFF]/u.test(value) || Buffer.byteLength(value) > 256)
       || (parsed.success && Buffer.byteLength(parsed.data.collection) > 128)
       || !options || !Number.isSafeInteger(options.max_source_bytes) || options.max_source_bytes < 0 || options.max_source_bytes > 16777216) throw new InvalidRequest();
+    if (Object.hasOwn(input,'embedding_profile') && (input as DenseCandidate).embedding_profile!==this.profile.profile_id) throw new EmbeddingProfileMismatch();
     const candidate = Object.freeze(parsed.data);
     if (candidate.tenant_id !== this.scope.tenant_id || candidate.collection !== this.request.collection) throw new UnauthorizedScope();
     this.busy = true;
@@ -468,7 +470,7 @@ export class ScopedSession {
   }
   async dense_candidates(input: EmbeddingBatch, options: { limit?: number } = {}): Promise<readonly DenseCandidate[]> {
     if (!this.active || this.busy || context.getStore() !== this.token) throw new InvalidRequest();
-    const batch = dense_batch(input);
+    const batch = dense_batch(input,this.profile);
     if (!valid_native_json(options)) throw new InvalidRequest();
     const parsedOptions = z.strictObject({ limit: z.number().int().min(1).max(1000).default(100) }).safeParse(options);
     if (!parsedOptions.success) throw new InvalidRequest();
@@ -480,13 +482,10 @@ export class ScopedSession {
       // This module imports session constants; defer it until after module initialization.
       const capability = await import('./vector-ingestion.js');
       check_options(this.options);
-      if (!isDeepStrictEqual(await query(this.client, capability._VECTOR_CAPABILITY_SQL, undefined, this.options), [[true]])
-        || !isDeepStrictEqual(await query(this.client, capability._SETUP_HISTORY_SQL, undefined, this.options), capability.EXPECTED_VECTOR_HISTORY)
-        || !isDeepStrictEqual(await query(this.client, capability._PROFILE_SQL, undefined, this.options),
-          [[...Object.values(FAKE_PROFILE), 'chunk_vectors_fake_1536']])) throw new UnsupportedCapability();
+      await validate_profile_storage((text,values)=>query(this.client,text,values,this.options),this.profile,capability._VECTOR_CAPABILITY_SQL);
       const [predicate, parameters] = compile_filters(this.request.required_filters, 9);
-      const text = _DENSE_SQL.replace('{predicate}', predicate).replace('{limit}', `$${9 + parameters.length}`);
-      const rows = await query(this.client, text, [vector, FAKE_PROFILE.profile_id, this.scope.tenant_id,
+      const text = profile_sql(_DENSE_SQL,this.profile).replace('{predicate}', predicate).replace('{limit}', `$${9 + parameters.length}`);
+      const rows = await query(this.client, text, [vector, this.profile.profile_id, this.scope.tenant_id,
         this.request.collection, this.scope.authorization_revision, this.scope.authorization_revision,
         this.scope.principal_id, [...this.scope.grant_ids], ...parameters, limit], this.options);
       if (rows.length > limit) throw new IntegrityViolation();
@@ -494,7 +493,7 @@ export class ScopedSession {
       const fields = Object.keys(CandidateSchema.shape);
       const result = rows.map(row => {
         if (row.length !== 12) throw new IntegrityViolation();
-        if (row[10] !== FAKE_PROFILE.profile_id || row[11] !== 'native_fts.v1') throw new UnsupportedCapability();
+        if (row[10] !== this.profile.profile_id || row[11] !== 'native_fts.v1') throw new UnsupportedCapability();
         const values = row.slice(0, 10);
         for (const index of [6, 7]) {
           const value = values[index];
@@ -545,7 +544,8 @@ export class ScopedSession {
 
 }
 export class PostgresSession {
-  constructor(private readonly resource: PoolResource) {}
+  private readonly profile: EmbeddingProfile;
+  constructor(private readonly resource: PoolResource, profile: EmbeddingProfile = FAKE_PROFILE) { this.profile=snapshot_profile(profile); }
   private async run<T>(options: LeaseOptions, body: (client: PgClient, options: LeaseOptions) => Promise<T>): Promise<T> {
     check_options(options);
     return this.resource.withLease(options, async (client, signal) => {
@@ -591,6 +591,9 @@ export class PostgresSession {
   async validate(options: LeaseOptions): Promise<void> {
     await this.run(options, async (client, scoped) => validate(client, scoped));
   }
+  async admit_embedding(input:RetrievalRequest, options:LeaseOptions & {scope:TrustedScope}):Promise<void> {
+    await this.transaction(input,options,async()=>{});
+  }
   async transaction<T>(input: RetrievalRequest, options: LeaseOptions & { scope: TrustedScope },
                        body: (session: ScopedSession) => Promise<T>): Promise<T> {
     check_options(options);
@@ -602,12 +605,16 @@ export class PostgresSession {
     const deadline = Math.min(options.deadline, now() + request.limits.deadline_ms / 1000);
     return this.run({ deadline, signal: options.signal }, async (client, scoped) => {
       await validate(client, scoped);
+      if (this.profile.provider !== 'fake') {
+        const capability=await import('./vector-ingestion.js');
+        await validate_profile_storage((text,values)=>query(client,text,values,scoped),this.profile,capability._VECTOR_CAPABILITY_SQL);
+      }
       await query(client, _SCOPE_SQL, [scope.tenant_id, scope.principal_id,
         scope.authorization_revision, JSON.stringify(scope.grant_ids)], scoped);
       const collection = await query(client, _COLLECTION_SQL, [scope.tenant_id, request.collection], scoped);
       if (collection.length !== 1 || collection[0].length !== 2 || collection[0][0] !== '0.1' || collection[0][1] !== 'native_fts.v1') throw new UnsupportedCapability();
       const token = Symbol('scoped-read');
-      const handle = new ScopedSession(client, request, scope, scoped, predicate, parameters, token);
+      const handle = new ScopedSession(client, request, scope, scoped, predicate, parameters, token,this.profile);
       const invalidate = (): void => handle.invalidate();
       scoped.signal?.addEventListener('abort', invalidate, { once: true });
       try { return await context.run(token, () => body(handle)); }

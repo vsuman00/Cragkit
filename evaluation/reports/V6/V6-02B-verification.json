@@ -1,0 +1,46 @@
+{
+  "task": "V6-02B",
+  "state": "mechanics_verified",
+  "verification": {
+    "sdk_stages": 34,
+    "python_tool_tests": 3236,
+    "python_skips": 0,
+    "python_deliberate_serializer_warnings": 4,
+    "node_tests": 1615,
+    "langchain_python_tests": 72,
+    "langchain_node_tests": 69,
+    "optional_install_profiles": 12,
+    "installed_mcp_python_tests": 41,
+    "installed_mcp_node_tests": 36,
+    "native_operator_checks": 16,
+    "native_runtime_checks": 40,
+    "native_runtime_parity": true,
+    "native_cleanup_verified": true
+  },
+  "evidence": {
+    "artifacts/V6/V6-02B/sdk-integrated-01/core/acceptance.json": {
+      "sha256": "c008caf62c862473e76ddc5d6cc939c8bbf7ac106bb4c5be5d53433afa73e052"
+    },
+    "artifacts/V6/V6-02B/sdk-integrated-01/frameworks/acceptance.json": {
+      "sha256": "8b628dd9421a339475dd8ca149294c23123eb3c933c3ab9ebf23fc32e63b2931"
+    },
+    "artifacts/V6/V6-02B/optional-integrated-01/acceptance.json": {
+      "sha256": "57132d91578e5f3ea5b330fce283456b251fad60adaf6f96a26d1a4a73f5303e"
+    },
+    "artifacts/V6/V6-02B/native-integrated-01/results.json": {
+      "sha256": "16d94c728d36c6158a887e61c4c67707d93d8bcacbc6c1aa15a158da1afe0468"
+    }
+  },
+  "package_version": "0.0.0",
+  "release_candidate_built": false,
+  "genuine_openai_vectors_stored": false,
+  "live_inference": false,
+  "held_out_scored": false,
+  "hosted_ci": false,
+  "publication": false,
+  "limitations": [
+    "Successful genuine-profile storage and live five-mode evaluation remain open.",
+    "Internal installed builds include preserved user prose; a frozen clean release candidate is a later gate.",
+    "Full V6 security, resource, usability, rollback, CI and publication gates remain open."
+  ]
+}

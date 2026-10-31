@@ -327,6 +327,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [x] V6-01: [Freeze release scope and thresholds](versions/V6-release.md#v6-01-freeze-release-scope-and-thresholds) — [preregistration acceptance](../evaluation/reports/V6/V6-01.md).
 
 - [ ] V6-02: [Held-out retrieval evaluation](versions/V6-release.md#v6-02-held-out-retrieval-evaluation) — evidence: pending.
+  - [x] V6-02B: Explicit PostgreSQL profile storage and dispatch mechanics — [native acceptance and limits](../evaluation/reports/V6/V6-02B.md). Successful genuine-vector publication and the live comparison remain required by the parent task.
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -3548,3 +3549,47 @@ V6 feature drafts preserved. Learning practice remains unassessed. Next action:
 continue the separately tracked V6 task under its existing gates; rename
 acceptance does not establish release readiness. Future implementation/test
 filenames follow AGENTS.md's role-based convention.
+
+
+V6-02B integration handoff: COMPLETE for native profile mechanics; parent
+V6-02 remains OPEN. PGO-r1 adds explicit PostgreSQL OpenAI profile storage,
+atomic setup, selected-table permission admission and honest dispatch/usage.
+Sol `v601_metrics` owned Python runtime/tests and its native child, and assembled
+the pair. Sol `postgres_node_finish` owned Node runtime/tests and its native
+child. Peers resolved batch-error classification and permissions directly;
+all writes transferred to root before integration. Root owned shared SQL,
+catalog, operator, fixture, native parent, guides/evidence, release inventory,
+tracker/Git and final verification. No unresolved Astra escalation. Old SQL,
+Qdrant contracts, metric bytes, targets and held-out splits remain unchanged.
+
+Native acceptance passed 16 operator and 40 runtime checks on genuine private
+PostgreSQL 17.11/pgvector 0.8.0. It verified atomic interruption rollback,
+existing active generation/vector preservation, unknown history/catalog drift,
+selected read/all write privileges, RLS/FK/registry triggers and TLS psql.
+A native preflight permission gap and a fixture cast-function grant were
+reproduced and fixed. Invalid callback Tasks now have delayed exceptions
+observed after cancellation. Repeated integrated native results matched SHA-256
+16d94c728d36c6158a887e61c4c67707d93d8bcacbc6c1aa15a158da1afe0468;
+cleanup passed. Only fake vectors were stored; OpenAI probes always failed
+before returning vectors. This does not establish live model quality.
+
+Final integrated verification: all 34 SDK stages passed, including 3,236
+Python/tool tests without skips, 1,615 Node tests, strict types/builds, shared
+contracts/seals and clean internal artifacts. Four deliberate malformed-model
+serializer warnings remain. LangChain passed 72 Python/69 Node; twelve optional
+install profiles and installed MCP passed 41 Python/36 Node. The earlier isolated
+run's two optional-SDK skips were resolved by the integrated checkout's builds.
+Owned documentation links, whitespace and prose checks passed. E16 no longer
+depends on an untracked audit: committed tests and V1-08 evidence remain.
+Reports: `evaluation/reports/V6/V6-02B*`; guide:
+`docs/postgres-embedding-profiles.md`. Root preserved user retrieval comments
+through three-way integration and staged accepted product blobs separately;
+unrelated source/storage prose and audits remain excluded.
+
+Headroom: 31 GiB disk, 42 percent system memory free. Tests/native services ran
+serially; no owned process remains. No live inference, genuine OpenAI vector,
+held-out scoring, hosted mutation, CI or publication occurred. Learning practice
+remains unassessed. Next: commit/push accepted mechanics, then implement bounded
+live HTTP/recording and the five-mode runner, obtain genuine-profile publication
+evidence and refreeze candidate identity before held-out access. Secure key
+target selection is pending. V6-03 through V6-09 remain required.

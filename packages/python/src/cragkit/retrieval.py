@@ -11,7 +11,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from ._hybrid import profile_snapshot, select
-from .embeddings import EmbeddingAdapter
+from .embeddings import EmbeddingAdapter, EmbeddingProfile, FAKE_PROFILE
+from ._postgres_profiles import snapshot_profile
 from ._postgres_pool import PoolResource
 from ._postgres_session import PostgresSession, _check_deadline
 from .contracts import Evidence, RetrievalRequest, RetrievalResult, TrustedScope, parse_request, parse_scope
@@ -29,7 +30,7 @@ class PostgresRetriever:
     """Reuse caller-owned resources; do not infer semantic support from lexical hits."""
 
     def __init__(self, resource: PoolResource, *, mode: str = 'lexical',
-                 embedder: EmbeddingAdapter | None = None, allow_degraded: bool = False,
+                 embedder: EmbeddingAdapter | None = None, embedding_profile: EmbeddingProfile = FAKE_PROFILE, allow_degraded: bool = False,
                  identifiers: bool = True, evidence_options: dict[str, Any] | None = None) -> None:
         if (type(mode) is not str or mode not in ('lexical', 'dense', 'hybrid')
                 or type(allow_degraded) is not bool or type(identifiers) is not bool
@@ -37,9 +38,12 @@ class PostgresRetriever:
                 or (mode != 'lexical' and not isinstance(embedder, EmbeddingAdapter))
                 or (mode == 'dense' and allow_degraded)):
             raise InvalidRequest()
+        self._profile = snapshot_profile(embedding_profile)
+        if embedder is not None:
+            profile_snapshot(embedder, self._profile)
         self._mode, self._embedder = mode, embedder
         self._allow_degraded, self._identifiers = allow_degraded, identifiers
-        self._session = PostgresSession(resource)
+        self._session = PostgresSession(resource, embedding_profile=self._profile)
         self._evidence_options: dict[str, Any] | None = None
         if evidence_options is not None:
             try:
@@ -101,11 +105,12 @@ class PostgresRetriever:
             raise ContextBudgetTooSmall()
         deadline = min(deadline, started + request.limits.deadline_ms / 1000)
         _check_deadline(deadline)
-        profile = profile_snapshot(embedder) if embedder is not None else None
+        profile = profile_snapshot(embedder, self._profile) if embedder is not None else None
         capacity = min(262_144, 4 * (request.limits.max_context_tokens - output.envelope_reserve_tokens))
         candidate_limit = min(65, request.limits.max_candidates)
         degraded = False
         prompt_tokens: int | None = 0
+        embedding_usage: dict[str, Any] = dict(provider_calls=0, input_tokens=0, output_tokens=0, cost_usd=0, cost_kind='known')
         stages: list[dict[str, Any]] = []
         if mode == 'lexical':
             async with self._session.transaction(request, scope=scope, deadline=deadline) as handle:
@@ -114,7 +119,7 @@ class PostgresRetriever:
             assert embedder is not None and profile is not None
             candidates, degraded, prompt_tokens, stages = await select(
                 self._session, request, scope, deadline, mode=mode, embedder=embedder,
-                allow_degraded=allow_degraded, identifiers=identifiers, profile=profile)
+                allow_degraded=allow_degraded, identifiers=identifiers, profile=profile, observation=embedding_usage)
         if len(candidates) > candidate_limit:
             raise IntegrityViolation()
         identities = [(item.tenant_id, item.collection, item.document_id, item.revision_id,
@@ -176,13 +181,13 @@ class PostgresRetriever:
                 'request_id': request.request_id, 'status': 'partial' if evidence else 'insufficient',
                 'evidence': [item.model_dump(mode='json') for item in evidence], 'facets': [],
                 'context': context, 'limitations': limitations,
-                'usage': {'attempt_count': 1, 'provider_calls': 0 if mode == 'lexical' else 1, 'provider_input_tokens': prompt_tokens,
+                'usage': {'attempt_count': 1, 'provider_calls': embedding_usage['provider_calls'], 'provider_input_tokens': embedding_usage['input_tokens'],
                           'stage_durations': stages,
-                          'provider_output_tokens': 0, 'cost_usd': 0, 'cost_kind': 'known',
+                          'provider_output_tokens': embedding_usage['output_tokens'], 'cost_usd': embedding_usage['cost_usd'], 'cost_kind': embedding_usage['cost_kind'],
                           'context_counting': 'estimated', 'context_tokens': (len(context.encode('utf-8')) + 3) // 4},
                 'versions': {'index': 'native_fts.v1'} if mode == 'lexical' else {
-                    'model': 'fake_embedding_model_v1',
-                    'index': 'dense_fake.v1' if mode == 'dense' else 'hybrid_rrf.v1'},
+                    'model': self._profile.model,
+                    'index': ('dense_fake.v1' if self._profile.provider == 'fake' else 'dense_openai.v1') if mode == 'dense' else 'hybrid_rrf.v1'},
             })
         except (ValidationError, TypeError, ValueError):
             pass
@@ -222,6 +227,7 @@ class PostgresRetriever:
         stages: list[dict[str, Any]] = []
         degraded = False
         prompt_tokens: int | None = 0
+        embedding_usage: dict[str, Any] = dict(provider_calls=0, input_tokens=0, output_tokens=0, cost_usd=0, cost_kind='known')
         candidate_limit = min(65, request.limits.max_candidates)
         if self._mode == 'lexical':
             async with self._session.transaction(request, scope=scope, deadline=deadline) as handle:
@@ -231,7 +237,7 @@ class PostgresRetriever:
             candidates, degraded, prompt_tokens, stages = await select(
                 self._session, request, scope, deadline, mode=self._mode, embedder=self._embedder,
                 allow_degraded=self._allow_degraded, identifiers=self._identifiers,
-                profile=profile_snapshot(self._embedder))
+                profile=profile_snapshot(self._embedder, self._profile), observation=embedding_usage)
         if len(candidates) > candidate_limit:
             raise IntegrityViolation()
         keys = [(c.tenant_id, c.collection, c.document_id, c.revision_id, c.generation_id, c.chunk_id)
@@ -383,17 +389,17 @@ class PostgresRetriever:
         if stale: limitations.append(dict(code='stale_evidence'))
         if truncated or packed['omitted_count']: limitations.append(dict(code='truncated_evidence'))
         if exhausted or packed['omitted_count']: limitations.append(dict(code='budget_exhausted'))
-        live = rerank_profile is not None and rerank_profile.provider != 'fake' and dispatched > 0
-        versions = dict(index='native_fts.v1' if self._mode == 'lexical' else 'dense_fake.v1' if self._mode == 'dense' else 'hybrid_rrf.v1',
+        live = (rerank_profile is not None and rerank_profile.provider != 'fake' and dispatched > 0) or embedding_usage['cost_kind'] == 'unknown'
+        versions = dict(index='native_fts.v1' if self._mode == 'lexical' else ('dense_fake.v1' if self._profile.provider == 'fake' else 'dense_openai.v1') if self._mode == 'dense' else 'hybrid_rrf.v1',
                         policy=packed['policy'], tokenizer=packed['tokenizer'])
         if rerank_profile is not None: versions['model'] = rerank_profile.profile_id
-        elif self._mode != 'lexical': versions['model'] = 'fake_embedding_model_v1'
+        elif self._mode != 'lexical': versions['model'] = self._profile.model
         try:
             result = RetrievalResult.model_validate(dict(request_id=request.request_id,
                 execution='degraded' if degraded else 'complete', status=packed['status'], evidence=packed['evidence'],
                 facets=packed['facets'], context=packed['context'], limitations=limitations, versions=versions,
-                usage=dict(attempt_count=1, provider_calls=embedding_calls + dispatched,
-                    provider_input_tokens=None if dispatched else prompt_tokens, provider_output_tokens=None if dispatched else 0,
+                usage=dict(attempt_count=1, provider_calls=embedding_usage['provider_calls'] + dispatched,
+                    provider_input_tokens=None if dispatched else embedding_usage['input_tokens'], provider_output_tokens=None if dispatched else embedding_usage['output_tokens'],
                     cost_usd=None if live else 0, cost_kind='unknown' if live else 'known',
                     context_counting=packed['counting_mode'], context_tokens=packed['context_tokens'], stage_durations=stages)))
         except (ValidationError, TypeError, ValueError):

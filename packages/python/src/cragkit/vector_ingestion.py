@@ -15,7 +15,8 @@ from ._postgres_session import (EXPECTED_HISTORY, SessionConnection, _CATALOG_SQ
                                 _HISTORY_SQL, _SCOPE_SQL, _check_deadline, _query)
 from .canonical import CanonicalDocument, canonicalize
 from .contracts import TrustedScope, parse_scope
-from .embeddings import EmbeddingAdapter, EmbeddingBatch, EmbeddingUsage, FAKE_PROFILE
+from .embeddings import EmbeddingAdapter, EmbeddingBatch, EmbeddingUsage, EmbeddingProfile, FAKE_PROFILE
+from ._postgres_profiles import snapshot_profile, profile_table, validate_profile_storage
 from .errors import (DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady,
                      IntegrityViolation, InvalidRequest, UnauthorizedScope, UnsupportedCapability)
 
@@ -116,13 +117,15 @@ class PostgresVectorIndexer:
 
     def __init__(self, resource: PoolResource, *,
                  authorize_write: Callable[[TrustedScope, str, str], Awaitable[bool]],
-                 embedder: EmbeddingAdapter, max_batches: int = 128, max_attempts: int = 8) -> None:
+                 embedder: EmbeddingAdapter, embedding_profile: EmbeddingProfile = FAKE_PROFILE, max_batches: int = 128, max_attempts: int = 8) -> None:
         if not callable(authorize_write) or not isinstance(embedder, EmbeddingAdapter):
             raise InvalidRequest()
         if type(max_batches) is not int or not 1 <= max_batches <= 128 or type(max_attempts) is not int or not 1 <= max_attempts <= 8:
             raise InvalidRequest()
-        if embedder.profile != FAKE_PROFILE:
+        self._profile = snapshot_profile(embedding_profile)
+        if embedder.profile != self._profile:
             raise UnsupportedCapability()
+        self._table = profile_table(self._profile)
         self._resource, self._authorize_write, self._embedder = resource, authorize_write, embedder
         self._max_batches, self._max_attempts = max_batches, max_attempts
         self._inflight = False
@@ -150,12 +153,12 @@ class PostgresVectorIndexer:
         document = canonicalize(source, format=format, **options)
         base, revision, _ = lexical._identifiers(document, scope, collection, document_id, intent_id,
                                                 source_locator, metadata_hash, expected_generation_id)
-        payload = lexical._hash(['cragkit.vector-ingest.v1', base, list(FAKE_PROFILE.model_dump().values())])
+        payload = lexical._hash(['cragkit.vector-ingest.v1', base, list(self._profile.model_dump().values())])
         generation = lexical._hash(['cragkit.vector-generation.v1', payload])
         receipt = VectorIngestionReceipt(tenant_id=scope.tenant_id, collection=collection, document_id=document_id,
             intent_id=intent_id, revision_id=revision, generation_id=generation, payload_sha256=payload,
             canonical_sha256=document.canonical_sha256, chunk_count=len(document.chunks), replayed=False,
-            embedding_profile=FAKE_PROFILE.profile_id, provider_calls=0, usage=())
+            embedding_profile=self._profile.profile_id, provider_calls=0, usage=())
         return _Prepared(document, receipt, scope, source_locator, metadata_json, expected_generation_id)
 
     async def _authorize_application(self, scope: TrustedScope, collection: str, document_id: str, deadline: float) -> None:
@@ -188,12 +191,7 @@ class PostgresVectorIndexer:
             raise UnauthorizedScope()
         if await query(_CATALOG_SQL) != [(True,)] or tuple(await query(_HISTORY_SQL)) != EXPECTED_HISTORY:
             raise UnsupportedCapability()
-        if await query(_VECTOR_CAPABILITY_SQL) != [(True,)]:
-            raise UnsupportedCapability()
-        if tuple(await query(_SETUP_HISTORY_SQL)) != EXPECTED_VECTOR_HISTORY:
-            raise UnsupportedCapability()
-        if await query(_PROFILE_SQL) != [(*FAKE_PROFILE.model_dump().values(), 'chunk_vectors_fake_1536')]:
-            raise UnsupportedCapability()
+        await validate_profile_storage(query, self._profile, _VECTOR_CAPABILITY_SQL, write=True)
         scope = prepared.scope
         await query(_SCOPE_SQL, (scope.tenant_id, scope.principal_id, scope.authorization_revision,
             lexical._json(sorted(set(scope.grant_ids), key=lambda value: value.encode('utf-8')))))
@@ -217,7 +215,7 @@ class PostgresVectorIndexer:
             (d.source_sha256, d.canonical_sha256, prepared.locator, d.parser_id, d.canonical_text)]:
             raise IntegrityViolation()
         if await _query(connection, _VECTOR_GENERATION_SQL, (*prepared.key, r.generation_id), deadline) != [
-            (r.revision_id, 'ready' if ready else 'staging', r.chunk_count, FAKE_PROFILE.profile_id, d.chunker_profile, 'native_fts.v1')]:
+            (r.revision_id, 'ready' if ready else 'staging', r.chunk_count, self._profile.profile_id, d.chunker_profile, 'native_fts.v1')]:
             raise IntegrityViolation()
         expected = [tuple(row.values()) for row in _chunk_rows(d)]
         if await _query(connection, _MANIFEST_SQL, (*prepared.key, r.generation_id), deadline) != expected:
@@ -277,7 +275,7 @@ class PostgresVectorIndexer:
             nonlocal missing
             result = await self._stage_initial(connection, prepared, deadline)
             if not result.replayed:
-                rows = await _query(connection, _MISSING_SQL, (*prepared.key, result.generation_id), deadline)
+                rows = await _query(connection, _MISSING_SQL.replace('chunk_vectors_fake_1536', self._table), (*prepared.key, result.generation_id), deadline)
                 if any(len(row) != 1 or type(row[0]) is not str for row in rows):
                     raise IntegrityViolation()
                 missing = [cast(str, row[0]) for row in rows]
@@ -300,34 +298,42 @@ class PostgresVectorIndexer:
                 await self._manifest(connection, prepared, deadline)
                 rows = [dict(chunk_id=key, embedding=lexical._json(list(vector)))
                         for key, vector in zip(batch_ids, response.vectors, strict=True)]
-                await _query(connection, _VECTOR_INSERT_SQL, (*prepared.key, prepared.receipt.revision_id,
-                    prepared.receipt.generation_id, FAKE_PROFILE.profile_id, lexical._json(rows)), deadline)
+                await _query(connection, _VECTOR_INSERT_SQL.replace('chunk_vectors_fake_1536', self._table), (*prepared.key, prepared.receipt.revision_id,
+                    prepared.receipt.generation_id, self._profile.profile_id, lexical._json(rows)), deadline)
                 return prepared.receipt
             await self._transaction(prepared, deadline, store)
         if not result.replayed:
             async def finish(connection: SessionConnection) -> VectorIngestionReceipt:
                 await self._authorized(connection, prepared, deadline, require_expected=True)
                 await self._manifest(connection, prepared, deadline)
-                if await _query(connection, _VECTOR_COUNTS_SQL, (*prepared.key, prepared.receipt.generation_id, FAKE_PROFILE.profile_id), deadline) != [(prepared.receipt.chunk_count,)]:
+                if await _query(connection, _VECTOR_COUNTS_SQL.replace('chunk_vectors_fake_1536', self._table), (*prepared.key, prepared.receipt.generation_id, self._profile.profile_id), deadline) != [(prepared.receipt.chunk_count,)]:
                     raise IntegrityViolation()
                 return prepared.receipt
             await self._transaction(prepared, deadline, finish)
         return result.model_copy(update={'provider_calls': len(usage), 'usage': tuple(usage)})
 
-    @staticmethod
-    def _validate_batch(response: EmbeddingBatch, count: int) -> None:
-        if not isinstance(response, EmbeddingBatch):
+    def _validate_batch(self, response: EmbeddingBatch, count: int) -> None:
+        if type(response) is not EmbeddingBatch or type(response.provider_calls) is not int:
             raise IntegrityViolation()
-        if response.profile != FAKE_PROFILE:
+        if response.profile != self._profile:
             raise EmbeddingProfileMismatch()
         try:
             checked = EmbeddingBatch.model_validate(response.model_dump())
         except (ValidationError, TypeError, ValueError):
             raise IntegrityViolation() from None
-        if any(len(vector) != FAKE_PROFILE.dimensions for vector in checked.vectors):
+        if any(len(vector) != self._profile.dimensions for vector in checked.vectors):
             raise EmbeddingProfileMismatch()
         import math
-        if len(checked.vectors) != count or not checked.synthetic or checked.provider_calls != 1:
+        usage = checked.usage
+        if (any(value is not None and (type(value) is not int or not 0 <= value <= 9_007_199_254_740_991)
+                for value in (usage.prompt_tokens, usage.total_tokens))
+                or (usage.prompt_tokens is not None and usage.total_tokens is not None
+                    and usage.total_tokens < usage.prompt_tokens)
+                or (usage.cost_usd is not None and (not math.isfinite(usage.cost_usd) or usage.cost_usd < 0))
+                or (self._profile.provider == 'fake' and (usage.cost_kind != 'known' or usage.cost_usd != 0))
+                or (self._profile.provider != 'fake' and usage.cost_kind not in ('estimated', 'unknown'))):
+            raise IntegrityViolation()
+        if len(checked.vectors) != count or checked.synthetic != (self._profile.provider == 'fake') or checked.provider_calls != 1:
             raise IntegrityViolation()
         if any(any(not math.isfinite(x) for x in vector) or abs(math.sqrt(sum(x*x for x in vector))-1) > 0.001 for vector in checked.vectors):
             raise IntegrityViolation()
@@ -346,7 +352,7 @@ class PostgresVectorIndexer:
             await self._authorized(connection, prepared, deadline, require_expected=not succeeded)
             await self._manifest(connection, prepared, deadline, ready=succeeded)
             if succeeded:
-                if await query(_VECTOR_COUNTS_SQL, (*key, r.generation_id, FAKE_PROFILE.profile_id)) != [(r.chunk_count,)]:
+                if await query(_VECTOR_COUNTS_SQL.replace('chunk_vectors_fake_1536', self._table), (*key, r.generation_id, self._profile.profile_id)) != [(r.chunk_count,)]:
                     raise IntegrityViolation()
                 return r.model_copy(update={'replayed': True})
             if type(jobs[0][4]) is not int or jobs[0][4] < 1 or jobs[0][4] >= self._max_attempts:
@@ -367,7 +373,7 @@ class PostgresVectorIndexer:
         await self._authorized(connection, prepared, deadline)
         await query("INSERT INTO cragkit.ingestion_jobs(tenant_id,collection_id,document_id,intent_id,payload_sha256,generation_id,state,attempt_count) VALUES (%s,%s,%s,%s,%s,%s,'running',1) RETURNING 1", (*key, r.intent_id, r.payload_sha256, r.generation_id))
         await query('INSERT INTO cragkit.document_revisions(tenant_id,collection_id,document_id,revision_id,source_sha256,source_locator,canonical_text,canonical_sha256,parser_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING RETURNING revision_id', (*key, r.revision_id, d.source_sha256, prepared.locator, d.canonical_text, d.canonical_sha256, d.parser_id))
-        await query("INSERT INTO cragkit.index_generations(tenant_id,collection_id,document_id,revision_id,generation_id,chunker_profile,lexical_profile,embedding_profile,status,expected_chunk_count) VALUES (%s,%s,%s,%s,%s,%s,'native_fts.v1',%s,'staging',%s) RETURNING 1", (*key, r.revision_id, r.generation_id, d.chunker_profile, FAKE_PROFILE.profile_id, r.chunk_count))
+        await query("INSERT INTO cragkit.index_generations(tenant_id,collection_id,document_id,revision_id,generation_id,chunker_profile,lexical_profile,embedding_profile,status,expected_chunk_count) VALUES (%s,%s,%s,%s,%s,%s,'native_fts.v1',%s,'staging',%s) RETURNING 1", (*key, r.revision_id, r.generation_id, d.chunker_profile, self._profile.profile_id, r.chunk_count))
         await query(lexical._CHUNKS_SQL, (*key, r.revision_id, r.generation_id, lexical._json(_chunk_rows(d))))
         await query(lexical._LEXICAL_SQL, (*key, r.generation_id, lexical._json({chunk.chunk_id: extract_identifiers(chunk.text) for chunk in d.chunks})))
         await self._manifest(connection, prepared, deadline)
@@ -414,7 +420,7 @@ class PostgresVectorIndexer:
             async def barrier() -> None:
                 await self._authorized(connection, prepared, deadline, require_expected=not succeeded)
                 await self._manifest(connection, prepared, deadline, ready=succeeded)
-                if await query(_VECTOR_COUNTS_SQL, (*key, r.generation_id, FAKE_PROFILE.profile_id)) != [(r.chunk_count,)]:
+                if await query(_VECTOR_COUNTS_SQL.replace('chunk_vectors_fake_1536', self._table), (*key, r.generation_id, self._profile.profile_id)) != [(r.chunk_count,)]:
                     raise IntegrityViolation()
             await barrier()
             if succeeded:
@@ -425,7 +431,7 @@ class PostgresVectorIndexer:
             # Hooks may await application work; authorization is checked again before mutation.
             await self._authorize_application(prepared.scope, r.collection, r.document_id, deadline)
             await barrier()
-            if await query("UPDATE cragkit.index_generations SET status='ready' WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s AND status='staging' AND embedding_profile=%s RETURNING 1", (*key, r.generation_id, FAKE_PROFILE.profile_id)) != [(1,)]:
+            if await query("UPDATE cragkit.index_generations SET status='ready' WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND generation_id=%s AND status='staging' AND embedding_profile=%s RETURNING 1", (*key, r.generation_id, self._profile.profile_id)) != [(1,)]:
                 raise IntegrityViolation()
             changed = await query('UPDATE cragkit.documents SET active_generation_id=%s,metadata=%s::jsonb WHERE tenant_id=%s AND collection_id=%s AND document_id=%s AND active_generation_id IS NOT DISTINCT FROM %s AND NOT tombstoned AND authorization_revision=%s RETURNING 1', (r.generation_id, prepared.metadata_json, *key, prepared.expected, prepared.scope.authorization_revision))
             if changed != [(1,)]:

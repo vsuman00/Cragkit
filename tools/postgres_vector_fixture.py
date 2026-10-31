@@ -146,11 +146,12 @@ class V6PostgresFixture:
     def config(self):
         return self._server.config
 
-    async def provision(self, *, tenants: tuple[str, ...], collections: tuple[str, ...]) -> RoleConfigs:
+    async def provision(self, *, tenants: tuple[str, ...], collections: tuple[str, ...],
+                        enable_openai_profile: bool = False) -> RoleConfigs:
         """Apply unchanged setup and scope-bounded policies; expose distinct logins.
 
-        Fake-profile storage is a prerequisite only. Live-profile provisioning is
-        owned by a separate accepted migration/runtime contract; never relabel it.
+        The default preserves legacy fake-only storage. Opting into the PGO-r1
+        upgrade provisions a separate empty table; it performs no inference.
         """
         import psycopg
         from psycopg import sql
@@ -159,7 +160,8 @@ class V6PostgresFixture:
         from cragkit.ingestion import _WRITER_ROLE_SQL
         from cragkit.vector_ingestion import _VECTOR_CAPABILITY_SQL
         from check_postgres import migrations, migration_script, vector_setup_script, vector_storage_script
-        if self._roles is not None or not tenants or not collections:
+        if (self._roles is not None or not tenants or not collections
+                or type(enable_openai_profile) is not bool):
             raise RuntimeError('v6_postgres_provision_state')
         config = self.config
         async with await psycopg.AsyncConnection.connect(
@@ -174,6 +176,10 @@ class V6PostgresFixture:
             setup = migrations(ROOT/'storage/postgres/setup')
             await admin.execute(vector_setup_script(setup[0], apply=True))
             await admin.execute(vector_storage_script(setup[1], apply=True))
+            if enable_openai_profile:
+                from check_postgres_profiles import profile_upgrade_script
+                await admin.execute(profile_upgrade_script(apply=True))
+                self.checks.append('explicit_openai_profile_upgrade')
             version = await (await admin.execute("SELECT extversion FROM pg_extension WHERE extname='vector'" )).fetchall()
             if version != [('0.8.0',)]:
                 raise RuntimeError('v6_pgvector_native_version')
@@ -192,6 +198,8 @@ class V6PostgresFixture:
                 await admin.execute(sql.SQL('GRANT USAGE ON SCHEMA cragkit,cragkit_vector TO {}').format(sql.Identifier(role)))
                 await admin.execute(sql.SQL('GRANT USAGE ON DOMAIN cragkit.identity_text,cragkit.collection_text,cragkit.sha256_hex,cragkit.safe_count TO {}').format(sql.Identifier(role)))
                 tables = ('collections','documents','document_revisions','index_generations','chunks','chunk_lexical','document_grants','ingestion_jobs','migration_history','embedding_profiles','chunk_vectors_fake_1536')
+                if enable_openai_profile:
+                    tables += ('chunk_vectors_openai_te3small_1536',)
                 for table in tables:
                     readonly = kind=='reader' or table in ('migration_history','embedding_profiles')
                     permissions = 'SELECT' if readonly else 'SELECT,INSERT,UPDATE'
@@ -202,7 +210,8 @@ class V6PostgresFixture:
                     if not readonly:args.append(predicate)
                     await admin.execute(policy.format(*args))
                 await admin.execute(sql.SQL('GRANT USAGE ON TYPE cragkit_vector.vector TO {}').format(sql.Identifier(role)))
-                for signature in ('vector_dims(cragkit_vector.vector)','vector_norm(cragkit_vector.vector)',
+                for signature in ('vector(cragkit_vector.vector,integer,boolean)',
+                                  'vector_dims(cragkit_vector.vector)','vector_norm(cragkit_vector.vector)',
                                   'cosine_distance(cragkit_vector.vector,cragkit_vector.vector)'):
                     await admin.execute(sql.SQL('GRANT EXECUTE ON FUNCTION cragkit_vector.'+signature+' TO {}').format(sql.Identifier(role)))
                 await admin.execute(sql.SQL('GRANT SELECT ON cragkit_vector.setup_history TO {}').format(sql.Identifier(role)))
@@ -226,10 +235,25 @@ class V6PostgresFixture:
                         async with connection.transaction():
                             if await (await connection.execute(_VECTOR_CAPABILITY_SQL)).fetchall() != [(True,)]:
                                 raise RuntimeError('v6_postgres_vector_guard')
+                            native = await (await connection.execute("SELECT "
+                                "cragkit_vector.vector_dims('[1]'::cragkit_vector.vector(1)),"
+                                "cragkit_vector.vector_norm('[1]'::cragkit_vector.vector(1)),"
+                                "cragkit_vector.cosine_distance('[1]'::cragkit_vector.vector(1),"
+                                "'[1]'::cragkit_vector.vector(1))")).fetchall()
+                            if native != [(1, 1.0, 0.0)]:
+                                raise RuntimeError('v6_postgres_vector_runtime_functions')
+                            if enable_openai_profile:
+                                from cragkit._postgres_profiles import validate_profile_storage
+                                from cragkit.embeddings import FAKE_PROFILE, OPENAI_PROFILE
+                                async def query(statement):
+                                    return await (await connection.execute(statement)).fetchall()
+                                for profile in (FAKE_PROFILE, OPENAI_PROFILE):
+                                    await validate_profile_storage(query, profile, _VECTOR_CAPABILITY_SQL)
                 finally:
                     await resource.close()
             self._roles=RoleConfigs(*configs)
             self.checks.append('distinct_restricted_native_role_guards')
+            self.checks.append('restricted_vector_cast_norm_and_distance')
             return self._roles
 
     def close(self):

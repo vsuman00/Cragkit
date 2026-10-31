@@ -29,8 +29,8 @@ export class PostgresRetriever {
     const deadline = Math.min(options.deadline, started + request.limits.deadline_ms / 1000);
     const bound = {scope, deadline, signal:options.signal};
     check_options(bound);
-    const session = new PostgresSession(this.resource);
-    const selection = this.config.mode === 'lexical' ? null : await select(session,request,bound,this.config,profile_snapshot(this.config.embedder!));
+    const session = new PostgresSession(this.resource,this.config.embedding_profile);
+    const selection = this.config.mode === 'lexical' ? null : await select(session,request,bound,this.config,profile_snapshot(this.config.embedder!,this.config.embedding_profile));
     const candidates = selection?.candidates ?? await session.transaction(request,bound,handle=>handle.lexical_candidates({limit:Math.min(65,request.limits.max_candidates)}));
     if (candidates.length > Math.min(65,request.limits.max_candidates)) throw new IntegrityViolation();
     const candidateKeys = new Set<string>();
@@ -76,9 +76,9 @@ export class PostgresRetriever {
     let result: RetrievalResult;
     try { result = parse_result({request_id:request.request_id,status:evidence.length?'partial':'insufficient',execution:selection?.degraded?'degraded':'complete',
       evidence,facets:[],context,limitations,trace_id:null,
-      usage:{attempt_count:1,provider_calls:selection?1:0,provider_input_tokens:selection?selection.input_tokens:0,provider_output_tokens:0,cost_usd:0,cost_kind:'known',
+      usage:{attempt_count:1,provider_calls:selection?selection.provider_calls:0,provider_input_tokens:selection?selection.input_tokens:0,provider_output_tokens:selection?selection.output_tokens:0,cost_usd:selection?.cost_usd??(selection?.cost_kind==='unknown'?null:0),cost_kind:selection?.cost_kind??'known',
         context_tokens:Math.ceil(Buffer.byteLength(context,'utf8')/4),context_counting:'estimated',stage_durations:selection?.stages ?? []},
-      versions:{engine:'0.0.0',policy:'unassessed.v0',model:selection?'fake_embedding_model_v1':null,tokenizer:null,index:selection?(this.config.mode==='dense'?'dense_fake.v1':'hybrid_rrf.v1'):'native_fts.v1'}}); } catch { throw new IntegrityViolation(); }
+      versions:{engine:'0.0.0',policy:'unassessed.v0',model:selection?this.config.embedding_profile.model:null,tokenizer:null,index:selection?(this.config.mode==='dense'?(this.config.embedding_profile.provider==='fake'?'dense_fake.v1':'dense_openai.v1'):'hybrid_rrf.v1'):'native_fts.v1'}}); } catch { throw new IntegrityViolation(); }
     check_options(bound);
     return deep_freeze(result);
   }
@@ -105,8 +105,8 @@ export class PostgresRetriever {
     }
     const reserved = (this.config.mode === 'lexical' ? 0 : 1) + (reranker ? 1 : 0);
     if (request.limits.max_provider_calls < reserved) throw new InvalidRequest();
-    const session = new PostgresSession(this.resource);
-    const selection = this.config.mode === 'lexical' ? null : await select(session,request,bound,this.config,profile_snapshot(this.config.embedder!));
+    const session = new PostgresSession(this.resource,this.config.embedding_profile);
+    const selection = this.config.mode === 'lexical' ? null : await select(session,request,bound,this.config,profile_snapshot(this.config.embedder!,this.config.embedding_profile));
     const candidates = selection?.candidates ?? await session.transaction(request,bound,handle=>handle.lexical_candidates({limit:Math.min(65,request.limits.max_candidates)}));
     if (candidates.length > Math.min(65,request.limits.max_candidates)) throw new IntegrityViolation();
     const candidateKeys = new Set<string>();
@@ -182,15 +182,15 @@ export class PostgresRetriever {
     if (stale) limitations.push({code:'stale_evidence'});
     if (truncated) limitations.push({code:'truncated_evidence'});
     if (exhausted) limitations.push({code:'budget_exhausted'});
-    const live = rerankCalls > 0 && rerankProfile!.provider !== 'fake';
+    const live = rerankCalls > 0 && rerankProfile!.provider !== 'fake' || selection?.cost_kind==='unknown';
     let result: RetrievalResult;
     try { result = parse_result({request_id:request.request_id,status:packed.status,execution:degraded?'degraded':'complete',evidence:packed.evidence,
       context:packed.context,facets:packed.facets,limitations,trace_id:null,
-      usage:{attempt_count:1,provider_calls:(selection?1:0)+rerankCalls,provider_input_tokens:rerankCalls?null:selection?selection.input_tokens:0,
-        provider_output_tokens:rerankCalls?null:0,cost_usd:live?null:0,cost_kind:live?'unknown':'known',context_tokens:packed.context_tokens,
+      usage:{attempt_count:1,provider_calls:(selection?.provider_calls??0)+rerankCalls,provider_input_tokens:rerankCalls?null:selection?selection.input_tokens:0,
+        provider_output_tokens:rerankCalls?null:selection?selection.output_tokens:0,cost_usd:live?null:0,cost_kind:live?'unknown':'known',context_tokens:packed.context_tokens,
         context_counting:packed.counting_mode,stage_durations:stages},
-      versions:{engine:'0.0.0',policy:packed.policy,model:rerankProfile?.profile_id ?? (selection?'fake_embedding_model_v1':null),tokenizer:packed.tokenizer,
-        index:selection?(this.config.mode==='dense'?'dense_fake.v1':'hybrid_rrf.v1'):'native_fts.v1'}}); } catch { throw new IntegrityViolation(); }
+      versions:{engine:'0.0.0',policy:packed.policy,model:rerankProfile?.profile_id ?? (selection?this.config.embedding_profile.model:null),tokenizer:packed.tokenizer,
+        index:selection?(this.config.mode==='dense'?(this.config.embedding_profile.provider==='fake'?'dense_fake.v1':'dense_openai.v1'):'hybrid_rrf.v1'):'native_fts.v1'}}); } catch { throw new IntegrityViolation(); }
     check_options(bound);
     return deep_freeze(result);
   }

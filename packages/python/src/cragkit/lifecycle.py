@@ -44,6 +44,10 @@ WITH known_vector_storage AS (
  SELECT c.relkind,c.relrowsecurity FROM pg_catalog.pg_class c
  JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
  WHERE n.nspname='cragkit' AND c.relname='chunk_vectors_fake_1536'
+), known_openai_vector_storage AS (
+ SELECT c.relkind,c.relrowsecurity FROM pg_catalog.pg_class c
+ JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+ WHERE n.nspname='cragkit' AND c.relname='chunk_vectors_openai_te3small_1536'
 ), base_expected(child,parent,child_columns,parent_columns,delete_action) AS (VALUES
     ('document_revisions','documents',ARRAY['tenant_id','collection_id','document_id']::text[],ARRAY['tenant_id','collection_id','document_id']::text[],'c'),
     ('document_grants','documents',ARRAY['tenant_id','collection_id','document_id']::text[],ARRAY['tenant_id','collection_id','document_id']::text[],'c'),
@@ -62,6 +66,12 @@ WITH known_vector_storage AS (
     ('chunk_vectors_fake_1536','index_generations',ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','embedding_profile']::text[],ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','embedding_profile']::text[],'c')
  ) optional(child,parent,child_columns,parent_columns,delete_action)
  WHERE EXISTS (SELECT 1 FROM known_vector_storage)
+ UNION ALL
+ SELECT * FROM (VALUES
+    ('chunk_vectors_openai_te3small_1536','chunks',ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','chunk_id']::text[],ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','chunk_id']::text[],'c'),
+    ('chunk_vectors_openai_te3small_1536','index_generations',ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','embedding_profile']::text[],ARRAY['tenant_id','collection_id','document_id','revision_id','generation_id','embedding_profile']::text[],'c')
+ ) optional_openai(child,parent,child_columns,parent_columns,delete_action)
+ WHERE EXISTS (SELECT 1 FROM known_openai_vector_storage)
 ), actual AS (
  SELECT c.oid,c.conrelid,c.confrelid,c.confdeltype::text AS delete_action,c.convalidated,
         child.relname::text AS child,parent.relname::text AS parent,
@@ -76,9 +86,11 @@ WITH known_vector_storage AS (
  JOIN pg_catalog.pg_class parent ON parent.oid=c.confrelid
  JOIN pg_catalog.pg_namespace parent_ns ON parent_ns.oid=parent.relnamespace
  WHERE c.contype='f' AND parent_ns.nspname='cragkit'
-   AND parent.relname IN ('documents','document_revisions','index_generations','chunks','chunk_vectors_fake_1536','document_grants','ingestion_jobs','chunk_lexical')
+   AND (parent.relname IN ('documents','document_revisions','index_generations','chunks','chunk_vectors_fake_1536','document_grants','ingestion_jobs','chunk_lexical')
+    OR parent.relname='chunk_vectors_openai_te3small_1536')
 )
 SELECT current_setting('session_replication_role')='origin'
+ AND NOT EXISTS (SELECT 1 FROM known_openai_vector_storage WHERE relkind<>'r' OR NOT relrowsecurity)
  AND NOT EXISTS (SELECT 1 FROM known_vector_storage
   WHERE relkind<>'r' OR NOT relrowsecurity)
  AND (SELECT count(*) FROM actual)=(SELECT count(*) FROM expected)

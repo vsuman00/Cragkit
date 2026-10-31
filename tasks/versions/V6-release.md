@@ -1,6 +1,6 @@
 # V6: Release, validation and maintenance
 
-Status: planned, not implemented. Progress is tracked only in [todo.md](../todo.md).
+Status: in progress. Task acceptance and remaining gates are tracked in [todo.md](../todo.md).
 
 ## Outcome and boundaries
 
