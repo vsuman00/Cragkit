@@ -35,6 +35,7 @@ def layout(tmp_path, monkeypatch):
         python_bytecode_writes=False)
     monkeypatch.setattr(runtime, '_candidate', lambda given: ({}, dict(candidate)))
     monkeypatch.setattr(runtime, '_versions', lambda given, configuration: dict(versions))
+    monkeypatch.setattr(runtime, '_node_export', lambda *args: None)
     monkeypatch.setattr(runtime, '_layout', lambda given: (paths, {'toolchain/python': executable}))
     builds = []
     def build(given, destination):
@@ -204,12 +205,14 @@ def test_declared_runtime_versions_are_actual_commands_not_receipt_claims(tmp_pa
         commands.append(arguments)
         return responses.pop(0)
     monkeypatch.setattr(runtime, '_command', command)
-    configuration = {'supported_matrix': {'python': runtime.platform.python_version(),
+    configuration = {'candidate_versions':{'npm':'1.0.0-rc.1'},
+        'supported_matrix': {'python': runtime.platform.python_version(),
         'node': '26.5.0', 'npm': '11.17.0', 'platform':sys.platform+'-'+runtime.platform.machine().lower()}}
     record = runtime._versions(tmp_path, configuration)
     assert record['typescript'] == '7.0.2'
     assert record['python_bytecode_writes'] is False
     assert len(commands) == 3
+    assert all('--version' in command for command in commands)
     responses[:] = ['v26.5.1', '11.17.0', 'Version 7.0.2']
     with pytest.raises(runtime.EvaluationRuntimeError):
         runtime._versions(tmp_path, configuration)
@@ -343,3 +346,119 @@ def test_cli_requires_no_bytecode_mode_before_dispatch(monkeypatch, capsys):
     assert runtime.main(['prepare', '--output', 'private-path']) == 1
     assert calls == []
     assert json.loads(capsys.readouterr().out)['error_code'] == 'evaluation_runtime_invalid'
+
+
+@pytest.fixture
+def release_metadata(tmp_path):
+    for suffix, version in (('python', '1.0.0rc1'), ('typescript', '1.0.0-rc.1')):
+        for prefix, name in (('', 'cragkit'), ('langchain-', 'cragkit-langchain'), ('mcp-', 'cragkit-mcp')):
+            directory = tmp_path/'packages'/(prefix+suffix)
+            directory.mkdir(parents=True)
+            if suffix == 'python':
+                dependencies = [] if not prefix else ['cragkit==1.0.0rc1']
+                (directory/'pyproject.toml').write_text('[project]\nname = '+json.dumps(name)
+                    +'\nversion = '+json.dumps(version)+'\ndependencies = '+json.dumps(dependencies)+'\n')
+            else:
+                project = dict(name=name, version=version)
+                if prefix:
+                    project['peerDependencies'] = {'cragkit':'1.0.0-rc.1'}
+                (directory/'package.json').write_text(json.dumps(project))
+    return tmp_path, {'candidate_versions':{'python':'1.0.0rc1', 'npm':'1.0.0-rc.1'}}
+
+
+def test_candidate_release_metadata_and_loaded_python_identity_agree(release_metadata):
+    root, configuration = release_metadata
+    runtime._release_versions(root, configuration)
+
+
+@pytest.mark.parametrize('component', ['python', 'langchain-python', 'mcp-python',
+    'typescript', 'langchain-typescript', 'mcp-typescript'])
+def test_candidate_rejects_any_library_still_declaring_old_version(release_metadata, component):
+    root, configuration = release_metadata
+    manifest = root/'packages'/component/('pyproject.toml' if component.endswith('python') else 'package.json')
+    current = '1.0.0rc1' if component.endswith('python') else '1.0.0-rc.1'
+    manifest.write_text(manifest.read_text().replace(current, '0.0.0'))
+    with pytest.raises(runtime.EvaluationRuntimeError):
+        runtime._release_versions(root, configuration)
+
+
+@pytest.mark.parametrize('component', ['langchain-python', 'mcp-python',
+    'langchain-typescript', 'mcp-typescript'])
+def test_candidate_rejects_stale_internal_core_pin(release_metadata, component):
+    root, configuration = release_metadata
+    manifest = root/'packages'/component/('pyproject.toml' if component.endswith('python') else 'package.json')
+    if component.endswith('python'):
+        manifest.write_text(manifest.read_text().replace('cragkit==1.0.0rc1', 'cragkit==0.0.0'))
+    else:
+        value = json.loads(manifest.read_text())
+        value['peerDependencies']['cragkit'] = '0.0.0'
+        manifest.write_text(json.dumps(value))
+    with pytest.raises(runtime.EvaluationRuntimeError):
+        runtime._release_versions(root, configuration)
+
+
+@pytest.mark.parametrize('attribute', ['__version__', '_ENGINE_VERSION'])
+def test_candidate_rejects_loaded_python_identity_drift(release_metadata, monkeypatch, attribute):
+    import cragkit
+    root, configuration = release_metadata
+    monkeypatch.setattr(cragkit, attribute, '0.0.0')
+    with pytest.raises(runtime.EvaluationRuntimeError):
+        runtime._release_versions(root, configuration)
+
+
+def test_metadata_mismatch_stops_public_preparation_before_build(release_metadata, monkeypatch):
+    root, configuration = release_metadata
+    configuration.update(source_commit='a'*40, package_tree='b'*40)
+    selected = root/'evaluation/release/V6-candidate.json'
+    selected.parent.mkdir(parents=True)
+    selected.write_text(json.dumps(configuration))
+    project = root/'packages/python/pyproject.toml'
+    project.write_text(project.read_text().replace('1.0.0rc1', '0.0.0'))
+    monkeypatch.setattr(runtime, 'ROOT', root)
+    monkeypatch.setattr(runtime.evaluation_packet, 'check_settings', lambda value: None)
+    monkeypatch.setattr(runtime.evaluation_packet, 'verify_candidate_source', lambda *args:'a'*40)
+    monkeypatch.setattr(runtime, '_versions', lambda *args:pytest.fail('Unaccepted metadata reached toolchain work'))
+    output = root/'identity'
+    invalid(lambda: runtime.prepare_runtime(root, output=output))
+    assert not output.exists()
+
+
+def test_unverified_dist_never_reaches_export_execution(layout, tmp_path, monkeypatch):
+    root, _, _ = layout
+    calls = []
+    monkeypatch.setattr(runtime, '_node_export', lambda *args:calls.append(args))
+    def fresh_build(given, destination):
+        destination.mkdir()
+        (destination/'file').write_bytes(b'known checked source output')
+    monkeypatch.setattr(runtime, '_build', fresh_build)
+    invalid(lambda:runtime.prepare_runtime(root, output=tmp_path/'private'))
+    assert calls == []
+
+
+def test_export_verification_uses_matching_fresh_scratch_output(layout, tmp_path, monkeypatch):
+    root, _, _ = layout
+    seen = []
+    def verify(emitted, configuration):
+        assert emitted != root/'node_dist'
+        assert (emitted/'file').read_bytes() == (root/'node_dist/file').read_bytes()
+        seen.append(emitted)
+    monkeypatch.setattr(runtime, '_node_export', verify)
+    runtime.prepare_runtime(root, output=tmp_path/'private')
+    assert len(seen) == 1 and not seen[0].exists()
+
+
+@pytest.mark.parametrize('exported', ['1.0.0-rc.1', '0.0.0'])
+def test_scratch_export_must_match_declared_candidate(tmp_path, monkeypatch, exported):
+    commands = []
+    monkeypatch.setattr(runtime.shutil, 'which', lambda name:'/synthetic/'+name)
+    def command(arguments):
+        commands.append(arguments)
+        return exported
+    monkeypatch.setattr(runtime, '_command', command)
+    configuration = {'candidate_versions':{'npm':'1.0.0-rc.1'}}
+    if exported == '1.0.0-rc.1':
+        runtime._node_export(tmp_path, configuration)
+    else:
+        with pytest.raises(runtime.EvaluationRuntimeError):
+            runtime._node_export(tmp_path, configuration)
+    assert len(commands) == 1 and (tmp_path/'index.js').as_uri() in commands[0][-1]

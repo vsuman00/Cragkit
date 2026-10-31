@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cragkit-mcp"
-version = "0.0.0"
+version = "1.0.0rc1"
 requires-python = ">=3.14,<3.15"
-dependencies = ["cragkit==0.0.0", "mcp==2.3.0"]
+dependencies = ["cragkit==1.0.0rc1", "mcp==2.3.0"]
 
 [tool.uv.sources]
 cragkit = { path = "../python", editable = true }

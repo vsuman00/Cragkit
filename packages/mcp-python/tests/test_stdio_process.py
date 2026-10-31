@@ -117,7 +117,7 @@ def test_installed_host_official_sdk_stdio_roundtrip(tmp_path: Path) -> None:
     asyncio.run(scenario())
     audit = json.loads(audit_path.read_text(encoding='utf-8'))
     assert audit['closed'] is True
-    assert audit['package_version'] == '0.0.0'
+    assert audit['package_version'] == '1.0.0rc1'
     assert len(audit['calls']) == 1
     assert audit['calls'][0]['scope'] == SCOPE
     request = audit['calls'][0]['request']

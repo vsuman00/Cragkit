@@ -36,7 +36,12 @@ Sufficient requires at least one required facet, all required facets supported, 
 
 Stage names are unique identity strings and durations are finite numbers 0-300000. Unknown cost requires null cost; known/estimated cost requires a number. Unknown context counting requires null tokens; estimated/strict counting requires a token number. Strict context counting also requires a declared tokenizer in versions. Missing provider usage remains null, not zero. Zero is accepted only when explicitly supplied as known usage.
 
-`Versions` defaults: `engine: "0.0.0"`, `policy: "unassessed.v0"`, `model: null`, `tokenizer: null`, `index: null`. All non-null values use identity rules. Top-level schema version identifies the wire schema. These fields declare identities; V0 does not validate model/tokenizer capabilities or claim a hard token ceiling.
+`Versions` defaults: `engine: "1.0.0-rc.1"`, `policy: "unassessed.v0"`, `model: null`, `tokenizer: null`, `index: null`. All non-null values use identity rules. Top-level schema version identifies the wire schema. These fields declare identities; V0 does not validate model/tokenizer capabilities or claim a hard token ceiling.
+
+The RC preparation updates the declared engine identity; schema version remains
+`0.1`. Explicit historical engine identities such as `0.0.0` remain valid. Both
+native runtimes emit `1.0.0-rc.1`; Python package metadata separately uses the
+PEP 440 spelling `1.0.0rc1`. See [the identity decision](../docs/decisions/0005-release-candidate-identity.md).
 
 ## Public validation and temporary V1 behavior
 

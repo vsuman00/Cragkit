@@ -3,9 +3,9 @@ name = "cragkit-backend-conformance"
 version = "0.0.0"
 requires-python = ">=3.14,<3.15"
 dependencies = [
-    "cragkit[postgres,qdrant,tokenizers]==0.0.0",
-    "cragkit-langchain==0.0.0",
-    "cragkit-mcp==0.0.0",
+    "cragkit[postgres,qdrant,tokenizers]==1.0.0rc1",
+    "cragkit-langchain==1.0.0rc1",
+    "cragkit-mcp==1.0.0rc1",
 ]
 
 [tool.uv]

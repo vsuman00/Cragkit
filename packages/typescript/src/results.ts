@@ -1,3 +1,4 @@
+import { version } from './index.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { InvalidRequest } from './errors.js';
@@ -51,7 +52,7 @@ const UsageObject = z.strictObject({
   && unique(value.stage_durations.map(stage => stage.stage)));
 export const UsageSchema = guarded(UsageObject);
 const VersionsObject = z.strictObject({
-  engine: identity.default('0.0.0'), policy: identity.default('unassessed.v0'),
+  engine: identity.default(version), policy: identity.default('unassessed.v0'),
   model: identity.nullable().default(null), tokenizer: identity.nullable().default(null), index: identity.nullable().default(null),
 });
 export const VersionsSchema = guarded(VersionsObject);

@@ -1,3 +1,4 @@
+import { version } from './index.js';
 /** Minimal lexical evidence assembly; coverage and model-token counts remain estimates. */
 import { z } from 'zod';
 import { isDeepStrictEqual } from 'node:util';
@@ -78,7 +79,7 @@ export class PostgresRetriever {
       evidence,facets:[],context,limitations,trace_id:null,
       usage:{attempt_count:1,provider_calls:selection?selection.provider_calls:0,provider_input_tokens:selection?selection.input_tokens:0,provider_output_tokens:selection?selection.output_tokens:0,cost_usd:selection?.cost_usd??(selection?.cost_kind==='unknown'?null:0),cost_kind:selection?.cost_kind??'known',
         context_tokens:Math.ceil(Buffer.byteLength(context,'utf8')/4),context_counting:'estimated',stage_durations:selection?.stages ?? []},
-      versions:{engine:'0.0.0',policy:'unassessed.v0',model:selection?this.config.embedding_profile.model:null,tokenizer:null,index:selection?(this.config.mode==='dense'?(this.config.embedding_profile.provider==='fake'?'dense_fake.v1':'dense_openai.v1'):'hybrid_rrf.v1'):'native_fts.v1'}}); } catch { throw new IntegrityViolation(); }
+      versions:{engine:version,policy:'unassessed.v0',model:selection?this.config.embedding_profile.model:null,tokenizer:null,index:selection?(this.config.mode==='dense'?(this.config.embedding_profile.provider==='fake'?'dense_fake.v1':'dense_openai.v1'):'hybrid_rrf.v1'):'native_fts.v1'}}); } catch { throw new IntegrityViolation(); }
     check_options(bound);
     return deep_freeze(result);
   }
@@ -189,7 +190,7 @@ export class PostgresRetriever {
       usage:{attempt_count:1,provider_calls:(selection?.provider_calls??0)+rerankCalls,provider_input_tokens:rerankCalls?null:selection?selection.input_tokens:0,
         provider_output_tokens:rerankCalls?null:selection?selection.output_tokens:0,cost_usd:live?null:0,cost_kind:live?'unknown':'known',context_tokens:packed.context_tokens,
         context_counting:packed.counting_mode,stage_durations:stages},
-      versions:{engine:'0.0.0',policy:packed.policy,model:rerankProfile?.profile_id ?? (selection?this.config.embedding_profile.model:null),tokenizer:packed.tokenizer,
+      versions:{engine:version,policy:packed.policy,model:rerankProfile?.profile_id ?? (selection?this.config.embedding_profile.model:null),tokenizer:packed.tokenizer,
         index:selection?(this.config.mode==='dense'?(this.config.embedding_profile.provider==='fake'?'dense_fake.v1':'dense_openai.v1'):'hybrid_rrf.v1'):'native_fts.v1'}}); } catch { throw new IntegrityViolation(); }
     check_options(bound);
     return deep_freeze(result);

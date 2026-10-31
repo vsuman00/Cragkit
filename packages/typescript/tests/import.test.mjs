@@ -48,10 +48,18 @@ test('core import exposes version without dependencies or external I/O', async (
     syncBuiltinESMExports();
     const core = await import('cragkit');
     assert.deepEqual(Object.keys(core), ['version']);
-    assert.equal(core.version, '0.0.0');
+    assert.equal(core.version, '1.0.0-rc.1');
   } finally {
     hooks.deregister();
     for (const restore of restorations.reverse()) restore();
     syncBuiltinESMExports();
   }
+});
+
+
+test('engine defaults to RC while explicit historical identity remains valid', async () => {
+  const { VersionsSchema } = await import('cragkit/contracts');
+  const { version } = await import('cragkit');
+  assert.equal(VersionsSchema.parse({}).engine, version);
+  assert.equal(VersionsSchema.parse({ engine: '0.0.0' }).engine, '0.0.0');
 });

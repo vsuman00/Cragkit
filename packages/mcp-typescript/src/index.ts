@@ -107,7 +107,7 @@ export class RetrievalHost {
   constructor(engine:RetrievalEngine,template:RetrievalRequest,scope:TrustedScope,
     serializer:(actual:CallToolResult)=>string,counter:Cl100kCounter|null){
     this.#engine=engine;this.#template=template;this.#scope=scope;this.#serializer=serializer;this.#counter=counter;
-    this.server=new Server({name:'cragkit',version:'0.0.0'},{capabilities:{tools:{}}});
+    this.server=new Server({name:'cragkit',version:'1.0.0-rc.1'},{capabilities:{tools:{}}});
     this.server.setRequestHandler('tools/list',async()=>({tools:[{name:'cragkit_retrieve',
       description:'Retrieve scoped source-linked evidence with coverage and limitations.',inputSchema,
       annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false}}]}));

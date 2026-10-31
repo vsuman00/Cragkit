@@ -21,14 +21,14 @@ def python_adapter(root: Path, output: Path, core: Path, work: Path,
     built = output / 'python'
     built.mkdir(parents=True, exist_ok=True)
     run(['uv', 'build', str(project), '--out-dir', str(built), '--no-python-downloads'], root, commands)
-    wheel = built / 'cragkit_langchain-0.0.0-py3-none-any.whl'
-    sdist = built / 'cragkit_langchain-0.0.0.tar.gz'
+    wheel = built / 'cragkit_langchain-1.0.0rc1-py3-none-any.whl'
+    sdist = built / 'cragkit_langchain-1.0.0rc1.tar.gz'
     files = archive_files(wheel)
     require('cragkit_langchain/__init__.py' in files and 'cragkit_langchain/py.typed' in files, 'adapter_wheel_missing')
     metadata_files = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(metadata_files) == 1, 'adapter_metadata')
     metadata = email.parser.BytesParser().parsebytes(files[metadata_files[0]])
-    require(metadata['Name'] == 'cragkit-langchain' and sorted(metadata.get_all('Requires-Dist', [])) == ['cragkit==0.0.0', 'langchain-core==1.7.0'], 'adapter_dependencies')
+    require(metadata['Name'] == 'cragkit-langchain' and metadata['Version'] == '1.0.0rc1' and sorted(metadata.get_all('Requires-Dist', [])) == ['cragkit==1.0.0rc1', 'langchain-core==1.7.0'], 'adapter_dependencies')
     rebuilt = output / 'rebuilt'
     rebuilt.mkdir(exist_ok=True)
     run(['uv', 'build', str(sdist), '--wheel', '--out-dir', str(rebuilt), '--no-python-downloads'], work, commands)
@@ -68,10 +68,10 @@ def node_adapter(root: Path, output: Path, core: Path, work: Path,
     require(archive.parent == built, 'adapter_npm_path')
     files = archive_files(archive)
     metadata = json.loads(files['package/package.json'])
-    require(metadata['name'] == 'cragkit-langchain' and metadata['version'] == '0.0.0'
+    require(metadata['name'] == 'cragkit-langchain' and metadata['version'] == '1.0.0-rc.1'
         and metadata.get('private') is True, 'adapter_npm_identity')
     require(metadata.get('dependencies') == {'@langchain/core': '1.3.0', 'langsmith': '0.11.1', 'zod': '4.6.7'}
-        and metadata.get('peerDependencies') == {'cragkit': '0.0.0'}, 'adapter_npm_dependencies')
+        and metadata.get('peerDependencies') == {'cragkit': '1.0.0-rc.1'}, 'adapter_npm_dependencies')
     require({'package/dist/index.js', 'package/dist/index.d.ts'} <= files.keys(), 'adapter_npm_exports')
     locked = json.loads((project / 'package-lock.json').read_text())['packages']
     dependencies = {name.removeprefix('node_modules/'): item for name,item in locked.items()
@@ -110,8 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     report: dict[str, Any] = {'state': 'running', 'commands': [], 'provenance': 'Isolated installed product imports outside checkout; explicit fixture/tokenizer inputs; original checkout remains present.'}
     try:
         with tempfile.TemporaryDirectory(prefix='cragkit-framework-') as temporary:
-            report['python'] = python_adapter(ROOT, output, args.core_artifacts.resolve() / 'python/cragkit-0.0.0-py3-none-any.whl', Path(temporary), report['commands'])
-            report['node'] = node_adapter(ROOT, output, args.core_artifacts.resolve() / 'npm/cragkit-0.0.0.tgz', Path(temporary), report['commands'])
+            report['python'] = python_adapter(ROOT, output, args.core_artifacts.resolve() / 'python/cragkit-1.0.0rc1-py3-none-any.whl', Path(temporary), report['commands'])
+            report['node'] = node_adapter(ROOT, output, args.core_artifacts.resolve() / 'npm/cragkit-1.0.0-rc.1.tgz', Path(temporary), report['commands'])
         report['state'] = 'passed'
     except Exception as error:
         # Commands capture output privately; never copy provider/environment payloads to reports.

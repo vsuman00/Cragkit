@@ -30,6 +30,6 @@ for name in ('cragkit', 'cragkit.qdrant', 'cragkit.qdrant_source', 'cragkit.qdra
     assert path.is_relative_to(Path(sys.prefix).resolve()), name
     modules[name] = str(path)
 assert callable(importlib.import_module('cragkit.qdrant_corrective').QdrantCorrectiveBackend)
-assert importlib.metadata.version('cragkit') == '0.0.0'
+assert importlib.metadata.version('cragkit') == '1.0.0rc1'
 print(json.dumps({'state': 'passed', 'profile': args.profile, 'modules': modules,
     'installed': sorted((d.metadata['Name'], d.version) for d in importlib.metadata.distributions())}))

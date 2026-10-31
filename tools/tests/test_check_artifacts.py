@@ -51,11 +51,21 @@ def test_wheel_requires_typed_core_and_only_declared_core_dependency(tmp_path):
 
 def test_npm_export_must_exist_in_archive(tmp_path):
     path = tmp_path / 'test.tgz'
-    package = {'name': 'cragkit', 'version': '0.0.0', 'private': True, 'dependencies': {'zod': '4.6.7'},
+    package = {'name': 'cragkit', 'version': '1.0.0-rc.1', 'private': True, 'dependencies': {'zod': '4.6.7'},
                'exports': {name: {'import': f'./dist/{stem}.js', 'types': f'./dist/{stem}.d.ts'}
                            for name, stem in [('.', 'index'), ('./contracts', 'contracts'), ('./errors', 'errors'), ('./postgres', 'postgres'), ('./embeddings', 'embeddings')]}}
     tar(path, {'package/package.json': json.dumps(package).encode(), 'package/dist/index.js': b''})
     with pytest.raises(ART.ArtifactError, match='npm_missing_export'):
+        ART.inspect_npm(path)
+
+
+def test_prototype_npm_identity_is_refused_before_export_checks(tmp_path):
+    path = tmp_path / 'prototype.tgz'
+    tar(path, {'package/package.json':json.dumps({
+        'name':'cragkit', 'version':'0.0.0', 'private':True,
+        'dependencies':{'zod':'4.6.7'}, 'exports':{},
+    }).encode()})
+    with pytest.raises(ART.ArtifactError, match='npm_identity'):
         ART.inspect_npm(path)
 
 

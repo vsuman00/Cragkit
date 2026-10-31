@@ -169,7 +169,7 @@ wheels = [
 
 [[package]]
 name = "cragkit"
-version = "0.0.0"
+version = "1.0.0rc1"
 source = { editable = "../python" }
 dependencies = [
     { name = "pydantic" },
@@ -177,25 +177,29 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", marker = "extra == 'qdrant'", specifier = "==0.28.1" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = "==3.3.6" },
     { name = "psycopg-pool", marker = "extra == 'postgres'", specifier = "==3.3.3" },
     { name = "pydantic", specifier = "==2.14.1" },
     { name = "tiktoken", marker = "extra == 'tokenizers'", specifier = "==0.14.0" },
 ]
-provides-extras = ["postgres", "tokenizers"]
+provides-extras = ["postgres", "qdrant", "tokenizers"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "build", specifier = "==1.6.1" },
+    { name = "httpx", specifier = "==0.28.1" },
     { name = "jsonschema", specifier = "==4.26.0" },
     { name = "mypy", specifier = "==2.4.0" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
+    { name = "psycopg-pool", specifier = "==3.3.3" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "tiktoken", specifier = "==0.14.0" },
 ]
 
 [[package]]
 name = "cragkit-langchain"
-version = "0.0.0"
+version = "1.0.0rc1"
 source = { editable = "." }
 dependencies = [
     { name = "cragkit" },

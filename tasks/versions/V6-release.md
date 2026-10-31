@@ -36,6 +36,14 @@ Dependency: V6-01. Target: one focused slice; split cross-runtime work into expl
 
 Build: Run declared baselines and the full library on held-out reviewed questions using a fixed corpus and configuration.
 
+Preparation prerequisite (31 October 2026 amendment): V6-02F aligns the six
+library manifests/internal pins, public package versions and common native
+engine identity with the preregistered RC1 labels before source refreeze and
+original held-out access. Split the work into contract/core, dependent metadata,
+artifact guard and clean-identity slices. This moves version preparation earlier;
+V6-06 still owns exact artifacts, notices, supported installs and actual CI
+acceptance after V6-05. See [the identity decision](../../docs/decisions/0005-release-candidate-identity.md).
+
 Acceptance: Report sample sizes, retrieval/coverage metrics, uncertainty, calls/cost and known failures; keep downstream answer claims separate.
 
 Verification: Reproduce one evaluation run and manually review unsupported acceptance and abstention examples.

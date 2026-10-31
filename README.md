@@ -20,7 +20,7 @@ Cragkit is a retrieval library with native Python and TypeScript packages. It re
 Coverage remains unknown unless the application configures a suitable assessment policy.
 
 > [!IMPORTANT]
-> Package version `0.0.0` and the `cragkit` package names are provisional. The project uses MIT; registry publication and hosted CI evidence remain separate.
+> Candidate metadata uses Python `1.0.0rc1` and npm `1.0.0-rc.1`; release acceptance is still in progress. The project uses MIT; package-name ownership, registry publication and hosted CI evidence remain separate.
 
 ## What Cragkit Does
 

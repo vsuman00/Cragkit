@@ -18,16 +18,24 @@ def wheel(path, metadata):
     with zipfile.ZipFile(path, 'w') as archive:
         archive.writestr('cragkit_mcp/__init__.py', '')
         archive.writestr('cragkit_mcp/py.typed', '')
-        archive.writestr('cragkit_mcp-0.0.0.dist-info/METADATA', metadata)
+        archive.writestr('cragkit_mcp-1.0.0rc1.dist-info/METADATA', metadata)
 
 
 def test_mcp_metadata_rejects_core_registry_version_drift(tmp_path):
     artifact = tmp_path / 'mcp.whl'
-    metadata = 'Name: cragkit-mcp\nVersion: 0.0.0\nRequires-Dist: cragkit==0.0.0\nRequires-Dist: mcp==2.3.0\n'
+    metadata = 'Name: cragkit-mcp\nVersion: 1.0.0rc1\nRequires-Dist: cragkit==1.0.0rc1\nRequires-Dist: mcp==2.3.0\n'
     wheel(artifact, metadata)
     assert 'cragkit_mcp/py.typed' in module.inspect_mcp_wheel(artifact)
     wheel(artifact, metadata.replace('mcp==2.3.0', 'mcp>=2.3.0'))
     with pytest.raises(module.require.__globals__['ArtifactError'], match='mcp_dependencies'):
+        module.inspect_mcp_wheel(artifact)
+
+
+def test_mcp_artifact_cannot_relabel_prototype_metadata_as_rc(tmp_path):
+    artifact = tmp_path / 'mcp.whl'
+    wheel(artifact, 'Name: cragkit-mcp\nVersion: 0.0.0\n'
+        'Requires-Dist: cragkit==1.0.0rc1\nRequires-Dist: mcp==2.3.0\n')
+    with pytest.raises(module.require.__globals__['ArtifactError'], match='mcp_identity'):
         module.inspect_mcp_wheel(artifact)
 
 
@@ -47,7 +55,7 @@ def test_lock_rejects_unreviewed_transitive_package():
 
 def test_lock_accepts_reviewed_transitives_and_local_archives():
     expected = {'node_modules/sdk': {'version': '1', 'integrity': 'sha512-reviewed'}}
-    module.check_node_lock({**expected, 'node_modules/cragkit': {'version': '0.0.0'}}, expected)
+    module.check_node_lock({**expected, 'node_modules/cragkit': {'version': '1.0.0-rc.1'}}, expected)
 
 
 def test_existing_output_is_preserved(tmp_path):

@@ -1,3 +1,4 @@
+import { version } from './index.js';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
@@ -269,7 +270,7 @@ export class CorrectiveRetriever {
       let result:RetrievalResult;
       try {result=ResultSchema.parse({request_id:request.request_id,status:p.status,execution:degraded?'degraded':'complete',evidence:p.evidence,facets:p.facets,context:p.context,limitations,
         usage:{attempt_count:usage.attempts,provider_calls:usage.provider_calls,provider_input_tokens:usage.input_tokens,provider_output_tokens:usage.output_tokens,cost_usd:usage.cost_usd,cost_kind:usage.cost_kind,
-          context_tokens:p.context_tokens,context_counting:p.counting_mode},versions:{engine:'0.0.0',policy:p.policy,model:this.#resultVersions.model,index:this.#resultVersions.index,tokenizer:p.tokenizer}});}catch{throw new IntegrityViolation();}
+          context_tokens:p.context_tokens,context_counting:p.counting_mode},versions:{engine:version,policy:p.policy,model:this.#resultVersions.model,index:this.#resultVersions.index,tokenizer:p.tokenizer}});}catch{throw new IntegrityViolation();}
       check();
       event('stop',reason);
       const events=this.#events&&trace?{trace_id:trace,...EventSink.prototype.snapshot.call(this.#events)}:null;

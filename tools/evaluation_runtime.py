@@ -131,8 +131,30 @@ def _candidate(root):
     configuration = evaluation_packet._json(raw)
     evaluation_packet.check_settings(configuration)
     commit = evaluation_packet.verify_candidate_source(root, configuration)
+    _release_versions(root, configuration)
     return configuration, dict(source_commit=commit, package_tree=configuration['package_tree'],
         configuration_sha256=sha256(raw).hexdigest())
+
+
+def _release_versions(root, configuration):
+    """Check declared RC metadata before fingerprinting an execution candidate."""
+    from cragkit import __version__, _ENGINE_VERSION
+
+    expected = configuration.get('candidate_versions')
+    _require(type(expected) is dict and expected == {'python':'1.0.0rc1', 'npm':'1.0.0-rc.1'})
+    _require(__version__ == expected['python'] and _ENGINE_VERSION == expected['npm'])
+    for component, distribution in (('python', 'cragkit'),
+            ('langchain-python', 'cragkit-langchain'), ('mcp-python', 'cragkit-mcp')):
+        project = tomllib.loads(_regular_bytes(root/'packages'/component/'pyproject.toml', 131072).decode())['project']
+        _require(project['name'] == distribution and project['version'] == expected['python'])
+        if component != 'python':
+            _require('cragkit=='+expected['python'] in project['dependencies'])
+    for component, distribution in (('typescript', 'cragkit'),
+            ('langchain-typescript', 'cragkit-langchain'), ('mcp-typescript', 'cragkit-mcp')):
+        project = _json(_regular_bytes(root/'packages'/component/'package.json', 131072))
+        _require(project['name'] == distribution and project['version'] == expected['npm'])
+        if component != 'typescript':
+            _require(project['peerDependencies']['cragkit'] == expected['npm'])
 
 
 def _metadata(root):
@@ -198,6 +220,15 @@ def _versions(root, configuration):
         _require(versions[key] == matrix[key])
     _require(versions['typescript'] == manifest['devDependencies']['typescript'])
     return versions
+
+
+def _node_export(emitted, configuration):
+    """Execute only freshly compiled source after complete emitted-set equality."""
+    node_path = Path(shutil.which('node')).resolve()
+    entry = (emitted/'index.js').as_uri()
+    expression = 'import {version} from '+json.dumps(entry)+';process.stdout.write(version);'
+    _require(_command([str(node_path), '--input-type=module', '-e', expression])
+        == configuration['candidate_versions']['npm'])
 
 
 def _layout(root):
@@ -340,6 +371,7 @@ def _snapshot(root):
         built.tree('node_dist', emitted)
         current = {key: digest for key, digest in before.items() if key.startswith('node_dist/')}
         _require(current == built.files and bool(current))
+        _node_export(emitted, configuration)
     after = _inventory(root)
     _require(before == after)
     configuration_after, candidate_after = _candidate(root)

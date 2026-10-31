@@ -2,6 +2,18 @@
   "revision": "0.1",
   "cases": [
     {
+      "id": "historical-engine-identity",
+      "kind": "result",
+      "input": {
+        "request_id": "request-historical",
+        "status": "insufficient",
+        "versions": {
+          "engine": "0.0.0"
+        }
+      },
+      "valid": true
+    },
+    {
       "id": "empty-insufficient",
       "kind": "result",
       "input": {

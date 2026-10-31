@@ -321,7 +321,7 @@
       "additionalProperties": false,
       "properties": {
         "engine": {
-          "default": "0.0.0",
+          "default": "1.0.0-rc.1",
           "pattern": "^[^\\u0000]*$",
           "title": "Engine",
           "type": "string"

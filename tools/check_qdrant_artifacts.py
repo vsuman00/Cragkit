@@ -22,17 +22,17 @@ def inspect_mcp_wheel(path: Path) -> dict[str, bytes]:
     names = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(names) == 1, 'mcp_metadata')
     metadata = email.parser.BytesParser().parsebytes(files[names[0]])
-    require(metadata['Name'] == 'cragkit-mcp' and metadata['Version'] == '0.0.0', 'mcp_identity')
-    require(sorted(metadata.get_all('Requires-Dist', [])) == ['cragkit==0.0.0', 'mcp==2.3.0'], 'mcp_dependencies')
+    require(metadata['Name'] == 'cragkit-mcp' and metadata['Version'] == '1.0.0rc1', 'mcp_identity')
+    require(sorted(metadata.get_all('Requires-Dist', [])) == ['cragkit==1.0.0rc1', 'mcp==2.3.0'], 'mcp_dependencies')
     return files
 
 
 def inspect_mcp_npm(path: Path) -> dict[str, bytes]:
     files = archive_files(path)
     package = json.loads(files['package/package.json'])
-    require(package['name'] == 'cragkit-mcp' and package['version'] == '0.0.0' and package.get('private') is True, 'mcp_npm_identity')
+    require(package['name'] == 'cragkit-mcp' and package['version'] == '1.0.0-rc.1' and package.get('private') is True, 'mcp_npm_identity')
     require(package.get('dependencies') == {'@modelcontextprotocol/server': '2.4.0', 'zod': '4.6.7'}
-            and package.get('peerDependencies') == {'cragkit': '0.0.0'}, 'mcp_npm_dependencies')
+            and package.get('peerDependencies') == {'cragkit': '1.0.0-rc.1'}, 'mcp_npm_dependencies')
     for kind, extension in (('import', '.js'), ('types', '.d.ts')):
         target = package.get('exports', {}).get('.', {}).get(kind, '')
         require(target.startswith('./dist/') and target.endswith(extension) and 'package/' + target[2:] in files, 'mcp_npm_export')
@@ -61,7 +61,7 @@ def accept(root: Path, core: Path, output: Path) -> dict[str, Any]:
             work = Path(temporary)
             built = output / 'mcp/python'; built.mkdir(parents=True, exist_ok=True)
             run(['uv', 'build', str(root / 'packages/mcp-python'), '--out-dir', str(built), '--no-python-downloads'], root, commands)
-            wheel, sdist = built / 'cragkit_mcp-0.0.0-py3-none-any.whl', built / 'cragkit_mcp-0.0.0.tar.gz'
+            wheel, sdist = built / 'cragkit_mcp-1.0.0rc1-py3-none-any.whl', built / 'cragkit_mcp-1.0.0rc1.tar.gz'
             files = inspect_mcp_wheel(wheel)
             rebuilt = output / 'mcp/rebuilt'; rebuilt.mkdir(exist_ok=True)
             run(['uv', 'build', str(sdist), '--wheel', '--out-dir', str(rebuilt), '--no-python-downloads'], work, commands)
@@ -74,7 +74,7 @@ def accept(root: Path, core: Path, output: Path) -> dict[str, Any]:
             require(len(packed) == 1, 'mcp_npm_count')
             npm = npm_out / packed[0]['filename']; require(npm.parent == npm_out, 'mcp_npm_path')
             report['artifacts']['npm'] = artifact_record(npm, inspect_mcp_npm(npm))
-            core_wheel, core_npm = core / 'python/cragkit-0.0.0-py3-none-any.whl', core / 'npm/cragkit-0.0.0.tgz'
+            core_wheel, core_npm = core / 'python/cragkit-1.0.0rc1-py3-none-any.whl', core / 'npm/cragkit-1.0.0-rc.1.tgz'
             require('cragkit/qdrant_corrective.py' in archive_files(core_wheel), 'v5_core_wheel_export')
             core_files = archive_files(core_npm)
             require(json.loads(core_files['package/package.json'])['exports']['./qdrant-corrective'] ==

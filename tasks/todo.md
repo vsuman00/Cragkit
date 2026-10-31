@@ -3923,3 +3923,46 @@ Astra dispute remains. Root must record the plan/ADR amendment before metadata
 edits; later V6-06 and publication gates remain pending. Next: V6-02F identity
 prerequisite, clean ECR preparation, secure OpenAI setup, genuine evaluation and
 all later V6 tasks. Learning practice unassessed; report gives denominator exercise.
+
+## V6-02F: RC identity preparation prerequisite
+
+State: RUNNING. Root accepted the Sol pair's A1 resolution and recorded
+`docs/decisions/0005-release-candidate-identity.md`, amending ADR0004 and the V6
+plan before metadata edits. Frozen contract: package Python `1.0.0rc1`, npm
+`1.0.0-rc.1`, native result engine and MCP server `1.0.0-rc.1`, schema `0.1`.
+Explicit historical engine inputs stay parseable; fresh results use RC identity.
+No target, seal, third-party dependency, model, permission or ranking change.
+F1 shared decision/contracts/schema/fixtures: root sole writer. Sol Python
+`postgres_node_finish` owns only core `__init__.py`, `contracts/results.py` and
+`tests/test_import.py`; Sol Node `v601_metrics` owns only core `src/index.ts`,
+`src/results.ts`, `src/retrieval.ts`, `src/corrective.ts` and `tests/import.test.mjs`.
+Node assembles the pair; direct peer agreement resolves interfaces. Preserve
+existing user comments/docstrings, particularly Node retrieval. Root owns all
+manifests/locks, remaining adapters, artifact guards, fixture generation, tracker,
+Git and final integration. One test slot, no peer tests/builds/installs/services.
+Protected boundaries or other ownership changes require root; unresolved issues
+escalate through root to Astra. Acceptance: native import/type/conformance and
+emitted engine identity, then coherent internal pins and artifact/version guards,
+actual clean ECR preparation. Later V6-06 acceptance/publication remain OPEN.
+
+V6-02F1-F3 local preparation: PASS; F4 clean ECR preparation remains OPEN.
+Sol core peers implemented three Python and five TypeScript source/test paths,
+then Node assembled. Root integrated six manifests/internal pins and locks,
+MCP identities, normative defaults/schema/fixtures, artifact guards/probes and
+runtime candidate-version admission. Seven offline lock updates preserved every
+third-party record. Initial core integration: 3,614 Python / 1,617 Node and types,
+33 shared result / 17 corrective cases passed. Full SDK pipeline: all 34 stages,
+3,616 Python/tool, 1,617 Node, LangChain73/70 and installed artifacts passed.
+Twelve optional environments with installed MCP41/36 passed. Review found one
+unsafe ordering (executing existing dist before fresh proof) and a stale current
+documentation sentence; root fixed both. Final runtime/parent84 and complete
+Python/tool3,620 tests passed, with four intentional serializer warnings. Real
+scratch export matched all100 emitted files. Native RC backend84 calls/16 refusals
+and development240 mode rows passed with exact common engine/parity/cleanup;
+Node evaluation65 passed. Six input digests/16 seals unchanged, no held-out or
+paid call. Reports: V6-02F-identity.md / V6-02F-identity-verification.json.
+All nine original user-owned files retain their hashes after reversing only RC
+identity edits in memory. Existing prose/audits/old tracker draft stay excluded;
+local archives contain working-tree prose and are not final publication bytes.
+F4 next: source commit/refreeze, fresh isolated candidate, exact frozen install
+and ECR prepare/verify. V6-06 acceptance and all later gates stay pending.

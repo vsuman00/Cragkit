@@ -119,7 +119,7 @@ class RetrievalHost:
         self._closed = False
         self._serving = False
         self._runner: asyncio.Task[Any] | None = None
-        self.server: Server[Any] = Server('cragkit', version='0.0.0',
+        self.server: Server[Any] = Server('cragkit', version='1.0.0-rc.1',
             on_list_tools=self._list_tools, on_call_tool=self._call_tool)
         # The pinned SDK enables ambient OpenTelemetry middleware by default.
         self.server.middleware.clear()

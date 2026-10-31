@@ -46,7 +46,8 @@ class CoreImportTests(unittest.TestCase):
 
             import cragkit
 
-            assert cragkit.__version__ == "0.0.0"
+            assert cragkit.__version__ == "1.0.0rc1"
+            assert cragkit._ENGINE_VERSION == "1.0.0-rc.1"
             assert cragkit.__all__ == ["__version__"]
             print(cragkit.__version__)
             """
@@ -59,8 +60,16 @@ class CoreImportTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "0.0.0\n")
+        self.assertEqual(result.stdout, "1.0.0rc1\n")
         self.assertEqual(result.stderr, "")
+
+    def test_engine_default_and_explicit_historical_identity(self):
+        from cragkit import _ENGINE_VERSION
+        from cragkit.contracts import Versions
+
+        self.assertEqual(_ENGINE_VERSION, "1.0.0-rc.1")
+        self.assertEqual(Versions().engine, _ENGINE_VERSION)
+        self.assertEqual(Versions(engine="0.0.0").engine, "0.0.0")
 
 
 if __name__ == "__main__":

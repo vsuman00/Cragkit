@@ -16,6 +16,16 @@ Sol runtime owns `tools/evaluation_runtime.py` and `tools/tests/test_evaluation_
 
 Receipt minimum identity: `revision: "ECR-r1"`, `source_commit`, `package_tree`, `configuration_sha256`, `runtime_versions`, `tokenizer_sha256`, `files` (relative category/path to digest) and `identity_sha256` over canonical identity JSON. Category names/complete schema are runtime-peer owned and must be reported to root before parent integration. Do not record credentials, source/query text or credential-bearing paths. Verification must execute from the same checkout/import origin as the worker. Compiled/dependency fingerprints are checked immediately before and after each execution stage; a changed identity invalidates the run. Python preparation/verification runs with `-B`, and any checkout `.pyc` in tools, runners or package source areas is refused: disabling writes does not disable cache reads. Do not delete user caches to satisfy this gate; prepare a fresh checkout. Installed dependency/stdlib bytecode remains part of the declared runtime fingerprint and frozen-install provenance scope.
 
+The [RC identity prerequisite](../docs/decisions/0005-release-candidate-identity.md)
+requires all six library manifest versions and internal core pins to match the
+declared candidate. Verify loaded Python package/engine identities and the actual
+Node public export as well. Matching byte fingerprints cannot excuse a package
+that still declares the old prototype version. The common wire engine uses
+`1.0.0-rc.1`; Python package metadata/export uses `1.0.0rc1`.
+Read the Node export only from freshly compiled scratch output after the
+complete emitted-file comparison passes; never execute unchecked existing
+`dist/` while trying to verify it.
+
 ## Independent scoring
 
 `score_observation(packet, reviewed_questions, observation, *, rerank_inputs=(), k=5)` is pure and returns a JSON-compatible per-mode report. It consumes the frozen independent `benchmark_metrics.py` functions without modifying that module. Validate all question/mode denominators and receipt aliases. Bind native IDs to logical revisions in a separate copied metric view; preserve the original result wire. Unknown identities stay invalid, never map by text alone. Use full trusted tenant/collection/document/revision source snapshots. Reject mismatched labels versus packet query/scope/filter identity. Operational failures remain explicit and count under frozen denominators; never turn them into an insufficient response or omit a mode.

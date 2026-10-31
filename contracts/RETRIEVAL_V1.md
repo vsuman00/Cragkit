@@ -36,7 +36,7 @@ Context is compact JSON of the emitted Evidence array, without ASCII escaping or
 
 Nonempty evidence gives partial, empty gives insufficient; never sufficient. Execution is complete when all operations succeed. No fallback converts an operational/integrity failure into missing evidence. Facets are empty because V1 has no facet assessor (request queries may exceed the facet question ceiling). Limitations use fixed order: coverage_unknown always, then stale_evidence, truncated_evidence, budget_exhausted when applicable; ID references may be empty. No semantic support is inferred from an FTS hit.
 
-Usage: attempt_count 1, provider_calls 0, provider_input_tokens 0, provider_output_tokens 0, cost_usd 0/cost_kind known, context_counting estimated with the count above, stage_durations empty. These zeros describe model/provider usage and spend, which are known because no such work occurs; they do not measure database hosting or infrastructure cost. trace_id null; versions engine 0.0.0, policy unassessed.v0, model/tokenizer null, index native_fts.v1. Recheck deadline/cancellation after assembly before returning.
+Usage: attempt_count 1, provider_calls 0, provider_input_tokens 0, provider_output_tokens 0, cost_usd 0/cost_kind known, context_counting estimated with the count above, stage_durations empty. These zeros describe model/provider usage and spend, which are known because no such work occurs; they do not measure database hosting or infrastructure cost. trace_id null; versions engine 1.0.0-rc.1, policy unassessed.v0, model/tokenizer null, index native_fts.v1. Recheck deadline/cancellation after assembly before returning.
 
 ## Acceptance
 

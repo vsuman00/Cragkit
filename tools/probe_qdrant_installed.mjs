@@ -24,5 +24,5 @@ for(const name of ['cragkit','cragkit/qdrant','cragkit/qdrant-source','cragkit/q
  await import(name); modules[name]=path;
 }
 assert.equal(typeof (await import('cragkit/qdrant-corrective')).QdrantCorrectiveBackend,'function');
-assert.equal((await import('cragkit')).version,'0.0.0');
+assert.equal((await import('cragkit')).version,'1.0.0-rc.1');
 console.log(JSON.stringify({state:'passed',profile,modules}));

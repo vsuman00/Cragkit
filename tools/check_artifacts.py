@@ -74,7 +74,7 @@ def inspect_wheel(path: Path) -> dict[str, bytes]:
     names = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(names) == 1, 'wheel_metadata')
     metadata = email.parser.BytesParser().parsebytes(files[names[0]])
-    require(metadata['Name'] == 'cragkit' and metadata['Version'] == '0.0.0', 'wheel_identity')
+    require(metadata['Name'] == 'cragkit' and metadata['Version'] == '1.0.0rc1', 'wheel_identity')
     requirements = metadata.get_all('Requires-Dist', [])
     core = [entry for entry in requirements if 'extra ==' not in entry]
     require(core == ['pydantic==2.14.1'], 'wheel_core_dependencies')
@@ -87,7 +87,7 @@ def inspect_npm(path: Path) -> dict[str, bytes]:
     files = archive_files(path)
     require('package/package.json' in files, 'npm_metadata')
     package = json.loads(files['package/package.json'])
-    require(package['name'] == 'cragkit' and package['version'] == '0.0.0' and package.get('private') is True, 'npm_identity')
+    require(package['name'] == 'cragkit' and package['version'] == '1.0.0-rc.1' and package.get('private') is True, 'npm_identity')
     require(package.get('dependencies') == {'zod': '4.6.7'}, 'npm_core_dependencies')
     for name in ('.', './contracts', './errors', './postgres', './embeddings', './reranking', './context', './packing', './assessment', './evidence', './execution', './planning', './corrective', './events', './postgres-corrective', './qdrant', './qdrant-source', './qdrant-corrective', './qdrant-publication'):
         target = package.get('exports', {}).get(name, {})
@@ -127,7 +127,7 @@ sys.addaudithook(audit)
 start = time.perf_counter()
 modules = [importlib.import_module(name) for name in ('cragkit', 'cragkit.contracts', 'cragkit.errors', 'cragkit.postgres', 'cragkit.embeddings', 'cragkit.reranking', 'cragkit.context', 'cragkit.packing', 'cragkit.assessment', 'cragkit.evidence', 'cragkit.execution', 'cragkit.planning', 'cragkit.corrective', 'cragkit.events', 'cragkit.postgres_corrective', 'cragkit.qdrant', 'cragkit.qdrant_source', 'cragkit.qdrant_corrective', 'cragkit.qdrant_publication')]
 elapsed = time.perf_counter() - start
-assert modules[0].__version__ == '0.0.0'
+assert modules[0].__version__ == '1.0.0rc1'
 assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve()) for module in modules)
 assert modules[1].parse_request({'query': 'smoke', 'collection': 'smoke'}).query == 'smoke'
 assert modules[1].parse_result({'request_id': 'smoke', 'status': 'insufficient'}).usage.cost_usd is None
@@ -168,7 +168,7 @@ const start = performance.now();
 const [core, contracts, errors, postgres, embeddings, reranking, context, packing, assessment, evidence] = await Promise.all([import('cragkit'), import('cragkit/contracts'), import('cragkit/errors'), import('cragkit/postgres'), import('cragkit/embeddings'), import('cragkit/reranking'), import('cragkit/context'), import('cragkit/packing'), import('cragkit/assessment'), import('cragkit/evidence')]);
 await Promise.all(['execution','planning','corrective','events','postgres-corrective','qdrant','qdrant-source','qdrant-corrective','qdrant-publication'].map(name=>import('cragkit/'+name)));
 const importSeconds = (performance.now()-start)/1000;
-assert.equal(core.version,'0.0.0');
+assert.equal(core.version,'1.0.0-rc.1');
 assert.equal(contracts.parse_result({request_id:'smoke',status:'insufficient'}).usage.cost_usd,null);
 assert.equal(contracts.parse_request({query:'smoke',collection:'smoke'}).query,'smoke');
 assert.equal(new errors.InvalidRequest().code,'invalid_request');
@@ -307,8 +307,8 @@ def accept_artifacts(root: Path, output: Path, postgres_config: Path | None = No
             py_out, npm_out, rebuilt_out = output / 'python', output / 'npm', output / 'rebuilt'
             for path in (py_out, npm_out, rebuilt_out): path.mkdir(exist_ok=True)
             run(['uv', 'build', str(root / 'packages/python'), '--out-dir', str(py_out), '--no-python-downloads'], root, commands)
-            wheel = py_out / 'cragkit-0.0.0-py3-none-any.whl'
-            sdist = py_out / 'cragkit-0.0.0.tar.gz'
+            wheel = py_out / 'cragkit-1.0.0rc1-py3-none-any.whl'
+            sdist = py_out / 'cragkit-1.0.0rc1.tar.gz'
             original_files = inspect_wheel(wheel)
             source_files = archive_files(sdist)
             require(any(name.endswith('/pyproject.toml') for name in source_files)

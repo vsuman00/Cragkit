@@ -9,8 +9,8 @@ This guide explains the release path while [V6](../tasks/versions/V6-release.md)
 | Label | Meaning for this project |
 | --- | --- |
 | V0 through V6 | Internal implementation milestones, not published package versions. |
-| `0.0.0` | Current provisional package metadata. Local archives with this version do not establish a registry release. |
-| Python `1.0.0rc1`, npm `1.0.0-rc.1` | Proposed release-candidate spellings for the same release stage. Consumers deliberately try the candidate while release acceptance is completed. |
+| `0.0.0` | Historical internal package metadata. Retained local archives with this version do not establish a registry release. |
+| Python `1.0.0rc1`, npm `1.0.0-rc.1` | Current candidate manifest spellings for the same release stage. Local preparation and release acceptance remain separate from publication. |
 | `1.0.0` | Proposed stable release after all required gates and publication authorization. It does not promise every platform, deployment or future API. |
 
 The three distribution names are currently `cragkit`, `cragkit-langchain` and `cragkit-mcp` in both ecosystems. Import names differ: Python uses `cragkit_langchain` and `cragkit_mcp`; Node uses the distribution names. Before publishing, verify account ownership and accepted names on each registry. A name in a local manifest does not reserve it. PyPI supports a pending trusted publisher for creating a new project, but that configuration itself does not reserve the name. See [PyPI project creation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).

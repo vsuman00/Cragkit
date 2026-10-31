@@ -150,7 +150,7 @@ wheels = [
 
 [[package]]
 name = "cragkit"
-version = "0.0.0"
+version = "1.0.0rc1"
 source = { editable = "../../packages/python" }
 dependencies = [
     { name = "pydantic" },
@@ -209,7 +209,7 @@ requires-dist = [
 
 [[package]]
 name = "cragkit-langchain"
-version = "0.0.0"
+version = "1.0.0rc1"
 source = { editable = "../../packages/langchain-python" }
 dependencies = [
     { name = "cragkit" },
@@ -231,7 +231,7 @@ dev = [
 
 [[package]]
 name = "cragkit-mcp"
-version = "0.0.0"
+version = "1.0.0rc1"
 source = { editable = "../../packages/mcp-python" }
 dependencies = [
     { name = "cragkit" },

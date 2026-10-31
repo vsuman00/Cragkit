@@ -1548,8 +1548,10 @@ python3 tools/check_release_readiness.py
 ```
 
 The [beginner release guide](open-source-release-guide.md) explains local
-packages, CI and registry publication as separate steps. MIT is selected; exact
-release-candidate metadata and artifacts remain V6-06 work.
+packages, CI and registry publication as separate steps. MIT is selected.
+[The identity amendment](decisions/0005-release-candidate-identity.md) moves RC
+metadata and local preparation to V6-02F; exact release artifact, license,
+supported-install and CI acceptance remain V6-06 work.
 
 ## Native five-mode evaluation mechanics
 

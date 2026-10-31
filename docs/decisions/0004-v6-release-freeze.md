@@ -8,7 +8,13 @@ The [candidate configuration](../../evaluation/release/V6-candidate.json) freeze
 
 The user chose MIT and asked for a recommendation for their first open-source library. MIT permits reuse and distribution subject to retaining its notice; it does not require downstream source publication. We retain that choice and add the [license](../../LICENSE). [Official MIT terms](https://opensource.org/license/mit) are authoritative. Dependency/provider notices remain their respective licenses and V6-06 audits their distribution requirements.
 
-The intended candidate labels are Python `1.0.0rc1` and npm `1.0.0-rc.1`. Existing manifests remain internal `0.0.0` until V6-06 prepares and verifies the exact candidate artifacts. A milestone name is not a registry release. No package name ownership or registry publication is implied.
+The intended candidate labels are Python `1.0.0rc1` and npm `1.0.0-rc.1`.
+Originally manifests were to remain internal `0.0.0` until V6-06. The
+[31 October identity amendment](0005-release-candidate-identity.md) moves version
+and native engine-identity preparation to V6-02F, before the first held-out run.
+V6-06 still prepares and verifies exact release artifacts through its later
+gates. A milestone name is not a registry release. No package name ownership or
+registry publication is implied.
 
 Prior [V5 observations](../../evaluation/release/V6-baselines.json) supply explicit same-machine reference measurements. Import latency ceilings are three times those fresh-process samples; RSS and logical installation ceilings are twice them. These are conservative engineering budgets, not newly measured performance or universal hardware promises. New measurements must disclose cache conditions, sample counts and optional services. Request limits retain the existing 25-second deadline and bounded candidates, attempts, providers and pools.
 

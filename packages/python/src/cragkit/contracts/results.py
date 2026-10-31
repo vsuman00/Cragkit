@@ -3,6 +3,7 @@ from typing import Annotated, Literal, Self, TypeAlias
 
 from pydantic import AfterValidator, BeforeValidator, Field, model_validator
 
+from .. import _ENGINE_VERSION
 from ._validation import MAX_SAFE_NUMBER, sequence, text
 from .models import ContractModel, Identity, Integer, Number
 
@@ -114,7 +115,7 @@ class Usage(ContractModel):
 
 
 class Versions(ContractModel):
-    engine: Identity = "0.0.0"
+    engine: Identity = _ENGINE_VERSION
     policy: Identity = "unassessed.v0"
     model: Identity | None = None
     tokenizer: Identity | None = None
