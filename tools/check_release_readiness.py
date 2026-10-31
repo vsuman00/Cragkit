@@ -28,13 +28,22 @@ def local_path(root: Path, value: object) -> Path:
     return path
 
 
-def check_configuration(root: Path, configuration: dict[str, Any]) -> dict[str, Any]:
+def check_settings(configuration: dict[str, Any]) -> None:
+    """Validate frozen parameters without reading files or interpreting labels."""
+    require(type(configuration) is dict, 'configuration_shape')
+    for name in ('license', 'comparison', 'quality_targets', 'request_limits', 'live_limits', 'resource_targets'):
+        require(type(configuration.get(name)) is dict, 'configuration_shape')
     require(configuration.get('revision') == 'V6-release-r1'
             and configuration.get('configuration_state') == 'frozen_before_held_out_run', 'unfrozen_configuration')
     require(configuration.get('license', {}).get('spdx') == 'MIT', 'unresolved_license')
     comparison = configuration.get('comparison', {})
     require(comparison.get('modes') == MODES and comparison.get('k') == 5
             and comparison.get('metric_version') == 'V6-reviewed-span-r1', 'comparison_incomplete')
+    embedding, reranking = comparison.get('live_embeddings'), comparison.get('live_reranking')
+    require(type(embedding) is dict and embedding.get('provider') == 'openai'
+            and embedding.get('model') == 'text-embedding-3-small' and embedding.get('dimensions') == 1536
+            and type(reranking) is dict and reranking.get('provider') == 'cohere'
+            and reranking.get('model') == 'rerank-v5.0-fast', 'unfrozen_provider_profiles')
     targets = configuration.get('quality_targets', {})
     require(all(type(targets.get(key)) is int and targets[key] == 0 for key in
                 ('invariant_violations', 'operational_failures', 'false_sufficient_count')), 'weakened_invariant_target')
@@ -53,6 +62,15 @@ def check_configuration(root: Path, configuration: dict[str, Any]) -> dict[str, 
             and live.get('total_admission_usd') == 0.02
             and live.get('embedding_admission_usd') == live.get('rerank_admission_usd') == 0.01
             and live.get('max_calls') == 60, 'unfrozen_live_limits')
+    resources = configuration.get('resource_targets', {})
+    require(all(type(resources.get(name)) in (float, int) and resources[name] > 0 for name in (
+        'python_default_import_seconds', 'node_default_import_seconds',
+        'python_default_peak_rss_bytes', 'node_default_peak_rss_bytes',
+        'python_core_logical_install_bytes', 'node_core_logical_install_bytes')), 'resource_targets_missing')
+
+
+def check_configuration(root: Path, configuration: dict[str, Any]) -> dict[str, Any]:
+    check_settings(configuration)
     inputs = configuration.get('inputs', {})
     required = {'evaluation/corpus/manifest.json', 'evaluation/questions/dev.json',
                 'evaluation/review/seal.json', 'evaluation/runners/benchmark_metrics.py',
@@ -78,11 +96,6 @@ def check_configuration(root: Path, configuration: dict[str, Any]) -> dict[str, 
         require(bool(row['owner']) and bool(row['state']) and bool(row['limitations']), 'coverage_owner_missing')
         for evidence in row['evidence']:
             require(local_path(root, evidence).is_file(), 'coverage_evidence_missing')
-    resources = configuration.get('resource_targets', {})
-    require(all(type(resources.get(name)) in (float, int) and resources[name] > 0 for name in (
-        'python_default_import_seconds', 'node_default_import_seconds',
-        'python_default_peak_rss_bytes', 'node_default_peak_rss_bytes',
-        'python_core_logical_install_bytes', 'node_core_logical_install_bytes')), 'resource_targets_missing')
     return {'state': 'configuration_verified', 'revision': configuration['revision'],
             'input_digests': len(inputs), 'requirements': 10, 'edge_cases': len(expected_edges),
             'held_out_opened': False, 'release_readiness': 'not_proven_by_preregistration'}

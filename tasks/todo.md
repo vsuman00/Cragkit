@@ -330,7 +330,8 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V6-02B: Explicit PostgreSQL profile storage and dispatch mechanics — [native acceptance and limits](../evaluation/reports/V6/V6-02B.md). Successful genuine-vector publication and the live comparison remain required by the parent task.
   - [x] V6-02C1: Fixed HTTP, exact admission and approved-payload primitives — [offline acceptance](../evaluation/reports/V6/V6-02C-io.md). Sealed packet binding, durable recordings and live execution remain open.
   - [x] V6-02C2/C3: Durable recording/sender and native Node provider replay — [mechanical acceptance](../evaluation/reports/V6/V6-02C-recording.md). Full native execution and genuine-provider quality remain open.
-  - [x] V6-02D1-D3: Native five-mode workers and independent disposable acceptance — [execution evidence](../evaluation/reports/V6/V6-02D-execution.md). D4 sealed-packet binding and genuine-provider evaluation remain open.
+  - [x] V6-02D1-D3: Native five-mode workers and independent disposable acceptance — [execution evidence](../evaluation/reports/V6/V6-02D-execution.md). Genuine-provider evaluation remains open.
+  - [x] V6-02D4: Sealed original-packet binding and source-access gate — [binding evidence](../evaluation/reports/V6/V6-02D-packet.md). Clean candidate/compiled identity and genuine held-out execution remain open.
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -3786,3 +3787,46 @@ Resource observation: 30 GiB disk, 47 percent system memory free; serial suites,
 owned processes closed. Learning practice unassessed. Next smallest action: D4
 sealed original-packet binding, exact candidate freeze, secure key destination
 and genuine live/replay comparison, then every remaining V6 gate.
+
+
+V6-02D4 assignment: COMPLETE sealed original-packet binding mechanics. Root is the single
+writer for `tools/evaluation_packet.py` and its focused tests; seal parsing and
+source-identity checks are dependent. Existing EVX workers, reviewed inputs,
+provider primitives, manifests and locks are read-only. Root owns a pinned
+approved seal identity, bounded same-byte digest/JSON reads, label-free packet
+projection and a held-out gate requiring explicit selection plus matching clean
+candidate code. Acceptance: development packet snapshot, rejected drift/private
+replacement, no labels in worker input, no held-out parsing before a valid gate,
+and source/dirty-tree refusal. Use synthetic held-out fixtures in unit tests;
+original held-out labels stay unopened. One test process, no services/providers.
+A Sol read-only review follows implementation; root retains final integration.
+
+D4 review found the release checker reads dependency files without bounds. Root
+approved extracting its existing frozen-settings validation into a pure shared
+helper in `tools/check_release_readiness.py`, preserving the CLI's complete
+coverage/digest checks. The binder will use that helper and its own bounded,
+same-byte digest reads; it will not claim full release readiness. Root owns this
+shared edit and will rerun the existing verifier regressions. Reader fixes also
+cover FIFO admission, decoder context and malformed nested configuration.
+
+
+V6-02D4 final handoff: COMPLETE packet binding; V6-02 remains OPEN. Root
+implemented binder/tests and pure release-settings extraction; Sol read-only
+review found FIFO, inherited unbounded reads, decoder context, malformed
+configuration and second-read identity gaps. Root resolved them, issued immutable
+snapshots privately and added regressions. Focused binding/release checks passed
+34 tests (27 binding cases); full Python/tool collection passed 3,460 with four
+intentional serializer warnings. The actual original development packet binds
+nine documents / 24 queries, SHA-256 recorded in the report. Actual held-out
+source access was refused before JSON interpretation; original labels unopened.
+Positive held-out tests use synthetic fixtures only. Full release configuration
+(6 digests, 10 requirements / 105 edges) and all 16 seals still pass. No frozen
+input/target/model/limit changed. No provider, credential, database or install
+used for D4. Source proof is not compiled artifact proof; provenance explicitly
+reports the latter false. User edits preserved. Report and evidence:
+`evaluation/reports/V6/V6-02D-packet.md` / `V6-02D-packet-verification.json`.
+Resource observations: 30 GiB disk / 44 percent system memory free; serial
+suites and temporary Git children closed. Learning practice unassessed. Next:
+prepare an isolated clean candidate and compiled/runtime identity, integrate
+the genuine live/recorded/replay parent with spend/text gates, finish secure
+provider setup, then held-out comparison and all remaining V6 gates.

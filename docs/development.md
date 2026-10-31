@@ -1549,3 +1549,20 @@ Use a fresh directory when repeating that command. The checker validates source
 bytes, scope, filters, strict context accounting and cleanup before comparing
 the 30 result rows per runtime. See [actual execution evidence](../evaluation/reports/V6/V6-02D-execution.md).
 This mechanics pass does not establish genuine embedding or reranking quality.
+
+## Sealed evaluation packet binding
+
+`tools/evaluation_packet.py` projects the original reviewed inputs into the
+label-free EVX packet. Run the binding and release-checker regressions together:
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_evaluation_packet.py tools/tests/test_check_release_readiness.py -q
+```
+
+`bind_packet()` defaults to development rehearsal. `require_candidate=True`
+requires matching clean source; held-out binding additionally requires explicit
+`allow_held_out=True`. Neither option authorizes a provider call. Returned
+provenance distinguishes source verification from compiled/runtime artifact
+verification, which the live parent must perform separately. See
+[the contract](../contracts/EVALUATION_PACKET_BINDING_V6.md) and
+[actual evidence](../evaluation/reports/V6/V6-02D-packet.md).

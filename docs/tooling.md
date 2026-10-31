@@ -48,6 +48,11 @@ disposable PostgreSQL fixtures and checks source/accounting invariants before
 cross-runtime parity. It requires explicit local-process admission and a
 prepared database prefix. See [verified commands](development.md#native-five-mode-evaluation-mechanics).
 
+`evaluation_packet.py` binds the original reviewed seal to label-free runtime
+input. Development defaults to an offline rehearsal; held-out interpretation
+requires explicit selection and matching clean candidate source. It does not
+attest compiled output or enable provider calls. See [binding commands](development.md#sealed-evaluation-packet-binding).
+
 ## Historical-name lookup
 
 Historical reports retain the command names actually executed at the time. They are evidence records, not current command references. Use this map when reproducing an old report; use the current filenames for new code and documentation.
