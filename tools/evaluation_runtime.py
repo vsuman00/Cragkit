@@ -202,6 +202,18 @@ def _metadata(root):
     return site
 
 
+def _npm_version(node_path, npm_path):
+    """Use distinct empty configs: npm refuses loading one file in both roles."""
+    with tempfile.TemporaryDirectory(prefix='cragkit-npm-config-') as temporary:
+        directory = Path(temporary)
+        user, global_config = directory/'user.npmrc', directory/'global.npmrc'
+        for path in (user, global_config):
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            os.close(descriptor)
+        return _command([str(node_path), str(npm_path), '--userconfig='+str(user),
+            '--globalconfig='+str(global_config), '--version'], cwd=directory)
+
+
 def _versions(root, configuration):
     _require(sys.dont_write_bytecode)
     node = shutil.which('node')
@@ -211,7 +223,7 @@ def _versions(root, configuration):
     compiler = root/'packages/typescript/node_modules/typescript/bin/tsc'
     manifest = _json(_regular_bytes(root/'packages/typescript/package.json', 1048576))
     versions = dict(python=platform.python_version(), node=_command([str(node_path), '--version']).removeprefix('v'),
-        npm=_command([str(node_path), str(npm_path), '--userconfig=/dev/null', '--globalconfig=/dev/null', '--version']),
+        npm=_npm_version(node_path, npm_path),
         typescript=_command([str(node_path), str(compiler), '--version']).removeprefix('Version '),
         python_bytecode_writes=False)
     matrix = configuration['supported_matrix']

@@ -3973,3 +3973,18 @@ in the preregistration; all models, targets, corpus/label/seal/metric digests,
 limits and gate snapshots remain unchanged. Configuration6digests/105edges and
 16sealed files pass without held-out interpretation. Next actual run uses a fresh
 isolated checkout, not the dirty original; no user caches or prose are removed.
+
+V6-02F4 first isolated attempt: source verification passed; runtime prepare then
+refused the npm version command before writing a receipt or opening held-out data.
+Root isolated the exact error: npm11.17 rejects loading /dev/null as both user and
+global configuration. Root now uses two distinct owner-only empty configs in a
+fresh private temporary cwd, preserving credential isolation and cleanup. The real
+npm probe passes11.17.0; focused runtime/parent85 tests pass. Independent clean
+metadata/inventory preflight passed9,411files/340,528,782bytes with no checkout
+bytecode and unchanged resource caps. Combined ECR preparation remains pending;
+this inventory alone is not an execution receipt. The fix needs a new source
+identity before rerunning the same owned checkout; no dirty user work or cache
+was removed, no model/target/label/package-tree change or paid call occurred.
+The npm probe fix also passed the final complete Python/tool suite:3,621 tests,
+four intentional serializer warnings. This is a tools-only correction; package
+bytes/tree remain unchanged. Re-freeze its new source commit before clean ECR.

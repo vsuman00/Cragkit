@@ -85,3 +85,19 @@ small-machine configuration, with no persistent service or model installation.
 Optional exercise: explain why checking a generated export before verifying its
 source can execute unwanted code even when the eventual comparison rejects it.
 Learning practice remains unassessed.
+
+## First clean-environment attempt
+
+The isolated checkout passed committed-source verification, then refused runtime
+preparation before producing a receipt. Diagnosis identified npm's exact error:
+it rejects loading `/dev/null` as both its user and global configuration file.
+The gate now creates two distinct empty owner-only files in a private temporary
+working directory and cleans them afterward. The real npm probe reports 11.17.0;
+85 runtime/parent tests and the full 3,621-test Python/tool suite passed after the
+fix. Four deliberate serializer warnings remain unchanged.
+
+A separate clean inventory preflight passed 9,411 files / 340,528,782 bytes with
+no checkout bytecode, within the existing bounds. That inventory is prerequisite
+evidence, not a combined runtime receipt. Source refreeze and actual ECR
+prepare/verify are still required. No package-tree, target, label, model or
+provider change was made to fix this environment probe.

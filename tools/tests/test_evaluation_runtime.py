@@ -201,7 +201,7 @@ def test_declared_runtime_versions_are_actual_commands_not_receipt_claims(tmp_pa
     monkeypatch.setattr(runtime.shutil, 'which', lambda name: '/synthetic/'+name)
     responses = ['v26.5.0', '11.17.0', 'Version 7.0.2']
     commands = []
-    def command(arguments):
+    def command(arguments, **kwargs):
         commands.append(arguments)
         return responses.pop(0)
     monkeypatch.setattr(runtime, '_command', command)
@@ -462,3 +462,18 @@ def test_scratch_export_must_match_declared_candidate(tmp_path, monkeypatch, exp
         with pytest.raises(runtime.EvaluationRuntimeError):
             runtime._node_export(tmp_path, configuration)
     assert len(commands) == 1 and (tmp_path/'index.js').as_uri() in commands[0][-1]
+
+
+def test_npm_version_uses_distinct_private_empty_configs_and_cleans_them(monkeypatch):
+    seen = []
+    def command(arguments, *, cwd):
+        user = Path(next(arg.split('=',1)[1] for arg in arguments if arg.startswith('--userconfig=')))
+        global_config = Path(next(arg.split('=',1)[1] for arg in arguments if arg.startswith('--globalconfig=')))
+        assert user != global_config and user.parent == global_config.parent == cwd
+        assert all(path.read_bytes() == b'' and path.stat().st_mode & 0o777 == 0o600
+                   for path in (user, global_config))
+        seen.append(cwd)
+        return '11.17.0'
+    monkeypatch.setattr(runtime, '_command', command)
+    assert runtime._npm_version(Path('/synthetic/node'), Path('/synthetic/npm')) == '11.17.0'
+    assert len(seen) == 1 and not seen[0].exists()
