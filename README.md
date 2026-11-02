@@ -19,6 +19,14 @@ Cragkit is a retrieval library with native Python and TypeScript packages. It re
 
 Coverage remains unknown unless the application configures a suitable assessment policy.
 
+Provider credentials belong to each consuming application. For example, Project
+A loads its own OpenAI key from its private `.env`, while Project B uses its own
+configuration. The application configures its provider client and injects a
+transport into Cragkit's adapter. Cragkit does not load `.env` files or supply a built-in key.
+Keep credentials in trusted backend configuration, outside retrieval/tool input.
+The separate V6 live benchmark needs a test credential; using the library does
+not require our development key or the Codex key-setup plugin.
+
 > [!IMPORTANT]
 > Candidate metadata uses Python `1.0.0rc1` and npm `1.0.0-rc.1`; release acceptance is still in progress. The project uses MIT; package-name ownership, registry publication and hosted CI evidence remain separate.
 

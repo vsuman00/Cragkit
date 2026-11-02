@@ -334,7 +334,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V6-02D4: Sealed original-packet binding and source-access gate — [binding evidence](../evaluation/reports/V6/V6-02D-packet.md). Clean execution identity is accepted below; genuine held-out execution remains open.
   - [x] V6-02E1/E2: Runtime identity, independent same-shortlist scoring and bounded parent mechanics — [offline implementation](../evaluation/reports/V6/V6-02E-candidate-execution.md) and [actual clean-runtime acceptance](../evaluation/reports/V6/V6-02F-clean-runtime.md). No genuine quality claim.
   - [x] V6-02F: Coherent RC metadata/engine identities and isolated execution preparation — [local artifacts](../evaluation/reports/V6/V6-02F-identity.md) and [clean identity](../evaluation/reports/V6/V6-02F-clean-runtime.md).
-  - [ ] V6-02E3: Secure provider configuration, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. OpenAI account/destination selection is pending; no paid call or original held-out interpretation has occurred.
+  - [ ] V6-02E3: Explicit caller-owned benchmark credentials, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. A usable OpenAI test credential has not been selected/configured. New-key creation and the Codex setup form are optional; no built-in library key, paid call or original held-out interpretation has occurred.
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -4042,3 +4042,27 @@ candidate, reports, dirty user work and pending question. Next: confirmed app
 selection, then private destination confirmation and the bounded genuine run.
 No tests, models, services or paid calls ran for this audit; prior resource and
 learning observations remain scoped to the accepted clean-preparation run.
+
+## V6-02G: Caller-owned provider credential clarification
+
+State: COMPLETE for the documentation clarification. The user confirmed the
+intended bring-your-own-key boundary: each consuming application owns its provider
+account/key and loads trusted configuration from its own private env or secret
+configuration. Cragkit takes configured transports; no built-in project/library
+key or Codex plugin is required for consumers. Source inspection confirmed the
+native embedding/reranking constructors already require injected transports;
+package-source searches found no provider-key or dotenv autoload. No runtime
+change was needed. Root used one writer for this dependent documentation slice.
+Changed files: README content inside its existing structure, architecture section3
+and this tracker. Local links/README structure and prose consistency were checked;
+no product tests, model calls or services were needed for the prose change.
+The earlier new-key recommendation was for the development benchmark only and
+is superseded by this clarification: existing caller-owned test credentials may
+be selected instead. Stop reopening the setup form as a library prerequisite.
+The live V6-02 benchmark still needs a usable explicit test credential under the
+frozen plan; fake responses cannot close its quality gate. The existing clean
+candidate and all later V6 requirements remain intact. No key was created or
+written, no secret was requested in chat, and user-owned dirty work is preserved.
+Next: use the application's selected private credential configuration for the
+live benchmark when available. Learning gap clarified: library configuration
+and the maintainer's release-evaluation setup are separate responsibilities.

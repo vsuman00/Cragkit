@@ -50,6 +50,18 @@ See [system overview](diagrams/01-system.svg) and the [editable diagram catalog]
 
 An application constructs one reusable retriever per compatible configuration, injects adapters and provider clients, and submits requests with an access scope resolved by trusted application code. Each request gets independent state, deadlines, counters, and cancellation. A retriever must not retain a previous user's question, candidates, or permissions.
 
+Provider credentials are caller-owned configuration. Each consuming project
+loads its own key from its private development `.env` or production secret
+configuration and injects a configured client/transport into the relevant
+adapter. Cragkit supplies no built-in provider key, does not automatically load
+project env files, and requires no Cragkit API key or Codex key-setup plugin.
+Keep provider credentials outside model-facing retrieval/tool arguments and
+browser bundles. Separate project instances can use separate credentials without
+a shared global library key. Our live release benchmark needs an explicitly
+selected test credential; that authoring-time requirement is not a downstream
+installation requirement. An existing project-owned credential can serve that
+test when selected; creating a new key is optional.
+
 Three paths share the same engine:
 
 1. Direct application calls to `retrieve`.
