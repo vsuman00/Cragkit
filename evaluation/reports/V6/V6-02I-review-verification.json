@@ -1,0 +1,34 @@
+{
+  "agent_exposure": [
+    "author /root/transport_pacing",
+    "independent reviewer /root/transport_diagnostics",
+    "root integration/review"
+  ],
+  "approval_gate_refused": true,
+  "approval_probe": "Fresh held-out pending review refused after an empty synthetic checker adapter allowed the validator to reach that gate. No persisted review metadata changed.",
+  "counts": {
+    "development_documents": 0,
+    "documents": 5,
+    "facets": 8,
+    "held_out_documents": 5,
+    "questions": 6,
+    "support_spans": 7
+  },
+  "family_disjointness": true,
+  "files": {
+    "README.md": "9ae2b30f210c8cf242fca375b9b107e85dd0b2f4522ff5c1e33b2a250bbeaca5",
+    "corpus/cobalt-routing-r1.md": "021f7272431edad67d5c82dce39f6e4c925cbe7798922dd30b4000740a8d9c0b",
+    "corpus/manifest.json": "808898934474a185d2a8e6777111d9598a526279091fffb9314f4b5465c9d96e",
+    "corpus/orchid-delivery-bulletin-r1.md": "a854a76b21c2ecfbf00b515cd76b18892c30b9dc14cfa4fa0caa7cc73383f7a1",
+    "corpus/orchid-delivery-guide-r1.md": "0bb2fa73f1abf59262e076142b38dd7598d3467505f9715e98a52fadef810c74",
+    "corpus/orchid-routing-r1.md": "455b6c71790ccc6f09f247735be1bb49f32f456f30bbd969b872c76a60aad11f",
+    "corpus/orchid-routing-r2.md": "20e3f8f782fe21c01089c7eb661bb4f30fee53df8d14b6ae61124bba7606cbc2",
+    "questions/held_out.json": "7bbfaeed22b15065624b76526491442fb973de3ad2f7af580bbbd0cc986a953b"
+  },
+  "independent_scoring_input_schema": "passed",
+  "native_packet_schema": "passed",
+  "note": "Temporary empty development dataset is only a checker adapter, not a proposed evaluation input. No retrieval/provider run or human approval occurred.",
+  "pending_human_review": true,
+  "review_revision_sha256": "2318dfda7a52fb25119bcab21786408fc2e32d91005d9002bcca5e211998cbdd",
+  "state": "mechanically_verified_human_review_pending"
+}

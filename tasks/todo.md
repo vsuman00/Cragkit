@@ -338,6 +338,8 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
   - [x] V6-02H: Offline pacing, safe failure categories and recorder integration — [143 focused/3,697 Python/41 Node checks](../evaluation/reports/V6/V6-02H-transport.md). No live rerun or held-out acceptance.
 
+  - [ ] V6-02I: Fresh recovery packet review, separate approved binding and candidate/input/runtime refreeze. I1 draft/mechanical preparation passed; [human review pending](../evaluation/review/retrieval-recovery/README.md) for six questions/eight facets.
+
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
 - [ ] V6-C1: Demonstration, relevant regression checks, learning review and resource note through V6-03.
@@ -4189,3 +4191,50 @@ review and contamination record, then candidate support/refreeze only under its
 accepted packet identity. Root owns final scope/security/link checks and scoped
 commit/immediatepush/sync; user source/audit edits and original tracker draft
 remain excluded.
+
+
+V6-02I1 / pending recovery review assignment: IN_PROGRESS. Shared concrete
+outcome: a separate mechanically valid human-review packet with fresh synthetic
+document families, leaving original approved corpus/labels/seal and failed
+run unchanged. Sol transport_pacing authors only new corpus/manifest and
+questions/held_out.json under evaluation/review/retrieval-recovery; Sol
+transport_diagnostics independently audits sources/support/scope/absence and
+owns that draft README review guide, assembling both lanes. Root owns tracker,
+plan, final mechanical checks and evidence/Git. Initial criteria frozen here:
+five immutable revisions across fresh support-routing and delivery-window
+families, two tenants, one historical revision; six questions: three supported
+answerable, one missing unanswerable, one partial/missing, one conflicting
+partial. Exact byte spans/digests, no real credentials or private text. All
+human-review states remain pending; initial agent author/reviewer exposure is
+explicit. No changed release targets, scorer, production runner/binding, old
+seal or provider call. These drafts are not approved execution input. Peers
+coordinate directly and escalate outcome/ownership/protected changes through
+root. No test/service/install/network/secret/original-heldout access by peers;
+one root mechanical validation slot. Root requests actual user review only
+after the packet is concrete and validated. Parent V6-02 stays OPEN.
+
+
+V6-02I1 final handoff: draft and mechanical preparation COMPLETE; human review
+PENDING and V6-02 OPEN. New separate retrieval-recovery bundle has 5 source
+revisions, 2 tenants, 2 new families, 6 questions, 8 facets, 7 support references. Sol author
+and independent source-first reviewer coordinated directly, assembled all full
+sources/facets/excerpts and returned ownership. Root read both reports and files;
+existing corpus checker passed all counts/byte-digests/scope/filter constraints;
+require_human_review correctly refused pending state. Native packet and scoring
+input schemas passed. Temporary empty development data was only checker adapter,
+removed automatically; no actual retrieval or model call. Safe source/guide/
+question hashes and review revision in V6-02I-review-verification.json; report
+V6-02I-review-preparation.md. Actual user question requests all 6 questions/8 facets;
+previous 30-label approval does not apply. All review states remain pending.
+Original 16 sealed files, old admission and incomplete journal preserved. No live runner
+binding/config refreeze or provider dispatch; old failed outcome remains failed.
+H correction coverage index now includes E106/E107; actual release checker passed
+10 requirements, 107 edge cases, 6 frozen inputs (preregistration only, not readiness).
+Next: await actual human label decision while retaining concrete review packet;
+corrections require revalidation, approval permits separate seal/profile binding
+with wrong/pending-seal/source/split regressions, followed by fresh frozen runtime
+and explicit live decision/budget. No lower thresholds, original-admission bypass
+or V6-03 acceptance. Resources 25.3 GiB/40 percent free memory; no owned services or
+installs. User-owned source/audits/tracker draft remain excluded. Root final
+links/prose/scope/security checks and commit/immediatepush/sync own this handoff.
+Learning practice remains unassessed.
