@@ -93,6 +93,14 @@ Learning exercise: Explain the difference between a security invariant and a qua
 
 Expected areas: `Boundary tests`, `artifact audit`, `V6 report`.
 
+4 November 2026 reassessment: V6-04R adds separate native consumer/error,
+release-hold and production-guide slices under
+[CSR-r1](../../contracts/CONSUMER_SECURITY_REVIEW.md). Corrections after a frozen
+candidate require new exact-artifact acceptance; historical CI receipts do not
+cover changed products. CSO helper coverage and deployed-target checks remain
+separate from local engineering results. See the
+[reassessment](../../evaluation/reports/V6/V6-04R-consumer-security.md).
+
 ### V6-05: Developer usability trial
 
 Dependency: V6-04. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.

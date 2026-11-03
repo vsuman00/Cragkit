@@ -147,12 +147,19 @@ class PlannerAdapter:
             if not done:
                 task.cancel()
                 raise DeadlineExceeded()
+            transport_failure: type[DeadlineExceeded] | type[ProviderUnavailable] | None = None
+            response: object = None
             try:
                 response = task.result()
-            except (asyncio.CancelledError, DeadlineExceeded, ProviderUnavailable):
+            except asyncio.CancelledError:
                 raise
+            except DeadlineExceeded:
+                transport_failure = DeadlineExceeded
             except Exception:
-                raise ProviderUnavailable() from None
+                transport_failure = ProviderUnavailable
+            # Classify first, then raise without retaining provider exception details.
+            if transport_failure is not None:
+                raise transport_failure()
             if loop.time() >= deadline:
                 raise DeadlineExceeded()
             plan, usage = _usage(response)

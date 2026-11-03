@@ -11,6 +11,8 @@
   "npm_tag": "next",
   "runner": "ubuntu-24.04",
   "timeout_minutes": 20,
+  "security_hold": true,
+  "security_hold_reason": "V6-04R corrected product code after the retained RC1 products were frozen. Refreeze the corrected source and verify exact replacement artifacts before reviewed hold removal.",
   "publication_authorized": false,
   "workflow_dispatched": false
 }

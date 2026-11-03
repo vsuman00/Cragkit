@@ -98,9 +98,10 @@ export class PlannerAdapter {
         }), boundary]);
         check(deadline, signal);
       } catch (error) {
-        if (error instanceof DeadlineExceeded || signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+        if (signal?.aborted) throw signal.reason;
+        if (error instanceof DeadlineExceeded) throw new DeadlineExceeded();
         if (this.#fallback) return deep_freeze({queries: [], fallback: true});
-        throw error instanceof ProviderUnavailable ? error : new ProviderUnavailable();
+        throw new ProviderUnavailable();
       }
       let response: z.infer<typeof ResponseSchema>;
       try {

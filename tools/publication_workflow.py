@@ -23,10 +23,12 @@ def policy():
     P.require(result['revision'] == 'PWP-r1' and result['repository'] == 'vsuman00/Cragkit'
               and result['manifest_sha256'] == R.MANIFEST_SHA256
               and result['npm_tag'] == 'next', 'publication_policy')
+    P.require(type(result.get('security_hold')) is bool, 'publication_policy_security_hold')
     return result
 
 
 def admit(environment):
+    P.require(policy()['security_hold'] is False, 'publication_security_hold')
     expected = {
         'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'vsuman00/Cragkit',
         'GITHUB_ACTOR': 'vsuman00',

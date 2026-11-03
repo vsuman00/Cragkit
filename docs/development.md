@@ -1718,6 +1718,28 @@ frozen V6-02 live candidate only through separately recorded subsequent changes;
 its original live evidence is retained rather than relabelled.
 
 
+## V6-04R consumer security reassessment
+
+The later [V6-04R consumer security reassessment](../evaluation/reports/V6/V6-04R-consumer-security.md)
+adds official MCP stdio consumers and canonical-error regressions. Run these
+focused checks serially, after building all three Node packages:
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_planning_security.py -q
+uv run --project packages/langchain-python --frozen --no-sync pytest packages/langchain-python/tests/test_security_errors.py -q
+uv run --project packages/mcp-python --frozen --no-sync pytest packages/mcp-python/tests/test_security_abuse.py -q
+npm --prefix packages/typescript run build
+npm --prefix packages/langchain-typescript run build
+npm --prefix packages/mcp-typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/planning-security.test.mjs packages/langchain-typescript/tests/security-errors.test.mjs packages/mcp-typescript/tests/security-abuse.test.mjs
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_publication_workflow.py -q
+```
+
+The publication policy now holds the earlier artifacts. Native regression passes
+and local engineering builds do not clear that hold. The reassessment records
+the partial CSO run separately. Use the [production security guide](production-security.md)
+for application-owned controls and unassessed deployment prerequisites.
+
 ## V6-05 installed pilot rehearsal
 
 The [human protocol](usability-trial.md) and

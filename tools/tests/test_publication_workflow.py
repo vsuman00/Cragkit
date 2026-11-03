@@ -21,8 +21,48 @@ def admitted():
                 TRANSPORT_RELEASE_ID='123', TRANSPORT_ASSET_ID='456')
 
 
+@pytest.fixture
+def reviewed_policy(tmp_path, monkeypatch):
+    approved = W.R.parse_json(W.P.read_file(W.POLICY, 16 * 1024))
+    approved['security_hold'] = False
+    path = tmp_path / 'reviewed-publication-policy.json'
+    path.write_text(json.dumps(approved))
+    monkeypatch.setattr(W, 'POLICY', path)
+    return approved
+
+
+def test_current_frozen_products_remain_on_security_hold():
+    assert W.policy()['security_hold'] is True
+    with pytest.raises(W.P.PreparationError, match='publication_security_hold'):
+        W.admit(admitted())
+
+
+@pytest.mark.parametrize('state,value', [('held', True), ('missing', None), ('null', None),
+    ('string', 'false'), ('zero', 0), ('one', 1), ('list', []), ('object', {})])
+def test_security_hold_refuses_perfect_environment_before_product_access(tmp_path, monkeypatch, state, value):
+    approved = W.R.parse_json(W.P.read_file(W.POLICY, 16 * 1024))
+    if state == 'missing':
+        approved.pop('security_hold')
+    else:
+        approved['security_hold'] = value
+    path = tmp_path / 'held-publication-policy.json'
+    path.write_text(json.dumps(approved))
+    monkeypatch.setattr(W, 'POLICY', path)
+    monkeypatch.setattr(W, 'checked_products', lambda *args: pytest.fail('product access while held'))
+    with pytest.raises(W.P.PreparationError, match='security_hold'):
+        W.admit(admitted())
+    with pytest.raises(W.P.PreparationError, match='security_hold'):
+        W.publish_npm(prepared=Path('/unused'), plan_path=Path('/unused'),
+                      environment=admitted(), runner=lambda *args, **kwargs: pytest.fail('upload while held'))
+
+
+def test_reviewed_false_policy_allows_environment_validation(reviewed_policy):
+    assert W.policy()['security_hold'] is False
+    W.admit(admitted())
+
+
 @pytest.mark.parametrize('key', list(admitted()))
-def test_missing_admission_refuses_before_upload(key):
+def test_missing_admission_refuses_before_upload(key, reviewed_policy):
     environment = admitted()
     W.admit(environment)
     environment[key] = ''
@@ -36,14 +76,14 @@ def test_missing_admission_refuses_before_upload(key):
     ('GITHUB_REPOSITORY', 'attacker/Cragkit'), ('TRANSPORT_ASSET_ID', '1; upload'),
     ('GITHUB_ACTOR', 'someone-else'),
     ('REVIEWED_WORKFLOW_SHA', 'b' * 40), ('PUBLICATION_AUTHORIZED', True)])
-def test_deceptive_context_cannot_admit(key, value):
+def test_deceptive_context_cannot_admit(key, value, reviewed_policy):
     environment = admitted()
     environment[key] = value
     with pytest.raises(W.P.PreparationError):
         W.admit(environment)
 
 
-def test_private_asset_must_belong_to_reviewed_draft():
+def test_private_asset_must_belong_to_reviewed_draft(reviewed_policy):
     approved, environment = W.policy(), admitted()
     release = dict(id=123, draft=True, tag_name=approved['transport_tag'],
                    target_commitish='a' * 40, assets=[dict(id=456)])
@@ -60,7 +100,7 @@ def test_private_asset_must_belong_to_reviewed_draft():
 
 
 @pytest.fixture
-def packet(tmp_path, monkeypatch):
+def packet(tmp_path, monkeypatch, reviewed_policy):
     products = [dict(item) for item in W.R.reviewed_products()]
     prepared, preflight = tmp_path / 'prepared', tmp_path / 'preflight'
     prepared.mkdir()
@@ -74,6 +114,8 @@ def packet(tmp_path, monkeypatch):
     manifest = b'{"synthetic": true}\n'
     (prepared / W.P.MANIFEST_NAME).write_bytes(manifest)
     monkeypatch.setattr(W.R, 'MANIFEST_SHA256', hashlib.sha256(manifest).hexdigest())
+    reviewed_policy['manifest_sha256'] = W.R.MANIFEST_SHA256
+    W.POLICY.write_text(json.dumps(reviewed_policy))
     monkeypatch.setattr(W.R, 'reviewed_products', lambda: products)
     report = dict(revision='RPK-r1', manifest_sha256=W.R.MANIFEST_SHA256,
                   state='partial', products=[{key: item[key] for key in

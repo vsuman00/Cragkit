@@ -15,10 +15,15 @@ from cragkit.context import Cl100kCounter, _ISSUED, count_context
 from cragkit.contracts import RetrievalRequest, RetrievalResult, ToolRequest, TrustedScope
 from cragkit.contracts import parse_request, parse_result, parse_scope, parse_tool_request
 from cragkit.contracts._validation import identity, native_json
-from cragkit.errors import CragkitError, ContextBudgetTooSmall, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability
+from cragkit.errors import (CragkitError, ContextBudgetTooSmall, DeadlineExceeded,
+    EmbeddingProfileMismatch, IndexNotReady, IntegrityViolation, InvalidRequest,
+    ProviderUnavailable, UnauthorizedScope, UnsupportedCapability)
 
 __all__ = ['create_tool']
 _FACTORY = object()
+_ERROR_TYPES: tuple[type[CragkitError], ...] = (InvalidRequest, UnauthorizedScope,
+    UnsupportedCapability, IndexNotReady, EmbeddingProfileMismatch, ProviderUnavailable,
+    DeadlineExceeded, ContextBudgetTooSmall, IntegrityViolation)
 
 
 def _reject(*args: Any, **kwargs: Any) -> Any:
@@ -61,6 +66,16 @@ class _RetrievalTool(StructuredTool):
         return await self.ainvoke(tool_input, config=config, **kwargs)
 
     async def _execute(self, value: object) -> str | ToolMessage:
+        try:
+            return await self._execute_bound(value)
+        except CragkitError as error:
+            failure = next((kind for kind in _ERROR_TYPES if isinstance(error, kind)), InvalidRequest)
+        except Exception:
+            failure = InvalidRequest
+        # Leave the handler before raising so no private exception context survives.
+        raise failure() from None
+
+    async def _execute_bound(self, value: object) -> str | ToolMessage:
         with tracing_context(enabled=False, parent=False):
             call_id: str | None = None
             try:
@@ -94,7 +109,7 @@ class _RetrievalTool(StructuredTool):
                     raise DeadlineExceeded()
                 try:
                     raw = task.result()
-                except CragkitError:
+                except _ERROR_TYPES:
                     raise
                 except Exception:
                     raise ProviderUnavailable() from None

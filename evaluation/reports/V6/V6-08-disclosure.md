@@ -1,5 +1,10 @@
 # V6-08: proposed RC1 disclosure
 
+Current status: publication is on security hold. The products below retain
+historical acceptance but predate the
+[V6-04R corrections](V6-04R-consumer-security.md). Corrected source and exact
+replacement-artifact acceptance are required before reviewed hold removal.
+
 State: nine locally prepared products passed root acceptance in
 [the preparation report](V6-08-preparation.md). Registry publication,
 account changes, tags, GitHub releases, repository visibility changes and further

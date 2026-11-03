@@ -9,12 +9,19 @@ import { performance } from 'node:perf_hooks';
 import { parse_request, parse_tool_request, parse_scope, parse_result,
   type RetrievalRequest, type TrustedScope, type ToolRequest } from 'cragkit/contracts';
 import { Cl100kCounter, count_context } from 'cragkit/context';
-import { CragkitError, ContextBudgetTooSmall, DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability } from 'cragkit/errors';
+import { CragkitError, ContextBudgetTooSmall, DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady,
+  IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from 'cragkit/errors';
 
 export type ToolEngine={retrieve(request:RetrievalRequest,options:{scope:TrustedScope;deadline:number;signal:AbortSignal}):Promise<unknown>};
 export type FinalSerializer=(actual:string|ToolMessage)=>string;
 export type CreateToolOptions={engine:ToolEngine;template:unknown;scope:unknown;final_serializer:FinalSerializer;counter?:Cl100kCounter|null;name?:string};
 const factory=Symbol('cragkit.tool.factory');
+const publicErrors=[InvalidRequest,UnauthorizedScope,UnsupportedCapability,IndexNotReady,EmbeddingProfileMismatch,
+  ProviderUnavailable,DeadlineExceeded,ContextBudgetTooSmall,IntegrityViolation] as const;
+function publicError(error:unknown,fallback:typeof ProviderUnavailable|typeof InvalidRequest=ProviderUnavailable):CragkitError{
+  try{const Kind=publicErrors.find(kind=>error instanceof kind);if(Kind)return new Kind();}catch{}
+  return new fallback();
+}
 const inputText=(bytes:number)=>z.string().min(1).max(bytes).refine(value=>Buffer.byteLength(value,'utf8')<=bytes
   &&!/[\0\uD800-\uDFFF]/u.test(value)&&/[^ \t\r\n\f\v]/.test(value));
 // A concrete object keeps SDK JSON-schema conversion usable; core parsing remains definitive.
@@ -82,6 +89,10 @@ class RetrievalTool extends DynamicStructuredTool<typeof NarrowToolSchema,ToolRe
     return await this.invoke(input,config) as ToolReturnType<NonNullable<TArg>,TConfig,string>;
   }
   async #execute(input:unknown,external?:AbortSignal):Promise<string|ToolMessage>{
+    try{return await this.#executeStage(input,external);}
+    catch(error){if(external?.aborted)throw external.reason;throw publicError(error);}
+  }
+  async #executeStage(input:unknown,external?:AbortSignal):Promise<string|ToolMessage>{
     external?.throwIfAborted();
     let callId:string|null=null,args:ToolRequest;
     try{
@@ -133,7 +144,7 @@ class RetrievalTool extends DynamicStructuredTool<typeof NarrowToolSchema,ToolRe
       }catch(error){if(error instanceof ContextBudgetTooSmall)throw error;throw new IntegrityViolation();}
       const actual:string|ToolMessage=callId===null?content:new ToolMessage({content,name:this.#boundName,tool_call_id:callId});
       let serialized:unknown;
-      try{serialized=this.#serializer(actual);}catch(error){if(error instanceof CragkitError)throw error;throw new InvalidRequest();}
+      try{serialized=this.#serializer(actual);}catch(error){throw publicError(error,InvalidRequest);}
       if(typeof serialized!=='string'||!native(serialized))throw new InvalidRequest();
       const size=Buffer.byteLength(serialized,'utf8');
       if(size>262144)throw new ContextBudgetTooSmall();

@@ -29,6 +29,12 @@ malformed input must fail before engine execution. Native required filters,
 limits and output profile survive binding. Do not accept scope, credentials,
 database connection, callback, provider, repair, purge or arbitrary SQL input.
 
+The SDK parses protocol arguments before this handler. The pinned Node SDK/Zod
+normalizes away a raw JSON `__proto__` key; this is not rejection of that wire
+key. Consumer regression tests verify that normalization cannot introduce
+foreign authority or prototype properties. Direct host input still rejects it.
+Do not claim byte-level rejection of every raw field from handler validation.
+
 Invoke the engine's actual native async `retrieve` with the rebound request,
 trusted scope and monotonic deadline; Node also passes its owned abort signal.
 Accept either the native `RetrievalResult` or the existing corrective engine's

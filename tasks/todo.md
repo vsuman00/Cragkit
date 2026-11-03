@@ -1,5 +1,11 @@
 # Cragkit implementation tracker
 
+Current security checkpoint (4 November 2026): V6-04R native engineering checks
+passed; CSO assessment is PARTIAL with unassessed domains. Publication is on
+security hold pending corrected-source and exact replacement-artifact acceptance.
+[Current evidence](../evaluation/reports/V6/V6-04R-consumer-security.md).
+V6-08, production acceptance and version exit remain incomplete.
+
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
 V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). V3-02: COMPLETE for native injectable adapters and the bounded Cohere comparison; [evidence](../evaluation/reports/V3/V3-02D.md). V3-03/V3-C1: COMPLETE for standalone strict context accounting. V3-04: COMPLETE for PK-r1 packing/native opt-in source snapshots. V3-05: COMPLETE for AS-r1 curated coverage. V3-06/V3-C2: COMPLETE for EP-r1. V3-07: COMPLETE for the frozen development comparison. V3-08/V3-C3/V3-EXIT: COMPLETE for the declared native/curated development milestone; [exit evidence](../evaluation/reports/V3/V3-08-exit.md). Next: V4-01 shared execution ledger. Registry publication, generalized live-model quality and hosted CI evidence remain pending.
@@ -4997,3 +5003,82 @@ prose/link/scoped-stage review precedes its authorized commit/push/sync.
 Learning and maintenance exercises remain unassessed. Resume from the account
 answer and existing publication runbook; do not rebuild/retest accepted products
 merely to fill the wait or bypass the external authorization gate.
+
+
+V6-04R/CSR-r1 assignment: IN_PROGRESS by explicit user security reassessment
+request on4November2026, before deployment setup. Shared outcome: native consumer
+plugin abuse reproductions, actionable findings/fixes and production ownership
+gaps. Sol consumer_security_python owns new MCP Python security test and ignored
+python-findings.md. Sol consumer_security_node owns new Node MCP security test
+and ignored node-findings.md; Node ASSEMBLES. Both inspect native core/providers/
+framework/MCP read-only. Root owns dependency/release/SQL review, contract,
+execution/test slot, reports/guide/tracker/Git and any later explicit product
+fix ownership. Existing nine dirty source/storage paths and three user audit
+files remain protected; baseline hashes retained under ignored security artifacts.
+No peer tests/install/services/network mutations; direct peer dependencies and
+protected/outcome escalations follow project protocol, then Astra if unresolved.
+Acceptance: actual consumer abuse cases, native lock audits/reachability triage,
+affected regression/integration checks and scoped production-gap report.
+Historical green checks and unknown vulnerability absence are not certification.
+No cloud deployment, paid run, credential disclosure or publication authorized.
+
+V6-04R final handoff (CSR-r1, 4 November 2026): native engineering acceptance
+PASSED; broader security/CSO/production acceptance remains PARTIAL. CSR-A2/B2
+correct planner and LangChain error boundaries in both runtimes with fresh
+allowlisted classes, no private properties/causes, stage-specific unknown errors
+and genuine caller cancellation. Two Sol writers transferred those files after
+stopping. Root fixed Python unknown-base parity and preserved the existing
+context-suppression contract. CSR-R2 Node owns the fail-closed publication hold
+and ten new tests; CSR-D1 Python owns production-security.md; Node assembled,
+both stopped, and root inspected integration. Astra independently challenged
+error exploitability and SDK prototype normalization. Trusted callback mutation
+is reproduced; a remote attack-to-private-mutation chain is not established.
+
+Actual serial regression: 4,377 core/tool Python, 113 LangChain Python, 54 MCP
+Python, 1,639 core Node, 108 LangChain Node and 42 MCP Node passed: 6,333 total,
+no skips, four existing intentional Python warnings. Core 51-file and both
+optional 1-file strict Python checks passed; all Node strict builds passed.
+The six new consumer/error files contain 108 cases included in those totals.
+A fresh disposable PostgreSQL17.11 security guard passed 23 SQL/role/RLS/lock
+checks and verified cleanup. Seven native lock audits exited0, reported no known
+advisories/vulnerabilities and left locks unchanged. These are time-bound known
+advisory results, not universal absence. Nine offline local engineering archives
+passed path/license/selected-pattern inspection; one synthetic reserved-domain
+invalid-URL fixture was reviewed. Exact replacement products/install/CI are pending.
+
+Failed pre-fix and diagnostic evidence is retained in ignored
+artifacts/security-review-2026-11-04. V6-04R-consumer-security.md and verification
+JSON record commands, actual counts/hashes, SDK normalization, logging ownership
+and scoped gaps. Node SDK/Zod drops raw __proto__ before the handler; raw-wire
+scope/prototype tests verify safe normalization, while direct host rejects it.
+Byte-level rejection of every raw unknown key is not claimed. Public MCP errors
+are code-only; application SDK DEBUG sinks still require their own controls.
+
+The explicit cso invocation used trusted helper run
+1793734268477-c0bfcb20040d052e and finished PARTIAL. Docker/scanners/runtime
+profiles were unavailable. The run closed without an assessment submission;
+its application model is empty and twelve assessment domains are not_assessed.
+No completed CSO/OWASP/ASVS audit or authenticated runtime bundle is claimed.
+Next CSO work requires a fresh bounded run with recorded domain submission;
+qualified isolated execution also needs the supported local prerequisites.
+Separate ordinary native tests are not relabelled as CSO coverage.
+
+The requested gstack upgrade passed clean fast-forward/setup to1.94.34.0,
+83 section links and browser render; source backup branch retained. Bun1.3.13
+is above its security floor but differs from upstream CI pin1.4.2; no Bun upgrade
+was made. Local resources before native work:38% system memory free,18GiB disk;
+one test process at a time, no task-owned service remains. No model calls,
+new paid CI, hosted writes, account mutation, publication or deployment occurred.
+
+Current policy security_hold=true refuses even otherwise-valid publication
+settings, and missing/malformed hold state fails closed. Original RC1 product,
+manifest, transport and immutable V6-08 verification identities are unchanged
+historical evidence; their acceptance does not cover corrected source. Next
+smallest release action is corrected-source refreeze/exact replacement acceptance,
+then separately authorized CI/account/publication/registry smoke. V6-08D,
+V6-09/C3/exit and actual production-target acceptance remain open. Root owns
+prose/link/scoped-stage review and authorized commit/immediate push/sync; only
+owned functional hunks are staged. Existing user comments/docstrings, unrelated
+source/storage edits, the original tracker draft and three user audit files stay
+untouched and excluded. Learning exercise about public errors versus private
+DEBUG logs remains unassessed; production-security.md assigns actual host controls.

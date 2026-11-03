@@ -1,5 +1,12 @@
 # Publish the reviewed RC1 products
 
+Publication is on security hold after the
+[consumer security reassessment](../evaluation/reports/V6/V6-04R-consumer-security.md).
+The retained products predate the corrected code. The workflow refuses admission
+until corrected source and exact replacement artifacts receive acceptance and
+the hold is explicitly reviewed. Do not use the manual upload examples below to
+bypass the hold. Account setup and publication authorization remain separate.
+
 For example, a wheel already tested in CI can be copied unchanged for upload.
 An npm tarball with `private: true` needs a separately reviewed local projection
 before publication. A version string alone does not establish that relationship.
