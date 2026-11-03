@@ -7,7 +7,7 @@ for tenant B is rejected; query text never chooses the tenant or grants.
 No active production target has been assessed or configured. This guide assigns
 deployment work to the consuming application's operator. Local tests, database
 development acceptance, hosted candidate CI and a production deployment are
-separate evidence. See the [consumer security reassessment](../evaluation/reports/V6/V6-04R-consumer-security.md)
+separate evidence. See the [finding closure](../evaluation/reports/V6/V6-04R-closure.md)
 for the current findings, commands, corrections and remaining gaps.
 
 ## Keep the corrected release on hold
@@ -84,10 +84,13 @@ The first CSO run was partial with unavailable Docker/scanners and an unsubmitte
 assessment. After Docker started, the
 [fresh follow-up](../evaluation/reports/V6/V6-04R-docker-cso.md) recorded its
 application model, completed Gitleaks and zizmor scans, and partial Semgrep
-coverage. Candidate triage and other applicable checks remain incomplete.
-Do not describe either run as a completed security audit. The scoped native
-consumer tests and dependency findings have their own evidence in the
-[reassessment report](../evaluation/reports/V6/V6-04R-consumer-security.md).
+coverage. The later [closure](../evaluation/reports/V6/V6-04R-closure.md) accounts
+for all retained candidates, adds complete native source parsing, fresh dependency
+and Git-history checks, and verifies local installed replacement products. A
+fresh qualified helper run completed OSV, Trivy and selected-source Gitleaks;
+its Semgrep and overall result remain partial. Runtime preparation is unsupported
+for the selected nested locks/toolchain. Native tests are separate evidence.
+Do not describe these partial helper runs as completed security audits.
 Deployment-specific identity, ingress, secrets, logging, recovery and operational
 controls still require assessment on the selected application target. No
 universal safety claim or security certification follows from this guide.

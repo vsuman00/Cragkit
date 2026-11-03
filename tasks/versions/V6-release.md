@@ -101,6 +101,12 @@ cover changed products. CSO helper coverage and deployed-target checks remain
 separate from local engineering results. See the
 [reassessment](../../evaluation/reports/V6/V6-04R-consumer-security.md).
 
+V6-04R-CLOSE: retained scanner findings and later reachable-history leads have
+inspected dispositions; installed-security test selection gaps are fixed.
+[Local acceptance](../../evaluation/reports/V6/V6-04R-closure.md) passed for the
+replacement products. Qualified CSO coverage remains partial; replacement
+candidate CI, release-packet review, registry and production gates remain separate.
+
 ### V6-05: Developer usability trial
 
 Dependency: V6-04. Target: one focused slice; split cross-runtime work into explicit child tasks if needed.

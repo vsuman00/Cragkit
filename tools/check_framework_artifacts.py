@@ -43,12 +43,17 @@ def python_adapter(root: Path, output: Path, core: Path, work: Path,
     python = environment / 'bin/python'
     run(['uv', 'pip', 'install', '--python', str(python), '--require-hashes', '-r', str(requirements)], work, commands)
     run(['uv', 'pip', 'install', '--python', str(python), str(core), str(wheel), 'pytest==9.1.1', 'tiktoken==0.14.0'], work, commands)
-    tests = work / 'test_adapter.py'
-    shutil.copyfile(project / 'tests/test_adapter.py', tests)
+    test_sources = (project / 'tests/test_adapter.py', project / 'tests/test_security_errors.py',
+                    root / 'packages/python/tests/test_planning_security.py')
+    tests = []
+    for source in test_sources:
+        target = work / source.name
+        shutil.copyfile(source, target)
+        tests.append(str(target))
     variables = {'CRAGKIT_FIXTURES': str(root / 'contracts/fixtures'),
                  'CRAGKIT_TOKENIZER': str(root / 'artifacts/tokenizers/cl100k_base.tiktoken'),
                  'PYTHONPATH': ''}
-    result = run([str(python), '-I', '-B', '-m', 'pytest', str(tests), '-q'], work, commands, environment=variables)
+    result = run([str(python), '-I', '-B', '-m', 'pytest', *tests, '-q'], work, commands, environment=variables)
     require('passed' in result, 'installed_adapter_tests_missing')
     probe = "import cragkit_langchain,cragkit,pathlib,sys; assert all(pathlib.Path(m.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix)) for m in (cragkit_langchain,cragkit)); print('installed')"
     run([str(python), '-I', '-B', '-c', probe], work, commands)
@@ -92,11 +97,18 @@ def node_adapter(root: Path, output: Path, core: Path, work: Path,
         actual = installed.get('node_modules/' + name, {})
         require(actual.get('version') == item['version'] and actual.get('integrity') == item.get('integrity'), 'adapter_sdk_lock_drift')
     (consumer / 'tests').mkdir()
-    shutil.copyfile(project / 'tests/adapter.test.mjs', consumer / 'tests/adapter.test.mjs')
+    tests = ['tests/adapter.test.mjs', 'tests/security-errors.test.mjs']
+    for name in tests:
+        shutil.copyfile(project / name, consumer / name)
     (consumer / 'dist').symlink_to(consumer / 'node_modules/cragkit-langchain/dist', target_is_directory=True)
+    (consumer / 'core/tests').mkdir(parents=True)
+    core_test = 'core/tests/planning-security.test.mjs'
+    shutil.copyfile(root / 'packages/typescript/tests/planning-security.test.mjs', consumer / core_test)
+    (consumer / 'core/dist').symlink_to(consumer / 'node_modules/cragkit/dist', target_is_directory=True)
+    tests.append(core_test)
     variables = {'CRAGKIT_FIXTURES': str(root / 'contracts/fixtures'),
         'CRAGKIT_TOKENIZER': str(root / 'artifacts/tokenizers/cl100k_base.tiktoken')}
-    result = run(['node', '--test', '--test-concurrency=1', 'tests/adapter.test.mjs'], consumer, commands, environment=variables)
+    result = run(['node', '--test', '--test-concurrency=1', *tests], consumer, commands, environment=variables)
     probe = consumer / 'probe.mjs'
     probe.write_text("import assert from 'node:assert/strict';import {realpathSync} from 'node:fs';for(const n of ['cragkit','cragkit-langchain'])assert.ok(realpathSync(new URL(import.meta.resolve(n))).startsWith(process.cwd()+'/node_modules/'));console.log('installed');")
     run(['node', str(probe)], consumer, commands)

@@ -105,8 +105,11 @@ def accept(root: Path, core: Path, output: Path) -> dict[str, Any]:
                     harness = work / 'python-tests/packages/mcp-python/tests'; harness.mkdir(parents=True)
                     tokenizer = work / 'python-tests/artifacts/tokenizers'; tokenizer.mkdir(parents=True)
                     shutil.copyfile(root / 'artifacts/tokenizers/cl100k_base.tiktoken', tokenizer / 'cl100k_base.tiktoken')
-                    for name in ('test_host.py', 'test_stdio_process.py'): shutil.copyfile(project / 'tests' / name, harness / name)
-                    report.setdefault('installed_mcp_tests', {})['python'] = run([str(python), '-I', '-B', '-m', 'pytest', str(harness), '-q'], work, commands)
+                    tests = ('test_host.py', 'test_stdio_process.py', 'test_security_abuse.py')
+                    for name in tests:
+                        shutil.copyfile(project / 'tests' / name, harness / name)
+                    report.setdefault('installed_mcp_tests', {})['python'] = run([str(python), '-I', '-B', '-m', 'pytest',
+                        *(str(harness / name) for name in tests), '-q'], work, commands)
             for profile in PROFILES:
                 consumer = work / ('node-' + profile); consumer.mkdir()
                 base_lock = json.loads((root / 'packages/typescript/package-lock.json').read_text())['packages']
@@ -126,11 +129,14 @@ def accept(root: Path, core: Path, output: Path) -> dict[str, Any]:
                 report['profiles']['node'][profile] = json.loads(run(['node', 'probe.mjs', profile], consumer, commands))
                 if profile == 'mcp':
                     tests = consumer / 'packages/mcp-typescript/tests'; tests.mkdir(parents=True)
-                    shutil.copyfile(root / 'packages/mcp-typescript/tests/host.test.mjs', tests / 'host.test.mjs')
+                    test_names = ('host.test.mjs', 'security-abuse.test.mjs')
+                    for name in test_names:
+                        shutil.copyfile(root / 'packages/mcp-typescript/tests' / name, tests / name)
                     (tests.parent / 'dist').symlink_to(consumer / 'node_modules/cragkit-mcp/dist', target_is_directory=True)
                     tokenizer = consumer / 'artifacts/tokenizers'; tokenizer.mkdir(parents=True)
                     shutil.copyfile(root / 'artifacts/tokenizers/cl100k_base.tiktoken', tokenizer / 'cl100k_base.tiktoken')
-                    report['installed_mcp_tests']['node'] = run(['node', '--test', '--test-concurrency=1', str(tests / 'host.test.mjs')], consumer, commands)
+                    report['installed_mcp_tests']['node'] = run(['node', '--test', '--test-concurrency=1',
+                        *(str(tests / name) for name in test_names)], consumer, commands)
         report['state'] = 'passed'
     except Exception as error:
         report['state'] = 'failed'; report['failure_code'] = str(error) if type(error).__name__ == 'ArtifactError' else type(error).__name__

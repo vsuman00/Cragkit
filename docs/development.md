@@ -1740,6 +1740,24 @@ and local engineering builds do not clear that hold. The reassessment records
 the partial CSO run separately. Use the [production security guide](production-security.md)
 for application-owned controls and unassessed deployment prerequisites.
 
+The later [finding closure](../evaluation/reports/V6/V6-04R-closure.md) resolves
+the retained candidates and verifies local replacement products. Both installed
+artifact checkers now explicitly include the planner/LangChain/MCP security
+regressions. To repeat those checks, choose fresh output directories and run
+serially after frozen dependency setup and the cached tokenizer are available:
+
+```sh
+uv run --project packages/python --frozen --no-sync python -B tools/check_artifacts.py --output-dir artifacts/security-check/core
+uv run --project packages/python --frozen --no-sync python -B tools/check_framework_artifacts.py --core-artifacts artifacts/security-check/core --output-dir artifacts/security-check/frameworks
+uv run --project packages/python --frozen --no-sync python -B tools/check_qdrant_artifacts.py --core-artifacts artifacts/security-check/core --output-dir artifacts/security-check/optional
+```
+
+The recorded run used a clean tracked-source export plus the two checker changes,
+not the user-edited working source. Its receipt records 120/112 installed
+LangChain/core cases, 54/42 MCP cases and twelve optional installation profiles.
+These commands exercise local fake-provider mechanics; they do not upload
+packages or establish live model quality, candidate CI or production acceptance.
+
 ## V6-05 installed pilot rehearsal
 
 The [human protocol](usability-trial.md) and

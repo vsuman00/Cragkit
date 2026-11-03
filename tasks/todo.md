@@ -1,11 +1,14 @@
 # Cragkit implementation tracker
 
-Current security checkpoint (4 November 2026): V6-04R native engineering checks
-passed. The Docker-backed CSO follow-up is PARTIAL: two scanners completed,
-Semgrep returned partial coverage and an untriaged backlog, and two secret-match
-correlations remain open. Publication stays on security hold pending security
-review, corrected-source and exact replacement-artifact acceptance.
-[Current evidence](../evaluation/reports/V6/V6-04R-docker-cso.md).
+Current security checkpoint (4 November 2026): V6-04R-CLOSE retained finding
+review and local replacement-product acceptance passed. All 258 retained
+candidates and eleven later Git-history occurrences have inspected dispositions;
+no unresolved product vulnerability was established in those paths. Installed
+security test-selection gaps are fixed. Qualified CSO coverage remains PARTIAL;
+separate native parsing, fresh dependency/history checks and installed tests
+have their own evidence. Publication stays on hold for replacement candidate CI,
+packet review and registry gates.
+[Current evidence](../evaluation/reports/V6/V6-04R-closure.md).
 V6-08, production acceptance and version exit remain incomplete.
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
@@ -5147,3 +5150,119 @@ bounded audit. Review disk headroom before more images; no global Docker prune.
 Publication security_hold remains true; corrected-artifact/CI/registry/production
 checks and V6 exit remain incomplete. Learning about scanner leads versus actual
 attacker control is offered in the report; exercise remains unassessed.
+
+V6-04R-CLOSE / CSR-CLOSE-r1 assignment: IN_PROGRESS by explicit user instruction
+to resolve security scanning/testing reports before publication readiness.
+Two Sol peers own124Semgrep candidates each, nonoverlapping file sets in private
+cragkit-security-closure assignment records. Python peer owns Python runtime and
+assigned tooling review; tools peer owns TypeScript runtime and assigned tooling,
+and ASSEMBLES. Initial private write split: dispositions-python.json/report and
+dispositions-tools.json/report; repository implementation transfer requires root
+approval of a concrete fix. Direct dependency resolution and agreed split changes
+remain within the subsystem; protected/outcome changes escalate to root/Astra.
+Root owns secret correlation, scanner coverage/missing checks, shared contracts,
+all execution/tests, reports/tracker/Git. One process at a time, no peer execution,
+no provider/hosted writes/paid CI/uploads. Preserve all user changes. Acceptance:
+all retained candidate IDs accounted for with source-specific evidence; confirmed
+faults fixed and tested, applicable audit gaps resolved or explicitly blocked,
+and exact corrected package acceptance kept separate from publication authority.
+Resource baseline:18GiB disk,38% system memory free; no new CSO start yet. Retained
+old run is read-only evidence, not a reopened budget or retroactive closure.
+
+V6-04R-CLOSE review checkpoint: both Sol writers stopped, tools assembled an exact
+248-ID reconciliation. Root inspected all product SQL, regex, dynamic-regex and
+registry weak-digest controls plus reported source/caller assumptions; no defect
+requiring a new product patch was established. Root owns the canonical258-ID
+Semgrep/Gitleaks/zizmor disposition record. Full helper stdout minus its single
+CLI-added newline matches execution hashes for both old unknown secret leads.
+Exact starts are API2 prose and a synthetic authorization-revision fixture literal;
+Astra independently confirmed these closures. They do not prove complete secret
+history coverage. All17key-like scanner occurrences now have exact field/constant/
+fixture context; no candidate values retained in reports.
+
+Scanner verification preparation: controlled image setup now11/11available,
+10cached/1newTrivy, no remaining download timeout. Nested package doctor clarified
+runtime capability: Python universal uv markers need a qualified platform export;
+Node package metadata prepares but qualified Node24.4.0 differs from the supported
+Node26.5.0 matrix. No locks/engines rewritten or fake rootserver/manifest added.
+Root will run remaining offline dependency/config scans and a production-source
+Semgrep pass through one fresh bounded helper run; no paid CI/publication.
+
+V6-04R-CLOSE / CSR-CLOSE-r1 final handoff: COMPLETE for retained-finding triage,
+the two installed-security acceptance slices and scoped local validation.
+Publication and overall qualified CSO/production acceptance remain incomplete.
+Both Sol peers did substantive 124-ID reviews; tools ASSEMBLED and both stopped.
+Peers coordinated proposal dependencies directly without overlapping writes.
+Root inspected their evidence and proposals, applied only the two checker patches,
+resolved the two exact secret correlations with independent Astra challenge,
+reconciled all 258 retained IDs, and owns final reports/tracker/Git integration.
+
+Changed: tools/check_framework_artifacts.py (CSR-CLOSE-I01) and
+tools/check_qdrant_artifacts.py (I02) now stage and explicitly run existing
+planner/LangChain/MCP security regressions against installed products outside
+the checkout. Added SECURITY_FINDING_REMEDIATION contract, candidate ledger,
+V6-04R-closure.md and verification record; updated current development/production/
+publication/version/tracker pointers and hold explanation. No runtime API,
+dependency lock or applied migration changes. Preserved all eight user-edited
+source files, storage guidance, tracker draft and three untracked audit drafts;
+they remain excluded from the scoped commit. Older frozen receipts/pins unchanged.
+
+Verification: 258 retained candidates (248 Semgrep / 8 Gitleaks / 2 zizmor), plus 11 native
+history occurrences, all individually accounted for with no unresolved product
+vulnerability established in those paths. The three additional history fields
+are synthetic replay request digests, corroborated by generation and replay code
+and the passing fixture-mapping regression. The three protected draft reports'
+concrete claims were reconciled against later fixes/current guards; no new defect
+was confirmed. This is occurrence-specific closure, not universal safety.
+
+Fresh helper run 1793738033708-d7614cea083ffbf1 finished PARTIAL with initial/final
+manual submissions accepted and helper-owned scanner rows excluded. Qualified
+OSV 2.6.0 / Trivy 0.75.0 / selected-source Gitleaks 8.30.1 completed with 0 candidates;
+Semgrep 1.179.0 partial with 37 previously reviewed IDs. Native same-version,
+byte-identical 1,433-rule scans completed: shipped source 37 candidates/no parser
+errors; implementation/operator 332 files / 244 candidates/no errors, all matched to
+retained dispositions. Two broader explicit-file attempts timed out at 420/240 s,
+were terminated and remain failed evidence. Narrower directory discovery passed
+in 83.441 s; no error was suppressed or old partial result relabelled. Native
+Gitleaks --all scanned 205 patch commits (~15.34MB) across 231 reachable commits,
+eleven reviewed leads, fully redacted, no allow comments or ignore entries.
+Fresh three npm/four uv lock audits reported 0 known vulnerabilities/adverse states;
+all seven locks unchanged. Raw scanner reports/tools are private outside Git.
+
+Actual engineering checks: 10 focused artifact-tool tests and 4,377 Python core/tool
+cases passed (0 skips / 4 existing invalid-model warnings). Clean tracked-source
+export a188957/package tree 63dafe3b3906778e456b1cd2aefb7f99cd896e43 plus only the
+two checker overlays produced 12 inspected archives. Core guarded/evidence/execution
+acceptance passed; installed LangChain/core 120 Python + 112 Node, MCP 54 Python + 42 Node,
+all 12 optional profiles passed. 23 native SQL security checks passed with verified
+cleanup, scoped same-transaction guard only. License/notice/metadata/export/path/
+rebuild and dependency identities passed. Selected credential patterns found one
+reserved-domain dummy URL in an invalid-endpoint test, inspected/closed. No
+unresolved archive pattern candidate. Source/installed checks are separate from
+qualified Docker runtime witness, new CI and published-artifact evidence.
+
+Resources: 18 GiB disk / 38% memory free before, 16 GiB / 40% at checkpoint. One local
+scanner/test/install process at a time; bounded one-worker scans, private native
+scanner environments, no model download, live provider, hosted write, new paid
+CI, registry/account mutation or upload. Temporary consumers and owned database
+process closed. Documentation/prose/link/ledger/whitespace/staged credential and
+protected-baseline checks precede the scoped commit and immediate push/sync.
+Current document checks: 589 local links/81 anchors resolved; all eight prose
+files had zero suspicious Unicode, low measured density and byte-identical
+deterministic cleaning. Ledger IDs/counts, all twelve archive hashes, acceptance
+receipts, immutable V6-08 receipt and hold-policy digest matched. All 43
+publication-admission regressions passed after the hold explanation update.
+Native staged Gitleaks completed with zero candidates across the thirteen
+intended files; eighteen protected tracker-draft lines remain outside the index.
+Whole-worktree whitespace inspection still flags user-owned source/storage
+trailing spaces; those files are preserved and excluded from staged checks.
+
+Remaining: qualified runtime preparation cannot represent nested uv locks and
+supported Node 26.5.0 with its Node 24.4.0 profile. Overall CSO remains partial;
+native installed consumers are separate evidence. No HTTP/OpenAPI target exists
+for Schemathesis in the supported native/stdio library. No production target is
+assessed. Next smallest action: freeze corrected candidate and obtain separately
+authorized candidate CI, then replacement packet/hold review; registry owners/
+permissions, explicit upload authorization and registry smoke remain required.
+V6-08D/V6-09/C3/exit remain unchecked. Learning is unassessed; the closure report
+offers a data-versus-SQL-syntax exercise and explains trusted-plugin limitations.

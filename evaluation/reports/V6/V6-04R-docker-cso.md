@@ -1,5 +1,10 @@
 # V6-04R Docker-backed CSO follow-up
 
+Historical snapshot. The later [closure report](V6-04R-closure.md) resolves the
+retained candidate backlog and records additional scans and local installed
+acceptance. The partial results and unresolved-at-the-time statements below
+remain the original run's evidence.
+
 Partial, 4 November 2026. Docker-backed security scans now have actual results;
 this is not release or production acceptance.
 
