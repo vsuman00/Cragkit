@@ -4966,3 +4966,34 @@ transport/publication/one20minuteLinuxjob authorization (estimatedcompute<=USD0.
 before includedusage and separate receiptstorage), run/reconcile, and verify
 registry installs/source access. No prior CI approval carries forward. V6-08D,
 V6-09/C3/exit stay incomplete.
+
+
+V6 external-gate audit: BLOCKED at V6-08C-account after the same unanswered
+registry/authorization dependency persisted across three consecutive goal turns.
+The preceding turn made concrete progress: verified workflow/transport/registry
+tools committed and pushed as56fd154. Current Git is synchronized; no test
+process or hosted publication job is being awaited. GitHub read-only checks
+returned0publication runs and0repository variables, so the enable flag remains
+unset. Local .npmrc/.pypirc publishing configuration was absent; this does not
+prove the user lacks accounts. No connected npm/PyPI account tool was available.
+The original product-summary identity still matches, and the recorded public
+preflight remains9absent/0errors/publication_completefalse. No new live registry
+preflight or repeated test suite was needed for this unchanged code.
+
+Required next input: answer the pending question with public PyPI/npm usernames
+or notyet, then complete secure owner setup and verify all six permissions.
+Never send passwords/tokens. Specific authorization for private draft/asset
+transport, public RC1 upload and one bounded publishing job is still required;
+the earlier one-CI approval has been consumed. V6-08D registry download/install/
+source smoke is unrun. V6-09 explicitly depends on V6-08, so maintenance acceptance,
+C3 and version exit remain open. No completed-version claim or scope reduction.
+
+Latest actual regression evidence remains4,360passed/0skips/4existing warnings.
+No source/lock/migration/README change, install, provider call, service, upload,
+account configuration or CI dispatch occurred during this gate audit. Resource
+work was bounded file/API reads only. Root preserves the original tracker draft,
+nine unrelated source/storage changes and three user audit files. Handoff-only
+prose/link/scoped-stage review precedes its authorized commit/push/sync.
+Learning and maintenance exercises remain unassessed. Resume from the account
+answer and existing publication runbook; do not rebuild/retest accepted products
+merely to fill the wait or bypass the external authorization gate.
