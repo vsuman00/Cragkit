@@ -1,7 +1,7 @@
 {
   "revision": "V6-release-r1",
   "configuration_state": "frozen_before_held_out_run",
-  "source_commit": "de683a241d0da3cd5b7f0edd2946cd949dc8c972",
+  "source_commit": "25275e447c64ecfd243ef6bc26c87031d5e2e472",
   "package_tree": "05fdc769488f496ef71ec6b988383fa8d1f18b1c",
   "candidate_versions": {
     "python": "1.0.0rc1",
@@ -32,14 +32,16 @@
     "evaluation/review/seal.json": "210ddce9237847d271db35dbff1d7c74a1ba1f30323a3f4119f939a604a83f81",
     "evaluation/runners/benchmark_metrics.py": "c7478fd304d0b4c2b72e506e0080119a05ab34068566208b314c9b6a6fee99e8",
     "evaluation/release/V6-metrics.md": "0577b6cf382254904ee206b46994a0389eb6574f096f18dc594bf9ad2247ef87",
-    "evaluation/release/V6-baselines.json": "434aadac17c4ccbe56f7950551f26bc5cff9bca774541e2b7f5efd32e97fc43f"
+    "evaluation/release/V6-baselines.json": "434aadac17c4ccbe56f7950551f26bc5cff9bca774541e2b7f5efd32e97fc43f",
+    "evaluation/review/retrieval-recovery/corpus/manifest.json": "808898934474a185d2a8e6777111d9598a526279091fffb9314f4b5465c9d96e",
+    "evaluation/review/retrieval-recovery/seal.json": "46a7e1bba338ff205d6d5e49f45a61db9cca3f0c8acb81b9c70d51870fd5e195"
   },
   "held_out": {
-    "path": "evaluation/questions/held_out.json",
-    "sha256": "d91d12b32864d917d1939ef07e315b8f1c35eacdceb8f457178274412d09f4ef",
-    "initial_exposure": "Initial authors and reviewer saw the original packet before sealing.",
+    "path": "evaluation/review/retrieval-recovery/questions/held_out.json",
+    "sha256": "33453432a95d3e48b501ac007053e190007bbb480684625c770d41c1d1dd6da7",
+    "initial_exposure": "Fresh synthetic packet authored/reviewed before sealing; agent/human exposure disclosed in separate approval record.",
     "current_run_access": "not_opened_or_scored",
-    "retuning_after_access": "Forbidden for unbiased comparison; a failure-informed change requires a fresh reviewed held-out revision."
+    "retuning_after_access": "Forbidden for unbiased comparison; preserve failed original run and use fresh reviewed revision for failure-informed changes."
   },
   "comparison": {
     "modes": [
@@ -132,5 +134,6 @@
     "V6-07": "pending",
     "V6-08": "pending",
     "V6-09": "pending"
-  }
+  },
+  "evaluation_revision": "recovery-r1"
 }

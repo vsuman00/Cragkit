@@ -4351,3 +4351,14 @@ their profile/path rather than inheriting a future mutable active selection;
 108 edge cases/10 requirements/8 inputs. Original 16-file seal check passed.
 Resource 25.2 GiB/52 percent free memory. Candidate still unchanged at this checkpoint;
 no live call. Root final staged review excludes all user-owned source/audits.
+
+I3 recovery selection: active candidate now explicitly recovery-r1 at frozen
+source 25275e447c64ecfd243ef6bc26c87031d5e2e472, unchanged package tree and all
+quality/resource/request/live targets. Original candidate preserved byte-for-byte
+in evaluation/release/history/original-candidate.json; original failed checkout
+and admission remain untouched. Actual recovery metadata checker passed 8 inputs/
+10 requirements/108 edge cases without held-out reads. Full suite on the activated
+configuration passed 3,780 tests/four existing intentional warnings. Next: commit
+this selection, create fresh isolated worktree and offline frozen dependency/
+tokenizer preparation, ECR prepare/verify, native development rehearsal before
+a separately recorded bounded live recovery comparison. No paid calls yet.
