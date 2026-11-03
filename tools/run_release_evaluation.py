@@ -374,8 +374,13 @@ def private_key(path, *, env_name=None):
     return value
 
 
+class _FixedArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        raise ReleaseEvaluationError('evaluation_cli_invalid') from None
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = _FixedArgumentParser(prog='run_release_evaluation', description=__doc__)
     parser.add_argument('--mode', choices=('mechanics', 'live', 'replay'), default='mechanics')
     parser.add_argument('--prepared-postgres-bin', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
@@ -387,8 +392,8 @@ def main(argv=None):
     parser.add_argument('--cohere-key-file', type=Path)
     parser.add_argument('--price-review', type=Path)
     parser.add_argument('--allow-local-processes', action='store_true', required=True)
-    args = parser.parse_args(argv)
     try:
+        args = parser.parse_args(argv)
         keys = None
         price_review = None
         if args.mode == 'live':

@@ -135,11 +135,9 @@ def validate_observation(packet, observation, runtime, *, counter=None):
 
 
 async def _node(packet, options):
-    environment = {key: value for key, value in os.environ.items()
-                   if not key.startswith(('PG', 'QDRANT__')) and key not in {
-                       'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'OPENAI_API_KEY', 'COHERE_API_KEY',
-                       'NODE_PATH', 'PYTHONPATH', 'PYTHONHOME',
-                       'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'}}
+    environment = {key: os.environ[key]
+                   for key in ('PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'TZ')
+                   if key in os.environ}
     node = shutil.which('node')
     require(node is not None, 'evaluation_node_missing')
     process = await asyncio.create_subprocess_exec(

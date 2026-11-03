@@ -16,7 +16,9 @@ SPEC.loader.exec_module(ART)
 
 @pytest.mark.parametrize('name', ['../secret', '/absolute', 'package/../../secret', 'package/.env',
                                  'package/node_modules/x', 'package/models/weights', 'C:/secret',
-                                 'package\\secret', 'package/cache.gguf', 'package/__pycache__/x.pyc'])
+                                 'package\\secret', 'package/cache.gguf', 'package/__pycache__/x.pyc',
+                                 'package/.pgpass', 'package/pgpass', 'package/pgpass.conf',
+                                 'package/.pg_service.conf', 'package/client.p12', 'package/client.pfx'])
 def test_archive_names_reject_escapes_secrets_and_heavy_assets(name):
     with pytest.raises(ART.ArtifactError):
         ART.safe_member(name)

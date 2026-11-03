@@ -363,3 +363,46 @@ def test_unexpected_cli_key_paths_are_not_read_in_offline_modes(tmp_path, monkey
     monkeypatch.setattr(parent, 'private_key', lambda *args, **kwargs:pytest.fail('Credential file read'))
     assert parent.main(['--prepared-postgres-bin', str(tmp_path), '--output', str(tmp_path/'run'),
         '--allow-local-processes', '--openai-env-file', str(tmp_path/'private')]) == 1
+
+
+@pytest.mark.parametrize('arguments', [
+    ['--prepared-postgres-bin', '/synthetic-bin', '--output', '/synthetic-output',
+     '--allow-local-processes', '--mode', 'synthetic-secret-sentinel'],
+    ['--prepared-postgres-bin', '/synthetic-bin', '--output', '/synthetic-output',
+     '--allow-local-processes', '--unknown', 'synthetic-secret-sentinel'],
+    ['--output', '/synthetic-secret-sentinel'],
+    ['--prepared-postgres-bin', '/synthetic-secret-sentinel', '--output'],
+    ['synthetic-secret-sentinel'],
+])
+def test_invalid_cli_never_echoes_argument_values(arguments, capsys, monkeypatch):
+    monkeypatch.setattr(parent, 'run_comparison', lambda **kwargs:pytest.fail('Execution attempted'))
+    assert parent.main(arguments) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ''
+    assert json.loads(captured.out) == {'state':'failed', 'code':'release_evaluation_failed'}
+    assert 'synthetic-secret-sentinel' not in captured.out
+
+
+def test_cli_help_remains_static_and_successful(capsys):
+    with pytest.raises(SystemExit) as error:
+        parent.main(['--help'])
+    assert error.value.code == 0
+    captured = capsys.readouterr()
+    assert captured.err == ''
+    assert '--allow-provider-calls' in captured.out
+    assert '--runtime-receipt' in captured.out
+    assert 'usage: run_release_evaluation ' in captured.out
+
+
+def test_valid_cli_flags_preserve_execution_arguments(tmp_path, monkeypatch, capsys):
+    observed = {}
+    async def execute(**kwargs):
+        observed.update(kwargs)
+        return {'state':'passed'}
+    monkeypatch.setattr(parent, 'run_comparison', execute)
+    assert parent.main(['--prepared-postgres-bin', str(tmp_path), '--output', str(tmp_path/'run'),
+        '--allow-local-processes', '--mode', 'mechanics']) == 0
+    assert observed['prepared_postgres_bin'] == tmp_path
+    assert observed['output'] == tmp_path/'run'
+    assert observed['mode'] == 'mechanics' and observed['keys'] is None
+    assert json.loads(capsys.readouterr().out) == {'state':'passed'}

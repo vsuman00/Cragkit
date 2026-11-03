@@ -1,4 +1,5 @@
 """Reject misleading native acceptance evidence; no database or provider work."""
+import asyncio
 from copy import deepcopy
 from hashlib import sha256
 import json
@@ -128,3 +129,56 @@ def test_existing_output_is_preserved_before_native_setup(tmp_path, monkeypatch)
     with pytest.raises(checker.NativeEvaluationError, match='fresh_output'):
         checker.run(tmp_path/'not-prepared', tmp_path)
     assert marker.read_text() == 'preserve'
+
+
+def test_node_replay_child_receives_only_explicit_safe_environment(monkeypatch):
+    safe = dict(PATH='/synthetic/bin', LANG='C', LC_ALL='C', LC_CTYPE='C',
+        TMPDIR='/synthetic/tmp', TZ='UTC')
+    ambient = dict(safe, OPENAI_API_KEY='synthetic-only', COHERE_API_KEY='synthetic-only',
+        APPLICATION_AUTH_TOKEN='synthetic-only', https_proxy='https://synthetic.invalid',
+        all_proxy='https://synthetic.invalid', SSL_CERT_FILE='/synthetic/untrusted-ca',
+        npm_config_registry='https://synthetic.invalid', NODE_OPTIONS='synthetic-options',
+        PG_CUSTOM_PASSWORD='synthetic-only')
+    monkeypatch.setattr(checker.os, 'environ', ambient)
+    monkeypatch.setattr(checker.shutil, 'which', lambda name: '/synthetic/bin/node')
+    captured = {}
+    response = {'synthetic_child': True}
+
+    class Input:
+        def write(self, value):
+            captured['stdin'] = value
+
+        async def drain(self):
+            pass
+
+        def close(self):
+            captured['stdin_closed'] = True
+
+    class Process:
+        returncode = None
+
+        def __init__(self):
+            self.stdin = Input()
+            self.stdout = asyncio.StreamReader()
+            self.stderr = asyncio.StreamReader()
+            self.stdout.feed_data(json.dumps(response).encode())
+            self.stdout.feed_eof()
+            self.stderr.feed_eof()
+
+        async def wait(self):
+            self.returncode = 0
+            return 0
+
+    async def spawn(*arguments, **options):
+        captured['arguments'] = arguments
+        captured['environment'] = options['env']
+        return Process()
+
+    monkeypatch.setattr(checker.asyncio, 'create_subprocess_exec', spawn)
+    packet = json.loads(checker.PACKET.read_text())
+    options = {'kind': 'mechanics', 'tokenizer_path': '/synthetic/pinned-tokenizer'}
+    assert asyncio.run(checker._node(packet, options)) == response
+    assert captured['environment'] == safe
+    assert captured['arguments'][0] == '/synthetic/bin/node'
+    assert captured['stdin_closed'] is True
+    assert json.loads(captured['stdin']) == {'packet': packet, 'options': options}

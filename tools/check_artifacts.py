@@ -30,10 +30,11 @@ def require(ok: bool, code: str) -> None:
 def safe_member(name: str) -> None:
     path = PurePosixPath(name)
     forbidden = {'.venv', 'node_modules', '__pycache__', '.git', '.pytest_cache', '.mypy_cache',
-                 '.cache', 'models', 'model-cache', 'credentials', 'secrets'}
+                 '.cache', 'models', 'model-cache', 'credentials', 'secrets',
+                 '.pgpass', 'pgpass', 'pgpass.conf', '.pg_service.conf'}
     require(bool(name) and not path.is_absolute() and '\\' not in name
             and '..' not in path.parts and not any(':' in part for part in path.parts), 'unsafe_archive_path')
-    require(not any(part in forbidden or part.startswith('.env') or part.endswith(('.pyc', '.pem', '.key', '.safetensors', '.onnx', '.gguf'))
+    require(not any(part in forbidden or part.startswith('.env') or part.endswith(('.pyc', '.pem', '.key', '.p12', '.pfx', '.safetensors', '.onnx', '.gguf'))
                     for part in path.parts), 'forbidden_archive_content')
 
 

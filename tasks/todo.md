@@ -334,7 +334,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V6-02D4: Sealed original-packet binding and source-access gate — [binding evidence](../evaluation/reports/V6/V6-02D-packet.md). Clean execution identity is accepted below; genuine held-out execution remains open.
   - [x] V6-02E1/E2: Runtime identity, independent same-shortlist scoring and bounded parent mechanics — [offline implementation](../evaluation/reports/V6/V6-02E-candidate-execution.md) and [actual clean-runtime acceptance](../evaluation/reports/V6/V6-02F-clean-runtime.md). No genuine quality claim.
   - [x] V6-02F: Coherent RC metadata/engine identities and isolated execution preparation — [local artifacts](../evaluation/reports/V6/V6-02F-identity.md) and [clean identity](../evaluation/reports/V6/V6-02F-clean-runtime.md).
-  - [ ] V6-02E3: Explicit caller-owned benchmark credentials, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. A usable OpenAI test credential has not been selected/configured. New-key creation and the Codex setup form are optional; no built-in library key, paid call or original held-out interpretation has occurred.
+  - [ ] V6-02E3: Explicit caller-owned benchmark credentials, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. The user selected and saved the explicit private OpenAI test credential; local format, permissions and scoped credential preflight passed. Live authentication, fresh hardened-source execution identity and genuine quality remain pending. No built-in library key is used. See [credential preflight](../evaluation/reports/V6/V6-02E3-credential-preflight.md).
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -4066,3 +4066,38 @@ written, no secret was requested in chat, and user-owned dirty work is preserved
 Next: use the application's selected private credential configuration for the
 live benchmark when available. Learning gap clarified: library configuration
 and the maintainer's release-evaluation setup are separate responsibilities.
+
+V6-02E3 credential preflight resumed after the user saved and selected the existing
+OpenAI test key at ~/.config/cragkit/evaluation/openai.env. No new key/setup form
+is required. Local no-value checks passed both provider files: owner-only regular
+files,0600, within0700directories, expected provider formats. The user explicitly
+requires credential non-disclosure. Root owns exact-secret Git/history/worktree
+and package checks, private files, serialized tests, live dispatch and integration.
+Sol postgres_node_finish owns read-only transport/log/error/child-environment
+review; Sol v601_metrics owns read-only exclusions/artifact review and assembles.
+Both write only safe temporary reports, coordinate directly and never read keys,
+private DB config or original held-out inputs. Root escalates protected/outcome
+changes and unresolved issues to Astra. No live dispatch until acceptance.
+
+
+V6-02E3 credential preflight handoff: COMPLETE for the scoped local audit and
+preventive tool fixes; parent genuine evaluation remains OPEN. Both explicit
+provider files passed no-value private-file and format checks. Root found zero
+selected-key/encoded-value matches across 4,574 reachable Git objects, 1,896
+working files and 367 members of twelve declared archives, with no skips within
+scope. Bounded high-confidence provider/private-key patterns also had no matches.
+Sol peers finished transport/artifact reviews, coordinated directly and returned
+ownership; artifact peer assembled the findings. Root integrated strict replay
+child environment forwarding, content-free CLI parser errors and PostgreSQL
+password/P12/PFX archive exclusions. Focused tests: 80 passed; full Python/tools:
+3,635 passed, four existing intentional Pydantic warnings. Report and safe counts:
+`evaluation/reports/V6/V6-02E3-credential-preflight.md` and matching verification
+JSON. No credentials, private fixture config or original held-out labels changed.
+Existing user edits/audits remain excluded. No live call or install occurred.
+The old runtime receipt was refused because three stdlib multiprocessing bytecode
+caches changed; all three current code objects match their unchanged source and
+runtime versions match. Prior receipt retained, no cache deletion or guard
+weakening. Next: commit/refreeze the hardened tools, prepare and verify a fresh
+runtime identity, then execute the authorized once-only live/replay evaluation
+with freshly reviewed prices. Resources: 26 GiB disk, 35 percent free memory;
+serial tests, no owned persistent service. Learning practice unassessed.
