@@ -80,13 +80,13 @@ Use a fresh Node project with a reviewed manifest. Verify imported modules resol
 
 ## 5. Add CI before granting registry access
 
-Local checks and hosted CI are different evidence. No successful hosted run follows from a local command or a proposed workflow. The integrator must create and inspect actual workflows before this guide can name their paths or results.
+Local checks and hosted CI are different evidence. No successful hosted run follows from a local command or a proposed workflow. The candidate workflow has one recorded passing run; the separate [manual publishing workflow](../.github/workflows/publish-candidate.yml) is locally checked, disabled and unrun. See [the current procedure](publication.md) for exact state and permission boundaries.
 
 Separate build/test jobs from the publish job. Give ordinary jobs read-only repository permissions. Restrict publication to the reviewed release identity and an approved environment. Pin third-party actions to reviewed full commit SHAs and pin build tools/dependencies. Do not expose publication authority to untrusted pull-request code. GitHub explains these controls in [workflow security hardening](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions).
 
 Trusted publishing uses a short-lived OIDC identity instead of a stored long-lived registry token. Configure the registry's repository, actual workflow filename and environment to match the reviewed publisher. Grant `id-token: write` only to the publishing job; this permission permits obtaining an identity token, not arbitrary repository writes. See [GitHub OIDC reference](https://docs.github.com/en/actions/reference/security/oidc) and [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/using-a-publisher/).
 
-For npm, follow the current supported CI-provider/CLI requirements and package settings in [npm trusted publishers](https://docs.npmjs.com/trusted-publishers/). npm automatically adds provenance for supported trusted-publishing runs. Bootstrap name ownership and any first manual upload separately if required; never assume PyPI and npm have the same setup. Record the selected bootstrap method before using credentials.
+For npm, follow the current supported CI-provider/CLI requirements and package settings in [npm trusted publishers](https://docs.npmjs.com/trusted-publishers/). npm provenance requires public source; this private repository cannot obtain that provenance badge. Bootstrap name ownership and any first manual upload separately if required; never assume PyPI and npm have the same setup. Record the selected bootstrap method before using credentials.
 
 ## 6. Publish only after the concrete candidate is approved
 

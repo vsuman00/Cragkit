@@ -355,7 +355,12 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [x] V6-07: [Migration and rollback rehearsal](versions/V6-release.md#v6-07-migration-and-rollback-rehearsal) — [scoped native recovery and required operator repair](../evaluation/reports/V6/V6-07-recovery.md).
   - [x] V6-07F1: Explicit bounded legacy lexical repair; [upgrade and operator evidence](../evaluation/reports/V6/V6-07-upgrade.md). No applied migration or package changed.
 
-- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — local A/B preparation verified; registry setup/workflow, authorization, upload and post-registry smoke pending. [Preparation](../evaluation/reports/V6/V6-08-preparation.md).
+- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — local products and disabled workflow verified; registry setup, hosted execution/authorization, upload and post-registry smoke pending. [Preparation](../evaluation/reports/V6/V6-08-preparation.md).
+
+- [x] V6-08C1: Durable local transport and exact nine-product replay verified.
+- [x] V6-08C2: Read-only registry verifier and bounded process cleanup verified.
+- [x] V6-08C3-local: Default-disabled owner/manual publication workflow and missing-file planner verified locally; hosted execution unrun. [Evidence](../evaluation/reports/V6/V6-08-workflow.md).
+- [ ] V6-08C-account: Six account permissions, secure bootstrap and trusted-publisher configuration.
 
 - [ ] V6-09: [Maintenance handoff](versions/V6-release.md#v6-09-maintenance-handoff) — evidence: pending.
 
@@ -4902,3 +4907,62 @@ account setup, six permission checks, reviewed workflow and durable product
 transport. The pending user question asks only public PyPI/npm usernames, never
 secrets. Package publication/specific workflow cost still need authorization;
 GitHub stays private. V6-08D registry smoke, V6-09/C3/exit remain incomplete.
+
+
+V6-08C1/C2 assignment: IN_PROGRESS local machinery while account question stays
+pending. PWK-r1 frozen in contracts/PUBLICATION_WORKFLOW_V6.md. Shared outcome:
+verified durable local transport and read-only registry identity verifier wired
+to a manual-only/default-disabled publication workflow. Sol publication_transport
+owns tools/release_transport.py and tools/tests/test_release_transport.py.
+Sol publication_registry owns tools/check_registry_products.py and its test;
+registry ASSEMBLES. Root owns workflow/policy, shared docs/contract/tracker,
+serial execution and final integration/Git. Protected packages/locks/migrations
+and user edits remain untouched. Peers coordinate interfaces directly, no
+tests/installs/services/network mutations. Root may perform one bounded public
+read-only preflight after fake tests. No account setup/upload/draft/tag/asset/
+new CI/visibility action is authorized. Registry permissions and post-registry
+consumer/source smoke remain required. Initial split is disjoint; ownership
+transfers require agreement/stopped writes and root notice; unresolved protected
+decisions return to root then Astra.
+
+
+V6-08C1/C2/local-C3 final handoff: COMPLETE local machinery, parent OPEN.
+Sol transport and registry peers delivered disjoint tool/test pairs and registry
+assembled; root inspected both, owned shared marker extension, upload planner/
+guard tests, fixed policy and manual-only workflow. Both writers stopped before
+transfer. Astra resolved per-request DNS/header enforcement and optional GitHub
+environment cost/availability. The workflow now documents owner-only manual
+authorization without an independent reviewer, rather than claim an unconfigured
+protected environment. Actual GitHub plan not returned; environment/variable
+counts0. No paid upgrade or visibility decision inferred.
+
+Transport68tests passed after root moved complete duplicate/header checks before
+member reads, eliminating an observed payload-bearing stdlib overlap warning.
+Registry103passed including real nonnetwork sleeper/slowwriter kill+reap, fake
+HTTP limits/digests and SIGTERM cleanup. Finalworkflow33passed; finalfullPython/
+tool4360passed,0skips,4intentionalwarnings20.75s. Actionlint1.7.12 official
+checksum matched; both workflows passed local validation. The two-marker shared
+helper extension leaves original PPR manifest default and exact products intact.
+
+Actual transport1,486,204bytes SHA6b817c8c... pack/unpack/regeneration matched
+all nine old product bytes and PPR manifest. Actual local missing-file plan
+selected9files/3Python groups/ordered npm; local publication admission refused.
+One public unauthenticated read-only preflight made9requests:9products/3next
+tags absent,0operationalerrors, publication_completefalse. This is not account
+ownership, name reservation, hosted OIDC or post-install evidence. Worker
+inspection0remaining. No account change/enablevariable/draft/tag/asset/upload/
+newCI/modelcall/service. Source packages, locks, appliedmigrations and user edits
+protected. Disk23GiB/systemmemoryfree39percent; no load claim.
+
+V6-08-workflow.md and verification JSON bind commands, tool/policy hashes,
+transport, preflight, tests and limits. Guide/release/disclosure/development
+consistency updated. Root owns prose/link/scoped secret-stage review and atomic
+commit/immediate push/sync. Original tracker17-line draft, nine unrelated
+source/storage edits and three user audits remain excluded; README unchanged.
+Learning: absence, authenticated ownership and publication are distinct facts;
+exercise unassessed. Next smallest action is C-account: pending public registry
+usernames, secure setup and six permissions. Then obtain specific private
+transport/publication/one20minuteLinuxjob authorization (estimatedcompute<=USD0.12
+before includedusage and separate receiptstorage), run/reconcile, and verify
+registry installs/source access. No prior CI approval carries forward. V6-08D,
+V6-09/C3/exit stay incomplete.

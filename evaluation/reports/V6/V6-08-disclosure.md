@@ -109,9 +109,14 @@ The [publication guide](../../../docs/publication.md) links current primary
 registry instructions, separates planned uploads from executed work and explains
 partial publication recovery and clean registry smoke.
 
+A later PyPI publish attestation can disclose the uploader workflow/run/repository
+and commit identity. It describes that upload, not proof that this job built the
+original CI products. npm provenance remains unavailable from private source.
+No attestation was generated during local preparation.
+
 The source repository remains private. npm trusted publishing can use private
 source, but npm provenance is unavailable there; no provenance badge is claimed.
-No publishing workflow currently exists. The next authorization must identify
+The manual publishing workflow has local validation but is disabled and unrun. The next authorization must identify
 these nine exact reviewed products, their public code/metadata disclosure, the
 six registry permissions, authentication/bootstrap path and any bounded workflow
 cost. It must not imply stable `1.0.0`, another paid CI run or repository exposure.

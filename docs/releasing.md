@@ -94,8 +94,8 @@ of trusting a replacement manifest. This local acceptance is recorded in
 [V6-08 preparation](../evaluation/reports/V6/V6-08-preparation.md).
 
 Follow the [publication procedure](publication.md) for the remaining secure
-registry ownership/bootstrap, workflow and authorization steps. No publishing
-workflow or registry permission is configured yet. Never put a registry token in
+registry ownership/bootstrap, workflow and authorization steps. The publishing workflow is prepared and
+default-disabled; registry permissions/bootstrap remain unverified. Never put a registry token in
 Git or chat. The GitHub repository stays private; public packages disclose their
 own contents. npm provenance is unavailable from private source repositories,
 as documented in [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).

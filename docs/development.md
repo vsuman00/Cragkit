@@ -1868,3 +1868,23 @@ A replacement runtime byte or manifest digest is refused. Public dependency
 downloads were needed for the separate fresh consumer install; they were not
 model calls or registry uploads. Registry permissions, the publication workflow,
 authorized upload and post-registry smoke remain pending. No new CI ran.
+
+
+## V6-08 local workflow and registry checker
+
+[Scoped acceptance](../evaluation/reports/V6/V6-08-workflow.md) records the final
+4,360-test local Python/tool pass, 68 transport, 103 registry and 33 workflow
+focused passes, plus Actionlint 1.7.12 for both workflows. The registry focused
+cases use fake HTTP and two real non-network supervised children; no test sends
+registry/provider requests or performs an upload.
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_release_transport.py tools/tests/test_check_registry_products.py tools/tests/test_publication_workflow.py -q
+```
+
+Actual pack/unpack commands and all hashes are in the verification record.
+The [publication runbook](publication.md) describes the owner-only disabled
+workflow and pending secure setup. A single actual read-only preflight returned
+all nine products absent with no operational errors. Repeating a live preflight
+uses public GETs and a fresh output path; it is not a routine offline test or
+proof of account permission. No new hosted workflow or upload ran.

@@ -6,8 +6,10 @@ before publication. A version string alone does not establish that relationship.
 
 This guide implements the local preparation boundary in
 [PPR-r1](../contracts/PUBLICATION_PREPARATION_V6.md). The repository remains
-private and no package has been published. No publishing workflow exists yet.
-The [existing workflow](../.github/workflows/candidate-validation.yml) validates
+private and no package has been published. The manual
+[publishing workflow](../.github/workflows/publish-candidate.yml) now has local
+checks but has not been enabled or run. The separate
+[candidate workflow](../.github/workflows/candidate-validation.yml) validates
 candidates and has no registry-upload role. Local preparation, account setup,
 publication authorization, an upload and post-publication smoke are separate
 states. Stable `1.0.0` requires its own later decision; this packet is RC1 only.
@@ -69,10 +71,10 @@ candidate, metadata and dependency pins; do not silently rename these products.
 
 Use the registries' signed-in account pages and enable account protection. Prefer
 workflow-bound trusted publishing over long-lived credentials. Configure exact
-repository/workflow/environment identities only after a reviewed publishing
-workflow and authorization exist. Use a protected deployment environment and
-minimal job permissions; keep dependency installation separate from the upload
-credential. Never paste a registry token or one-time password into chat, Git,
+repository/workflow identities only after secure setup is authorized. This
+first-maintainer workflow uses owner-only manual admission and minimal job
+permissions. No independent deployment reviewer or protected environment is
+configured; keep that trust boundary explicit. Never paste a registry token or one-time password into chat, Git,
 reports or a command recorded in shell history.
 
 PyPI supports a pending trusted publisher for a new project; it creates the
@@ -93,6 +95,59 @@ secure CLI login/2FA flow. If a token is necessary, use the narrowest supported
 short-lived credential in an approved secret store, then revoke it when no longer
 needed. No token has been requested or configured here.
 
+## Workflow controls and private transport
+
+The [workflow policy](../evaluation/release/V6-publication.json) fixes the
+1,486,204-byte transport SHA-256
+`6b817c8c627e1cdd0fe882b25617b2be17fe6ff7dc75e45b3d8a26d69c0db0d0`.
+The locally prepared ZIP contains exactly the original CI ZIP, its three metadata
+records and the reviewed publication manifest. Unpack regenerates the same nine
+products and rechecks their identities. The original one-day hosted artifact is
+not required once this retained transport is available.
+
+The proposed later storage is one private draft release named by tag
+`rc1-transport-20261103`, targeting the reviewed workflow commit. Creating it and
+uploading its asset are still unauthorized. The publishing job receives numeric
+release/asset IDs, verifies draft/commit/name/size/digest/membership, and downloads
+the asset through a read-only repository token. No tag or public GitHub release
+is created by the publishing job. Draft creation, asset access and hosted behavior
+remain to be verified after authorization.
+
+Only owner `vsuman00` can admit the job, from `main`, on its first attempt, with
+the executing SHA explicitly acknowledged and all three publication/cost/setup
+flags true. Repository variable `CRAGKIT_RELEASE_ENABLED` must equal
+`reviewed-rc1`; it is currently absent. There are no push/PR triggers. The job
+has read-only repository access and upload-job OIDC permission, without a stored
+PyPI/npm token. Core precedes adapters. Preflight validates present files and
+plans only missing files; postflight fetches all nine and checks npm `next`.
+It never blindly skips conflicting files or retries a partial publication.
+
+This is a single-maintainer flow that trusts the owner account and repository
+writers; matching a SHA does not prove independent review. GitHub's environment
+and reviewer features have plan restrictions for private repositories. The API
+did not return this account's plan, and no environment exists. We have not
+assumed a Free plan, upgraded the account or made the repository public. See
+[GitHub environment availability](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
+
+Before setup, use your own [PyPI account](https://pypi.org/account/register/) and
+[npm account](https://www.npmjs.com/signup), verify email and enable MFA. The
+PyPI pending-publisher fields are owner `vsuman00`, repository `Cragkit`, workflow
+`publish-candidate.yml`, and no environment for this flow. npm uses the same
+repository/workflow and must allow direct publication, after its initial owner
+bootstrap is resolved. Confirm each registry's supported constraints instead of
+assuming that it enforces a branch merely because GitHub emits a branch subject.
+Account creation/configuration and interactive bootstrap need the owner's secure
+participation; public usernames are sufficient for coordination. Never share a
+password, key or token in chat.
+
+The proposed job is one `ubuntu-24.04` run, with a 20-minute timeout and one-day
+nonsecret receipt storage. At the reviewed Linux two-core rate of USD 0.006 per
+minute, compute would be up to USD 0.12 before included usage, rounding and
+separate storage. Allowance and actual charges are unknown. The earlier approved
+macOS validation run does not authorize this job. See
+[GitHub runner pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing).
+No dispatch, registry/account change or private asset upload has run.
+
 ## Review the proposed first upload
 
 This is a plan, not an executed upload or permission request. The next concrete
@@ -106,8 +161,8 @@ before its optional adapters. PyPI receives the six wheel/sdist files at
 `1.0.0rc1`; npm receives the three projected tarballs at `1.0.0-rc.1`, explicitly
 under the prerelease tag `next`. Never use a working-tree rebuild, a wildcard
 that includes retained rebuilt wheels, or a publish-from-directory command in
-place of the reviewed products. A future workflow must verify the original
-candidate and prepared hashes before upload, pin its actions/tools and retain
+place of the reviewed products. The prepared workflow verifies the original
+candidate and prepared hashes before upload, pins actions/tools and retains
 nonsecret receipts. Reusing old prepared bytes avoids an unreviewed rebuild.
 
 For illustration only, the npm upload of one reviewed tarball would use the
@@ -123,8 +178,8 @@ These behaviors are documented in
 [npm publish](https://docs.npmjs.com/cli/v11/commands/npm-publish/).
 Setting `--provenance=false` records the private-source limitation; it does not
 create an attestation or justify a provenance badge. Upload clients and the PyPI
-upload invocation remain to be frozen in the reviewed workflow; no untested
-workflow is presented as ready.
+upload invocation are fixed in the prepared workflow. Its hosted upload,
+OIDC/account configuration and draft-asset read still lack execution evidence.
 
 ## Handle a partial upload
 

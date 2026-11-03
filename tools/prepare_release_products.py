@@ -285,7 +285,8 @@ def verify_directory(prepared, expected):
     require(found == expected.keys() and directories == expected_dirs, 'prepared_inventory')
 
 
-def publish_directory(stage, output, expected):
+def publish_directory(stage, output, expected, *, completion_marker=MANIFEST_NAME):
+    require(completion_marker in expected, 'completion_marker_missing')
     created_files = []
     created_dirs = []
 
@@ -311,12 +312,12 @@ def publish_directory(stage, output, expected):
                        if str(parent) != '.'}
         for relative in sorted(directories, key=lambda path: (len(path.parts), str(path))):
             own_directory(output / relative)
-        for relative in sorted(set(expected) - {MANIFEST_NAME}):
+        for relative in sorted(set(expected) - {completion_marker}):
             link(relative)
         verify_directory(output, {name: raw for name, raw in expected.items()
-                                  if name != MANIFEST_NAME})
+                                  if name != completion_marker})
         # A directory becomes complete only when its checked manifest exists.
-        link(MANIFEST_NAME)
+        link(completion_marker)
         verify_directory(output, expected)
         complete = True
     finally:

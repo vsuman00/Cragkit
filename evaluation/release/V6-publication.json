@@ -1,0 +1,16 @@
+{
+  "revision": "PWP-r1",
+  "repository": "vsuman00/Cragkit",
+  "workflow": "publish-candidate.yml",
+  "admission_model": "owner_manual",
+  "manifest_sha256": "7ced6f15ee096752d8e974d793d1bd99a8f41d77181fb061d2871d890aeb5dc5",
+  "transport_tag": "rc1-transport-20261103",
+  "transport_asset": "release-transport.zip",
+  "transport_sha256": "6b817c8c627e1cdd0fe882b25617b2be17fe6ff7dc75e45b3d8a26d69c0db0d0",
+  "transport_bytes": 1486204,
+  "npm_tag": "next",
+  "runner": "ubuntu-24.04",
+  "timeout_minutes": 20,
+  "publication_authorized": false,
+  "workflow_dispatched": false
+}
