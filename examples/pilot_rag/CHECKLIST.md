@@ -4,7 +4,7 @@ Run the [pilot](README.md) against its synthetic corpus. Leave the result cells 
 
 | Check | Action | Expected observation | Manual result |
 | --- | --- | --- | --- |
-| Installed artifact | Start a session and inspect the import origin and version. | Child imports `cragkit` from `examples/pilot_rag/.venv`, version `0.0.0`, not checkout product code. | |
+| Installed artifact | Start a session and inspect the import origin and version. | Child imports `cragkit` from the selected installed environment, normally `examples/pilot_rag/.venv`, version `1.0.0rc1`, not checkout product code. | |
 | Seed and baseline | As `alice`, run `docs`, then `ask atlas rollback`. | Nine authorized team documents are seeded; runbook evidence has source references. Useful hits can be `partial` with unknown coverage. | |
 | No match | `ask quasarlattice` | No matching evidence; an honest `insufficient` result, not an invented answer. | |
 | Synonym limitation | Compare `ask rollback` and `ask reversion`. | The literal query finds evidence; the synonym may miss because this profile is lexical. | |

@@ -1,0 +1,108 @@
+{
+  "revision": "UX-r1",
+  "task_state": "completed_with_missing_human_evidence",
+  "human_trial": {
+    "state": "not_run",
+    "reason": "No independent unfamiliar human participant or manual baseline measurement available in this session.",
+    "participant_id": null,
+    "baseline_total_seconds": null,
+    "library_total_seconds": null,
+    "assistance": null,
+    "continue_or_abandon_feedback": null,
+    "comparison_valid": false,
+    "effort_or_adoption_claim": false
+  },
+  "agent_rehearsal": {
+    "version": "1.0.0rc1",
+    "state": "passed",
+    "checks": [
+      "known_answer",
+      "unknown_coverage_no_inference",
+      "exact_citation",
+      "exact_citation",
+      "absent_answer",
+      "bob_denied",
+      "outside_denied",
+      "foreign_owner_can_read",
+      "foreign_canary_denied",
+      "unicode_query",
+      "unicode_byte_span",
+      "code_identifier",
+      "manual_prompt_contains_untrusted_source",
+      "bob_write_denied",
+      "invalid_query_rejected",
+      "budget_failure_explicit",
+      "idempotent_replay",
+      "immutable_revision_update",
+      "updated_evidence",
+      "tombstone_excludes_source",
+      "closed_resource_operational_failure"
+    ],
+    "document_count": 10,
+    "kind": "installed_native_mechanics_not_human_usability",
+    "installed_origin_confined_to_owned_environment": true,
+    "wheel_sha256": "6c5648fd8e0460a686c207e3627870be2c8b91560df7c0c4a2939d2517cd1500",
+    "corpus_sha256": "25e5ecbe975b54298ce0659f427e779a682559104809f6b8bf92100b62b83523",
+    "source_commit": "3889e875a9fb8d01305ed1f8d67193c44c84e22a",
+    "provider_calls": 0,
+    "hosted_database_writes": 0,
+    "cleanup_verified": true
+  },
+  "retained_failures": [
+    {
+      "step": "initial offline install",
+      "cause": "Spaced absolute --constraints path rejected before installation."
+    },
+    {
+      "step": "file-URI install with same constraints path",
+      "cause": "Same constraints-path failure; file URI was not the cause."
+    },
+    {
+      "step": "first smoke",
+      "cause": "Root launched before checking failed install; child import found no cragkit. Fixture closed. This is a rehearsal failure, not human feedback."
+    }
+  ],
+  "isolating_dry_runs": {
+    "relative_paths": "passed",
+    "file_uri_wheel_relative_constraints": "passed",
+    "absolute_interpreter": "passed",
+    "absolute_wheel": "passed",
+    "absolute_constraints_with_space": "failed"
+  },
+  "correction": "Relative locked constraints path; PEP508 wheel file URI;9 locked packages installed offline, then fresh disposable native smoke passed. No security check or version assertion weakened.",
+  "documents_corrected": [
+    "docs/v5-operations.md",
+    "examples/pilot_rag/README.md",
+    "examples/pilot_rag/CHECKLIST.md",
+    "README.md"
+  ],
+  "logs_sha256": {
+    "pilot-smoke.log": "147593844dd59b62fef7216b9700ea0c9d9128557e2474b66e333b3cc7b9e773",
+    "preparation.log": "1a1152d2bb4e114e6246e4eda862e2bbac9efb6b99a6a7942b50fd2b6cc0f75e",
+    "verified-install.log": "b55d586c2bd3b54cfff02d87e649bac584595b0e35ad4fa74aaf01d28e8f7761",
+    "pilot-smoke-corrected.log": "f44ab99e14d3849100b5ba180f993f3e9eb15959bfb91419e7acced1388ee6db",
+    "dry-absolute_wheel.log": "0347c45ee19825e3b4f7d38f182c820d70bb9110f2237f99ff38e09ddab113f4",
+    "corrected-install.log": "9308a21551d03dfbf5c75c6ede9af93da94a73af12142dabde45573a9c6cf46d",
+    "dry-absolute_constraints.log": "9308a21551d03dfbf5c75c6ede9af93da94a73af12142dabde45573a9c6cf46d",
+    "dry-file_uri.log": "2af19702981f4f82bffa1bd8ab80e305effbbeeff6afd30180990e26687597e8",
+    "dry-absolute_python.log": "1af7b3f2c9cf21df2485929daf326a6991fc3014ed9ea72ac549e1b546587237",
+    "dry-relative.log": "b92f9d9ead3a3afae5de02723af114aee89fee49624c27fd06bdb418d98713c4"
+  },
+  "resource_observation": {
+    "after_smoke_memory_free_percent": 32,
+    "after_smoke_swap_used_MiB": 7282.94,
+    "interpretation": "Swap allocation grew during the interval; causality is not established. No further native load launched while checking for sustained pressure; owned processes closed.",
+    "later_memory_free_percent": 46,
+    "later_swap_used_MiB": 7910.06,
+    "action": "Further native/load runs stopped after two swap-growth observations; continue light documentation/metadata work and recheck stable headroom.",
+    "third_memory_free_percent": 44,
+    "third_swap_used_MiB": 8107.31,
+    "third_swapout_pages": 6816294
+  },
+  "limitations": [
+    "Agent rehearsal cannot substitute for unfamiliar human timing, errors, assistance or feedback.",
+    "No manual SQL baseline or comparative effort/adoption result.",
+    "Single local Python installed pilot; native Node core is separately tested, not a Node human usability trial.",
+    "Local wheel is a security-audit sample including preserved user prose; final frozen artifact identity remains V6-06."
+  ]
+}

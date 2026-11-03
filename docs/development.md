@@ -1716,3 +1716,26 @@ The initial MCP metadata mismatch was corrected through a frozen offline sync,
 not by weakening its installed-version test. Current source differs from the
 frozen V6-02 live candidate only through separately recorded subsequent changes;
 its original live evidence is retained rather than relabelled.
+
+
+## V6-05 installed pilot rehearsal
+
+The [human protocol](usability-trial.md) and
+[actual record](../evaluation/reports/V6/V6-05-usability.md) separate an unavailable
+independent participant from the passing installed-package agent smoke. No manual
+baseline, human timing or adoption claim exists. The guide's RC1 wheel names and
+PostgreSQL override now match current metadata/options. From the repository root,
+the actual offline correction and smoke were:
+
+```sh
+uv pip install --offline --python artifacts/V6/V6-05/pilot-env/bin/python --constraints artifacts/V6/V6-05/constraints.txt 'cragkit[postgres] @ file:///absolute/percent-encoded/path/cragkit-1.0.0rc1-py3-none-any.whl'
+uv run --project packages/python --frozen --no-sync python -B examples/pilot_rag/session.py --python artifacts/V6/V6-05/pilot-env/bin/python --postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --smoke
+```
+
+Create a fresh Python environment first and export the current frozen core extras
+as constraints; select your inspected wheel and verified PostgreSQL17.11 binaries.
+The absolute constraints filename failed when it contained the workspace's space;
+the relative filename above succeeded. Isolated dry runs verified that absolute
+interpreter and wheel paths were not the cause. The smoke passed21 checks with
+no model calls and cleaned up its private database. Native/load work stopped
+after subsequent swap growth; recheck stable headroom before another local run.

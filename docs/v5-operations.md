@@ -4,9 +4,9 @@ For example, a PostgreSQL lexical application needs the core and PostgreSQL driv
 but no Qdrant server, embedding provider or MCP process. Choose the smallest profile
 that supplies the required capabilities.
 
-This guide covers local beta-candidate artifacts and disposable operational examples.
-Package manifests still use provisional `0.0.0`; the planned `0.5.0-beta.1` label is
-not a published release. Check the [tracker](../tasks/todo.md) and
+This guide covers local candidate artifacts and disposable operational examples.
+Current manifests use Python `1.0.0rc1` and npm `1.0.0-rc.1`; no registry release is
+implied. Older V5 reports retain their original `0.0.0` identities. Check the [tracker](../tasks/todo.md) and
 [V5-08 evidence](../evaluation/reports/V5/V5-08.md) for actual acceptance. Installation,
 native backend mechanics, live-model quality and hosted operation are separate evidence.
 
@@ -63,13 +63,22 @@ backend or prove a real embedding model's quality.
 
 For an application, install an explicit archive path from those reports into a new
 environment. For Python, select the wheel's extra using the quoted local path syntax
-`'/absolute/path/cragkit-0.0.0-py3-none-any.whl[postgres]'`; select `qdrant` or
+`'/absolute/path/cragkit-1.0.0rc1-py3-none-any.whl[postgres]'`; select `qdrant` or
 `tokenizers` instead for the corresponding dependency. For the reference Qdrant
 PostgreSQL authority select both `postgres,qdrant`. Core needs no extra. Install the
-local core wheel alongside the local MCP wheel so its exact `cragkit==0.0.0` dependency
+local core wheel alongside the local MCP wheel so its exact `cragkit==1.0.0rc1` dependency
 resolves to your built product.
 
-For Node, run `npm install --ignore-scripts /absolute/path/to/cragkit-0.0.0.tgz`
+If an absolute wheel path contains spaces, use a percent-encoded file URI in a
+PEP 508 requirement, for example
+`'cragkit[postgres] @ file:///absolute/My%20Project/cragkit-1.0.0rc1-py3-none-any.whl'`.
+`Path('/absolute/My Project/cragkit-1.0.0rc1-py3-none-any.whl').as_uri()` produces
+that URI. If you also use a locked constraints file in this repository's spaced
+workspace, pass its relative path from the repository root. The local uv rehearsal
+rejected a spaced absolute `--constraints` path; the interpreter and wheel paths
+were independently verified to work.
+
+For Node, run `npm install --ignore-scripts /absolute/path/to/cragkit-1.0.0-rc.1.tgz`
 in a new application directory. Add `pg@8.23.1` or `tiktoken@1.0.22` only when that
 profile needs it. Install the local core tarball alongside the MCP tarball; do not
 resolve provisional package names from a public registry. Neither package is being

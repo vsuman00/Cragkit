@@ -346,7 +346,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V6-04: [Security and failure audit](versions/V6-release.md#v6-04-security-and-failure-audit) — [scoped local acceptance](../evaluation/reports/V6/V6-04-security.md).
 
-- [ ] V6-05: [Developer usability trial](versions/V6-release.md#v6-05-developer-usability-trial) — evidence: pending.
+- [x] V6-05: [Developer usability trial](versions/V6-release.md#v6-05-developer-usability-trial) — [unavailable-participant record and agent rehearsal](../evaluation/reports/V6/V6-05-usability.md). Human comparative effort/adoption remain unvalidated.
 
 - [ ] V6-06: [Release artifacts and CI](versions/V6-release.md#v6-06-release-artifacts-and-ci) — evidence: pending.
 
@@ -4548,3 +4548,46 @@ findings/results/hashes/limits. Root owns prose/links/staged secret review, scop
 commit, immediate push and sync. User-owned source/audits/tracker draft preserved
 and excluded. Learning example safe operational error vs relevance, exercise
 unassessed. Next smallest task V6-05 usability trial; full V6 remains incomplete.
+
+
+V6-05 assignment: root single writer for a dependent documentation/rehearsal
+slice after V6-04. No useful independent implementation lane: pilot version is
+already discovered dynamically; the defect is stale 0.0.0 install prose. Child
+A owns docs/v5-operations.md and pilot README/CHECKLIST (three files), preserving
+README structure for any status correction. Child B owns actual installed pilot
+rehearsal, usability protocol/report and tracker. No unfamiliar human participant
+or comparable manual-baseline timing is available; record null/unvalidated human
+metrics per active plan and frozen developer-trial policy, never substitute agent
+timing/feedback. Acceptance: corrected RC1 commands/local links, fresh installed
+wheel pilot smoke and explicit limitations. Use one owned environment/database,
+o real provider/model/hosted write, and close all resources. Future human trial
+needs paired same-corpus manual SQL/library tasks; no lowered effort/adoption claim.
+
+
+V6-05 final handoff: COMPLETE documentation/rehearsal and explicit unavailable-
+participant path, not human usability or comparative-effort acceptance. No
+unfamiliar participant/manual SQL baseline: all human times/errors/assistance/
+feedback null, no reduced effort or adoption claim. docs/usability-trial.md fixes
+future paired comparison requirements; original candidate target unchanged.
+Root single writer corrected stale RC0 archive/provisional beta prose in operations
+and pilot guides/checklist, preserved root README structure and updated V6 row.
+Initial install and file-URI attempt failed due spaced absolute --constraints
+path; root erroneously launched first smoke before checking installation, causing
+missing-package import, with fixture cleanup. One-argument dry runs identified
+constraints path as sole cause; relative constraints fixed offline installation
+of nine pinned packages. Corrected installed RC1 pilot passed21 mechanics checks
+on ten synthetic documents, genuine TLS PostgreSQL17.11, origin confined to owned
+environment, no provider calls/hosted writes/model download. Mutation, denial,
+Unicode/source spans, partial/insufficient versus explicit operational failure,
+replay/update/tombstone and resource closure observed. Failed logs retained, no
+assertions weakened. Manual result cells blank; docs are not proof of human trial.
+
+Reports V6-05-usability.md and V6-05-verification.json retain digests/results/limits.
+Resource after smoke32%free/swap7282.94MiB, later46%free/swap7910.06MiB: two growth
+observations, no causality claim. All owned processes/listeners closed. Further
+native/load runs stopped pending stable headroom or an approved suitable CI
+runner; continue light metadata/docs without deleting unrelated data. Source
+implementation/locks/seals/models/targets unchanged in this slice. Learning
+exercise unassessed. Root prose/link/secret scoped review then commit/immediate
+push/sync, user dirty source/audits/tracker draft excluded. Next V6-06 license/
+notices/exact artifact/CI preparation; full V6 still incomplete.

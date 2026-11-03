@@ -2,17 +2,32 @@
 
 For example, `ask atlas rollback` retrieves synthetic runbook excerpts with source references. `prompt atlas rollback` prepares evidence for you to paste into an LLM of your choice. The app makes no generation or embedding calls.
 
-This is V5-PILOT-01, a local installed-artifact beta trial. V5 is a milestone label: the wheel's actual version is `0.0.0` and it is unpublished. This exercise is not V6-05 usability acceptance, a held-out quality evaluation or a release claim. See the [operations guide](../../docs/v5-operations.md) and [tracker](../../tasks/todo.md).
+This is a local installed-artifact pilot, originally introduced as V5-PILOT-01.
+The current wheel version is `1.0.0rc1` and registry publication remains pending.
+An automated or agent rehearsal is not an independent human usability trial,
+a held-out quality evaluation or a release claim. See the
+[operations guide](../../docs/v5-operations.md) and [tracker](../../tasks/todo.md).
 
 ## Start a disposable session
 
-Run these commands from the repository root. They require `uv`, Python 3.14, the existing local wheel below and the existing PostgreSQL 17.11 binaries at `/opt/homebrew/opt/postgresql@17/bin`. The launcher requires that exact PostgreSQL version; it does not download a server or a model. If the wheel is absent, follow the operations guide and inspect the local build evidence before installing it.
+Run these commands from the repository root. They require `uv`, Python 3.14,
+an inspected local RC1 wheel and existing PostgreSQL 17.11 binaries. The default
+server path is `/opt/homebrew/opt/postgresql@17/bin`; pass `--postgres-bin` when
+your verified binaries are elsewhere. The launcher requires that exact server
+version and downloads no server or model. Replace the absolute wheel path below
+with the artifact path from your build report; follow the operations guide if
+you have not built it yet.
 
 ```sh
 uv venv --python 3.14 examples/pilot_rag/.venv
-uv pip install --python examples/pilot_rag/.venv/bin/python 'artifacts/V5/V5-08/full-core-frameworks/core/python/cragkit-0.0.0-py3-none-any.whl[postgres]'
+uv pip install --python examples/pilot_rag/.venv/bin/python 'cragkit[postgres] @ file:///absolute/path/cragkit-1.0.0rc1-py3-none-any.whl'
 uv run --project packages/python --frozen --no-sync python examples/pilot_rag/session.py
 ```
+
+Use a percent-encoded file URI when the path contains spaces, such as
+`file:///absolute/My%20Project/cragkit-1.0.0rc1-py3-none-any.whl`.
+Python's `Path(...).as_uri()` can construct it. The explicit package name and
+`[postgres]` extra select the optional driver without enabling a model provider.
 
 The launcher uses the repository development environment only to provision the explicit disposable TLS database. Its child application runs in `examples/pilot_rag/.venv` and imports the installed wheel, without importing the product from the checkout. Inspect the startup import origin. The application seeds [corpus.json](corpus.json) automatically into collection `manual-pilot` and starts as `alice`.
 
