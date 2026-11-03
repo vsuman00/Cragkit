@@ -1,5 +1,9 @@
 # V6-04R consumer security reassessment
 
+Later evidence: the [Docker-backed follow-up](V6-04R-docker-cso.md) records actual
+scanner execution after Docker became available. The run and results below
+remain historical; the follow-up does not clear the publication hold.
+
 Partial overall, 4 November 2026. Scoped native engineering acceptance passed;
 the CSO assessment, replacement release artifacts and production deployment
 assessment remain incomplete. This report does not certify that Cragkit or an

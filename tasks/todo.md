@@ -1,9 +1,11 @@
 # Cragkit implementation tracker
 
 Current security checkpoint (4 November 2026): V6-04R native engineering checks
-passed; CSO assessment is PARTIAL with unassessed domains. Publication is on
-security hold pending corrected-source and exact replacement-artifact acceptance.
-[Current evidence](../evaluation/reports/V6/V6-04R-consumer-security.md).
+passed. The Docker-backed CSO follow-up is PARTIAL: two scanners completed,
+Semgrep returned partial coverage and an untriaged backlog, and two secret-match
+correlations remain open. Publication stays on security hold pending security
+review, corrected-source and exact replacement-artifact acceptance.
+[Current evidence](../evaluation/reports/V6/V6-04R-docker-cso.md).
 V6-08, production acceptance and version exit remain incomplete.
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
@@ -5082,3 +5084,66 @@ owned functional hunks are staged. Existing user comments/docstrings, unrelated
 source/storage edits, the original tracker draft and three user audit files stay
 untouched and excluded. Learning exercise about public errors versus private
 DEBUG logs remains unassessed; production-security.md assigns actual host controls.
+
+V6-04R-CSO2 assignment: user started Docker and authorized the security follow-up.
+Outcome: a fresh helper-owned audit with recorded application model, explicit
+coverage and actual scanner outcomes; no relabelled native-test or production
+assurance. Root owns trusted image provisioning, run lifecycle, scanner/test
+slot, final integration/report/tracker/Git. Sol integrations peer owns read-only
+plugin/provider/authority tracing and a private lane report; Sol release peer
+owns read-only CI/supply-chain/skills tracing and a separate private lane report,
+and ASSEMBLES. Repository paths are read-only for peers. Root supplies the exact
+snapshot/run ID; all audited source reads use helper inspect/read/history.
+Shared constraints: one scanner process at a time, no target scripts or Docker
+commands on host, no credentials/live providers/paid CI/publication, preserve all
+user edits, no global telemetry/shared learning. Peers coordinate directly;
+plan/protected ownership changes escalate to root, unresolved decisions to Astra.
+Before completion, root submits the evidence through the helper and finishes it;
+unavailable qualified images/runtime profiles remain explicit prerequisites.
+State: prerequisite image setup running; no new audit start yet.
+
+V6-04R-CSO2 final handoff: PARTIAL. Docker 29.9.2 became reachable and trusted
+provision-images acquired 10/11 exact qualified ARM64 images; Trivy hit 45s limit.
+Memory free 39%, disk 16 GiB before/6.8 GiB after images; stopped further downloads.
+No package/source/lock changes, host target execution, live provider, cloud write,
+new paid CI or publication. Root serialized scanner processes. Native 6,333 test/
+23 SQL-check acceptance remains earlier evidence, not a rerun or CSO witness.
+
+Fresh run 1793736056579-06b263c519e5f9fd captured source 671cc2c plus preserved
+user prose and this assignment, snapshot 521d7e051eddfb1b2248ec1505646b4d3ccae121f69d43a0d66bef52d4d5c887.
+Root submitted application model and 12 domain records successfully, inspected the
+Sol pair's read-only assembly and finished via helper. Integrations and release
+peers owned separate private reports; release ASSEMBLED, both stopped writing.
+Actual immutable outcomes: Gitleaks 8.30.1 complete, 8 candidates; zizmor 1.30.1 complete,
+2 informational leads; Semgrep 1.179.0 partial, 248 candidates with parser/rule/execution
+errors (214 reported high/25 medium/9 info). These are scanner labels, not confirmed
+exploit severities. OSV/Trivy/Schemathesis and application execution did not run.
+Root preparation expects missing root requirements.txt; nested lock layout was
+preserved. No new fake manifest/server was added for audit admission.
+
+Five Gitleaks hits are tokenizer digest fields/constants, one is a synthetic
+owner-token fixture. Exact correlations for tasks/todo.md:1175 and
+qdrant_publication_schema.py:414 remain unresolved. Sol peers challenged synthetic
+neighboring context; Astra agreed this does not prove exact false-positive
+closure, credential exposure or a high-severity finding. No candidate values or
+credentials disclosed. Both zizmor leads are fixed npm 11.17.0 --ignore-scripts
+installs; toolchain bytes/effective registry/config remain supply-chain gaps.
+Semgrep 248-candidate triage remains open, prioritizing production SQL/subprocess/
+regex data flows. Nine binary inputs withheld; history 10/100 commits retained.
+
+Final coverage enrichment accidentally included helper-owned scanner rows and
+was rejected INVALID_SCHEMA; one correction after finalization was rejected
+because only running audits accept evidence. Initial model/domain submission and
+three immutable scanner outcomes remain saved. Post-scan triage is in separate
+V6-04R-docker-cso.md/verification.json, not retroactive helper coverage. Private
+helper report persists under security/cso/e7ac09bf7e97c728f9f0310d/runID/report.md.
+Root owns companion report, current-guide pointers, tracker/prose/link/scoped Git
+checks and authorized commit/immediate push/sync; user drafts/edits stay excluded.
+
+Next smallest task: trace and independently triage retained Semgrep production
+call sites, correlate the two exact secret matches without exposing values,
+address partial parser coverage, then run remaining applicable checks in a new
+bounded audit. Review disk headroom before more images; no global Docker prune.
+Publication security_hold remains true; corrected-artifact/CI/registry/production
+checks and V6 exit remain incomplete. Learning about scanner leads versus actual
+attacker control is offered in the report; exercise remains unassessed.

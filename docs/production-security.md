@@ -80,10 +80,12 @@ code.
 
 ## Record what remains unvalidated
 
-The CSO daily run for this reassessment is partial: Docker and required scanners
-were unavailable, and its assessment submission did not finish within the run
-budget. The saved helper report leaves the assessment domains unassessed.
-Do not describe it as a completed CSO audit. The scoped native
+The first CSO run was partial with unavailable Docker/scanners and an unsubmitted
+assessment. After Docker started, the
+[fresh follow-up](../evaluation/reports/V6/V6-04R-docker-cso.md) recorded its
+application model, completed Gitleaks and zizmor scans, and partial Semgrep
+coverage. Candidate triage and other applicable checks remain incomplete.
+Do not describe either run as a completed security audit. The scoped native
 consumer tests and dependency findings have their own evidence in the
 [reassessment report](../evaluation/reports/V6/V6-04R-consumer-security.md).
 Deployment-specific identity, ingress, secrets, logging, recovery and operational
