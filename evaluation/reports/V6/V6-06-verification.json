@@ -1,0 +1,100 @@
+{
+  "revision": "V6-06-acceptance-r1",
+  "state": "complete",
+  "checkpoint": "V6-C2",
+  "source_commit": "0c7c568d5cb71638eebab2dea97c5973b0f8cc08",
+  "package_tree": "60a251c2bf94402cb562d0398403c218875454f3",
+  "ci_run_id": 41625938303,
+  "ci_job_id": 125883197705,
+  "ci_run_url": "https://github.com/vsuman00/Cragkit/actions/runs/41625938303",
+  "authorized_actual_ci_runs": 1,
+  "additional_ci_run_authorized": false,
+  "exact_package_products": 12,
+  "full_local_python_tools": {
+    "command": "uv run --project packages/python --frozen --no-sync pytest packages/python/tests tools/tests -q",
+    "passed": 3968,
+    "skipped": 0,
+    "warnings": 4,
+    "seconds": 18.51
+  },
+  "combined_new_checker_tests": {
+    "command": "uv run --project packages/python --frozen --no-sync pytest tools/tests/test_check_ci_bundle.py tools/tests/test_check_recorded_compatibility.py -q",
+    "passed": 32,
+    "seconds": 0.54
+  },
+  "records": [
+    {
+      "path": "artifacts/V6/ci-bundle-audit.json",
+      "sha256": "bfb5008d10941760ab3326ae0d089b29dd468a2889f7c17d7ab6e00cccd68972"
+    },
+    {
+      "path": "artifacts/V6/release-installed/default-resources.json",
+      "sha256": "436f858ef7e92aab1ab72ca3c6d8d3d7faa3090117d894a792fb711b7b40c956"
+    },
+    {
+      "path": "artifacts/V6/release-installed/integrity-probes.json",
+      "sha256": "5d7cafe7ae97e4eb1a28c10fed75adb9c643fb92f888097823667e95fccb1157"
+    },
+    {
+      "path": "artifacts/V6/release-recorded-compatibility/results.json",
+      "sha256": "4144836f3d7c67635acba15aee9d541c5d2ab6ab30a05409066a04f9a87e2486"
+    },
+    {
+      "path": "artifacts/V6/v6-c2-python.log",
+      "sha256": "c510ab80ae49a0004a4d7eec72c89b486cf1e89347a7d7b2539fea2b08519f29"
+    },
+    {
+      "path": "artifacts/V6/v6-c2-secret-scan.json",
+      "sha256": "b840ce89554a1f5c58106ce81be05f9eb84a19a09a9b4fb340687cfcb75c43bb"
+    }
+  ],
+  "integrity_probes": {
+    "state": "passed",
+    "checks": {
+      "extra_installed_python_file_rejected": true,
+      "changed_node_dist_rejected": true,
+      "original_target_identity_restored": true
+    },
+    "target_snapshot_sha256": "fe442d30048e03940027ce9899a542cf96ade01d46b0bbdb9dc85621080e44f7",
+    "target_file_count": 2608,
+    "live_provider_calls": 0
+  },
+  "compatibility": {
+    "revision": "EBC-r1",
+    "identity_sha256": "3efdb1bc1abeca2a5cac50a3b6bb3c6a7df55dbfcf8b14bac6563722b98600f8",
+    "target_file_count": 2608,
+    "rows_per_runtime": 30,
+    "receipts_per_runtime": 5,
+    "recorded_calls_per_runtime": 39,
+    "normalized_parity": true,
+    "live_http_calls_this_run": 0,
+    "cleanup_verified": true
+  },
+  "resource_evidence": {
+    "default_artifacts": "all six frozen default size/import/RSS checks passed",
+    "native_artifacts": "all twelve RST checks per runtime passed; three ingests and forty retrieval measurements each",
+    "pressure": "Default39-41percent free/zero swapout delta; native36percent free/zero delta. Later system paging observed outside the bounded measurements; keep monitoring before further native runs.",
+    "native_rss_descriptive_only": true
+  },
+  "limitations": [
+    "Only the declared darwin-arm64 toolchain configurations were exercised.",
+    "The three initial hosted skips passed locally; the new future post-build workflow step has not run in hosted CI.",
+    "Recorded-output compatibility is not a new live evaluation or proof of semantic quality.",
+    "Human comparative usability remains unvalidated; known quality failures remain reported.",
+    "Actual GitHub charges and free allowance are unverified.",
+    "Repository remains private; no registry publication or visibility change.",
+    "V6-07 onward and version exit remain incomplete."
+  ],
+  "secret_scan": {
+    "state": "passed",
+    "working_files": 986,
+    "exact_ci_archives": 12,
+    "archive_members": 391,
+    "matches": 0,
+    "scope": "Selected private provider values and their base64 plus provider/GitHub/private-key patterns. Not universal secret detection."
+  },
+  "tools_sha256": {
+    "check_ci_bundle.py": "e6282e4174abb3ff6f81856a2ae169493100b49b34058e930f0730f1d071ddc1",
+    "check_recorded_compatibility.py": "680d020f2fa4be729b19a3bacdba1c13fa3ea466a563d74c0421f7e7de41269f"
+  }
+}

@@ -1,0 +1,590 @@
+{
+  "revision": "CIB-r1",
+  "state": "passed_ci_artifact_and_local_compatibility",
+  "source_commit": "0c7c568d5cb71638eebab2dea97c5973b0f8cc08",
+  "package_tree": "60a251c2bf94402cb562d0398403c218875454f3",
+  "ci": {
+    "run_id": 41625938303,
+    "job_id": 125883197705,
+    "run_url": "https://github.com/vsuman00/Cragkit/actions/runs/41625938303",
+    "state": "success",
+    "repository_private": true,
+    "runtime": {
+      "runner": "macos-15",
+      "architecture": "arm64",
+      "macos": "15.8.2",
+      "macos_build": "24H232",
+      "python": "3.14.6",
+      "node": "26.5.0",
+      "npm": "11.17.0",
+      "uv": "0.11.8"
+    },
+    "core_python_tools": {
+      "passed": 3933,
+      "skipped": 3,
+      "warnings": 4,
+      "seconds": 27.62
+    },
+    "core_node_passed": 1635,
+    "sdk_pipeline_stages": 34,
+    "langchain": {
+      "python_passed": 73,
+      "node_passed": 70
+    },
+    "mcp": {
+      "python_passed": 41,
+      "node_passed": 36
+    }
+  },
+  "retention": {
+    "artifact_id": 13226006299,
+    "archive_path": "artifacts/V6/hosted-candidate-0c7c568.zip",
+    "bytes": 1281321,
+    "sha256": "37b5fbcadc65be97556d885810a598e791b4321ba2ef9d3868877e2a67e4b17b",
+    "hosted_expires_at": "2026-11-04T11:17:24Z",
+    "local_retention": "Ignored ZIP and metadata retained; committed hashes alone cannot recover missing binaries."
+  },
+  "retained_metadata": [
+    {
+      "path": "artifacts/V6/ci-run.json",
+      "sha256": "f42ec8cd45d6ea328b5b393163f937cf41de71f592ef94d99aaadea1006776a3"
+    },
+    {
+      "path": "artifacts/V6/ci-jobs.json",
+      "sha256": "4740711385c939790803974c351d846f965d5c6defae31d6c568c277901ab1bc"
+    },
+    {
+      "path": "artifacts/V6/ci-artifact.json",
+      "sha256": "c7f1597ec5cb0f52d29708330d5dae015d2302b263271028352e9da38cbedb9e"
+    },
+    {
+      "path": "artifacts/V6/ci-job.log",
+      "sha256": "008562ce3e99e375ff0ccbc7c37e8517988138d36d84ab15a183d44e31d8ee86"
+    },
+    {
+      "path": "artifacts/V6/ci-local-entrypoint-bridge.json",
+      "sha256": "85f8f103bccd7b9742b06911ae5084ca2230e418a6eea723feac2b10a53aa134"
+    },
+    {
+      "path": "artifacts/V6/release-runtime-preparation.json",
+      "sha256": "ed4a74b49a803187bbd01cae7df3151e6529673bada387b6d0a5e0ff9e259170"
+    },
+    {
+      "path": "artifacts/V6/release-installed/default-resources.json",
+      "sha256": "436f858ef7e92aab1ab72ca3c6d8d3d7faa3090117d894a792fb711b7b40c956"
+    }
+  ],
+  "bundle": {
+    "revision": "CIB-r1",
+    "state": "passed",
+    "source_commit": "0c7c568d5cb71638eebab2dea97c5973b0f8cc08",
+    "run_id": 41625938303,
+    "job_id": 125883197705,
+    "artifact_id": 13226006299,
+    "archive_sha256": "37b5fbcadc65be97556d885810a598e791b4321ba2ef9d3868877e2a67e4b17b",
+    "archive_bytes": 1281321,
+    "products": [
+      {
+        "path": "sdks/core/python/cragkit-1.0.0rc1-py3-none-any.whl",
+        "kind": "wheel",
+        "package": "cragkit",
+        "bytes": 233144,
+        "sha256": "ad8e7c928363bdf23cf69d479657219a0e662e498706f7254e211554e11ca599",
+        "file_count": 57,
+        "unpacked_bytes": 1069071,
+        "licensing": "passed"
+      },
+      {
+        "path": "sdks/core/python/cragkit-1.0.0rc1.tar.gz",
+        "kind": "sdist",
+        "package": "cragkit",
+        "bytes": 421214,
+        "sha256": "107d66d1f678d21a279e630ecd6dabe9012cbfe8b1394a37c4e88d7b32e39cd1",
+        "file_count": 117,
+        "unpacked_bytes": 2155873,
+        "licensing": "passed"
+      },
+      {
+        "path": "sdks/core/rebuilt/cragkit-1.0.0rc1-py3-none-any.whl",
+        "kind": "wheel",
+        "package": "cragkit",
+        "bytes": 233144,
+        "sha256": "ad8e7c928363bdf23cf69d479657219a0e662e498706f7254e211554e11ca599",
+        "file_count": 57,
+        "unpacked_bytes": 1069071,
+        "licensing": "passed"
+      },
+      {
+        "path": "sdks/core/npm/cragkit-1.0.0-rc.1.tgz",
+        "kind": "npm",
+        "package": "cragkit",
+        "bytes": 230521,
+        "sha256": "339e1004df372a5fe111296b96b964a0e90533dfc0db414ce996a0c7805932b3",
+        "file_count": 103,
+        "unpacked_bytes": 1264158,
+        "licensing": "passed"
+      },
+      {
+        "path": "sdks/frameworks/python/cragkit_langchain-1.0.0rc1-py3-none-any.whl",
+        "kind": "wheel",
+        "package": "cragkit-langchain",
+        "bytes": 5851,
+        "sha256": "479347d93c913e1f723aaa3109d8d6014bababb5292ec1a655c7d7032d462c83",
+        "file_count": 7,
+        "unpacked_bytes": 13455,
+        "licensing": "passed"
+      },
+      {
+        "path": "sdks/frameworks/python/cragkit_langchain-1.0.0rc1.tar.gz",
+        "kind": "sdist",
+        "package": "cragkit-langchain",
+        "bytes": 60955,
+        "sha256": "bdddc499fc03aa29501e0dc40392c7d3e7388f8ddb9dcff354f0ead291e15059",
+        "file_count": 9,
+        "unpacked_bytes": 199557,
+        "licensing": "passed"
+      },
+      {
+        "path": "sdks/frameworks/rebuilt/cragkit_langchain-1.0.0rc1-py3-none-any.whl",
+        "kind": "wheel",
+        "package": "cragkit-langchain",
+        "bytes": 5851,
+        "sha256": "479347d93c913e1f723aaa3109d8d6014bababb5292ec1a655c7d7032d462c83",
+        "file_count": 7,
+        "unpacked_bytes": 13455,
+        "licensing": "passed"
+      },
+      {
+        "path": "sdks/frameworks/npm/cragkit-langchain-1.0.0-rc.1.tgz",
+        "kind": "npm",
+        "package": "cragkit-langchain",
+        "bytes": 5564,
+        "sha256": "1f3b63c232dde69a5fef9bd986000c5828cfe272b354e339b7e011e311b07364",
+        "file_count": 5,
+        "unpacked_bytes": 16775,
+        "licensing": "passed"
+      },
+      {
+        "path": "optional/mcp/python/cragkit_mcp-1.0.0rc1-py3-none-any.whl",
+        "kind": "wheel",
+        "package": "cragkit-mcp",
+        "bytes": 6982,
+        "sha256": "8e90f98762d3a030e20a6f23b5a3f6e2e5759a672161d77ef3d2a34197a625f7",
+        "file_count": 7,
+        "unpacked_bytes": 16959,
+        "licensing": "passed"
+      },
+      {
+        "path": "optional/mcp/python/cragkit_mcp-1.0.0rc1.tar.gz",
+        "kind": "sdist",
+        "package": "cragkit-mcp",
+        "bytes": 56388,
+        "sha256": "25d0faf4d66853d71b7efbf3f50499cb2e4de9db2fee4472c4f70e191471227b",
+        "file_count": 10,
+        "unpacked_bytes": 183625,
+        "licensing": "passed"
+      },
+      {
+        "path": "optional/mcp/rebuilt/cragkit_mcp-1.0.0rc1-py3-none-any.whl",
+        "kind": "wheel",
+        "package": "cragkit-mcp",
+        "bytes": 6982,
+        "sha256": "8e90f98762d3a030e20a6f23b5a3f6e2e5759a672161d77ef3d2a34197a625f7",
+        "file_count": 7,
+        "unpacked_bytes": 16959,
+        "licensing": "passed"
+      },
+      {
+        "path": "optional/mcp/npm/cragkit-mcp-1.0.0-rc.1.tgz",
+        "kind": "npm",
+        "package": "cragkit-mcp",
+        "bytes": 6188,
+        "sha256": "88d2aa6507f9ae6bfc4c1cb7448a8e62bfbf3683007c3aa59ea154c8f1181ed5",
+        "file_count": 5,
+        "unpacked_bytes": 19077,
+        "licensing": "passed"
+      }
+    ],
+    "acceptance_reports": [
+      {
+        "path": "sdks/core/acceptance.json",
+        "sha256": "4bdd77ec87965617363f501f7b3823d957a919204cc18aef97aa93d6d2c0ef9e"
+      },
+      {
+        "path": "sdks/frameworks/acceptance.json",
+        "sha256": "8003f142f6f356020039fafd7351da020b51580e988de2fba88e68bf4b8ebbf2"
+      },
+      {
+        "path": "optional/acceptance.json",
+        "sha256": "fbc9e7532f920fd994de3ea2b1f5f0c6a55f79ed795302627c605d3b87acde6a"
+      }
+    ],
+    "optional_profiles": {
+      "python": [
+        "core",
+        "postgres",
+        "qdrant",
+        "qdrant-authoritative",
+        "tokenizers",
+        "mcp"
+      ],
+      "node": [
+        "core",
+        "postgres",
+        "qdrant",
+        "qdrant-authoritative",
+        "tokenizers",
+        "mcp"
+      ]
+    },
+    "rebuilt_wheel_members_identical": true,
+    "license_sha256": "7b56ad5c16899ef1aa4453067a03f6e494d9146565cda1eec835d4391f593a7b",
+    "notice_sha256": "899df7c9b2301c90750ac5748bc3794f027c44ee3084ec1f5778b01a48ebeef2"
+  },
+  "focused_tests": {
+    "state": "passed",
+    "executor": "root",
+    "passed": 21,
+    "seconds": 0.09,
+    "command": "uv run --project packages/python --frozen --no-sync pytest tools/tests/test_check_ci_bundle.py -q"
+  },
+  "local_postbuild_skip_bridge": {
+    "state": "passed",
+    "source_commit": "0c7c568d5cb71638eebab2dea97c5973b0f8cc08",
+    "test_files": {
+      "tools/tests/test_backend_conformance.py": "9875686e150dca3c74c844c6342de9532fa4bbf56433a4d7377ebddf60d27cd3",
+      "tools/tests/test_check_qdrant.py": "cd762bf6467a3dc7194cf331edb0bac23c44f8c44a7d43676bf6cb59e02a78a1"
+    },
+    "command": "uv run --project packages/python --frozen --no-sync pytest tools/tests/test_backend_conformance.py::test_node_entrypoint_resolves_checkout_dependencies_before_input tools/tests/test_check_qdrant.py::test_explicit_node_candidate_import_has_no_driver_or_io -q",
+    "passed": 3,
+    "skipped": 0,
+    "environment": "Existing local checkout and its built native SDK dependencies; no database or live provider.",
+    "hosted_workflow_addition": "Added identical post-build command for future runs; not rerun in hosted CI.",
+    "hosted_rerun": false
+  },
+  "compatibility": {
+    "state": "passed",
+    "report": "evaluation/reports/V6/V6-06-compatibility.md",
+    "revision": "EBC-r1",
+    "focused_tests": {
+      "executor": "root",
+      "passed": 11,
+      "seconds": 0.55,
+      "command": "uv run --project packages/python --frozen --no-sync pytest tools/tests/test_check_recorded_compatibility.py -q",
+      "combined_after_guard": {
+        "passed": 32,
+        "seconds": 0.54,
+        "executor": "root",
+        "command": "uv run --project packages/python --frozen --no-sync pytest tools/tests/test_check_ci_bundle.py tools/tests/test_check_recorded_compatibility.py -q"
+      }
+    },
+    "review": "Inspected old ECR separation, retained tape pins, CIB product binding, exact target wheel/dist bytes, locked dependencies, replay parity, optional RST identity and resource-child prefix guard. Native acceptance remains with root.",
+    "result_path": "artifacts/V6/release-recorded-compatibility/results.json",
+    "result_sha256": "4144836f3d7c67635acba15aee9d541c5d2ab6ab30a05409066a04f9a87e2486",
+    "identity_sha256": "3efdb1bc1abeca2a5cac50a3b6bb3c6a7df55dbfcf8b14bac6563722b98600f8",
+    "evidence_kind": "recorded_output_compatibility",
+    "baseline_source_commit": "25275e447c64ecfd243ef6bc26c87031d5e2e472",
+    "baseline_runtime_identity_sha256": "59af39c6cb0a5d118c73511dbb67b5fd22b2289a731ffeaaa5fc488d4105b993",
+    "target": {
+      "package_tree": "60a251c2bf94402cb562d0398403c218875454f3",
+      "products": {
+        "sdks/core/npm/cragkit-1.0.0-rc.1.tgz": "339e1004df372a5fe111296b96b964a0e90533dfc0db414ce996a0c7805932b3",
+        "sdks/core/python/cragkit-1.0.0rc1-py3-none-any.whl": "ad8e7c928363bdf23cf69d479657219a0e662e498706f7254e211554e11ca599"
+      },
+      "runtime_versions": {
+        "node": "26.5.0",
+        "npm": "11.17.0",
+        "python": "3.14.6",
+        "python_bytecode_writes": false,
+        "typescript": "7.0.2"
+      },
+      "source_commit": "0c7c568d5cb71638eebab2dea97c5973b0f8cc08",
+      "tokenizer_sha256": "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+    },
+    "target_file_count": 2608,
+    "target_identity_sha256": "fe442d30048e03940027ce9899a542cf96ade01d46b0bbdb9dc85621080e44f7",
+    "retained_sha256": {
+      "provider-accounting.json": "c6d2d76b1ee4aa4a9de3d748e4b5a5cd0080834f7ff576ca21b790e2fb0516c3",
+      "python_live.json": "d0dd734e626da08b957a519558644e6979f5e5573936a8b21cfb4b96f3212ebf",
+      "recordings/seal.json": "65d10033aba64d5179b442b59e8776e78257bef460f9250dc1222ab295d36275",
+      "run-binding.json": "fed3fb7d599a42d0938e24cae5bafa4b8a9151b8b896cf642f3bde77d22ff2a5"
+    },
+    "rows_per_runtime": 30,
+    "receipts_per_runtime": 5,
+    "consumed_calls_per_runtime": 39,
+    "normalized_parity": true,
+    "live_http_calls_this_run": 0,
+    "new_live_quality_evidence": false,
+    "cleanup_verified": true
+  },
+  "limitations": [
+    "One hosted arm64 macOS runtime tuple only.",
+    "Three prebuild skips and four warnings remain in actual hosted results.",
+    "Archive exclusion audit does not prove arbitrary file contents contain no secret.",
+    "Synthetic installed probes do not establish live database/model quality.",
+    "No package publication, additional CI dispatch or live provider calls.",
+    "Runner estimated and actual billing unverified."
+  ],
+  "bundle_command": "python3 tools/check_ci_bundle.py --archive artifacts/V6/hosted-candidate-0c7c568.zip --run artifacts/V6/ci-run.json --jobs artifacts/V6/ci-jobs.json --artifact artifacts/V6/ci-artifact.json --output artifacts/V6/ci-bundle-audit.json --expected-source 0c7c568d5cb71638eebab2dea97c5973b0f8cc08 --expected-run 41625938303 --expected-job 125883197705 --expected-artifact 13226006299 --expected-digest 37b5fbcadc65be97556d885810a598e791b4321ba2ef9d3868877e2a67e4b17b",
+  "resource_observation": {
+    "source": "root handoff",
+    "memory_free_percent": 41,
+    "swapout_pages": 6913488,
+    "swapout_observation": "No swapout increase across twelve samples",
+    "processes": "No peer-owned services or test processes; root serialized verification.",
+    "memory_free_percent_range": [
+      39,
+      41
+    ],
+    "swapout_samples": 12
+  },
+  "local_target_preparation": {
+    "state": "prepared",
+    "source_commit": "0c7c568d5cb71638eebab2dea97c5973b0f8cc08",
+    "node": [
+      {
+        "package": "typescript",
+        "archive": "sdks/core/npm/cragkit-1.0.0-rc.1.tgz",
+        "sha256": "339e1004df372a5fe111296b96b964a0e90533dfc0db414ce996a0c7805932b3",
+        "exact_dist_files": 100,
+        "dependency_policy": "reuse existing frozen checkout dependency tree, independently inventoried for compatibility"
+      },
+      {
+        "package": "langchain-typescript",
+        "archive": "sdks/frameworks/npm/cragkit-langchain-1.0.0-rc.1.tgz",
+        "sha256": "1f3b63c232dde69a5fef9bd986000c5828cfe272b354e339b7e011e311b07364",
+        "exact_dist_files": 2,
+        "dependency_policy": "reuse existing frozen checkout dependency tree, independently inventoried for compatibility"
+      },
+      {
+        "package": "mcp-typescript",
+        "archive": "optional/mcp/npm/cragkit-mcp-1.0.0-rc.1.tgz",
+        "sha256": "88d2aa6507f9ae6bfc4c1cb7448a8e62bfbf3683007c3aa59ea154c8f1181ed5",
+        "exact_dist_files": 2,
+        "dependency_policy": "reuse existing frozen checkout dependency tree, independently inventoried for compatibility"
+      }
+    ],
+    "tokenizer_sha256": "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7",
+    "python": "Exact CI wheel installed offline with locked postgres/tokenizers/qdrant extras and jsonschema fixture dependency,25packages"
+  },
+  "local_default_resources": {
+    "state": "passed",
+    "revision": "RST-r1",
+    "configuration_sha256": "229913922d1c8db8ba71e6af48e91f02c1780bdcb8ce6e15c83474f895fdd9b1",
+    "probe_sha256": {
+      "python": "0952702a8d750b843b035d842225d659081caa7161ffa6554249e6818c2a5c2e",
+      "node": "4df34d39aa8363a1d8d1afa4bed24a62ca8a0ba3165f3a150d125548807ff283"
+    },
+    "observations": {
+      "python": {
+        "logical_install_bytes": 8036822,
+        "fresh_seconds": {
+          "count": 5,
+          "median": 0.2669306249881629,
+          "p95": 0.46808729201438837,
+          "maximum": 0.46808729201438837
+        },
+        "warm_seconds": {
+          "count": 250,
+          "median": 4.7909998102113605e-06,
+          "p95": 5.124980816617608e-06,
+          "maximum": 1.491600414738059e-05
+        },
+        "checks": {
+          "import_seconds": true,
+          "peak_rss_bytes": true,
+          "logical_install_bytes": true
+        },
+        "max_peak_rss_bytes": 66224128
+      },
+      "node": {
+        "logical_install_bytes": 7414183,
+        "fresh_seconds": {
+          "count": 5,
+          "median": 0.044835458,
+          "p95": 0.045541624999999995,
+          "maximum": 0.045541624999999995
+        },
+        "warm_seconds": {
+          "count": 250,
+          "median": 4.8583499999999444e-05,
+          "p95": 7.59999999999934e-05,
+          "maximum": 0.0006542910000000006
+        },
+        "checks": {
+          "import_seconds": true,
+          "peak_rss_bytes": true,
+          "logical_install_bytes": true
+        },
+        "max_peak_rss_bytes": 92356608
+      }
+    },
+    "claim_limit": "Fresh child import samples with uncontrolled filesystem caches; warm samples reuse loaded modules. Current local machine only.",
+    "setup_failures": [
+      "Initial relative npm --prefix path failed ENOENT; corrected with explicit working directory.",
+      "Offline pinned zod was absent from cache (ENOTCACHED); a small normal registry dependency fetch installed two packages in 694ms. No model/API cost."
+    ]
+  },
+  "assembly": {
+    "state": "ready_for_final_integration",
+    "writer_policy": "Non-overlapping peer files; root owns tracker, shared workflow and final acceptance.",
+    "D1_paths": [
+      "tools/check_ci_bundle.py",
+      "tools/tests/test_check_ci_bundle.py",
+      "evaluation/reports/V6/V6-06-ci.md",
+      "evaluation/reports/V6/V6-06-ci-verification.json"
+    ],
+    "D2_paths": [
+      "tools/check_recorded_compatibility.py",
+      "tools/tests/test_check_recorded_compatibility.py",
+      "evaluation/reports/V6/V6-06-compatibility.md"
+    ],
+    "resolved_finding": "Target Python prefix now matches the venv used by native resource children.",
+    "native_validation": "passed_root_execution"
+  },
+  "local_native_resources": {
+    "cleanup_verified": true,
+    "evidence_kind": "local_postgres_fake_providers",
+    "live_provider_calls": 0,
+    "new_live_quality_evidence": false,
+    "pressure": [
+      {
+        "free_percent": 36,
+        "swapout_pages": 6988180
+      },
+      {
+        "free_percent": 36,
+        "swapout_pages": 6988180
+      },
+      {
+        "free_percent": 36,
+        "swapout_pages": 6988180
+      },
+      {
+        "free_percent": 36,
+        "swapout_pages": 6988180
+      },
+      {
+        "free_percent": 36,
+        "swapout_pages": 6988180
+      },
+      {
+        "free_percent": 36,
+        "swapout_pages": 6988180
+      }
+    ],
+    "revision": "RST-r1",
+    "state": "passed",
+    "target_identity_sha256": "fe442d30048e03940027ce9899a542cf96ade01d46b0bbdb9dc85621080e44f7",
+    "observations": [
+      {
+        "active_dispatch_observation": 1,
+        "checks": {
+          "active_cancelled": true,
+          "cleanup_verified": true,
+          "deadlines": true,
+          "evidence_scope": true,
+          "evidence_spans": true,
+          "ingestion_fidelity": true,
+          "overload_refused": true,
+          "queued_cancelled": true,
+          "reuse_after_active": true,
+          "reuse_after_queue": true,
+          "strict_tokens": true,
+          "usage_limits": true
+        },
+        "database_logical_bytes": 9090739,
+        "ingestion_summary_ms": {
+          "count": 3,
+          "maximum": 41.665959026431665,
+          "median": 27.589667006395757,
+          "p95": 41.665959026431665
+        },
+        "peak_rss_bytes": 109805568,
+        "provider_http_calls": 0,
+        "revision": "RST-r1",
+        "runtime": "python",
+        "version": "1.0.0rc1",
+        "ingestion_count": 3,
+        "retrieval": [
+          {
+            "concurrency": 1,
+            "latency_summary_ms": {
+              "count": 20,
+              "maximum": 16.119750012876466,
+              "median": 11.434854008257389,
+              "p95": 11.842334002722055
+            },
+            "observed_requests_per_second": 85.24814592535832
+          },
+          {
+            "concurrency": 2,
+            "latency_summary_ms": {
+              "count": 20,
+              "maximum": 22.530334012117237,
+              "median": 22.13506201223936,
+              "p95": 22.373125015292317
+            },
+            "observed_requests_per_second": 90.54348741217242
+          }
+        ]
+      },
+      {
+        "active_dispatch_observation": 1,
+        "checks": {
+          "active_cancelled": true,
+          "cleanup_verified": true,
+          "deadlines": true,
+          "evidence_scope": true,
+          "evidence_spans": true,
+          "ingestion_fidelity": true,
+          "overload_refused": true,
+          "queued_cancelled": true,
+          "reuse_after_active": true,
+          "reuse_after_queue": true,
+          "strict_tokens": true,
+          "usage_limits": true
+        },
+        "database_logical_bytes": 9090739,
+        "ingestion_summary_ms": {
+          "count": 3,
+          "maximum": 48.395875000000004,
+          "median": 32.37170900000001,
+          "p95": 48.395875000000004
+        },
+        "peak_rss_bytes": 172736512,
+        "provider_http_calls": 0,
+        "recovery_attempts": 19,
+        "recovery_elapsed_ms": 2082.865292,
+        "recovery_refusals": 18,
+        "revision": "RST-r1",
+        "runtime": "node",
+        "version": "1.0.0-rc.1",
+        "ingestion_count": 3,
+        "retrieval": [
+          {
+            "concurrency": 1,
+            "latency_summary_ms": {
+              "count": 20,
+              "maximum": 25.15941700000002,
+              "median": 10.88764550000002,
+              "p95": 13.551625000000001
+            },
+            "observed_requests_per_second": 83.58945665285873
+          },
+          {
+            "concurrency": 2,
+            "latency_summary_ms": {
+              "count": 20,
+              "maximum": 21.318291999999985,
+              "median": 20.281499999999994,
+              "p95": 21.110416999999984
+            },
+            "observed_requests_per_second": 97.30067636570513
+          }
+        ]
+      }
+    ]
+  },
+  "acceptance_boundary": "D1/D2 evidence passed; root owns complete V6-C2 regression, security-negative byte binding, tracker and final Git review."
+}

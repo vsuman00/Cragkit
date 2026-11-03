@@ -63,6 +63,11 @@ jobs:
           uv run --project packages/mcp-python --frozen --no-sync mypy --config-file packages/mcp-python/pyproject.toml packages/mcp-python/src/cragkit_mcp
           uv run --project packages/mcp-python --frozen --no-sync pytest packages/mcp-python/tests -q
           npm --prefix packages/mcp-typescript test
+      - name: Check entry points after all native SDK builds
+        run: >-
+          uv run --project packages/python --frozen --no-sync pytest
+          tools/tests/test_backend_conformance.py::test_node_entrypoint_resolves_checkout_dependencies_before_input
+          tools/tests/test_check_qdrant.py::test_explicit_node_candidate_import_has_no_driver_or_io -q
       - name: Validate exact optional artifacts and installation profiles
         run: python tools/check_qdrant_artifacts.py --core-artifacts artifacts/ci/sdks/core --output-dir artifacts/ci/optional
       - name: Retain candidate archives and reports

@@ -348,9 +348,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V6-05: [Developer usability trial](versions/V6-release.md#v6-05-developer-usability-trial) — [unavailable-participant record and agent rehearsal](../evaluation/reports/V6/V6-05-usability.md). Human comparative effort/adoption remain unvalidated.
 
-- [ ] V6-06: [Release artifacts and CI](versions/V6-release.md#v6-06-release-artifacts-and-ci) — evidence: pending.
+- [x] V6-06: [Release artifacts and CI](versions/V6-release.md#v6-06-release-artifacts-and-ci) — [exact products and actual private CI](../evaluation/reports/V6/V6-06-ci.md), [recorded compatibility](../evaluation/reports/V6/V6-06-compatibility.md).
 
-- [ ] V6-C2: Demonstration, relevant regression checks, learning review and resource note through V6-06.
+- [x] V6-C2: Demonstration, regressions, shared fixtures and resource observations through V6-06 — [checkpoint](../evaluation/reports/V6/V6-C2.md). Learning practice remains unassessed.
 
 - [ ] V6-07: [Migration and rollback rehearsal](versions/V6-release.md#v6-07-migration-and-rollback-rehearsal) — evidence: pending.
 
@@ -4654,3 +4654,87 @@ clean candidate exact builds/installed profiles and post-security recorded-respo
 compatibility; concrete free-CI/visibility or bounded-cost decision before dispatch.
 Original frozen live candidate/tape/seals/targets remain unchanged. Learning
 exercise unassessed; full V6 is not complete.
+
+
+V6-06 hosted CI authorization: user explicitly approved one private30min job,
+including possible charges (estimated1.86USD compute plus one-day artifact storage).
+Repository stays private, no package publication. Durable single-run admission
+artifacts/V6/ci-run-authorization.json prevents blind retries. Initial gh workflow
+CLI returned failure without a run; repeated all-run/check reads showed zero.
+Documented REST dispatch then returned200 with run41625938303, head0c7c568,
+attempt1, job125883197705. Plugin read confirmed setup successful/core-SDK step
+running; no second actual run authorized. CurrentCI result pending. Source
+clean worktree artifacts/V6/release-candidate-rc1 at0c7c568 prepared, package tree
+60a251c2bf94402cb562d0398403c218875454f3. Root maintains original live candidate
+unchanged and will bind exact CI products/installed compatibility separately.
+
+
+V6-06 D1/D2 assignment: root final integrator and tracker/Git owner; Sol
+release_ci_bundle owns tools/check_ci_bundle.py, its focused tests and CI report/
+verification JSON, and ASSEMBLES. Sol release_compatibility owns separate
+check_recorded_compatibility.py, focused tests and compatibility report. Shared
+outcome: bind successful single CI run/source0c7c568/exact products and recorded-
+output compatibility after the security fix; do not refreeze or weaken old ECR.
+Peers communicate directly; ownership/protected/outcome changes escalate to root
+then Astra if unresolved. Root owns runtime preparation, actual serial tests,
+workflow and final acceptance. No new paid CI/API/model/service download.
+Baseline live identity remains59af39c6; new EBC-r1 bridge uses separate target
+source/product/import-byte identity. D1 metadata read paths ci-run.json,
+ci-jobs.json,ci-artifact.json; original ZIP SHA37b5fbcadc65be97556d885810a598e791b4321ba2ef9d3868877e2a67e4b17b
+verified after download. Current CI three initial build-order skips passed in a
+fresh local focused command (3passed,0skipped); identical test sources to0c7c568.
+Root added a future hosted post-build step; this workflow amendment has not run
+in hosted CI and does not authorize another job. Resource36%free/swap5551MiB,
+recovered from prior growth; heavy native tests remain conditional on headroom.
+State running; only root may run tests/install/native fixtures serially.
+
+
+V6-06 D1/D2 and V6-C2 final handoff: COMPLETE for the declared candidate matrix.
+The two Sol peers implemented separate tools, tests and reports, coordinated
+directly, and passed assembly and root integration. Exactly one approved private
+CI run, 41625938303, succeeded against source 0c7c568, attempt 1/job 125883197705.
+No further run is authorized. Actual GitHub charges and free allowance remain
+unknown. The repository stays private and no package was published.
+
+Hosted results: 3,933 Python/tool passes, three build-order skips and four known
+warnings; 1,635 Node passes; LangChain 73/70 and MCP 41/36; all 34 pipeline stages
+and installed profiles passed. The retained ZIP digest starts 37b5fbca; all twelve
+products, 391 archive members and three acceptance reports passed identity audits.
+All six packages contain the exact MIT/NOTICE assets; direct and rebuilt wheel
+members match. The three skipped cases passed locally after builds. A future
+workflow step runs them post-build; that amendment has no hosted execution yet.
+
+The two new checkers passed 32 focused tests in 0.54 seconds. Final Python/tool
+regressions passed 3,968 tests, no skips and four intentional warnings in 18.51
+seconds. Fresh minimal installations passed all six frozen default resource
+gates. Node preparation first failed on a relative prefix path, then an offline
+zod cache miss; an explicit working directory and two small pinned registry
+packages resolved setup. No model/API call was needed.
+
+Separate EBC-r1 identity 3efdb1bc... binds the new products and 2,608 target files;
+the old ECR/configuration/tape remain unchanged. Each native runtime consumed all
+39 recordings and returned 30 rows/five receipts matching the original after
+normalizing timing only. Zero live HTTP calls, with cleanup verified. The same
+products passed twelve native resource checks per runtime, three ingests and
+forty retrieval measurements each. Node's bounded harness needed 19 recovery
+probes/18 known refusals; this is not a new library retry. Added Python content
+and a changed Node byte were rejected, then originals and identity restored.
+
+Default measurements had 39-41 percent free memory; native measurements had 36
+percent, with no swapout growth inside either run. Later system paging occurred;
+latest headroom was 43 percent with stable swapouts. Monitor before further
+native work. All owned processes/listeners closed. Selected credential/base64
+and key-pattern scanning found zero matches across 986 working files and the
+exact CI archives; this is a scoped check. Seven documents had no missing local
+link targets. Prose inspection was low with zero suspicious Unicode; README
+structure was preserved and the stale architecture MIT decision corrected.
+
+Evidence: V6-06-ci.md/verification JSON, V6-06-compatibility.md,
+V6-06-verification.json and V6-C2.md. Root owns the workflow, documentation,
+tracker and final Git actions. Scoped staging excludes nine user-owned source/
+storage edits, the original seventeen-line tracker draft and three user audits.
+Global diff checking found only their existing whitespace; scoped checking is
+required before commit/push. Learning: artifact identity was demonstrated with
+two rejected changes; the exercise remains unassessed. Next is V6-07, disposable
+migration, interrupted upgrade, backup/restore and revocation-safe rollback.
+V6-08/09/C3/EXIT remain required; full V6 is incomplete.

@@ -57,6 +57,11 @@ Core, framework and MCP checks run serially; exact archive/install profiles foll
 It starts no persistent service, publishes nothing and retains candidate files
 for one day. A workflow definition is not a CI pass.
 
+The [single approved candidate run](../evaluation/reports/V6/V6-06-ci.md) passed
+for source `0c7c568`. Its downloaded products and hashes are retained locally
+beyond hosted expiry. This approval covers that completed run only; future paid
+CI, registry publication and repository visibility need their own authorization.
+
 GitHub documents standard runners as free for public repositories. Private
 repositories draw on included usage and then incur charges. At the recorded
 review, standard macOS compute is listed at USD 0.062 per minute: 30 minutes would

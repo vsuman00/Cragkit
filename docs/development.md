@@ -1740,10 +1740,11 @@ interpreter and wheel paths were not the cause. The smoke passed21 checks with
 no model calls and cleaned up its private database. Native/load work stopped
 after subsequent swap growth; recheck stable headroom before another local run.
 
-## V6-06 licensing and CI preparation
+## V6-06 licensing, artifacts and CI
 
 [Licensing preparation](../evaluation/reports/V6/V6-06-licensing.md) records
-completed child checks, not parent V6-06 acceptance. The six manifests declare
+the earlier child checks. [Final V6-C2 acceptance](../evaluation/reports/V6/V6-C2.md)
+records the later exact-artifact and actual hosted evidence. The six manifests declare
 MIT and carry exact root LICENSE/NOTICE files. Core, framework and MCP artifact
 tools now check licensing as well as their existing dependency/asset identities.
 The [publishing guide](releasing.md) explains license, artifacts, CI, deployment
@@ -1762,7 +1763,27 @@ builds free memory was 47–48% and swapouts remained unchanged.
 The manual-only [candidate workflow](../.github/workflows/candidate-validation.yml)
 has pinned official action commits, a read-only repository token and one ARM64
 macOS job with a 30-minute timeout. Its YAML and configured action inputs were
-checked; it has not run. The repository is private and free included usage was
-not accessible through the available billing API/browser. No billable dispatch,
-publication or visibility change is implied by committing this workflow. Follow
-the guide's cost decision before dispatching; never label a skipped job a CI pass.
+checked. The single user-approved private run passed against `0c7c568`;
+[CI evidence](../evaluation/reports/V6/V6-06-ci.md) records its exact products,
+runner, counts and three initial build-order skips. Those cases passed locally
+after builds; an added future post-build step has not run in hosted CI. No further
+run is authorized by that approval. Actual charges/free allowance remain unverified.
+The repository is private and no package was published.
+
+The two new offline checkers passed 32 focused tests; the final Python/tool suite
+passed 3,968 with no skips and four intentional boundary-fixture warnings:
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_check_ci_bundle.py tools/tests/test_check_recorded_compatibility.py -q
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests tools/tests -q
+```
+
+Use the exact archive-audit command in the CI verification record and the explicit
+[recorded-output bridge command](../evaluation/reports/V6/V6-06-compatibility.md)
+for the locally retained candidate. The bridge preserves the historical ECR
+identity, checks the new installed CI products separately and uses only sealed
+recordings/fake providers. It cannot authorize HTTP inference. Local prepared
+PostgreSQL binaries and stable headroom are required for its native checks.
+Do not overwrite the original frozen candidate or treat the replay as new quality
+evidence. All six default resource targets and twelve native checks per runtime
+passed for these exact products; full details and limits are in the checkpoint.

@@ -363,7 +363,7 @@ Only this documentation directory and its diagrams are created by this architect
 | Embedding and reranker models/providers | Compare a small local option and a provider option on the target corpus, latency, memory, cost, license, and parity. |
 | Coverage assessor | Compare conservative heuristics with a structured model judge using human-labelled facets; retain unknown states. |
 | Runtime/version matrix | Verify Python and Node versions against database drivers, tokenizer and optional ONNX packages; publish tested combinations. |
-| Package names and license | Check registry availability and dependency/model licenses before publication; original MIT intent remains proposed. |
+| Package names and license | MIT is selected and declared in all six candidate packages. Check registry ownership and dependency/model notices before publication. |
 | Performance and false-sufficient targets | Set targets from the first baseline and target application needs, then freeze before held-out evaluation. |
 | Hosted telemetry or monetization | Validate developer demand separately; no cloud dependency in the library design. |
 

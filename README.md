@@ -28,7 +28,7 @@ The separate V6 live benchmark needs a test credential; using the library does
 not require our development key or the Codex key-setup plugin.
 
 > [!IMPORTANT]
-> Candidate metadata uses Python `1.0.0rc1` and npm `1.0.0-rc.1`; release acceptance is still in progress. The project uses MIT; package-name ownership, registry publication and hosted CI evidence remain separate.
+> Candidate metadata uses Python `1.0.0rc1` and npm `1.0.0-rc.1`; release acceptance is still in progress. The project uses MIT; package-name ownership and registry publication remain separate. Declared candidate CI checks passed.
 
 ## What Cragkit Does
 
@@ -53,10 +53,10 @@ The **npm** package runs natively in Node.js — no Python server required. The 
 | **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
 | **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [V4 exit evidence](evaluation/reports/V4/V4-08-exit.md) |
 | **V5** | Qdrant publication and repair, existing indexes and optional MCP | ✅ Complete for the declared local native milestone | [V5 exit evidence](evaluation/reports/V5/V5-exit.md) · [Install and operations guide](docs/v5-operations.md) |
-| **V6** | Evaluation and release | 🚧 In progress; local evaluation, resource and security checks complete | [V6 plan](tasks/versions/V6-release.md) · [Live evaluation](evaluation/reports/V6/V6-02-recovery.md) · [Resources](evaluation/reports/V6/V6-03-resources.md) · [Security](evaluation/reports/V6/V6-04-security.md) |
+| **V6** | Evaluation and release | 🚧 In progress; candidate artifacts and CI verified; migration/publication pending | [V6 plan](tasks/versions/V6-release.md) · [CI evidence](evaluation/reports/V6/V6-06-ci.md) · [Checkpoint](evaluation/reports/V6/V6-C2.md) |
 
 > [!NOTE]
-> V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. Live-model quality, hosted CI, production acceptance and registry publication remain separate V6 work.
+> V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. V6 records limited live-model results and declared-platform CI. Migration, publication and production acceptance remain separate gates.
 
 Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
 
