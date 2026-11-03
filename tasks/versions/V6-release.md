@@ -44,6 +44,15 @@ artifact guard and clean-identity slices. This moves version preparation earlier
 V6-06 still owns exact artifacts, notices, supported installs and actual CI
 acceptance after V6-05. See [the identity decision](../../docs/decisions/0005-release-candidate-identity.md).
 
+Recovery after the failed 3 November original held-out attempt: V6-02H adds
+offline bounded provider pacing and safe status diagnostics in separate H1/H2
+lanes followed by root H3 integration. Preserve the original failed admission,
+tape and labels. V6-02I prepares a separate pending human-review packet and
+records contamination before a later candidate/input refreeze; no approval or
+new live dispatch is implied. Original evaluation targets remain unchanged.
+See [the failed attempt](../../evaluation/reports/V6/V6-02E3-live-attempt.md) and
+[ETP-r1](../../contracts/EVALUATION_TRANSPORT_V6.md).
+
 Acceptance: Report sample sizes, retrieval/coverage metrics, uncertainty, calls/cost and known failures; keep downstream answer claims separate.
 
 Verification: Reproduce one evaluation run and manually review unsupported acceptance and abstention examples.

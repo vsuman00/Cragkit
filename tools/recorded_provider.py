@@ -15,12 +15,15 @@ from provider_recordings import RecordingValidationError, request_metadata, vali
 
 _CLOSE_TIMEOUT = 2.0
 
+_TRANSPORT_CODES = frozenset(('provider_http_auth_failed', 'provider_http_rate_limited',
+    'provider_http_server_failed', 'provider_pacing_invalid', 'provider_pacing_failed'))
+
 _SAFE_CODES = frozenset(('provider_http_invalid', 'provider_http_failed', 'provider_http_close_failed', 'deadline_exceeded',
     'concurrent_dispatch', 'provider_journal_invalid', 'provider_journal_failed',
     'provider_recording_invalid', 'unapproved_evaluation_payload', 'live_budget_invalid',
     'live_budget_closed', 'live_budget_pending', 'live_budget_exhausted',
     'live_budget_reservation_invalid', 'live_budget_usage_invalid', 'live_budget_overrun',
-    'provider_recorded_invalid', 'provider_recorded_failed'))
+    'provider_recorded_invalid', 'provider_recorded_failed')) | _TRANSPORT_CODES
 _SAFE_TYPES = (ProviderAdapterError, EvaluationPayloadError, LiveBudgetError, RecordingValidationError)
 
 
@@ -219,10 +222,19 @@ class RecordedProviderSend:
                     self._budget.abort(reservation)
                 except Exception:
                     pass
-        reason = ('cancelled' if cancelled is not None else 'usage_overrun' if overrun
-                  else 'deadline_exceeded' if str(failure) == 'deadline_exceeded'
-                  else 'transport_failed' if stage == 'http' else 'response_invalid'
-                  if type(failure) is RecordingValidationError else 'journal_failed')
+        if cancelled is not None:
+            reason = 'cancelled'
+        elif overrun:
+            reason = 'usage_overrun'
+        elif str(failure) == 'deadline_exceeded':
+            reason = 'deadline_exceeded'
+        elif stage == 'http':
+            code = failure.args[0]
+            reason = code if code in _TRANSPORT_CODES else 'transport_failed'
+        elif type(failure) is RecordingValidationError:
+            reason = 'response_invalid'
+        else:
+            reason = 'journal_failed'
         self._mark_failure(ticket, completed, reason)
         if cancelled is not None:
             raise cancelled

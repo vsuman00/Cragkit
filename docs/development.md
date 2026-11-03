@@ -1,5 +1,23 @@
 # Cragkit development
 
+## Evaluation transport pacing and safe failures
+
+The [ETP-r1 correction](../contracts/EVALUATION_TRANSPORT_V6.md) adds serial
+Cohere pacing to the live evaluation sender and preserves fixed auth/rate/server
+failure categories in its private journal. Pacing waits share the original
+request deadline; they do not retry requests or raise spend/call limits.
+Mock transports skip production pacing. These offline tests also exercise the
+production path with a fake client and clock:
+
+```sh
+uv run --project packages/python --frozen --no-sync python -B -m pytest tools/tests/test_evaluation_pacing.py tools/tests/test_provider_http.py tools/tests/test_recorded_provider.py tools/tests/test_provider_journal.py -q
+```
+
+Verified locally: 143 focused tests, 3,697 Python/tool regression tests and 41
+Node provider-replay tests, serially. See [the correction report](../evaluation/reports/V6/V6-02H-transport.md).
+The failed original live run remains unsealed and cannot be resumed by this
+change. Any later evaluation requires its own reviewed input and frozen identity.
+
 ## Candidate execution identity and comparison
 
 The [ECR-r1 contract](../contracts/EVALUATION_CANDIDATE_V6.md) and

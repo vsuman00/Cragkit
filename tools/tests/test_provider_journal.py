@@ -182,3 +182,30 @@ def test_metadata_digest_and_parse_share_one_read(tmp_path,monkeypatch):
     monkeypatch.setattr(journal,'_read',read)
     assert len(journal.load_recordings(path,require_live=False))==1
     assert all(count==1 for count in reads.values())
+
+
+@pytest.mark.parametrize('code', [
+    'provider_http_auth_failed', 'provider_http_rate_limited', 'provider_http_server_failed',
+    'provider_pacing_invalid', 'provider_pacing_failed',
+])
+def test_fixed_transport_categories_remain_unreplayable(tmp_path, code):
+    path = tmp_path / 'tape'
+    with journal.EvaluationJournal(path, evidence_kind='mock') as tape:
+        ticket = tape.begin(request(), 10)
+        tape.uncertain(ticket, code)
+        with pytest.raises(ProviderAdapterError):
+            tape.finish()
+    assert json.loads((path / 'failure.json').read_text()) == {'ordinal': 1, 'code': code}
+    with pytest.raises(ProviderAdapterError):
+        journal.load_recordings(path, require_live=False)
+
+
+def test_arbitrary_provider_error_text_is_not_journaled(tmp_path):
+    path = tmp_path / 'tape'
+    with journal.EvaluationJournal(path, evidence_kind='mock') as tape:
+        ticket = tape.begin(request(), 10)
+        with pytest.raises(ProviderAdapterError):
+            tape.uncertain(ticket, 'provider_http_rate_limited synthetic-private-value')
+        assert not (path / 'failure.json').exists()
+        tape.uncertain(ticket, 'transport_failed')
+    assert 'synthetic-private-value' not in (path / 'failure.json').read_text()

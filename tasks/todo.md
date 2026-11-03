@@ -336,6 +336,8 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V6-02F: Coherent RC metadata/engine identities and isolated execution preparation — [local artifacts](../evaluation/reports/V6/V6-02F-identity.md) and [clean identity](../evaluation/reports/V6/V6-02F-clean-runtime.md).
   - [ ] V6-02E3: Explicit caller-owned benchmark credentials, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. The user selected and saved the explicit private OpenAI test credential; local format, permissions and scoped credential preflight passed. Both providers authenticated in the genuine live attempt, and hardened-source identity passed. The run failed with an incomplete Cohere recording; replay and quality remain unaccepted. See [failed attempt](../evaluation/reports/V6/V6-02E3-live-attempt.md). No built-in library key is used. See [credential preflight](../evaluation/reports/V6/V6-02E3-credential-preflight.md).
 
+  - [x] V6-02H: Offline pacing, safe failure categories and recorder integration — [143 focused/3,697 Python/41 Node checks](../evaluation/reports/V6/V6-02H-transport.md). No live rerun or held-out acceptance.
+
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
 - [ ] V6-C1: Demonstration, relevant regression checks, learning review and resource note through V6-03.
@@ -4149,3 +4151,41 @@ later unbiased live comparison. Do not bypass original no-resend ownership or
 accept V6-03 onward. Resource observation 26 GiB/35 percent free memory; one suite
 at a time, owned services closed, no model download. Learning practice unassessed.
 Root owns final scoped checks/commit/immediatepush/sync; user edits/audits excluded.
+
+
+V6-02H / ETP-r1 assignment: IN_PROGRESS offline transport correction. Previous
+goal turn made progress: committed credential safeguards, runtime identity and
+the failed original live run; current recheck confirms failed/unsealed evidence
+and no owned database process. Concrete shared outcome: bounded serial live
+pacing plus safe fixed HTTP failure categories, preserving no-retry/deadline/
+cancellation/private-output behavior. H1 Sol diagnostics owns provider_http.py
+and test_provider_http.py. H2 Sol pacing owns evaluation_pacing.py and its test,
+and assembles. Root owns frozen ETP-r1 contract, H3 recorder/journal integration,
+tracker/reports/Git and final serial checks. Peers message each other directly;
+protected/outcome changes escalate through root to Astra if unresolved. No
+provider calls, secrets/private config/held-out label access, services, installs,
+manifest/lock/core/label/metric/threshold/admission/tape edits. Each child stays
+bounded; one test process, root owns integration slot. Acceptance: fake-clock
+spacing/deadline/cancellation/concurrency and privacy-safe status/journal faults,
+then focused and full regressions. This does not accept V6-02 or permit a live
+rerun. Contract: contracts/EVALUATION_TRANSPORT_V6.md. State assigned.
+
+
+V6-02H final handoff: COMPLETE offline H1/H2/H3. Sol diagnostics and pacing
+peers delivered nonoverlapping implementation/test files, resolved APIs directly
+and assembled reviews. Root integrated production-only sender pacing, fixed
+status/pacing sanitizer and journal categories, plus combined fake-client tests.
+Passed 143 focused, 3,697 full Python/tool (four existing intentional warnings),
+41 Node provider-replay tests; serial processes, zero network/account calls.
+Source roles: tools/evaluation_pacing.py, provider_http.py, recorded_provider.py,
+provider_journal.py and four focused test files. ETP-r1 contract, development
+commands, E106/E107, V6 recovery plan and evidence report synchronized. Original
+core/locks/labels/metrics/thresholds/admission/tape remain unchanged. Old identity
+is historical; later runtime refreeze required. New diagnostics do not confirm
+old failure cause. Live V6-02 remains OPEN; no incomplete tape replay or paid retry.
+Resource 25.3 GiB/40 percent free memory, no owned service/install/model. Learning
+practice unassessed. Next smallest action V6-02I1: prepare fresh pending human
+review and contamination record, then candidate support/refreeze only under its
+accepted packet identity. Root owns final scope/security/link checks and scoped
+commit/immediatepush/sync; user source/audit edits and original tracker draft
+remain excluded.

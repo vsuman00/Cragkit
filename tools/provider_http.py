@@ -10,6 +10,7 @@ import time
 import httpx
 
 from provider_adapters import ProviderAdapterError, ProviderRequest, _json
+from evaluation_pacing import EvaluationPacer
 
 _ROUTES = {
     'openai': ('text-embedding-3-small', 'https://api.openai.com/v1/embeddings', 65536),
@@ -33,6 +34,7 @@ class HttpProviderSend:
                 for provider, key in self._keys.items()):
             _invalid()
         self._transport = transport
+        self._pacer = EvaluationPacer() if transport is None else None
         self._client = None
         self._closed = False
         self._inflight = False
@@ -93,14 +95,30 @@ class HttpProviderSend:
         failure = None
         try:
             async with asyncio.timeout(deadline - time.monotonic()):
+                if self._pacer is not None:
+                    await self._pacer.wait(request.provider, deadline=deadline)
+                if asyncio.current_task().cancelling():
+                    raise asyncio.CancelledError()
+                if time.monotonic() >= deadline:
+                    raise ProviderAdapterError('deadline_exceeded')
                 async with self._client.stream('POST', url, content=request.body, headers={
                         'Authorization': 'Bearer ' + self._keys[request.provider],
                         'Content-Type': 'application/json', 'Accept': 'application/json',
                         'Accept-Encoding': 'identity'}) as response:
+                    if response.status_code != 200:
+                        if response.status_code in (401, 403):
+                            code = 'provider_http_auth_failed'
+                        elif response.status_code == 429:
+                            code = 'provider_http_rate_limited'
+                        elif 500 <= response.status_code <= 599:
+                            code = 'provider_http_server_failed'
+                        else:
+                            code = 'provider_http_failed'
+                        raise ProviderAdapterError(code)
                     content_type = response.headers.get('content-type', '').split(';')[0].strip().lower()
                     encoding = response.headers.get('content-encoding', 'identity').strip().lower()
                     length = response.headers.get('content-length')
-                    if (response.status_code != 200 or content_type != 'application/json'
+                    if (content_type != 'application/json'
                             or encoding != 'identity' or (length is not None and
                             (not length.isascii() or not length.isdecimal() or int(length) > max_response_bytes))):
                         raise ProviderAdapterError('provider_http_failed')
@@ -115,8 +133,14 @@ class HttpProviderSend:
                     return b''.join(chunks)
         except TimeoutError:
             failure = 'deadline_exceeded'
-        except ProviderAdapterError:
-            raise
+        except ProviderAdapterError as error:
+            code = (error.args[0] if type(error) is ProviderAdapterError and len(error.args) == 1
+                    and type(error.args[0]) is str else None)
+            failure = code if code in {
+                'provider_http_auth_failed', 'provider_http_rate_limited',
+                'provider_http_server_failed', 'provider_http_failed',
+                'provider_pacing_invalid', 'provider_pacing_failed', 'concurrent_dispatch',
+                'deadline_exceeded'} else 'provider_http_failed'
         except Exception:
             failure = 'provider_http_failed'
         finally:

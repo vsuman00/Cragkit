@@ -11,7 +11,9 @@ from provider_adapters import ProviderAdapterError, ProviderRecording
 from provider_recordings import request_metadata, validate_recording
 
 _CODES = frozenset(('transport_failed', 'response_invalid', 'cancelled', 'deadline_exceeded',
-                    'journal_failed', 'usage_overrun'))
+                    'journal_failed', 'usage_overrun', 'provider_http_auth_failed',
+                    'provider_http_rate_limited', 'provider_http_server_failed',
+                    'provider_pacing_invalid', 'provider_pacing_failed'))
 _LIMIT = 2097152
 
 

@@ -401,3 +401,76 @@ def test_cleanup_returns_before_cancellation_resistant_task_and_observes_late_er
         await asyncio.sleep(0)
         assert observed and send._http._client.is_closed
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('status,code', [
+    (401, 'provider_http_auth_failed'),
+    (403, 'provider_http_auth_failed'),
+    (429, 'provider_http_rate_limited'),
+    (500, 'provider_http_server_failed'),
+    (503, 'provider_http_server_failed'),
+])
+def test_fixed_http_category_survives_private_journal_without_response_body(tmp_path, status, code):
+    class UnreadableStream(httpx.AsyncByteStream):
+        closed = False
+
+        async def __aiter__(self):
+            pytest.fail('Error response body was consumed')
+            yield b''
+
+        async def aclose(self):
+            self.closed = True
+
+    stream, calls = UnreadableStream(), []
+
+    def handler(row):
+        calls.append(True)
+        return httpx.Response(status, headers={'x-private': 'synthetic-private-value'}, stream=stream)
+
+    send = sender(tmp_path, handler)
+
+    async def run():
+        async with send:
+            with pytest.raises(ProviderAdapterError, match='^' + code + '$') as error:
+                await invoke(send)
+            assert error.value.__context__ is None and error.value.__cause__ is None
+            with pytest.raises(ProviderAdapterError):
+                await invoke(send)
+
+    asyncio.run(run())
+    assert calls == [True] and stream.closed
+    directory = tmp_path / 'recordings'
+    assert json.loads((directory / 'failure.json').read_text()) == {'ordinal': 1, 'code': code}
+    assert not (directory / 'seal.json').exists()
+    assert not list(directory.glob('*.response'))
+    assert all('fake-key' not in p.read_text() and 'synthetic-private-value' not in p.read_text()
+               for p in directory.iterdir())
+    snapshot = send.snapshot()
+    assert snapshot['cleanup_verified'] and snapshot['failed']
+    assert snapshot['budget']['attempts'] == 1 and snapshot['budget']['pending'] == 0
+    assert snapshot['budget']['records'][0]['reported_input_tokens'] is None
+    assert snapshot['budget']['records'][0]['estimated_input_tokens'] == 32768
+    with pytest.raises(ProviderAdapterError):
+        load_recordings(directory, require_live=False)
+
+
+@pytest.mark.parametrize('code', ['provider_pacing_invalid', 'provider_pacing_failed'])
+def test_fixed_predispatch_pacing_failure_is_recorded_without_http(tmp_path, code):
+    calls = []
+    send = sender(tmp_path, lambda row: calls.append(True))
+
+    class RefusingPacer:
+        async def wait(self, *args, **kwargs):
+            raise ProviderAdapterError(code)
+
+    send._http._pacer = RefusingPacer()
+
+    async def run():
+        async with send:
+            with pytest.raises(ProviderAdapterError, match='^' + code + '$'):
+                await invoke(send)
+
+    asyncio.run(run())
+    assert not calls
+    assert json.loads((tmp_path / 'recordings/failure.json').read_text()) == {'ordinal': 1, 'code': code}
+    assert not (tmp_path / 'recordings/seal.json').exists()
