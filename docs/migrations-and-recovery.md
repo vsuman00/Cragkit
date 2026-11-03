@@ -66,10 +66,25 @@ MRR-r2 requires a separately versioned operator repair of this derived field,
 with explicit check/apply modes, writer exclusion, exact catalog checks and
 before/after verification. It must record direct reader refusal before any
 repair, preserve source/vector/security state, and prove successful reads
-subsequently. The repair is still under local validation. Do not edit migration
-0002, delete its history row or normalize fixture setup to hide this result.
-The original paid CI evidence covers its frozen inputs; it does not validate
-this new maintenance procedure.
+subsequently. The [local rehearsal](../evaluation/reports/V6/V6-07-recovery.md) passed with the
+required explicit repair. Do not edit migration 0002, delete its history row or
+normalize fixture setup to hide this result. Use the existing owner-only scalar
+operator config, with certificate and password-file paths, on the explicitly
+selected target:
+
+```sh
+uv run --project packages/python --frozen --no-sync python -B tools/repair_legacy_lexical_config.py --check --config "$CRAGKIT_OPERATOR_CONFIG" --expected-database "$CRAGKIT_DATABASE" --expected-owner "$CRAGKIT_OWNER" --confirm-dedicated-target
+uv run --project packages/python --frozen --no-sync python -B tools/repair_legacy_lexical_config.py --apply --config "$CRAGKIT_OPERATOR_CONFIG" --expected-database "$CRAGKIT_DATABASE" --expected-owner "$CRAGKIT_OWNER" --confirm-dedicated-target
+```
+
+Check returns 2 when repair is required, 0 when already canonical, and 1 on
+failure. Apply returns 0 only after its owned transaction commits. The SQL file
+is a checked maintenance artifact, not a standalone substitute for the tool's
+preflight and locks. Snapshot capacity is 1,000 combined rows/8 MiB; larger work
+refuses. Hardened lexical-only and exact two/three-step vector catalogs were
+tested. Setup-only 0001 optional storage is explicitly unsupported. Preserve
+receipts and keep current authority available. The original paid CI covers its
+frozen inputs; separate local evidence validates this maintenance procedure.
 
 ## Restore into quarantine
 
@@ -117,8 +132,8 @@ publication and deployment approval separate.
 
 ## Rehearsal evidence
 
-The backup lane passed its scoped native rehearsal. Overall V6-07 acceptance
-remains pending the upgrade lane and explicit legacy repair negative cases. The tracker records actual commands, source/artifact hashes, restoration
+[V6-07 acceptance](../evaluation/reports/V6/V6-07-recovery.md) records the passed
+backup, upgrade and explicit repair rehearsals, including their negative cases. The tracker records actual commands, source/artifact hashes, restoration
 checks, resource observations and cleanup. No hosted target or model call is
 required for this rehearsal. A small exercise: explain why a valid old backup
 must still be denied release when its current authority snapshot is missing.

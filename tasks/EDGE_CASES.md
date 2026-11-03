@@ -95,7 +95,7 @@ Layers: U = deterministic unit/contract fixtures; I = real adapter/database inte
 | E55 | MCP disconnect, malformed input or untrusted scope | Propagate cancellation, validate requests and bind host-resolved scope. | V5-06 | I |
 | E56 | Different runtime/backend/library-tool-MCP results | Stable contract semantics agree; documented backend ranking differences stay explicit. | V5-07 | U/I |
 | E57 | Clean install, unsupported runtime or missing optional dependency | Supported core installs work; incompatible optional use gives an actionable error. | V6-06 | I/M |
-| E58 | Migration interrupted or package rollback attempted | Follow tested compatibility/restore procedure; never restore revoked permissions through rollback. | V6-07 | I |
+| E58 | Migration interrupted, legacy lexical alias retained, or package rollback attempted | Follow the tested upgrade and explicit alias-repair procedure; preserve source/vector/history state and never restore revoked permissions through rollback. | V6-07, V6-07F1 | U/I |
 | E59 | Held-out leakage, synthetic labels or selective benchmark reporting | Separate splits, human review, complete configuration/results and honest uncertainty. | V0-06, V6-01, V6-02 | M/L |
 | E60 | Sustained load, large inputs or too many queued requests | Backpressure and batch/input limits keep work bounded; measure pressure and stop local runs when necessary. | V6-03 | I/M |
 | E61 | Published artifact differs from local candidate | Verify artifact identity/version and installed behavior; create a corrective release if necessary. | V6-08 | I/M |

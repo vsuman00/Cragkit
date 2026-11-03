@@ -1793,8 +1793,8 @@ passed for these exact products; full details and limits are in the checkpoint.
 
 The [backup rehearsal](../evaluation/reports/V6/V6-07-backup.md) passed on a
 single disposable PostgreSQL cluster, using the exact installed CI core wheel
-and Node dist. This completes child B; the [legacy upgrade/repair](migrations-and-recovery.md)
-and parent V6-07 remain open. The result retains the MRR-r1 backup label;
+and Node dist. This completed child B; the later [upgrade/repair acceptance](../evaluation/reports/V6/V6-07-recovery.md)
+closes parent V6-07 separately. The result retains the MRR-r1 backup label;
 [MRR-r2](../contracts/RECOVERY_REHEARSAL_V6.md) adds the separate legacy repair
 without changing the backup lane's requirements.
 
@@ -1811,3 +1811,38 @@ SQLSTATE; the corrected gate retains independent NOLOGIN, zero-session, exact
 healthy-target and failed runtime-connection checks. No raw driver diagnostic
 is accepted as report text. Pressure was 44-43 percent free, without swapout
 increase. No hosted database or second paid CI job was used.
+
+
+## V6-07 upgrade and explicit legacy repair acceptance
+
+[Parent acceptance](../evaluation/reports/V6/V6-07-recovery.md) and
+[the upgrade report](../evaluation/reports/V6/V6-07-upgrade.md) record passed
+MRR-r2/LCR-r1 native verification. Populated 0001-to-0002 rows retain `simple`;
+both current CI and retained V5 runtimes refused FTS/direct identifier reads
+before explicit repair. The same products returned exact evidence afterward.
+Applied migration, package and lockfile bytes, plus prior history entries, were preserved.
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_repair_legacy_lexical_config.py tools/tests/test_check_migration_recovery.py -q
+env -u PYTHONPATH -u PYTHONHOME -u NODE_PATH -u NODE_OPTIONS artifacts/V6/release-candidate-rc1/packages/python/.venv/bin/python -I -B tools/check_migration_recovery.py --sdk-root artifacts/V6/release-candidate-rc1/packages/typescript --old-python artifacts/V6/rollback-installed/python-env/bin/python --old-node-root artifacts/V6/rollback-installed/node-sdk --prepared-postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --output artifacts/V6/migration-recovery-r2-functional --allow-local-processes
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests tools/tests -q
+```
+
+The executed output directory is retained; choose a fresh path for reproduction.
+The combined focused suite passed 109 cases. Native acceptance passed six main
+and fourteen operator groups, including actual lock refusal, repair/profile
+precommit interruption and rollback, retry, idempotence, base-only CLI 2/0/0 and
+optional setup 0003 no-op. Current fake dense reads survived setup 0003; retained 0.0.0
+products refused that capability and remain ineligible for production rollback.
+Ten pressure samples stayed at 35-38 percent free with no swapout increase. All
+owned services closed; no provider HTTP or hosted database call was used.
+
+The first full suite exposed a test-only import collision: the budget tests
+replaced an already imported module and split its error-class identity. A small
+collection reproduced it; normal import fixed that loader without modifying
+production budget/sender code. The corrected slice passed 72 tests and the final
+full suite passed 4,109, no skips and four existing intentional boundary warnings.
+Failed logs remain in the verification record. The operator tool has separate
+local evidence; the earlier paid CI did not execute it. See the
+[recovery guide](migrations-and-recovery.md) for private config, explicit check/
+apply commands, exit statuses and supported bounded catalog states.

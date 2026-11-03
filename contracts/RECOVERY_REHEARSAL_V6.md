@@ -1,8 +1,8 @@
 # Migration and recovery rehearsal (MRR-r2)
 
 V6-07 exercises explicit operations on synthetic disposable PostgreSQL 17.11 /
-pgvector 0.8.0 data. It adds no library import, migration, backup or hosting side
-effect. Native Python and Node remain independent consumers. Existing migration
+pgvector 0.8.0 data. Library imports remain free of network, migration, backup and hosting effects.
+Operators run these steps explicitly. Native Python and Node remain independent consumers. Existing migration
 and setup bytes, profile identity and runtime authorization contracts are fixed.
 
 ## Upgrade lane

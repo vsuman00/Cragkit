@@ -53,7 +53,7 @@ The **npm** package runs natively in Node.js — no Python server required. The 
 | **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
 | **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [V4 exit evidence](evaluation/reports/V4/V4-08-exit.md) |
 | **V5** | Qdrant publication and repair, existing indexes and optional MCP | ✅ Complete for the declared local native milestone | [V5 exit evidence](evaluation/reports/V5/V5-exit.md) · [Install and operations guide](docs/v5-operations.md) |
-| **V6** | Evaluation and release | 🚧 In progress; candidate artifacts and CI verified; migration/publication pending | [V6 plan](tasks/versions/V6-release.md) · [CI evidence](evaluation/reports/V6/V6-06-ci.md) · [Checkpoint](evaluation/reports/V6/V6-C2.md) |
+| **V6** | Evaluation and release | 🚧 In progress; candidate artifacts, CI and migration verified; publication pending | [V6 plan](tasks/versions/V6-release.md) · [CI evidence](evaluation/reports/V6/V6-06-ci.md) · [Checkpoint](evaluation/reports/V6/V6-C2.md) |
 
 > [!NOTE]
 > V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. V6 records limited live-model results and declared-platform CI. Migration, publication and production acceptance remain separate gates.
@@ -134,6 +134,7 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 - [Direct Neon acceptance](evaluation/reports/V2/DB-NEON-01.md) — Verified development transport and native checks, with production and pooling limits
 - [V5 installation and operations](docs/v5-operations.md) — Optional profiles, connection ownership, explicit migrations, recovery and local shutdown
 - [Publishing and deployment guide](docs/releasing.md) — MIT notices, exact artifacts, CI, release permission and application hosting
+- [Migration and recovery guide](docs/migrations-and-recovery.md) — Explicit upgrades, quarantined restore and current access state
 
 > Historical Supabase results do not establish Neon acceptance; see the tracker before hosted use.
 

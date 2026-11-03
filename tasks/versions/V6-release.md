@@ -135,6 +135,16 @@ Acceptance: No import performs migrations; failed upgrades preserve recoverabili
 
 Verification: Rehearse upgrade, interrupted migration and documented recovery from a test backup.
 
+3 November 2026 amendment: V6-07F1 addresses the natively confirmed populated
+0001-to-0002 lexical alias incompatibility through a separate explicit LCR-r1
+operator repair. Applied migration/package bytes and histories are preserved;
+the unmodified upgrade is recorded as rejected. Check/apply, writer exclusion,
+interruption, exact source/vector/security preservation and current/historical
+runtime compatibility passed under [MRR-r2](../../contracts/RECOVERY_REHEARSAL_V6.md).
+See [the scoped acceptance](../../evaluation/reports/V6/V6-07-recovery.md). This
+maintenance step has separate local evidence; it is not covered by the earlier
+paid candidate CI and does not authorize publication.
+
 Learning exercise: Explain application rollback versus database rollback.
 
 Expected areas: `Migration guide`, `operations fixtures`, `recovery report`.

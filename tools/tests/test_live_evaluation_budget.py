@@ -1,15 +1,12 @@
 """Exact fixed admission and uncertain-work accounting; no I/O or billing claim."""
-import importlib.util
 from pathlib import Path
 import sys
 from decimal import localcontext, Inexact, ROUND_FLOOR
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location('live_evaluation_budget', Path(__file__).resolve().parents[1] / 'live_evaluation_budget.py')
-M = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = M
-SPEC.loader.exec_module(M)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import live_evaluation_budget as M
 
 
 def test_exact_provider_and_total_caps():

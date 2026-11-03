@@ -352,7 +352,8 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V6-C2: Demonstration, regressions, shared fixtures and resource observations through V6-06 — [checkpoint](../evaluation/reports/V6/V6-C2.md). Learning practice remains unassessed.
 
-- [ ] V6-07: [Migration and rollback rehearsal](versions/V6-release.md#v6-07-migration-and-rollback-rehearsal) — evidence: pending.
+- [x] V6-07: [Migration and rollback rehearsal](versions/V6-release.md#v6-07-migration-and-rollback-rehearsal) — [scoped native recovery and required operator repair](../evaluation/reports/V6/V6-07-recovery.md).
+  - [x] V6-07F1: Explicit bounded legacy lexical repair; [upgrade and operator evidence](../evaluation/reports/V6/V6-07-upgrade.md). No applied migration or package changed.
 
 - [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — evidence: pending.
 
@@ -4797,3 +4798,52 @@ Guide/development commands updated; parent A/F1 remain in progress. Root owns
 scoped validation, commit/push/sync, preserves all user edits and excludes A's
 unvalidated files. Next smallest action is F1 implementation/assembly and native
 upgrade verification; no new CI or registry publication is authorized.
+
+
+V6-07/F1 final acceptance: COMPLETE for scoped local upgrade plus required
+operator repair and revocation-safe backup rehearsal. Root read Sol assembly
+and actual files/results, integrated the two owned lanes and the bounded Astra
+decision. Applied migrations, library packages, manifests, locks and histories
+were not rewritten. Native data confirmed the legacy simple alias; both current
+CI and historical Python/Node products returned typed FTS/direct-identifier
+refusal before repair and exact source afterward. The successful path remains
+explicitly upgrade plus repair, never an unmodified-upgrade pass.
+
+LCR-r1 has explicit check/apply, target fingerprint/TLS/owner binding, sorted
+writer-excluding locks, exact catalog/trigger/frozen-function checks, binary
+vector and keyed source/security/history comparison, 1,000 combined rows/8 MiB combined
+limits and pending/committed receipts. Setup-only optional storage is unsupported.
+All six upgrade and fourteen operator groups passed: wrong target, drift,
+vector/config/profile/trigger faults, actual writer lock (55P03), pending repair
+backend termination/rollback/retry, profile-upgrade interruption, idempotence,
+base-only CLI statuses 2/0/0 and setup 0003 no-op. Current fake dense works after setup 0003;
+historical 0.0.0 refuses it and is not an eligible security-complete rollback.
+
+Backup acceptance remains ten checks/five source cases per runtime, with current
+authority restored before login and denied revoked/foreign/tombstoned/old-scope
+access. Functional native pressure was 35-38 percent free with swapouts at 7,204,592
+unchanged across ten samples; no load benchmark, model HTTP or hosted write.
+All owned service processes/listeners closed. The earlier paid CI covers its
+original source 0c7c568 inputs, not this newly locally verified maintenance tool.
+
+Root ran 109 focused A/F1 cases and 32 backup cases. Initial full suite exposed
+a test-only canonical-module replacement: the old budget test loader split
+exception identity after early sender import. Three-file collection reproduced
+1 failure/49 passes; normal import fixed only that loader, then 72 passed. Final
+full Python/tool suite passed 4,109 tests, no skips and four intentional warnings in 18.70 seconds. No sender,
+budget, core exception, timing assertion or security condition was weakened.
+Earlier diagnostic failures are retained separately: unsupported to_regconfig,
+verified PG17 CHECK intermediate cast, unsupported tsvector_send (corrected to
+shipped-catalog tsvectorsend). Native checks preceded every operator mutation;
+no assertions or fixtures were normalized merely to pass.
+
+Reports V6-07-upgrade.md, V6-07-backup.md, V6-07-recovery.md and verification JSON
+bind commands, byte identities, results and limits. Guide/verified commands,
+README structure/status, active plan amendment and E58 regression updated.
+Learning examples show pending receipt vs commit and stale backup vs current
+authority; exercises remain unassessed. Root owns final prose/link/secret and
+scoped-stage review, commit/immediate push/sync. Unrelated nine user source/
+storage edits, original tracker draft and three audits stay excluded. Next is
+V6-08 reviewable release products/notes and publication authorization; V6-09,
+C3 and version exit remain incomplete. No new paid CI, registry publication or
+repository visibility change is authorized.
