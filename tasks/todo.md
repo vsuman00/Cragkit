@@ -338,7 +338,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
   - [x] V6-02H: Offline pacing, safe failure categories and recorder integration. H4 terminal-time correction passed [173 focused/3,727 Python checks](../evaluation/reports/V6/V6-02H4-terminal.md); historical H1-H3 also passed 41 Node checks. No live rerun or held-out acceptance.
 
-  - [ ] V6-02I: Fresh recovery packet review, separate approved binding and candidate/input/runtime refreeze. I1 draft/mechanical preparation passed; [human review pending](../evaluation/review/retrieval-recovery/README.md) for six questions/eight facets.
+  - [ ] V6-02I: Fresh recovery packet review, separate approved binding and candidate/input/runtime refreeze. I1 draft/mechanical preparation passed; BLOCKED on actual [human label review](../evaluation/review/retrieval-recovery/README.md) for six questions/eight facets.
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -4278,3 +4278,29 @@ actual recovery human label decision; then separate approved seal/profile bindin
 and candidate/runtime refreeze. V6-02 and V6-03 onward stay OPEN. Root final
 prose/links/preservation/security/index checks and scoped commit/immediatepush/
 synchronization; unrelated user edits/audits/tracker draft remain excluded.
+
+
+V6 blocking audit after H4: BLOCKED on actual recovery human label review.
+The same decision gate was recorded when I1 preparation finished, remained
+pending through the H4 corrective turn, and is revalidated now for the third
+consecutive goal turn. The prior turn made progress: delayed-dispatch pacing
+was fixed, tested (173 focused/3,727 full Python-tool) and pushed at 1f63e7a.
+Current authoritative review data still says pending/reviewer null; all eight
+review-bundle file digests match the recorded revision. No actual approval reply
+has arrived; automatic goal continuation does not supply label judgment.
+The old live result remains failed, its journal unsealed, both replays unrun;
+no PostgreSQL process remains. V6-03 depends on V6-02 and later tasks form a
+required dependency chain, so none can be accepted by skipping this gate.
+Known independent transport corrections are complete; no new code fault or
+unblocked implementation task was found. No duplicate question, provider call,
+secret/config read, install, test rerun, service or label/seal/admission change
+was made in this audit. Only this tracker handoff is changed. One root auditor;
+no independent peer lanes are needed for checking a pending human decision.
+Next action remains the existing concrete review request for all six questions
+and eight facets in evaluation/review/retrieval-recovery/README.md. Corrections
+require draft revalidation; actual approval permits its separate seal and trusted
+profile/binding work before runtime refreeze and a recorded live decision.
+The full V6 goal is not complete. After scoped tracker commit/push/sync, mark
+the goal blocked on this human dependency and stop automatic work until input
+or an external-state change. User edits/audits/original tracker draft preserved.
+Learning review remains unassessed; no new resource-heavy work was performed.
