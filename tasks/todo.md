@@ -340,9 +340,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
   - [x] V6-02I: Human recovery-label approval, separate pinned profile binding and actual candidate/runtime refreeze — [approval/binding](../evaluation/reports/V6/V6-02I-approved-binding.md) and [clean runtime](../evaluation/reports/V6/V6-02I-runtime.md).
 
-- [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
+- [x] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — [local resource/native evidence](../evaluation/reports/V6/V6-03-resources.md).
 
-- [ ] V6-C1: Demonstration, relevant regression checks, learning review and resource note through V6-03.
+- [x] V6-C1: Demonstration, regressions, shared fixtures and resource observations — [checkpoint evidence](../evaluation/reports/V6/V6-03-resources.md). Learning practice remains unassessed.
 
 - [ ] V6-04: [Security and failure audit](versions/V6-release.md#v6-04-security-and-failure-audit) — evidence: pending.
 
@@ -4410,3 +4410,62 @@ or local model download. Learning practice unassessed. Next V6-03 resource/concu
 measurement under frozen targets; later V6 gates remain required. Root final prose/
 links/schema/security checks and scoped commit/immediate push/sync; user dirty
 source/audits/tracker draft remain excluded. Full goal not complete.
+
+
+V6-03 resource handoff: COMPLETE local acceptance, including V6-C1. Root was
+coordinator, shared-contract owner, final integrator, tracker/Git owner and single
+test-slot owner. RST-r1 was frozen before measurement; child assignments were:
+- V6-03A1: root, default-import harness and tests (two files).
+- V6-03B1: Sol transport_pacing, Python workload and tests (two files).
+- V6-03B2: Sol transport_diagnostics, Node workload and tests (two files), assembler.
+- V6-03B3: root, bounded native launcher and tests (two files).
+Both Sol peers did substantive work, resolved interfaces directly and returned
+ownership. Root inspected their sources and assembled report, then integrated
+and verified serially. Shared outcome and protected source/manifests/locks/seals/
+labels/model identities/thresholds stayed unchanged. No peer ran a test, service,
+install, provider call or secret read. No ownership overlap or Astra escalation
+was needed. Root's later diagnostic/recovery edits occurred after ownership return.
+
+Default core preparation used the clean recovery candidate, offline wheel/npm
+builds, frozen minimal Python dependencies and 840 receipt-verified Zod files.
+The initial npm pack lacked its output directory; root created the task-owned
+parent before a successful repeat. No npm-install success or download is claimed.
+Five fresh processes and 250 warm observations per language passed unchanged
+import/RSS/logical-size targets. Actual hardware was M4/16 GiB, arm64/macOS 27.2.
+Fresh maxima: Python 0.593 s, Node 0.0645 s. Default peak RSS: 67,092,480 and
+92,241,920 bytes; logical installs: 8,032,831 and 7,409,253 bytes respectively.
+
+The first native attempt failed and is retained. A diagnostic run confirmed Node
+active_reuse/provider_unavailable; Python completed its three ingests and forty
+retrievals. Pinned driver socket destruction can precede PostgreSQL backend-slot
+release under the unchanged role connection limit of one. Before the final run,
+root and Sol reviewed a bounded harness recovery clarification: one five-second
+deadline, at most 25 sequential probes, only provider_unavailable treated as
+temporary. No library retry, privileged observer or role-limit relaxation was added.
+The final run passed both runtimes: three ingests, forty hybrid retrievals at
+concurrency one then two, all twelve invariants, overload refusal, queued/active
+cancellation, healthy reuse and cleanup. ECR verification passed before and after.
+Node recovery needed eighteen attempts, seventeen refusals and 2,017.54 ms.
+Immediate reuse, server cancellation acknowledgment and SQLSTATE 53300 are not
+claimed. Retrieval p95: Python 11.44/21.83 ms and Node 12.74/20.10 ms, below the
+25-second deadline. Database logical size was 9,090,739 bytes each; native optional
+runtime RSS is descriptive and separate from the default-import gate.
+
+Actual validation: 45 new Python harness tests, 19 Node harness tests; V6-C1 passed
+3,825 Python/tool tests with four existing intentional warnings, 1,617 core Node
+tests, and nineteen shared schema/fixture/development/seal stages. All ran serially.
+Reports V6-03-resources.md and V6-03-verification.json retain samples, failed runs,
+digests and limitations; development.md records reproduction commands. Pressure
+was 46-49 percent free with no new swapouts. All owned database listeners closed;
+no watcher, real provider call or held-out scoring ran. Credentials were excluded
+from report output. Source, original/current sealed inputs, configuration and
+frozen targets are unchanged. Scope is short local PostgreSQL tests on three
+synthetic documents; no Qdrant throughput, large-corpus, OS-cold-cache, cross-platform,
+long soak or production guarantee. Broader CI remains V6-06.
+
+Learning example: a one-client pool can make concurrency two wait longer; nearest-
+rank p95 is the nineteenth of twenty sorted samples. Optional exercise and learning
+practice remain unassessed. Root applies prose/link/JSON/hash and staged secret
+checks, then scoped commit, immediate push and remote synchronization. User-owned
+source, audit reports and the original tracker draft remain excluded. Next smallest
+task: V6-04 security/failure audit. Full V6 remains incomplete.

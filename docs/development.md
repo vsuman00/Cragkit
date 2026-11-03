@@ -1647,3 +1647,44 @@ provenance distinguishes source verification from compiled/runtime artifact
 verification, which the live parent must perform separately. See
 [the contract](../contracts/EVALUATION_PACKET_BINDING_V6.md) and
 [actual evidence](../evaluation/reports/V6/V6-02D-packet.md).
+
+
+## V6-03 resource and concurrency checks
+
+The [RST-r1 contract](../contracts/RESOURCE_TESTING_V6.md) fixes the measurement
+procedure. [Local acceptance](../evaluation/reports/V6/V6-03-resources.md) and
+[raw numeric observations](../evaluation/reports/V6/V6-03-verification.json)
+record exact candidate/tool identities, failed attempts, native recovery behavior
+and platform limits. These commands measure already prepared environments; they
+never install drivers, download models or call a real embedding provider.
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_measure_default_resources.py tools/tests/test_measure_native_resources.py tools/tests/test_resource_workload.py -q
+node --test --test-concurrency=1 tools/tests/resource-workload.test.mjs
+python3 -B tools/measure_default_resources.py --python-env artifacts/V6/resource-default/python-env --node-env artifacts/V6/resource-default/node-env --output artifacts/V6/resource-default/new-measurements.json
+uv run --project packages/python --frozen --no-sync python -B tools/measure_native_resources.py --candidate-root artifacts/V6/recovery-candidate-rc1 --runtime-receipt artifacts/V6/recovery-candidate-rc1/artifacts/V6/recovery-runtime/runtime.json --prepared-postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --output artifacts/V6/resource-native-new --allow-local-processes
+```
+
+Output paths must be fresh. The native command verifies the existing ECR receipt
+before/after execution and starts disposable local TLS databases sequentially.
+Credentials travel through bounded stdin, never argv or reports. The restricted
+reader/writer logins each retain one backend slot; pool queue size remains one.
+Node active cancellation destroys its frontend socket. The report separately
+counts temporary acquisition refusals until an actual healthy query succeeds
+under one five-second harness recovery deadline; this is not a library retry.
+
+Preparation used a clean frozen candidate, Python 3.14.6 with offline wheel/core
+dependency installation, and offline npm pack followed by bounded extraction and
+receipt-verified Zod reuse. Existing development environments with optional
+packages do not satisfy the default-import probe. Full preparation provenance
+and exact archive digests are retained in the linked observations; rebuilding
+for V6-06 remains a separate artifact/release gate.
+
+V6-C1 ran the following serially: 3,825 Python/tool tests (four existing intentional
+warnings), `npm --prefix packages/typescript test` (1,617 tests), and the 19
+`check_core_pipeline.py` stages from schema-drift through sealed-input-integrity.
+That selected checkpoint reused prepared dependencies with `--no-sync`; it did
+not run the full install/artifact pipeline or hosted CI. Both original sealed
+inputs and active recovery configuration remained unchanged. The focused new
+harness suites passed 45 Python and 19 Node tests. Local native measurements
+cover PostgreSQL only, not Qdrant throughput or a long-duration soak.
