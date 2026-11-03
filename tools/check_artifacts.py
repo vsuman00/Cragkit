@@ -15,11 +15,27 @@ import tempfile
 import zipfile
 from typing import Any
 
+from artifact_licensing import ArtifactLicensingError, validate_artifact_licensing
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ArtifactError(RuntimeError):
     pass
+
+
+def check_artifact_licensing(files: dict[str, bytes], *, kind: str,
+                             package_name: str, version: str) -> None:
+    """Require the source license/notices in every accepted candidate archive."""
+    failed = False
+    try:
+        validate_artifact_licensing(files, kind=kind, package_name=package_name,
+            version=version, license_bytes=(ROOT/'LICENSE').read_bytes(),
+            notice_bytes=(ROOT/'NOTICE').read_bytes())
+    except (ArtifactLicensingError, OSError):
+        failed = True
+    if failed:
+        raise ArtifactError('artifact_license_notice')
 
 
 def require(ok: bool, code: str) -> None:
@@ -81,6 +97,7 @@ def inspect_wheel(path: Path) -> dict[str, bytes]:
     require(core == ['pydantic==2.14.1'], 'wheel_core_dependencies')
     optional = [entry for entry in requirements if 'extra ==' in entry]
     require(all(('postgres' in entry and entry.startswith(('psycopg[', 'psycopg-pool'))) or ('tokenizers' in entry and entry.startswith('tiktoken==0.14.0')) or ('qdrant' in entry and entry.startswith('httpx==0.28.1')) for entry in optional), 'wheel_optional_dependencies')
+    check_artifact_licensing(files, kind='wheel', package_name='cragkit', version='1.0.0rc1')
     return files
 
 
@@ -96,6 +113,7 @@ def inspect_npm(path: Path) -> dict[str, bytes]:
             value = target.get(kind)
             require(isinstance(value, str) and value.startswith('./dist/') and value.endswith(suffix), 'npm_export_target')
             require('package/' + value[2:] in files, 'npm_missing_export')
+    check_artifact_licensing(files, kind='npm', package_name='cragkit', version='1.0.0-rc.1')
     return files
 
 
@@ -312,6 +330,7 @@ def accept_artifacts(root: Path, output: Path, postgres_config: Path | None = No
             sdist = py_out / 'cragkit-1.0.0rc1.tar.gz'
             original_files = inspect_wheel(wheel)
             source_files = archive_files(sdist)
+            check_artifact_licensing(source_files, kind='sdist', package_name='cragkit', version='1.0.0rc1')
             require(any(name.endswith('/pyproject.toml') for name in source_files)
                     and any(name.endswith('/src/cragkit/py.typed') for name in source_files), 'sdist_missing_source')
             run(['uv', 'build', str(sdist), '--wheel', '--out-dir', str(rebuilt_out), '--no-python-downloads'], work, commands)

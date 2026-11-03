@@ -1739,3 +1739,30 @@ the relative filename above succeeded. Isolated dry runs verified that absolute
 interpreter and wheel paths were not the cause. The smoke passed21 checks with
 no model calls and cleaned up its private database. Native/load work stopped
 after subsequent swap growth; recheck stable headroom before another local run.
+
+## V6-06 licensing and CI preparation
+
+[Licensing preparation](../evaluation/reports/V6/V6-06-licensing.md) records
+completed child checks, not parent V6-06 acceptance. The six manifests declare
+MIT and carry exact root LICENSE/NOTICE files. Core, framework and MCP artifact
+tools now check licensing as well as their existing dependency/asset identities.
+The [publishing guide](releasing.md) explains license, artifacts, CI, deployment
+and the separate publication decision.
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_artifact_licensing.py tools/tests/test_check_artifacts.py tools/tests/test_check_qdrant_artifacts.py tools/tests/test_check_framework_artifacts.py -q
+```
+
+This passed 135 focused cases. Nine small offline preview archives also passed
+actual license/notice layout checks. Their emitted metadata format is 2.5; the
+helper accepts known PEP 639 formats 2.4–2.6 and rejects old/invalid formats. These
+working-tree previews are not the clean final artifacts. During those serial
+builds free memory was 47–48% and swapouts remained unchanged.
+
+The manual-only [candidate workflow](../.github/workflows/candidate-validation.yml)
+has pinned official action commits, a read-only repository token and one ARM64
+macOS job with a 30-minute timeout. Its YAML and configured action inputs were
+checked; it has not run. The repository is private and free included usage was
+not accessible through the available billing API/browser. No billable dispatch,
+publication or visibility change is implied by committing this workflow. Follow
+the guide's cost decision before dispatching; never label a skipped job a CI pass.

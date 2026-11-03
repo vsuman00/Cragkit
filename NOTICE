@@ -1,0 +1,22 @@
+Cragkit distribution notice
+
+Cragkit's own code is distributed under the MIT License in LICENSE.
+Copyright (c) 2026 Vaibhav Suman.
+
+Dependencies are separate distributions. Their own licenses and notices continue
+to apply; Cragkit's MIT declaration does not relicense them. Exact required and
+optional versions are declared in each package manifest and the repository locks.
+The Python core requires Pydantic; the Node core requires Zod. PostgreSQL clients,
+HTTP clients, tokenizers, LangChain and MCP SDKs are installed only by the selected
+profile or separate adapter package. Consult those installed distributions for
+their license texts and transitive dependencies.
+
+These Cragkit archives do not bundle database servers, model weights, model
+runtimes or tokenizer rank assets. Supported server/profile names identify
+compatibility, not a redistribution of those products. Tokenizer assets and local
+model assets require explicit application setup and their applicable terms.
+
+Hosted embedding and reranker profiles require an application-owned transport,
+credential and disclosure policy. Cragkit supplies no built-in API key. Provider
+service terms and usage charges are separate from the MIT license for this code.
+No provider call or model download occurs merely by importing the core package.

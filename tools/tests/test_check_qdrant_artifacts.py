@@ -19,11 +19,15 @@ def wheel(path, metadata):
         archive.writestr('cragkit_mcp/__init__.py', '')
         archive.writestr('cragkit_mcp/py.typed', '')
         archive.writestr('cragkit_mcp-1.0.0rc1.dist-info/METADATA', metadata)
+        archive.writestr('cragkit_mcp-1.0.0rc1.dist-info/licenses/LICENSE', (TOOLS.parent/'LICENSE').read_bytes())
+        archive.writestr('cragkit_mcp-1.0.0rc1.dist-info/licenses/NOTICE', (TOOLS.parent/'NOTICE').read_bytes())
 
 
 def test_mcp_metadata_rejects_core_registry_version_drift(tmp_path):
     artifact = tmp_path / 'mcp.whl'
-    metadata = 'Name: cragkit-mcp\nVersion: 1.0.0rc1\nRequires-Dist: cragkit==1.0.0rc1\nRequires-Dist: mcp==2.3.0\n'
+    metadata = ('Metadata-Version: 2.4\nName: cragkit-mcp\nVersion: 1.0.0rc1\n'
+                'License-Expression: MIT\nLicense-File: LICENSE\nLicense-File: NOTICE\n'
+                'Requires-Dist: cragkit==1.0.0rc1\nRequires-Dist: mcp==2.3.0\n')
     wheel(artifact, metadata)
     assert 'cragkit_mcp/py.typed' in module.inspect_mcp_wheel(artifact)
     wheel(artifact, metadata.replace('mcp==2.3.0', 'mcp>=2.3.0'))

@@ -10,7 +10,7 @@ import sys
 import tempfile
 from typing import Any
 
-from check_artifacts import archive_files, artifact_record, require, run, size_tree
+from check_artifacts import archive_files, artifact_record, check_artifact_licensing, require, run, size_tree
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,6 +24,8 @@ def python_adapter(root: Path, output: Path, core: Path, work: Path,
     wheel = built / 'cragkit_langchain-1.0.0rc1-py3-none-any.whl'
     sdist = built / 'cragkit_langchain-1.0.0rc1.tar.gz'
     files = archive_files(wheel)
+    check_artifact_licensing(files, kind='wheel', package_name='cragkit-langchain', version='1.0.0rc1')
+    check_artifact_licensing(archive_files(sdist), kind='sdist', package_name='cragkit-langchain', version='1.0.0rc1')
     require('cragkit_langchain/__init__.py' in files and 'cragkit_langchain/py.typed' in files, 'adapter_wheel_missing')
     metadata_files = [name for name in files if name.endswith('.dist-info/METADATA')]
     require(len(metadata_files) == 1, 'adapter_metadata')
@@ -67,6 +69,7 @@ def node_adapter(root: Path, output: Path, core: Path, work: Path,
     archive = built / packed[0]['filename']
     require(archive.parent == built, 'adapter_npm_path')
     files = archive_files(archive)
+    check_artifact_licensing(files, kind='npm', package_name='cragkit-langchain', version='1.0.0-rc.1')
     metadata = json.loads(files['package/package.json'])
     require(metadata['name'] == 'cragkit-langchain' and metadata['version'] == '1.0.0-rc.1'
         and metadata.get('private') is True, 'adapter_npm_identity')

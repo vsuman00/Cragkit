@@ -4591,3 +4591,66 @@ implementation/locks/seals/models/targets unchanged in this slice. Learning
 exercise unassessed. Root prose/link/secret scoped review then commit/immediate
 push/sync, user dirty source/audits/tracker draft excluded. Next V6-06 license/
 notices/exact artifact/CI preparation; full V6 still incomplete.
+
+
+V6-06 A1/A2/B assignment: IN_PROGRESS, dependency V6-05 unavailable-participant
+record accepted. Concrete outcome: six RC1 packages declare MIT and contain exact
+LICENSE/NOTICE; pure archive guard refuses malformed/missing licensing identity.
+ALC-r1 frozen in contracts/ARTIFACT_LICENSING_V6.md. Sol transport_pacing owns
+three Python manifests (A1), three Node manifests (A2), six package LICENSE/NOTICE
+copy pairs only. Sol transport_diagnostics owns tools/artifact_licensing.py plus
+its test (B), and ASSEMBLES. Root owns root NOTICE/contract/locks/tool wiring,
+CI/release guide/exact artifacts/compatibility, tracker/Git/final acceptance.
+Peers resolve dependencies directly, no overlap; escalate scope/protected changes
+through root then Astra. No peer tests/installs/services/network/credentials.
+Memory policy: native/load stopped after three swap-growth observations; light
+edits only until stable headroom or approved suitable CI. Root public registry
+checks all six names returned404, not a reservation/ownership guarantee. Repository
+still private; no CI or publication/visibility action taken. Package versions,
+dependencies, bounds and private=true protected; root serializes lock metadata.
+State assigned; next implement metadata/helper while root researches CI safely.
+
+V6-06 A1/A2/B handed back: IMPLEMENTED_UNVALIDATED. Sol metadata and pure validator
+lanes completed substantive files and static comparisons; assembler inspected
+all six manifests/twelve exact assets and helper interface, no overlap. Root
+aligned only npm lock root license metadata; graph/resolved/integrities protected.
+Root integration child C1 owns core artifact licensing hook plus its isolation
+import test; C2 owns framework/MCP hooks plus MCP archive fixture. Both call pure
+ALC-r1 guard for wheel/sdist/npm without weakening existing dependency/asset
+checks. Small hermetic helper/fixture validation is next; native/load still held
+while swap growth is checked. GitHub repo Actions enabled/no existing runs; plan
+quota unavailable from API, so billable/hosted CI dispatch remains unapproved.
+Action versions resolved to immutable commits; preparing manual-only workflow
+and teaching guide before any cost/visibility/publication decision.
+
+
+V6-06 A1/A2/B/C1/C2 verified child handoff: COMPLETE local metadata/helper/layout
+preparation; parent V6-06 and checkpoint V6-C2 remain OPEN. Root inspected Sol assembly, six
+manifests and twelve exact LICENSE/NOTICE assets. Only root npm-lock license
+metadata changed, no version/graph/integrity/runtime-bound/private guard change.
+Pure archive licensing validation is integrated in all core/framework/MCP wheel,
+sdist and npm tools. Root passed135 focused tests; all nine actual offline layout
+previews passed exact notice identities. Initial preview enumerated uv .gitignore
+as an archive, corrected to explicit names. An added exact2.4 format assumption
+failed on actual2.5 builder metadata; primary PyPA spec verified valid2.4–2.6,
+negative old/invalid and positive newer-standard tests added, all nine rechecked.
+No weakened licensing/dependency/asset check. Previews include user prose and
+are not final clean release artifacts. Small serial builds47–48%free/no new
+swapouts; broader/native tests remain deliberately serialized with headroom checks.
+
+Manual-only candidate-validation workflow prepared: five official actions pinned
+to verified commits, action inputs checked from pinned action.yml, system YAML
+parser passed, contents read/persist-credentials false, one macOS ARM64 job,30min
+timeout, fixed Python3.14.6/Node26.5/npm11.17/uv0.11.8, no provider/DB secrets or
+publication. Ten key public dependency metadata endpoints returned200. All six
+project names404, not reservation/ownership. Repo private, Actions enabled,0runs;
+billing allowance inaccessible and browser host unavailable. No hosted CI dispatch,
+visibility change or registry publication occurred. New docs/releasing.md teaches
+free MIT code versus separate service/CI charges, clean exact artifacts and
+operator-owned deployment. README structure preserved, guide link added.
+Root owns final prose/link/JSON/secret staged review, verified child commit and
+immediate push/sync. User source/audits/original tracker draft excluded. Next:
+clean candidate exact builds/installed profiles and post-security recorded-response
+compatibility; concrete free-CI/visibility or bounded-cost decision before dispatch.
+Original frozen live candidate/tape/seals/targets remain unchanged. Learning
+exercise unassessed; full V6 is not complete.

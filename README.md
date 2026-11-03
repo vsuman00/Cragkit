@@ -133,6 +133,7 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 - [Secure setup runbook](docs/neon.md) — Security requirements and acceptance gates
 - [Direct Neon acceptance](evaluation/reports/V2/DB-NEON-01.md) — Verified development transport and native checks, with production and pooling limits
 - [V5 installation and operations](docs/v5-operations.md) — Optional profiles, connection ownership, explicit migrations, recovery and local shutdown
+- [Publishing and deployment guide](docs/releasing.md) — MIT notices, exact artifacts, CI, release permission and application hosting
 
 > Historical Supabase results do not establish Neon acceptance; see the tracker before hosted use.
 

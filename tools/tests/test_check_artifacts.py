@@ -3,10 +3,13 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import zipfile
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 SPEC = importlib.util.spec_from_file_location('check_artifacts', Path(__file__).resolve().parents[1] / 'check_artifacts.py')
 assert SPEC and SPEC.loader

@@ -10,7 +10,7 @@ import sys
 import tempfile
 from typing import Any
 
-from check_artifacts import archive_files, artifact_record, require, run
+from check_artifacts import archive_files, artifact_record, check_artifact_licensing, require, run
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES = ('core', 'postgres', 'qdrant', 'qdrant-authoritative', 'tokenizers', 'mcp')
@@ -24,6 +24,7 @@ def inspect_mcp_wheel(path: Path) -> dict[str, bytes]:
     metadata = email.parser.BytesParser().parsebytes(files[names[0]])
     require(metadata['Name'] == 'cragkit-mcp' and metadata['Version'] == '1.0.0rc1', 'mcp_identity')
     require(sorted(metadata.get_all('Requires-Dist', [])) == ['cragkit==1.0.0rc1', 'mcp==2.3.0'], 'mcp_dependencies')
+    check_artifact_licensing(files, kind='wheel', package_name='cragkit-mcp', version='1.0.0rc1')
     return files
 
 
@@ -36,6 +37,7 @@ def inspect_mcp_npm(path: Path) -> dict[str, bytes]:
     for kind, extension in (('import', '.js'), ('types', '.d.ts')):
         target = package.get('exports', {}).get('.', {}).get(kind, '')
         require(target.startswith('./dist/') and target.endswith(extension) and 'package/' + target[2:] in files, 'mcp_npm_export')
+    check_artifact_licensing(files, kind='npm', package_name='cragkit-mcp', version='1.0.0-rc.1')
     return files
 
 
@@ -63,6 +65,7 @@ def accept(root: Path, core: Path, output: Path) -> dict[str, Any]:
             run(['uv', 'build', str(root / 'packages/mcp-python'), '--out-dir', str(built), '--no-python-downloads'], root, commands)
             wheel, sdist = built / 'cragkit_mcp-1.0.0rc1-py3-none-any.whl', built / 'cragkit_mcp-1.0.0rc1.tar.gz'
             files = inspect_mcp_wheel(wheel)
+            check_artifact_licensing(archive_files(sdist), kind='sdist', package_name='cragkit-mcp', version='1.0.0rc1')
             rebuilt = output / 'mcp/rebuilt'; rebuilt.mkdir(exist_ok=True)
             run(['uv', 'build', str(sdist), '--wheel', '--out-dir', str(rebuilt), '--no-python-downloads'], work, commands)
             require(inspect_mcp_wheel(rebuilt / wheel.name) == files, 'mcp_sdist_rebuild_drift')
