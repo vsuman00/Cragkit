@@ -344,7 +344,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V6-C1: Demonstration, regressions, shared fixtures and resource observations — [checkpoint evidence](../evaluation/reports/V6/V6-03-resources.md). Learning practice remains unassessed.
 
-- [ ] V6-04: [Security and failure audit](versions/V6-release.md#v6-04-security-and-failure-audit) — evidence: pending.
+- [x] V6-04: [Security and failure audit](versions/V6-release.md#v6-04-security-and-failure-audit) — [scoped local acceptance](../evaluation/reports/V6/V6-04-security.md).
 
 - [ ] V6-05: [Developer usability trial](versions/V6-release.md#v6-05-developer-usability-trial) — evidence: pending.
 
@@ -4469,3 +4469,82 @@ practice remain unassessed. Root applies prose/link/JSON/hash and staged secret
 checks, then scoped commit, immediate push and remote synchronization. User-owned
 source, audit reports and the original tracker draft remain excluded. Next smallest
 task: V6-04 security/failure audit. Full V6 remains incomplete.
+
+
+V6-04 security/failure audit assignment: IN_PROGRESS after V6-03/C1 acceptance.
+One concrete outcome: inspect all 108 implemented edge-case boundaries against
+actual source/tests and artifact exclusions, identify gaps before acceptance, and
+record scoped security evidence and residual limitations. Sol transport_pacing
+owns E01-E54 review and evaluation/reports/V6/V6-04-core-audit.json only. Sol
+transport_diagnostics owns E55-E108 and V6-04-extension-audit.json only and is
+ASSEMBLER. Both review both native languages in their assigned edge range.
+Shared audit schema: edge_id, boundary, reviewed_source, python_tests, node_tests,
+native_evidence, disposition (covered_local/gap/not_implemented), limitations.
+Every list contains repo-relative existing paths; covered_local means inspected
+implementation/test ownership, not a new test result. Root owns acceptance report,
+archive/secret inspection, actual commands and test slot, tracker/Git. Mandatory
+coordinate/manager skills and workflow applied; no overlapping files. Read-only
+source, core/manifests/locks/seals/thresholds/private files and user audit drafts
+protected. No peer tests/services/installs/network/credentials or provider output.
+Peers resolve concrete range/interface issues directly; report plan-changing gaps
+before edits. Root then Astra handles unresolved material questions. Current
+source package tree unchanged; earlier native evidence remains historical unless
+rerun and newly recorded. State assigned; next root runs scoped audit commands
+and fresh required adversarial fixtures serially.
+
+V6-04F1 security fix assignment: root owns clean reranking.py/reranking.ts and
+their two adapter test files; shared RK-r2 clarification root-owned. Sol E51
+source review plus root synthetic probes confirmed raw unknown exception markers
+in both default traces. Astra security_error_decision recommends fresh existing
+ProviderUnavailable outside recognized fallback selection, no raw cause/context,
+preserve recognized project errors/deadline/cancellation and single dispatch.
+Inspected corrective capture is outside search retry catches, so this does not
+add built-in reranker retry. No new wire code or live call. E51 remains a gap until
+regressions pass. F2, if required, owns separate orchestration regression files.
+This is an explicit post-evaluation security correction; retain frozen V6-02 live
+results, record changed source and require offline compatibility evidence later.
+
+V6-04F2: root owns the two clean retrieval-evidence regression files only. Add
+public orchestration unknown-error tests for both fallback settings: one dispatch,
+fixed error, no raw details/cause/context, no degraded success and no held lease.
+No edits to the user-owned retrieval/execution source files. F1 adapter tests
+currently passed 28 Python cases; remaining Node/full integration still required.
+
+
+V6-04 and children F1/F2 final acceptance: COMPLETE for scoped local security
+and failure boundaries. Sol peers audited E01-E54 and E55-E108 directly against
+actual sources/tests; extension peer assembled, root integrated. Initial E51 gap
+was reproduced with synthetic markers in both public reranker traces. Astra
+resolved typed-error/fallback policy; root fixed clean reranking files and four
+adapter/orchestration tests, RK-r2 clarified. Fresh allowlisted errors discard
+ordinary provider messages/causes/context and caller subclass constructors while
+retaining known classes, declared fallback, deadlines and request cancellation.
+Unknown errors still fail the current call even with fallback; no new code/retry.
+Sol independently reviewed final diff; root accepted only after 58 focused Python
+and 39 Node tests, 3,843 full Python/tool tests (four existing intentional warnings),
+1,635 core Node tests/build, Python strict typing51, optional SDKs LangChain73/70
+and MCP41/36, and targeted reranker/hybrid/evidence parity all passed.
+
+Initial MCP environment had stale 0.0.0 installed metadata (40 pass/1 failure);
+root verified it, resynced frozen offline with Python3.14.6 and reran all SDKs
+after the patch. No lock, source or assertion weakened. Fresh genuine SQL guard
+races23, supervisor suspension14 and managed purge52 checks passed with cleanup.
+All42 retained native result digests for43 historical faults reverified;29 relevant
+Qdrant library/migration files and renamed native consumer unchanged since V5exit.
+Historical runs are not claimed fresh. Six current local audit archives passed
+asset/path/privacy inspection; selected private-key/base64 scan found0matches
+in archives and950 trackedfiles. OSVpublic133versions query returned0advisory
+matches, not absence of unknown vulnerabilities/binary/system risks. No actual
+credential used in repro, provider inference, hosted database write or model
+download. Pressure45-47%free; owned PG/Qdrant/children/listeners closed.
+
+Audit108 cases:102 implemented scoped evidence, six future/conditional E58/E61/
+E62/E63/E64/E67 explicitly unimplemented; CPU-local subcase and all quality limits
+remain visible. This is not universal security or production acceptance. Current
+security patch follows frozen live V6-02; old candidate/tape/seals/targets remain
+intact, final source needs later offline compatibility/resource/artifact/CI binding.
+Reports V6-04-security.md, two audit JSONs and V6-04-verification.json record all
+findings/results/hashes/limits. Root owns prose/links/staged secret review, scoped
+commit, immediate push and sync. User-owned source/audits/tracker draft preserved
+and excluded. Learning example safe operational error vs relevance, exercise
+unassessed. Next smallest task V6-05 usability trial; full V6 remains incomplete.

@@ -63,6 +63,34 @@ async def retrieve(session, request, scope, options):
     return await retriever.retrieve(request, scope=scope, deadline=asyncio.get_running_loop().time() + 2)
 
 
+@pytest.mark.parametrize('allow_fallback', [False, True])
+def test_unknown_reranker_failure_is_redacted_through_retrieval(allow_fallback):
+    import traceback
+    marker = 'private-reranker-orchestration-diagnostic'
+
+    async def check():
+        session, request, scope = setup()
+        calls = 0
+
+        async def failed(body, **kwargs):
+            nonlocal calls
+            calls += 1
+            assert session.active == 0
+            raise RuntimeError(marker) from ValueError(marker)
+
+        with pytest.raises(ProviderUnavailable) as caught:
+            await retrieve(session, request, scope, dict(
+                reranker=RerankingAdapter(failed), rerank_fallback=allow_fallback))
+        assert calls == 1 and session.active == 0
+        assert str(caught.value) == 'Provider is unavailable.'
+        assert caught.value.__cause__ is None and caught.value.__context__ is None
+        assert marker not in ''.join(traceback.format_exception(caught.value))
+        assert all(bound_scope == scope and bound_request.required_filters == request.required_filters
+                   for bound_request, bound_scope in session.bound)
+
+    asyncio.run(check())
+
+
 def test_fresh_post_model_authorization_no_held_lease_and_shared_source_budget():
     async def check():
         for revoke in [False, True]:

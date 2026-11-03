@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { RerankingAdapter, FAKE_RERANK_PROFILE } from '../dist/reranking.js';
-import { DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability } from '../dist/errors.js';
+import { DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from '../dist/errors.js';
 const fixture = JSON.parse(fs.readFileSync(new URL('../../../contracts/fixtures/reranking.json', import.meta.url), 'utf8'));
 const encode = value => new TextEncoder().encode(JSON.stringify(value));
 const options = extra => ({ deadline: performance.now() / 1000 + 5, ...extra });
@@ -68,12 +68,87 @@ test('fallback is explicit, limited to capability/unavailability, and preserves 
     assert.deepEqual(result.order, ['a', 'b']); assert.deepEqual(result.scores, []);
     assert.equal(result.degraded, true); assert.equal(result.provider_calls, 1);
   }
-  const unknown = new Error('opaque transport failure');
-  await assert.rejects(new RerankingAdapter(async () => { throw unknown; }).rank('q', candidates, options({ allow_fallback: true })), error => error === unknown);
   let calls = 0;
   const live = new RerankingAdapter(async () => { calls++; return encode(scores); }, { profile: { ...FAKE_RERANK_PROFILE, provider: 'hosted' } });
   await assert.rejects(live.rank('q', candidates, options({ allow_fallback: true })), UnsupportedCapability);
   assert.equal(calls, 0);
+});
+
+for (const allow_fallback of [false, true]) {
+  test(`unknown transport error is redacted and fatal with fallback=${allow_fallback}`, async () => {
+    const marker = 'private-provider-diagnostic';
+    const original = new Error(marker, {cause: new Error(marker)});
+    let calls = 0;
+    const adapter = new RerankingAdapter(async () => { calls++; throw original; });
+    await assert.rejects(adapter.rank('q', candidates, options({allow_fallback})), error => {
+      assert.ok(error instanceof ProviderUnavailable);
+      assert.notEqual(error, original);
+      assert.equal(error.code, 'provider_unavailable');
+      assert.equal(error.message, 'Provider is unavailable.');
+      assert.equal(error.cause, undefined);
+      assert.ok(!error.stack.includes(marker));
+      assert.ok(!JSON.stringify(error).includes(marker));
+      return true;
+    });
+    assert.equal(calls, 1);
+  });
+}
+
+for (const Kind of [ProviderUnavailable, UnsupportedCapability, IntegrityViolation,
+  UnauthorizedScope, DeadlineExceeded, InvalidRequest]) {
+  for (const allow_fallback of [false, true]) {
+    test(`declared ${Kind.name} retains classification without private chain, fallback=${allow_fallback}`, async () => {
+      const marker = 'private-typed-provider-diagnostic';
+      const original = new Kind();
+      original.message = marker;
+      original.cause = new Error(marker);
+      let calls = 0;
+      const adapter = new RerankingAdapter(async () => { calls++; throw original; });
+      if (allow_fallback && [ProviderUnavailable, UnsupportedCapability].includes(Kind)) {
+        const result = await adapter.rank('q', candidates, options({allow_fallback}));
+        assert.equal(result.degraded, true);
+        assert.equal(result.provider_calls, 1);
+      } else {
+        await assert.rejects(adapter.rank('q', candidates, options({allow_fallback})), error => {
+          assert.equal(error.constructor, Kind);
+          assert.notEqual(error, original);
+          assert.equal(error.message, new Kind().message);
+          assert.equal(error.cause, undefined);
+          assert.ok(!error.stack.includes(marker));
+          assert.ok(!JSON.stringify(error).includes(marker));
+          return true;
+        });
+      }
+      assert.equal(calls, 1);
+    });
+  }
+}
+
+test('caller subclass constructor is not reinvoked', async () => {
+  let constructed = 0;
+  class CustomUnavailable extends ProviderUnavailable {
+    constructor(required) { super(); assert.ok(required); this.message = required; constructed++; }
+  }
+  const original = new CustomUnavailable('private-subclass-diagnostic');
+  await assert.rejects(new RerankingAdapter(async () => { throw original; })
+    .rank('q', candidates, options()), error => {
+      assert.equal(error.constructor, ProviderUnavailable);
+      assert.equal(error.message, 'Provider is unavailable.');
+      return true;
+    });
+  assert.equal(constructed, 1);
+});
+
+test('transport abort error retains cancellation class without private message or cause', async () => {
+  const original = new DOMException('private-abort-diagnostic', 'AbortError');
+  await assert.rejects(new RerankingAdapter(async () => { throw original; })
+    .rank('q', candidates, options({allow_fallback:true})), error => {
+      assert.equal(error.name, 'AbortError');
+      assert.equal(error.message, 'Operation aborted.');
+      assert.equal(error.cause, undefined);
+      assert.ok(!error.stack.includes('private-abort-diagnostic'));
+      return true;
+    });
 });
 
 test('deadline and cancellation bound noncooperative async transport and retain one slot', async () => {

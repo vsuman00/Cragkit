@@ -8,7 +8,13 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from .errors import DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability
+from .errors import (CragkitError, ContextBudgetTooSmall, DeadlineExceeded,
+                     EmbeddingProfileMismatch, IndexNotReady, IntegrityViolation,
+                     InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability)
+
+_TRANSPORT_ERRORS = (InvalidRequest, UnauthorizedScope, UnsupportedCapability,
+                     IndexNotReady, EmbeddingProfileMismatch, ProviderUnavailable,
+                     DeadlineExceeded, ContextBudgetTooSmall, IntegrityViolation)
 
 
 class RerankProfile(BaseModel):
@@ -212,6 +218,8 @@ class RerankingAdapter:
             task = asyncio.create_task(invoke())
             self._pending = task
             task.add_done_callback(self._settled)
+            transport_failure: type[CragkitError] | None = None
+            fallback_eligible = False
             try:
                 done, _ = await asyncio.wait({task}, timeout=max(0.0, deadline - time.monotonic()))
                 if not done:
@@ -222,14 +230,20 @@ class RerankingAdapter:
                 task.cancel()
                 raise
             except TimeoutError:
-                raise DeadlineExceeded() from None
-            except (ProviderUnavailable, UnsupportedCapability):
+                transport_failure = DeadlineExceeded
+            except Exception as error:
+                fallback_eligible = isinstance(error, (ProviderUnavailable, UnsupportedCapability))
+                transport_failure = next((kind for kind in _TRANSPORT_ERRORS
+                                          if isinstance(error, kind)), ProviderUnavailable)
+            if transport_failure is not DeadlineExceeded:
                 self._deadline(deadline)
-                if not allow_fallback:
-                    raise
-                result["degraded"] = True
-                return result
-            self._deadline(deadline)
+            # Leave the handler before recovery/deadline/raise so no provider
+            # message or chain is retained. Never invoke a caller subclass.
+            if transport_failure is not None:
+                if allow_fallback and fallback_eligible:
+                    result["degraded"] = True
+                    return result
+                raise transport_failure()
             scores = self._scores(raw, views)
             ordered = sorted(scores, key=lambda row: row["raw_score"], reverse=profile.score_direction == "higher_is_better")
             result["scores"] = scores

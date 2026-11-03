@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { deep_freeze, text } from './shared.js';
-import { DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability } from './errors.js';
+import { CragkitError, ContextBudgetTooSmall, DeadlineExceeded, EmbeddingProfileMismatch,
+  IndexNotReady, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope,
+  UnsupportedCapability } from './errors.js';
+
+const transportErrors = [InvalidRequest, UnauthorizedScope, UnsupportedCapability,
+  IndexNotReady, EmbeddingProfileMismatch, ProviderUnavailable, DeadlineExceeded,
+  ContextBudgetTooSmall, IntegrityViolation];
 
 export const RerankProfileSchema = z.strictObject({
   profile_id: text(256), provider: text(256), model: text(256), model_revision: text(256),
@@ -142,13 +148,25 @@ export class RerankingAdapter {
     schedule();
     try {
       let raw: unknown;
+      let transportFailure: (new () => CragkitError) | undefined;
+      let fallbackEligible = false;
+      let transportCancelled = false;
       try { raw = await Promise.race([pending, control]); }
       catch (error) {
-        check(deadline, signal);
-        if (fallback && (error instanceof ProviderUnavailable || error instanceof UnsupportedCapability)) { const recovered = result([], true, 1); check(deadline, signal); return recovered; }
-        throw error;
+        transportCancelled = error instanceof Error && error.name === 'AbortError'
+          || error instanceof DOMException && error.name === 'AbortError';
+        if (!transportCancelled) {
+          fallbackEligible = error instanceof ProviderUnavailable || error instanceof UnsupportedCapability;
+          transportFailure = transportErrors.find(kind => error instanceof kind) ?? ProviderUnavailable;
+        }
       }
       check(deadline, signal);
+      // Preserve classification and declared fallback, never provider error objects.
+      if (transportCancelled) throw aborted();
+      if (transportFailure) {
+        if (fallback && fallbackEligible) { const recovered = result([], true, 1); check(deadline, signal); return recovered; }
+        throw new transportFailure();
+      }
       let scores: RerankScore[];
       try {
         if (!(raw instanceof Uint8Array) || raw.byteLength > 65536) throw new Error();

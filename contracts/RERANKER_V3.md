@@ -52,3 +52,18 @@ Transport request JSON contains `profile`, `query`, `candidates`; response JSON 
 Return a frozen/snapshotted JSON-compatible result with exactly `profile`, `order` (candidate IDs), `scores` (validated raw rows in input order), `truncations` (candidate_id, original_bytes, view_bytes), `degraded`, `provider_calls`, `synthetic`. Empty input returns zero calls. A successful nonempty invocation or a recovered transport failure reports one reserved boundary call. Synthetic results imply no model charge; real token usage and cost remain unknown until a separately validated transport accounts for them.
 
 Use InvalidRequest for configuration/input/exhausted allowance/concurrent adapter admission. Use IntegrityViolation for malformed provider mappings or response encoding. Only transport ProviderUnavailable/UnsupportedCapability can recover with explicit fallback; return unchanged IDs, empty scores and degraded=true. No silent fallback for validation/deadline/cancellation. An uncooperative transport can outlive the caller's deadline: the caller stops waiting and admission stays occupied until that transport settles, preventing unbounded detached work. This does not claim that arbitrary synchronous transport code or CPU inference becomes nonblocking; a CPU model requires an explicitly bounded worker path and its own verification.
+
+V6-04 security clarification: an unknown transport exception becomes a fresh fixed
+`ProviderUnavailable` after recognized fallback selection. Its original message,
+payload, cause and context are not retained in the public error. It fails the
+current rank invocation even with `allow_fallback=True`; only a transport-declared
+availability/capability error can produce the explicit degraded result. Recognized
+project errors, cancellation and deadline classifications remain unchanged. The
+existing error code remains retryable for an external caller; this is not a claim
+that every caller treats it as permanently fatal. No retry is added to the adapter.
+Recognized ordinary transport errors also cross as fresh allowlisted library
+classes, preserving classification and fallback eligibility while discarding
+mutated messages, causes and attached properties. Caller subclass constructors
+are never invoked. Transport timeouts become fresh deadline errors. This is not
+universal exception redaction or application-log sanitization; request-owned
+cancellation semantics remain separate.

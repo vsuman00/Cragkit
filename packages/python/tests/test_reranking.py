@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from cragkit.errors import DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnsupportedCapability
+from cragkit.errors import DeadlineExceeded, IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability
 from cragkit.reranking import FAKE_RERANK_PROFILE, RerankingAdapter
 
 
@@ -103,6 +103,81 @@ def test_explicit_unavailable_fallback_and_live_policy() -> None:
     profile = FAKE_RERANK_PROFILE.model_copy(update={"provider": "hosted"})
     with pytest.raises(UnsupportedCapability):
         run(RerankingAdapter(unavailable, profile=profile), allow_fallback=True)
+
+
+@pytest.mark.parametrize('allow_fallback', [False, True])
+def test_unknown_transport_error_is_redacted_and_fatal(allow_fallback: bool) -> None:
+    import traceback
+    marker = 'private-provider-diagnostic'
+    calls = 0
+
+    async def failed(body: bytes, *, deadline: float, max_response_bytes: int) -> bytes:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError(marker) from ValueError(marker)
+
+    with pytest.raises(ProviderUnavailable) as caught:
+        run(RerankingAdapter(failed), allow_fallback=allow_fallback)
+    assert calls == 1
+    assert caught.value.code == 'provider_unavailable'
+    assert str(caught.value) == 'Provider is unavailable.'
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert marker not in ''.join(traceback.format_exception(caught.value))
+
+
+@pytest.mark.parametrize('kind', [ProviderUnavailable, UnsupportedCapability, IntegrityViolation,
+                                 UnauthorizedScope, DeadlineExceeded, InvalidRequest])
+@pytest.mark.parametrize('allow_fallback', [False, True])
+def test_declared_transport_errors_keep_classification_without_private_chain(kind, allow_fallback):
+    import traceback
+    marker = 'private-typed-provider-diagnostic'
+    original = kind()
+    original.args = (marker,)
+    calls = 0
+
+    async def failed(body, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise original from RuntimeError(marker)
+
+    if allow_fallback and kind in (ProviderUnavailable, UnsupportedCapability):
+        result = run(RerankingAdapter(failed), allow_fallback=True)
+        assert result['degraded'] is True and result['provider_calls'] == 1
+    else:
+        with pytest.raises(kind) as caught:
+            run(RerankingAdapter(failed), allow_fallback=allow_fallback)
+        assert type(caught.value) is kind and caught.value is not original
+        assert str(caught.value) == kind.message
+        assert caught.value.__cause__ is None and caught.value.__context__ is None
+        assert marker not in ''.join(traceback.format_exception(caught.value))
+    assert calls == 1
+
+
+def test_transport_timeout_has_no_retained_private_context():
+    async def failed(body, **kwargs):
+        raise TimeoutError('private-timeout-diagnostic')
+
+    with pytest.raises(DeadlineExceeded) as caught:
+        run(RerankingAdapter(failed), allow_fallback=True)
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+
+
+def test_caller_subclass_constructor_is_not_reinvoked():
+    class CustomUnavailable(ProviderUnavailable):
+        def __init__(self, required):
+            super().__init__()
+            self.args = (required,)
+
+    original = CustomUnavailable('private-subclass-diagnostic')
+
+    async def failed(body, **kwargs):
+        raise original
+
+    with pytest.raises(ProviderUnavailable) as caught:
+        run(RerankingAdapter(failed))
+    assert type(caught.value) is ProviderUnavailable
+    assert str(caught.value) == ProviderUnavailable.message
 
 
 def test_timeout_cancellation_and_reentrancy() -> None:

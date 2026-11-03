@@ -1688,3 +1688,31 @@ not run the full install/artifact pipeline or hosted CI. Both original sealed
 inputs and active recovery configuration remained unchanged. The focused new
 harness suites passed 45 Python and 19 Node tests. Local native measurements
 cover PostgreSQL only, not Qdrant throughput or a long-duration soak.
+
+
+## V6-04 security and failure checks
+
+[Security acceptance](../evaluation/reports/V6/V6-04-security.md) links the full
+edge-case audit and numeric evidence. Reranker transports now cross through fresh
+fixed operational errors. Only transport-declared availability/capability errors
+qualify for the existing explicit fallback; an unknown error remains fatal to
+that call. No retry or new wire code was added.
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_reranking.py packages/python/tests/test_retrieval_evidence.py -q
+npm --prefix packages/typescript run build
+node --test --test-concurrency=1 packages/typescript/tests/reranking.test.mjs packages/typescript/tests/retrieval-evidence.test.mjs
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python -B tools/check_qdrant_security_guard.py --postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --allow-local-processes --artifacts-dir artifacts/V6/V6-04/new-security-guard
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python -B tools/check_qdrant_publication_worker.py --postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --scenario supervisor_pause --runtime all --artifacts-dir artifacts/V6/V6-04/new-supervisor-pause
+uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python -B tools/check_qdrant_purge.py --postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --runtime all --artifacts-dir artifacts/V6/V6-04/new-purge
+```
+
+Run native commands serially with fresh output directories and the existing
+verified binaries; they start disposable services and close them. No credential
+or provider setup is needed. Full regression results: 3,843 Python/tool cases,
+1,635 core Node cases, strict Python typing over 51 source files, and optional
+LangChain 73/70 and MCP 41/36 Python/Node tests. Node tests include strict builds.
+The initial MCP metadata mismatch was corrected through a frozen offline sync,
+not by weakening its installed-version test. Current source differs from the
+frozen V6-02 live candidate only through separately recorded subsequent changes;
+its original live evidence is retained rather than relabelled.

@@ -1,0 +1,1203 @@
+{
+  "revision": "SFA-r1",
+  "owner": "/root/transport_diagnostics",
+  "entries": [
+    {
+      "edge_id": "E55",
+      "boundary": "MCP disconnect, malformed input or untrusted scope",
+      "reviewed_source": [
+        "packages/mcp-python/src/cragkit_mcp/__init__.py",
+        "packages/mcp-typescript/src/index.ts"
+      ],
+      "python_tests": [
+        "packages/mcp-python/tests/test_host.py",
+        "packages/mcp-python/tests/test_stdio_process.py"
+      ],
+      "node_tests": [
+        "packages/mcp-typescript/tests/host.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-06-implementation.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Inspected official-SDK forged scope, malformed/UTF8/incomplete stdio frames, disconnect and noncooperative drain tests; host owns trusted scope and retains occupied slot until actual work drains. Optional SDK/installed stdio evidence must be separately exercised; historical report is not a fresh result."
+      ]
+    },
+    {
+      "edge_id": "E56",
+      "boundary": "Different runtime/backend/library-tool-MCP results",
+      "reviewed_source": [
+        "tools/backend_conformance_fixture.py",
+        "tools/check_backend_conformance.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_backend_conformance.py"
+      ],
+      "node_tests": [
+        "packages/mcp-typescript/tests/host.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-07.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Actual matrix compares direct/framework/MCP results and source identities on representative PostgreSQL lexical and Qdrant dense profiles; historical 42 retrievals/eight refusals per runtime are scoped, not every mode or current native pass."
+      ]
+    },
+    {
+      "edge_id": "E57",
+      "boundary": "Clean install, unsupported runtime or missing optional dependency",
+      "reviewed_source": [
+        "tools/check_artifacts.py",
+        "tools/check_qdrant_artifacts.py",
+        "tools/measure_default_resources.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_check_artifacts.py",
+        "tools/tests/test_check_qdrant_artifacts.py",
+        "tools/tests/test_measure_default_resources.py"
+      ],
+      "node_tests": [],
+      "native_evidence": [
+        "evaluation/reports/V6/V6-03-resources.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Inspected fresh-entry-point import/I-O guards and minimal-environment resource probes. Current local artifacts are not a supported-OS/Python/Node CI matrix; V6-06 install/CI gate remains future."
+      ]
+    },
+    {
+      "edge_id": "E58",
+      "boundary": "Migration interrupted or package rollback attempted",
+      "reviewed_source": [
+        "tasks/versions/V6-release.md",
+        "docs/version-control.md"
+      ],
+      "python_tests": [],
+      "node_tests": [],
+      "native_evidence": [],
+      "disposition": "not_implemented",
+      "limitations": [
+        "V6-07 release migration/rollback procedure is not yet implemented or accepted. Existing atomic storage migrations do not establish package rollback safety or restoration without revoked privileges. Do not infer completion from this audit."
+      ]
+    },
+    {
+      "edge_id": "E59",
+      "boundary": "Held-out leakage, synthetic labels or selective benchmark reporting",
+      "reviewed_source": [
+        "evaluation/protocol.md",
+        "tools/evaluation_profiles.py",
+        "tools/evaluation_packet.py",
+        "tools/evaluation_scoring.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_evaluation_packet.py",
+        "tools/tests/test_check_release_readiness.py"
+      ],
+      "node_tests": [
+        "tools/tests/retrieval-evaluation.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V6/V6-02I-approved-binding.md",
+        "evaluation/reports/V6/V6-02I-runtime.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Known independently pinned profiles, explicit human approval, candidate source-before-heldout decode and issued scoring path/digest guards inspected. Six recovery questions were synthetic and author/reviewer exposed; original failed run stays failed. No old heldout labels/results read for this audit."
+      ]
+    },
+    {
+      "edge_id": "E60",
+      "boundary": "Sustained load, large inputs or too many queued requests",
+      "reviewed_source": [
+        "tools/resource_workload.py",
+        "tools/resource_workload.mjs",
+        "tools/measure_native_resources.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_resource_workload.py",
+        "tools/tests/test_measure_native_resources.py"
+      ],
+      "node_tests": [
+        "tools/tests/resource-workload.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V6/V6-03-resources.md",
+        "evaluation/reports/V6/V6-03-verification.json"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Inspected fixed one/two workers, one-client/one-waiter overload, queue/native cancellation and pressure guard. Node cancellation destroys client; backend may continue; immediate reuse failed and eventual bounded reuse took about 2.02 seconds with 17 refusals. No instant reuse/server-cancel acknowledgment claim."
+      ]
+    },
+    {
+      "edge_id": "E61",
+      "boundary": "Published artifact differs from local candidate",
+      "reviewed_source": [
+        "tools/check_artifacts.py",
+        "tasks/versions/V6-release.md"
+      ],
+      "python_tests": [
+        "tools/tests/test_check_artifacts.py"
+      ],
+      "node_tests": [],
+      "native_evidence": [],
+      "disposition": "not_implemented",
+      "limitations": [
+        "Local archive identity and default imports are implemented; V6-08 registry publication, downloaded published-byte verification and corrective release workflow have not run. No package is claimed published."
+      ]
+    },
+    {
+      "edge_id": "E62",
+      "boundary": "A result/embedding cache is proposed later",
+      "reviewed_source": [
+        "docs/architecture/ARCHITECTURE.md",
+        "tasks/versions/V6-release.md"
+      ],
+      "python_tests": [],
+      "node_tests": [],
+      "native_evidence": [],
+      "disposition": "not_implemented",
+      "limitations": [
+        "Architecture explicitly excludes result/embedding caching from the initial slice. No cache-hit authorization/invalidation evidence is claimed; adding a cache requires its separate scope/generation/profile tests."
+      ]
+    },
+    {
+      "edge_id": "E63",
+      "boundary": "Approximate vector index is proposed for measured scale needs",
+      "reviewed_source": [
+        "docs/architecture/ARCHITECTURE.md",
+        "tasks/versions/V6-release.md"
+      ],
+      "python_tests": [],
+      "node_tests": [],
+      "native_evidence": [],
+      "disposition": "not_implemented",
+      "limitations": [
+        "The reference vector branch is exact search. Approximate/HNSW optimization and filtered underfill/fallback acceptance remain conditional and unimplemented; no approximate-index performance claim."
+      ]
+    },
+    {
+      "edge_id": "E64",
+      "boundary": "Final-answer generation is added to a demo",
+      "reviewed_source": [
+        "docs/architecture/ARCHITECTURE.md",
+        "tasks/versions/V6-release.md"
+      ],
+      "python_tests": [],
+      "node_tests": [],
+      "native_evidence": [],
+      "disposition": "not_implemented",
+      "limitations": [
+        "Library outputs retrieval evidence only. No answer-generating demo or downstream unsupported-claim evaluation is implemented or accepted; citation fidelity cannot establish answer faithfulness."
+      ]
+    },
+    {
+      "edge_id": "E65",
+      "boundary": "Stored PostgreSQL catalog-OID types prevent a hosted database upgrade",
+      "reviewed_source": [
+        "storage/postgres/migrations/0002_portable_lexical_config.sql",
+        "packages/python/src/cragkit/_postgres_session.py",
+        "packages/typescript/src/postgres-session.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_postgres_session.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/postgres.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V2/DB-NEON-01.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Portable lexical configuration stores names and resolves under fixed search path. Catalog/history/type checks refuse unsupported structures; historical Neon cutover is not proof for a newly upgraded target."
+      ]
+    },
+    {
+      "edge_id": "E66",
+      "boundary": "A hosted endpoint certificate cannot be verified or plaintext startup is attempted",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_postgres_pool.py",
+        "packages/typescript/src/postgres-pool.ts",
+        "tools/check_python_postgres.py",
+        "tools/check_typescript_postgres.mjs"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_postgres_pool.py",
+        "tools/tests/test_check_neon_postgres.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/postgres.test.mjs",
+        "packages/typescript/tests/neon-transport.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-01-H.md",
+        "evaluation/reports/V2/DB-NEON-01.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Explicit CA/hostname checks and encrypted/authorized native socket checks precede hosted SQL. Plaintext/certificate refusals have separate historical target evidence; no current external endpoint probe was made."
+      ]
+    },
+    {
+      "edge_id": "E67",
+      "boundary": "A rotated database password is followed by pooler rejection and a direct network ban",
+      "reviewed_source": [
+        "docs/neon.md",
+        "tools/save_neon_config.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_save_neon_config.py"
+      ],
+      "node_tests": [],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-01-H-hosted.md"
+      ],
+      "disposition": "not_implemented",
+      "limitations": [
+        "Provider password rotation, cached pooled authentication and network-ban diagnosis are caller/host operations, not an automatic library recovery subsystem. Direct-target safety checks do not prove a specific remote ban/cache cause; new hosted credential intervention needs explicit bounded manual evidence."
+      ]
+    },
+    {
+      "edge_id": "E68",
+      "boundary": "A driver returns a connection after its acquisition deadline before the timer callback runs",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_postgres_pool.py",
+        "packages/typescript/src/postgres-pool.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_postgres_pool.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/postgres.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-02A.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Inspected late-driver-return tests: absolute deadline is rechecked before yielding and the late checkout is released; acquisition timeout remains distinct from elapsed request deadline. Node socket cancellation is not remote server completion."
+      ]
+    },
+    {
+      "edge_id": "E69",
+      "boundary": "Hosted CREATEROLE administrator cannot use DROP OWNED for a temporary runtime role",
+      "reviewed_source": [
+        "tools/check_python_postgres.py",
+        "tools/runtime_recovery_postgres.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_runtime_recovery_postgres.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/postgres.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-02B.md",
+        "evaluation/reports/V4/V4-SECURITY-VERIFICATION.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Exact fixture-owned grants/policies/roles are cleaned without DROP OWNED or broader privileges; cleanup proofs require the target-bound private journal and known graph. PostgreSQL admin cleanup is Python-owned for both native fixtures."
+      ]
+    },
+    {
+      "edge_id": "E70",
+      "boundary": "A scoped session handle escapes its transaction, or a deadline is too large for a float",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_postgres_session.py",
+        "packages/python/src/cragkit/_postgres_pool.py",
+        "packages/typescript/src/postgres-session.ts",
+        "packages/typescript/src/postgres-pool.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_postgres_session.py",
+        "packages/python/tests/test_postgres_pool.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/postgres.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-02B.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Inspected escaped/cross-task handle refusal and huge/malformed deadline tests; session/lease post-await checks prevent stale use. Callback body failures may retain explicit caller cause by design, distinct from provider/tool sanitization boundaries."
+      ]
+    },
+    {
+      "edge_id": "E71",
+      "boundary": "A driver suppresses a rollback error or reports failed transaction exit without raising",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_postgres_session.py",
+        "packages/typescript/src/postgres-session.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_postgres_session.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/postgres.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-02B.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Suppressed rollback and nonidle postconditions are tested in both runtimes; unusable clients are destroyed and cleanup failure is operational. Root native evidence is separate from these fault-injected doubles."
+      ]
+    },
+    {
+      "edge_id": "E72",
+      "boundary": "Native text parsers disagree on CR/BOM, Unicode line boundaries, split packing or tokenizer work",
+      "reviewed_source": [
+        "packages/python/src/cragkit/canonical.py",
+        "packages/typescript/src/canonical.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_canonical.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/canonical.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-04.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Byte/digest/chunk profiles inspect CR/BOM and Unicode handling; malformed/async counter regressions reject invalid work. These are deterministic parser fixtures, not universal parser equivalence."
+      ]
+    },
+    {
+      "edge_id": "E73",
+      "boundary": "A same-tenant caller has read scope but no document write permission",
+      "reviewed_source": [
+        "packages/python/src/cragkit/ingestion.py",
+        "packages/typescript/src/ingestion.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_ingestion.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/ingestion.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-05.md",
+        "evaluation/reports/V1/V1-06.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Write authorizer must return exact true before parse/lease and is rechecked for replay; role checks deny overprivileged writers and existing ACLs are retained. Application authorizer truth is a trusted boundary."
+      ]
+    },
+    {
+      "edge_id": "E74",
+      "boundary": "COMMIT acknowledgement is lost or times out",
+      "reviewed_source": [
+        "packages/python/src/cragkit/ingestion.py",
+        "packages/typescript/src/ingestion.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_ingestion.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/ingestion.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-05.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Lost COMMIT acknowledgment tests destroy uncertain connections and do not claim no publication; recovery uses stable same intent, not blind replay. Operational failures remain distinct from missing evidence."
+      ]
+    },
+    {
+      "edge_id": "E75",
+      "boundary": "RLS allows reading/inserting a staging generation but silently hides its ready UPDATE",
+      "reviewed_source": [
+        "packages/python/src/cragkit/ingestion.py",
+        "packages/typescript/src/ingestion.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_ingestion.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/ingestion.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-06.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Missing ready-transition row is an explicit publication barrier failure; transaction rolls back before active pointer change. Fake RLS row omission must be paired with actual native RLS evidence at checkpoints."
+      ]
+    },
+    {
+      "edge_id": "E76",
+      "boundary": "Node returns PostgreSQL bigint/domain byte offsets as decimal strings",
+      "reviewed_source": [
+        "packages/typescript/src/postgres-session.ts",
+        "packages/python/src/cragkit/_postgres_session.py"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_postgres_identifiers.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/postgres.test.mjs",
+        "packages/typescript/tests/postgres-identifiers.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-07.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Node byte offsets accept only canonical safe nonnegative integer strings; malformed/boolean/unsafe driver values fail. Python numeric decoding is native; runtime precision limits remain explicit."
+      ]
+    },
+    {
+      "edge_id": "E77",
+      "boundary": "Original source bytes differ from normalized canonical bytes, or a source budget changes during an awaited fetch",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_postgres_source.py",
+        "packages/typescript/src/postgres-source.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_source_snapshot.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/source-snapshot.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-08.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Source snapshot verifies canonical bytes/digest and snapshots byte allowance before await; opaque labels are preserved. Source truth/relevance is not established by exact source fidelity."
+      ]
+    },
+    {
+      "edge_id": "E78",
+      "boundary": "Purge reinsertion fails, child rows are hidden by RLS, or inbound FK/trigger catalog differs",
+      "reviewed_source": [
+        "packages/python/src/cragkit/lifecycle.py",
+        "packages/typescript/src/lifecycle.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_lifecycle.py",
+        "packages/python/tests/test_vector_ingestion.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/lifecycle.test.mjs",
+        "packages/typescript/tests/vector-ingestion.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V1/V1-09.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Purge validates incoming FK/internal trigger graph and exact scoped cascades; reinsertion faults restore parent/source atomically. Filtered child row counts alone do not establish deletion; external caller copies are outside library erasure."
+      ]
+    },
+    {
+      "edge_id": "E79",
+      "boundary": "A hosted proxy terminates TLS before PostgreSQL, so backend SSL flags are false",
+      "reviewed_source": [
+        "tools/check_typescript_postgres.mjs",
+        "tools/check_python_postgres.py",
+        "packages/typescript/src/postgres-pool.ts"
+      ],
+      "python_tests": [
+        "tools/tests/test_check_neon_postgres.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/neon-transport.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V2/DB-NEON-01.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Hosted proxy backend SSL flags are not treated as TLS proof; client encrypted/authorized/certificate hostname is checked before source SQL without exposing raw sockets in guarded API."
+      ]
+    },
+    {
+      "edge_id": "E80",
+      "boundary": "A managed host rejects pre-hashed SQL-role passwords",
+      "reviewed_source": [
+        "tools/check_python_postgres.py",
+        "tools/check_neon_postgres.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_check_neon_postgres.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/neon-transport.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V2/DB-NEON-01.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Explicit Neon fixture path establishes verified TLS before its password statement; diagnostics remain safe and temporary roles cleaned. Host-managed plaintext statement mode is isolated from ordinary prehashed fixture behavior."
+      ]
+    },
+    {
+      "edge_id": "E81",
+      "boundary": "A credential import supplies a pooled/wrong target, unsafe URI options or an existing/symlink output",
+      "reviewed_source": [
+        "tools/save_neon_config.py",
+        "docs/neon.md"
+      ],
+      "python_tests": [
+        "tools/tests/test_save_neon_config.py"
+      ],
+      "node_tests": [],
+      "native_evidence": [
+        "evaluation/reports/V2/DB-NEON-01.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Hidden-input importer pins direct host, excludes pooled/unsupported URI security options and rejects existing/symlink outputs; writes owner-only outside checkout. No credential input/output was read in this audit."
+      ]
+    },
+    {
+      "edge_id": "E82",
+      "boundary": "Native acceptance is killed, its administrator connection is lost, or cleanup also fails",
+      "reviewed_source": [
+        "tools/runtime_recovery.py",
+        "tools/runtime_recovery_postgres.py",
+        "tools/runtime_diagnostics.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_runtime_recovery.py",
+        "tools/tests/test_runtime_recovery_postgres.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/postgres.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V4/V4-SECURITY-VERIFICATION.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Inspected immutable exclusive private journals, target/history/ownership refusal, fresh-connector bounded retries and original-versus-cleanup errors. Missing journal cannot authorize deletion; stale native cleanup evidence requires exact identity/target qualification."
+      ]
+    },
+    {
+      "edge_id": "E83",
+      "boundary": "Node enables ambient proxies through `NODE_OPTIONS`, rather than `execArgv`",
+      "reviewed_source": [
+        "packages/typescript/src/qdrant-transport.ts",
+        "packages/python/src/cragkit/_qdrant_transport.py"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-02.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Node explicitly scans NODE_OPTIONS and execArgv including quoted proxy flags, TLS override and ambient proxy admission before HTTP. Tests assert unsupported capability without startup-option/key text."
+      ]
+    },
+    {
+      "edge_id": "E84",
+      "boundary": "Equal-dimensional embedding batches name another model, hide synthetic execution or lose usage",
+      "reviewed_source": [
+        "packages/python/src/cragkit/qdrant.py",
+        "packages/python/src/cragkit/_qdrant_vectors.py",
+        "packages/typescript/src/qdrant.ts",
+        "packages/typescript/src/qdrant-vectors.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_embeddings.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-embeddings.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-02E.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Full fixed embedding profile, immutable validated vector batch and synthetic/provider flags are checked before query. Estimated/unknown cost is not converted to known billing; fake fixtures do not establish real model quality."
+      ]
+    },
+    {
+      "edge_id": "E85",
+      "boundary": "Canonical bytes include NUL, a mid-scalar span or invalid UTF-8 outside a valid excerpt",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_source.py",
+        "packages/typescript/src/qdrant-source-contract.ts",
+        "storage/qdrant/postgres/migrations/0001_authority.sql"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_source.py",
+        "tools/tests/test_qdrant_source_native.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-source.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-03BC.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Python strict UTF8 decoding and Node fatal TextDecoder validate whole canonical bytes plus excerpt/mid-scalar boundaries after digest checks; SQL hashes alone are not source-release authorization."
+      ]
+    },
+    {
+      "edge_id": "E86",
+      "boundary": "Malformed scope-grant JSON contains extreme numeric exponents or depth",
+      "reviewed_source": [
+        "storage/qdrant/postgres/migrations/0001_authority.sql",
+        "tools/qdrant_source_cases.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_qdrant_source_native.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-authority.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-03BC.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "scope_grants() in 0001_authority.sql:237-240 catches only declared malformed-text/Unicode/numeric-range/program-limit errors; cancellation, memory and connection failures are not caught as absent grants. Shared SQL is consumed by both runtimes; malformed exponent/depth cases need actual PostgreSQL evidence, not mocks alone."
+      ]
+    },
+    {
+      "edge_id": "E87",
+      "boundary": "Cosine storage normalizes Float32 inputs, or two runtimes serialize floats differently",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_vectors.py",
+        "packages/typescript/src/qdrant-vectors.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_vectors.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-vectors.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Original norm is admitted before binary32 rounding; nonfinite and nonzero underflow are rejected. Dense readback uses declared numerical equivalence, sparse content canonical exactness; arbitrary JSON hash equality is not claimed."
+      ]
+    },
+    {
+      "edge_id": "E88",
+      "boundary": "An old worker resumes after lease expiry or an instance restart affects another document",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_supervisor.py",
+        "packages/typescript/src/qdrant-supervisor.ts",
+        "packages/python/src/cragkit/_qdrant_recovery.py",
+        "packages/typescript/src/qdrant-recovery.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_supervisor.py",
+        "packages/python/tests/test_qdrant_recovery.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-supervisor.test.mjs",
+        "packages/typescript/tests/qdrant-recovery.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04H-supervisor-pause.md",
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Private proof/attempt ownership, durable blocked instance and exact key fencing exclude stale workers. Paused-supervisor native proof is historical; restart/lease/PID alone never admits successor. Automatic recovery after supervisor death is unsupported."
+      ]
+    },
+    {
+      "edge_id": "E89",
+      "boundary": "Qdrant loads while acknowledged WAL operations are still queued for background replay",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_supervisor.py",
+        "packages/typescript/src/qdrant-supervisor.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_supervisor.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-supervisor.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04E1.md",
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Supported single-node configuration fixes prevent_unoptimized=false and verifies recovered collection profile; status/health alone cannot settle publication or erase uncertainty. No cluster/distributed deployment profile is claimed."
+      ]
+    },
+    {
+      "edge_id": "E90",
+      "boundary": "A valid original dense vector rounds outside the original E-r1 norm boundary, then repair restarts",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_manifest.py",
+        "packages/python/src/cragkit/_qdrant_vectors.py",
+        "packages/typescript/src/qdrant-manifest.ts",
+        "packages/typescript/src/qdrant-vectors.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_manifest.py",
+        "packages/python/tests/test_qdrant_vectors.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-manifest.test.mjs",
+        "packages/typescript/tests/qdrant-vectors.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Original input sidecar and private admitted vector seals survive canonical serialization/restart; boundary norm-rounding regressions ensure rounded values are not re-admitted as originals. Deserialized structural lookalikes are not issued proof."
+      ]
+    },
+    {
+      "edge_id": "E91",
+      "boundary": "A managed writer uses a repeatable-read/serializable snapshot after waiting for an unchanged owner or generation row lock",
+      "reviewed_source": [
+        "storage/qdrant/postgres/migrations/0002_publication.sql",
+        "packages/python/src/cragkit/_qdrant_writer.py",
+        "packages/typescript/src/qdrant-writer.ts",
+        "tools/qdrant_publication_schema.py"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_writer.py",
+        "tools/tests/test_qdrant_publication_schema.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-writer.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04C2.md",
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Managed SQL explicitly demands READ COMMITTED; source readers keep separate read-only isolation. Native two-connection owner/member/gate race evidence remains historical until root reruns or verifies unchanged source/schema identity."
+      ]
+    },
+    {
+      "edge_id": "E92",
+      "boundary": "A reserved dispatch receives more point rows after its creation transaction commits",
+      "reviewed_source": [
+        "storage/qdrant/postgres/migrations/0002_publication.sql",
+        "tools/qdrant_publication_schema.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_qdrant_publication_schema.py",
+        "tools/tests/test_check_qdrant_publication_schema.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-writer.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04C2.md",
+        "evaluation/reports/V5/V5-04H-reserved-crash.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "created_xid is bound to pg_current_xact_id during reserved journal/member creation, and finite exact member count is required. Separate-commit/crash-gap native scenarios are essential; later transactions cannot append reserved membership."
+      ]
+    },
+    {
+      "edge_id": "E93",
+      "boundary": "An internal FK trigger is disabled while constraints remain marked valid and the catalog fingerprint excludes internal trigger state",
+      "reviewed_source": [
+        "tools/qdrant_publication_schema.py",
+        "storage/qdrant/postgres/migrations/0002_publication.sql",
+        "packages/python/src/cragkit/_qdrant_authority.py",
+        "packages/typescript/src/qdrant-authority.ts"
+      ],
+      "python_tests": [
+        "tools/tests/test_qdrant_publication_schema.py",
+        "tools/tests/test_check_qdrant_publication_schema.py",
+        "packages/python/tests/test_qdrant_authority.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-authority.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04C2.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Publication structural SQL in _qdrant_authority.py:108-110 rejects every disabled trigger without the fingerprint query's NOT tgisinternal exclusion; Node embeds the matching guard. Historical native trigger-disable/unchanged-fingerprint/rollback proof must not be replaced by a catalog string test."
+      ]
+    },
+    {
+      "edge_id": "E94",
+      "boundary": "Reader grants change after initialization, or capability membership has inheritance disabled",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_authority.py",
+        "packages/typescript/src/qdrant-authority.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_authority.py",
+        "tools/tests/test_qdrant_source_privileges.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-authority.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-03BC.md",
+        "evaluation/reports/V5/V5-04G2b2d2a.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Each source lease rechecks effective privileges and dangerous memberships, including noninherit membership, before source byte access. Fingerprint covers structure, not effective deployment grants."
+      ]
+    },
+    {
+      "edge_id": "E95",
+      "boundary": "Named writer capability grants, LOGIN flags or outbound memberships drift without changing the schema fingerprint",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_writer.py",
+        "packages/typescript/src/qdrant-writer.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_writer.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-writer.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04D.md",
+        "evaluation/reports/V5/V5-04G2b2d2b1.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Frozen role maps check capability NOLOGIN/safe flags/outbound memberships and effective table/column/function grants each lease; tests mutate capability itself and LOGIN role, with refusal before business scope."
+      ]
+    },
+    {
+      "edge_id": "E96",
+      "boundary": "Another publisher replaces owner and pointer while final CAS waits, or a successful older operation is retried after supersession",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_writer.py",
+        "packages/typescript/src/qdrant-writer.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_writer.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-writer.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04D.md",
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Fresh locked document fences precede old-owner rejection; test replaced owner/pointer and superseded completed-intent retries. Durable historical outcomes are preserved without rebasing or overwriting current pointer."
+      ]
+    },
+    {
+      "edge_id": "E97",
+      "boundary": "A controller expects the wrong retired-key HTTP status, accepts a copied physical proof, or reopens admission after restart alone",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_supervisor.py",
+        "packages/python/src/cragkit/_qdrant_recovery.py",
+        "packages/typescript/src/qdrant-supervisor.ts",
+        "packages/typescript/src/qdrant-recovery.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_supervisor.py",
+        "packages/python/tests/test_qdrant_recovery.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-supervisor.test.mjs",
+        "packages/typescript/tests/qdrant-recovery.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04E1.md",
+        "evaluation/reports/V5/V5-04E2b.md",
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Pinned invalid retired key requires HTTP401, fresh key actual write/readback and issuer-bound recovery proof. Copied proof or restart cannot reopen ordinary admission before durable settlement."
+      ]
+    },
+    {
+      "edge_id": "E98",
+      "boundary": "An owned server exits, invalid recovery input arrives, or closed handles remain referenced",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_supervisor.py",
+        "packages/typescript/src/qdrant-supervisor.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_supervisor.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-supervisor.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04E1.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Supervisor checks known-dead owned child before credential/HTTP delivery, rejects invalid epoch without poisoning healthy admission and frees closed handle slots. Platform-specific controlled process profile remains a scope limit."
+      ]
+    },
+    {
+      "edge_id": "E99",
+      "boundary": "A second manifest reuses a generation, an inner join hides an incomplete extra member, or SQL row order changes",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_writer.py",
+        "packages/python/src/cragkit/_qdrant_reconciliation.py",
+        "packages/typescript/src/qdrant-writer.ts",
+        "packages/typescript/src/qdrant-reconciliation.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_writer.py",
+        "packages/python/tests/test_qdrant_reconciliation.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-writer.test.mjs",
+        "packages/typescript/tests/qdrant-reconciliation.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04E2a.md",
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Same generation cannot adopt changed manifest; raw bounded claim/member/journal reconstruction precedes joins and UUID order is canonical. Equal counts do not prove exact membership or complete source graph."
+      ]
+    },
+    {
+      "edge_id": "E100",
+      "boundary": "Copied readback receipts, hidden extra points or exhausted verification bytes appear complete",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_reconciliation.py",
+        "packages/typescript/src/qdrant-reconciliation.ts",
+        "packages/python/src/cragkit/_qdrant_security_readback.py",
+        "packages/typescript/src/qdrant-security-readback.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_reconciliation.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-reconciliation.test.mjs",
+        "packages/typescript/tests/qdrant-security-readback.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04E2a.md",
+        "evaluation/reports/V5/V5-04E2b.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Private receipt/issuer/current authority checks reject copies; readback scans complete immutable scope without profile/ID filters and shares remaining aggregate bytes through passes. Readback receipt alone cannot settle uncertainty or open admission."
+      ]
+    },
+    {
+      "edge_id": "E101",
+      "boundary": "Two coordinators share one supervisor, or a timeout releases admission before native work unwinds",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_supervisor.py",
+        "packages/python/src/cragkit/_qdrant_recovery.py",
+        "packages/typescript/src/qdrant-supervisor.ts",
+        "packages/typescript/src/qdrant-recovery.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_supervisor.py",
+        "packages/python/tests/test_qdrant_recovery.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-supervisor.test.mjs",
+        "packages/typescript/tests/qdrant-recovery.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04E2b.md",
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "One private supervisor session spans SQL/physical/handoff; competing/nested/raw mutation and inherited/expired proof fail. Noncooperative work must drain before release; failed drain leaves durable block instead of manufacturing success."
+      ]
+    },
+    {
+      "edge_id": "E102",
+      "boundary": "A generic lease-options helper forwards an undefined owner field into a stricter native HTTP transport",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_publication_verification.py",
+        "packages/typescript/src/qdrant-publication-verification.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_publication_verification.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-publication-verification.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Exact HTTP options omit undefined owner metadata; strict double and native publication verification use the real transport contract. A permissive mock is not compatibility proof."
+      ]
+    },
+    {
+      "edge_id": "E103",
+      "boundary": "A callback suppresses native cancellation and returns before the original deadline",
+      "reviewed_source": [
+        "packages/python/src/cragkit/qdrant_publication.py",
+        "packages/python/src/cragkit/_qdrant_publication_worker.py",
+        "packages/typescript/src/qdrant-publication.ts",
+        "packages/typescript/src/qdrant-publication-worker.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_publication.py",
+        "packages/python/tests/test_qdrant_publication_worker.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-publication.test.mjs",
+        "packages/typescript/tests/qdrant-publication-worker.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04H-cancel-after-dispatch.md",
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Cancellation is latched across callback awaits and finalization; noncooperative work keeps original ownership until drain and cannot issue later SQL/HTTP. Native process authority is separate from coroutine cancellation."
+      ]
+    },
+    {
+      "edge_id": "E104",
+      "boundary": "A publication worker loses its private channel or resumes with a retired key",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_publication_worker.py",
+        "packages/typescript/src/qdrant-publication-worker.ts",
+        "tools/check_qdrant_publication_worker.py"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_publication_worker.py",
+        "tools/tests/test_qdrant_publication_worker_native.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-publication-worker.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04H-writer-crash-live-supervisor.md",
+        "evaluation/reports/V5/V5-04H-supervisor-pause.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Parent owns genuine supervisor, per-attempt key and IPC authority; native EOF/SIGKILL/paused-child old-key HTTP401 must corroborate doubles. Historical process evidence is not a fresh native pass."
+      ]
+    },
+    {
+      "edge_id": "E105",
+      "boundary": "A worker/controller binding is copied or replaced, or an IPC request arrives during finalization",
+      "reviewed_source": [
+        "packages/python/src/cragkit/_qdrant_publication_worker.py",
+        "packages/typescript/src/qdrant-publication-worker.ts"
+      ],
+      "python_tests": [
+        "packages/python/tests/test_qdrant_publication_worker.py"
+      ],
+      "node_tests": [
+        "packages/typescript/tests/qdrant-publication-worker.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V5/V5-04H-supervisor-pause.md",
+        "evaluation/reports/V5/V5-04H.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Private WeakKey/WeakMap registries bind exact worker/controller/channel/native objects. Tests reject copied bindings, nonterminal done, replayed IPC and operations during finalization; failed child reaping retains strong session ownership."
+      ]
+    },
+    {
+      "edge_id": "E106",
+      "boundary": "Evaluation HTTP error bodies or exception chains contain credentials, and status failures become indistinguishable",
+      "reviewed_source": [
+        "tools/provider_http.py",
+        "tools/recorded_provider.py",
+        "tools/provider_journal.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_provider_http.py",
+        "tools/tests/test_recorded_provider.py",
+        "tools/tests/test_provider_journal.py"
+      ],
+      "node_tests": [],
+      "native_evidence": [
+        "evaluation/reports/V6/V6-02H-transport.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Status codes mapped to exact auth/rate/server allowlist before response iteration; synthetic faults assert no body read, one send and no private cause/context. Failed journals remain unsealed with unknown billing; these evaluation-only guards do not imply every direct adapter sanitizes unknown caller exceptions."
+      ]
+    },
+    {
+      "edge_id": "E107",
+      "boundary": "A trial evaluation bursts reranker calls or a pacing wait outlives the original deadline",
+      "reviewed_source": [
+        "tools/evaluation_pacing.py",
+        "tools/provider_http.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_evaluation_pacing.py",
+        "tools/tests/test_provider_http.py"
+      ],
+      "node_tests": [],
+      "native_evidence": [
+        "evaluation/reports/V6/V6-02H4-terminal.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Cohere next admission anchors at least6.1s after started operation terminal cleanup; fake productionbranch regressions cover delayedfirstdispatch, delayedclose, elapseddeadlines/cancel and finishfault. MockHTTP skips productionpacer; no distributed accountquota guarantee."
+      ]
+    },
+    {
+      "edge_id": "E108",
+      "boundary": "A recovery packet substitutes an editable seal/path or scores labels from a different root",
+      "reviewed_source": [
+        "tools/evaluation_profiles.py",
+        "tools/evaluation_packet.py",
+        "tools/check_release_readiness.py",
+        "tools/run_release_evaluation.py"
+      ],
+      "python_tests": [
+        "tools/tests/test_evaluation_packet.py",
+        "tools/tests/test_check_release_readiness.py",
+        "tools/tests/test_run_release_evaluation.py"
+      ],
+      "node_tests": [
+        "tools/tests/retrieval-evaluation.test.mjs"
+      ],
+      "native_evidence": [
+        "evaluation/reports/V6/V6-02I-approved-binding.md",
+        "evaluation/reports/V6/V6-02I-runtime.md"
+      ],
+      "disposition": "covered_local",
+      "limitations": [
+        "Known fixed paths/seal pins preserve original development prerequisite; private issued root/path/digest scoring method refuses forged/wrongroot/drift/pending approvals. Checksettings never opens heldout; source and compiled identity gates are separate. Native Node consumes label-free projection, not independent approval parser."
+      ]
+    }
+  ],
+  "limitations": [
+    "covered_local means implementation/test ownership inspected, not a newly executed test or native pass. No peer test/service/network/install/credential/private-config/raw-provider access.",
+    "Historical native reports retain their original source/configuration identity and scope. Root must rerun required adversarial native boundaries or explicitly verify unchanged relevant source/schema before acceptance; unit doubles alone do not prove PostgreSQL/Qdrant/process behavior.",
+    "Qdrant evidence covers pinned local single-node controlled-process profile, not clusters or all operating systems. Retired-key HTTP401, process EOF/SIGKILL, SQL isolation/member races and grant drift need actual native evidence.",
+    "Pending V6-06 CI/install matrix, V6-07 rollback procedures and V6-08 publication remain separate future gates; no full V6 or universal safety claim.",
+    "Known current-only historical candidate search, default unknown coverage/conflict miss and Node backend work after socket cancellation remain documented limits, not newly claimed capabilities."
+  ]
+}

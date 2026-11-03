@@ -9,6 +9,30 @@ import {RerankingAdapter,FAKE_RERANK_PROFILE} from '../dist/reranking.js';
 import {Cl100kCounter} from '../dist/context.js';
 import {EmbeddingAdapter,FAKE_PROFILE} from '../dist/embeddings.js';
 import {InvalidRequest,IntegrityViolation,UnsupportedCapability,DeadlineExceeded,ProviderUnavailable} from '../dist/errors.js';
+
+for (const rerank_fallback of [false, true]) {
+  test(`unknown reranker failure stays redacted through retrieval with fallback=${rerank_fallback}`, async () => {
+    const resource = new Resource();
+    const marker = 'private-reranker-orchestration-diagnostic';
+    let calls = 0;
+    const reranker = new RerankingAdapter(async () => {
+      calls++;
+      assert.equal(resource.active, 0);
+      throw new Error(marker, {cause: new Error(marker)});
+    });
+    await assert.rejects(new PostgresRetriever(resource, {evidence_options:{reranker,rerank_fallback}})
+      .retrieve(request(),bound()), error => {
+        assert.ok(error instanceof ProviderUnavailable);
+        assert.equal(error.message, 'Provider is unavailable.');
+        assert.equal(error.cause, undefined);
+        assert.ok(!error.stack.includes(marker));
+        return true;
+      });
+    assert.equal(calls, 1);
+    assert.equal(resource.active, 0);
+    assert.equal(resource.client.status, 'I');
+  });
+}
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const sourceText='Café🙂';
 const candidate=()=>({tenant_id:'tenant',collection:'collection',document_id:'document',revision_id:'revision',generation_id:'generation',chunk_id:'chunk',start_byte:0,end_byte:Buffer.byteLength(sourceText),text_sha256:sha(sourceText),score:1});
