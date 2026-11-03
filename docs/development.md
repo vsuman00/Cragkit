@@ -1,5 +1,21 @@
 # Cragkit development
 
+## Reviewed evaluation packet profiles
+
+The [EPR-r1 binding contract](../contracts/EVALUATION_PACKET_REVISIONS_V6.md)
+selects only known independently pinned original/recovery profiles. Development
+remains original. Recovery labels were approved separately by the project user;
+[the approval and binding report](../evaluation/reports/V6/V6-02I-approved-binding.md)
+records scope and limits. The checker reads manifest/seal metadata, never held-out
+questions; the parent scorer loads only an issued root/path/digest after execution.
+
+```sh
+uv run --project packages/python --frozen --no-sync python -B -m pytest tools/tests/test_evaluation_packet.py tools/tests/test_check_release_readiness.py tools/tests/test_run_release_evaluation.py tools/tests/test_evaluation_runtime.py -q
+```
+
+Verified: 179 focused tests and 3,780 Python/tool regressions. These are offline
+checks; a later candidate/profile selection requires a new frozen runtime receipt.
+
 ## Evaluation transport pacing and safe failures
 
 The [ETP-r1 correction](../contracts/EVALUATION_TRANSPORT_V6.md) adds serial

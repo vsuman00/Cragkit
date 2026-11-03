@@ -17,7 +17,7 @@ from check_native_evaluation import _node
 from cragkit.context import Cl100kCounter, count_context
 from cragkit.contracts import parse_result
 from cragkit.embeddings import FAKE_PROFILE, OPENAI_PROFILE
-from evaluation_packet import bind_packet, _read, _json
+from evaluation_packet import BoundEvaluationPacket, bind_packet, _read, _json
 from evaluation_payloads import EvaluationPayloadGate
 from postgres_vector_fixture import V6PostgresFixture
 from provider_adapters import ReplaySend
@@ -88,11 +88,8 @@ def check_observation(packet, observation, *, profile, counter):
 
 
 def labels_for(root, bound):
-    provenance = bound.provenance()
-    name = 'evaluation/questions/'+('dev.json' if provenance['split'] == 'development' else 'held_out.json')
-    labels = _json(_read(root, name, 262144, provenance['labels_sha256']))
-    require(labels.get('human_review', {}).get('state') == 'approved', 'evaluation_labels_unapproved')
-    return labels['questions']
+    require(type(bound) is BoundEvaluationPacket, 'evaluation_binding_not_issued')
+    return bound.reviewed_questions(root)
 
 
 def gate_for(packet):

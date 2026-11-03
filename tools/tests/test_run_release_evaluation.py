@@ -406,3 +406,31 @@ def test_valid_cli_flags_preserve_execution_arguments(tmp_path, monkeypatch, cap
     assert observed['output'] == tmp_path/'run'
     assert observed['mode'] == 'mechanics' and observed['keys'] is None
     assert json.loads(capsys.readouterr().out) == {'state':'passed'}
+
+
+def test_parent_scoring_uses_issued_development_labels_and_isolates_returned_copies():
+    bound = parent.bind_packet()
+    first = parent.labels_for(parent.ROOT, bound)
+    assert len(first) == 24
+    assert bound.provenance()['labels_path'] == 'evaluation/questions/dev.json'
+    first[0]['query'] = 'synthetic caller mutation'
+    assert parent.labels_for(parent.ROOT, bound)[0]['query'] != 'synthetic caller mutation'
+
+
+def test_parent_scoring_refuses_a_duck_typed_label_loader():
+    class Forged:
+        def reviewed_questions(self, root):
+            pytest.fail('Unissued label loader executed')
+
+    with pytest.raises(parent.ReleaseEvaluationError, match='^evaluation_binding_not_issued$'):
+        parent.labels_for(parent.ROOT, Forged())
+
+
+def test_parent_scoring_refuses_unissued_native_object_and_wrong_root(tmp_path):
+    import evaluation_packet
+    forged = object.__new__(parent.BoundEvaluationPacket)
+    with pytest.raises(evaluation_packet.PacketBindingError, match='^evaluation_binding_not_issued$'):
+        parent.labels_for(parent.ROOT, forged)
+    bound = parent.bind_packet()
+    with pytest.raises(evaluation_packet.PacketBindingError, match='^evaluation_binding_root$'):
+        parent.labels_for(tmp_path, bound)

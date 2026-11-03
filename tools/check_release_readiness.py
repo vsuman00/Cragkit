@@ -4,12 +4,17 @@ from __future__ import annotations
 import argparse
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import re
+import stat
 from typing import Any
+
+from evaluation_profiles import ORIGINAL_SEAL_SHA256, input_limits, packet_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 MODES = ['lexical', 'dense', 'hybrid', 'reranked_hybrid', 'corrective']
+APPROVED_SEAL_SHA256 = ORIGINAL_SEAL_SHA256
 
 
 class ReleaseConfigurationError(ValueError):
@@ -28,9 +33,70 @@ def local_path(root: Path, value: object) -> Path:
     return path
 
 
+def _read(root: Path, relative: str, limit: int) -> bytes:
+    """Read bounded regular files without following path-component symlinks."""
+    path = Path(relative)
+    require(bool(path.parts) and not path.is_absolute() and '..' not in path.parts, 'unsafe_input_path')
+    directory = None
+    failed = False
+    try:
+        directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        for component in path.parts[:-1]:
+            child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        descriptor = os.open(path.parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        with os.fdopen(descriptor, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            require(stat.S_ISREG(info.st_mode) and info.st_size <= limit, 'invalid_input_size')
+            raw = stream.read(limit + 1)
+        require(len(raw) <= limit, 'invalid_input_size')
+    except OSError:
+        failed = True
+    finally:
+        if directory is not None:
+            os.close(directory)
+    if failed:
+        raise ReleaseConfigurationError('unsafe_input_path')
+    return raw
+
+
+def _profile(configuration: dict[str, Any]):
+    invalid = False
+    try:
+        profile = packet_profile(configuration)
+    except ValueError:
+        invalid = True
+    if invalid:
+        raise ReleaseConfigurationError('release_configuration_invalid')
+    return profile
+
+
+def _seal(raw: bytes, digest: str) -> dict[str, Any]:
+    require(sha256(raw).hexdigest() == digest, 'review_seal_drift')
+    seal = json.loads(raw)
+    require(type(seal) is dict and seal.get('state') == 'sealed', 'review_not_approved')
+    review = seal.get('human_review')
+    require(type(review) is dict and review.get('state') == 'approved'
+            and type(review.get('reviewer')) is str and bool(review['reviewer'].strip()), 'review_not_approved')
+    files = seal.get('files')
+    require(type(files) is list and all(type(entry) is dict for entry in files), 'review_seal_invalid')
+    return seal
+
+
+def _sealed_digest(seal: dict[str, Any], path: str):
+    entries = [entry for entry in seal['files'] if entry.get('path') == path]
+    require(len(entries) == 1, 'held_out_seal_mismatch')
+    digest = entries[0].get('sha256')
+    require(type(digest) is str and re.fullmatch('[0-9a-f]{64}', digest) is not None,
+            'held_out_seal_mismatch')
+    return digest
+
+
 def check_settings(configuration: dict[str, Any]) -> None:
     """Validate frozen parameters without reading files or interpreting labels."""
     require(type(configuration) is dict, 'configuration_shape')
+    _profile(configuration)
     for name in ('license', 'comparison', 'quality_targets', 'request_limits', 'live_limits', 'resource_targets'):
         require(type(configuration.get(name)) is dict, 'configuration_shape')
     require(configuration.get('revision') == 'V6-release-r1'
@@ -72,20 +138,25 @@ def check_settings(configuration: dict[str, Any]) -> None:
 def check_configuration(root: Path, configuration: dict[str, Any]) -> dict[str, Any]:
     check_settings(configuration)
     inputs = configuration.get('inputs', {})
-    required = {'evaluation/corpus/manifest.json', 'evaluation/questions/dev.json',
-                'evaluation/review/seal.json', 'evaluation/runners/benchmark_metrics.py',
-                'evaluation/release/V6-metrics.md', 'evaluation/release/V6-baselines.json'}
-    require(type(inputs) is dict and set(inputs) == required, 'missing_frozen_inputs')
+    profile = _profile(configuration)
+    limits = input_limits(configuration)
+    require(type(inputs) is dict and set(inputs) == set(limits), 'missing_frozen_inputs')
+    raw_inputs = {}
     for name, digest in inputs.items():
-        path = local_path(root, name)
-        require(path.is_file() and sha256(path.read_bytes()).hexdigest() == digest, 'frozen_input_drift')
-    seal = json.loads(local_path(root, 'evaluation/review/seal.json').read_text())
-    require(seal.get('state') == 'sealed' and seal.get('human_review', {}).get('state') == 'approved', 'review_not_approved')
-    held = configuration.get('held_out', {})
-    require(held.get('path') == 'evaluation/questions/held_out.json'
+        raw = _read(root, name, limits[name])
+        require(type(digest) is str and sha256(raw).hexdigest() == digest, 'frozen_input_drift')
+        raw_inputs[name] = raw
+    original = _seal(raw_inputs['evaluation/review/seal.json'], APPROVED_SEAL_SHA256)
+    for name in ('evaluation/corpus/manifest.json', 'evaluation/questions/dev.json'):
+        require(_sealed_digest(original, name) == inputs[name], 'held_out_seal_mismatch')
+    seal = (original if profile.revision == 'original-r1'
+            else _seal(raw_inputs[profile.seal_path], profile.seal_sha256))
+    require(_sealed_digest(seal, profile.manifest_path) == inputs[profile.manifest_path],
+            'held_out_seal_mismatch')
+    held = configuration.get('held_out')
+    require(type(held) is dict and held.get('path') == profile.question_path
             and held.get('current_run_access') == 'not_opened_or_scored', 'held_out_access_not_preregistered')
-    sealed = [entry for entry in seal['files'] if entry['path'] == held['path']]
-    require(len(sealed) == 1 and sealed[0]['sha256'] == held.get('sha256'), 'held_out_seal_mismatch')
+    require(_sealed_digest(seal, profile.question_path) == held.get('sha256'), 'held_out_seal_mismatch')
     # The digest comes from the human-review seal. Never open held_out.json here.
     coverage = json.loads(local_path(root, 'evaluation/release/V6-coverage.json').read_text())
     rows = coverage['requirements'] + coverage['edge_cases']

@@ -338,7 +338,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
   - [x] V6-02H: Offline pacing, safe failure categories and recorder integration. H4 terminal-time correction passed [173 focused/3,727 Python checks](../evaluation/reports/V6/V6-02H4-terminal.md); historical H1-H3 also passed 41 Node checks. No live rerun or held-out acceptance.
 
-  - [ ] V6-02I: Fresh recovery packet review, separate approved binding and candidate/input/runtime refreeze. I1 draft/mechanical preparation passed; BLOCKED on actual [human label review](../evaluation/review/retrieval-recovery/README.md) for six questions/eight facets.
+  - [ ] V6-02I: Fresh recovery packet review, separate approved binding and candidate/input/runtime refreeze. I1 human review approved by the project user on 3 November 2026; separate nine-file seal prepared. I2 trusted binding and I3 candidate/runtime refreeze IN_PROGRESS; genuine evaluation remains open.
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -4304,3 +4304,50 @@ The full V6 goal is not complete. After scoped tracker commit/push/sync, mark
 the goal blocked on this human dependency and stop automatic work until input
 or an external-state change. User edits/audits/original tracker draft preserved.
 Learning review remains unassessed; no new resource-heavy work was performed.
+
+
+V6 resumed by actual user approval "I approved" of the requested six recovery
+questions/eight facets. This clears the human-review blocker without inferring
+paid dispatch or publication approval. Root verified all pre-approval hashes;
+source/question semantics unchanged, only review metadata and guide status
+updated. approval.json preserves the reviewed revision and actual decision;
+new seal.json has nine files and SHA256
+46a7e1bba338ff205d6d5e49f45a61db9cca3f0c8acb81b9c70d51870fd5e195.
+Original seal/labels/failed journal/admission remain untouched. EPR-r1 assigns
+I2a root pure known-profile helper, I2b Sol binder+tests, I2c Sol checker+tests
+and assembly; root I3 parent integration/tests after bound API handoff and final
+serialized verification/Git/refreeze. No overlapping writes: root owns shared
+helper/contract/approval metadata/config/tracker; peers own disjoint pairs.
+Direct peer dependency messages required, unresolved protected/outcome decisions
+through root to Astra. Explicit profiles original-r1/recovery-r1, original default
+and development retained; no caller seal/path injection. Frozen targets/labels/
+core/manifests/locks and actual provider behavior protected. Tests synthetic and
+one root process; no peer secret/private config/service/install/provider access.
+Shared contract contracts/EVALUATION_PACKET_REVISIONS_V6.md frozen for this work.
+State IN_PROGRESS, actual clean candidate/live/replay still unaccepted.
+
+
+V6-02I1/I2 and I3 parent integration acceptance: COMPLETE offline. Actual user
+approval recorded for six questions/eight facets; all preapproval file hashes
+matched, source/question semantics unchanged. New 9-file seal and approved state
+passed mechanical human-review checker. EPR-r1 source-pinned profile helper,
+Sol binder/checker pairs and root exact-issued parent scoring integration passed
+179 focused/3,780 full Python-tool tests, four existing intentional warnings.
+Actual guarded recovery preregistration accepted 8 inputs without reading either
+held-out question file. Source identity still precedes held-out decoding; original
+development 9 docs/24 questions and independent original seal preserved. Both peers
+coordinated directly, assembled and returned ownership; root inspected and ran
+one serialized suite. E108/coverage/development guidance/evidence synchronized.
+Current profile config/source/runtime refreeze and live/replay remain OPEN.
+Original failed run/admission/tape/core/locks/metrics/targets untouched. No private
+config/provider calls/services/install/model downloads in this acceptance.
+Next: scoped source commit/push/sync, preserve original candidate, select recovery
+with unchanged limits, refreeze source and prepare fresh isolated runtime. User-owned
+source/audits/original tracker draft excluded. Learning practice unassessed.
+
+I2 integration follow-up: original-profile synthetic fixtures explicitly select
+their profile/path rather than inheriting a future mutable active selection;
+46 packet tests passed in isolation. Recovery guarded checker now indexes
+108 edge cases/10 requirements/8 inputs. Original 16-file seal check passed.
+Resource 25.2 GiB/52 percent free memory. Candidate still unchanged at this checkpoint;
+no live call. Root final staged review excludes all user-owned source/audits.

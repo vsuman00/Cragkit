@@ -1,10 +1,10 @@
 # Recovery packet for human review
 
-This separate draft contains five synthetic source revisions and six proposed questions, covering eight facets and seven support references. Human review is pending; the reviewer field remains null. Read every source and every facet below, including the absent-answer and conflicting claims. Mechanical checks cannot approve these judgments.
+This separate draft contains five synthetic source revisions and six proposed questions, covering eight facets and seven support references. Human review was approved by the project user on 2026-11-03 with the explicit reply "I approved" to the six-question/eight-facet review request. The dataset records reviewer `project-user`. Read every source and every facet below, including the absent-answer and conflicting claims. Mechanical checks cannot approve these judgments.
 
 The author agent was `/root/transport_pacing`; `/root/transport_diagnostics` independently read the sources before the proposed labels and assembled this guide. Both agents are exposed to this packet. These small synthetic examples are not a blind external benchmark and establish no retrieval quality, performance or release result. The original attempted packet is already exposed; this draft does not restore its unseen status. The new family IDs are disjoint from the old manifest, which does not prove broad semantic independence.
 
-This directory is a pending review artifact, not approved live execution input. It does not change original labels, seals, targets, runtime bindings, recordings or dispatch authorization. Human approval, an accepted packet identity and the later planned candidate/input/runtime refreeze are separate gates. A new paid run needs its own recorded decision and budget.
+This directory is an approved label-review artifact; live execution still requires its trusted seal/profile and frozen candidate/runtime identity. It does not change original labels, seals, targets, runtime bindings, recordings or dispatch authorization. Human approval is recorded; accepted packet identity and the planned candidate/input/runtime refreeze remain separate gates. A new paid run needs its own recorded decision and budget.
 
 Review [the manifest](corpus/manifest.json) and [all proposed question labels](questions/held_out.json) alongside this guide. All documents use collection `customer-operations` and split `held_out`. Byte spans below are half-open UTF-8 offsets `[start,end)`, not character positions. The source blocks reproduce the full source text, including the final newline; the linked files and digests define exact bytes.
 
@@ -183,6 +183,6 @@ Both delivery documents are active, authorized and apply to all Orchid standard 
 
 Review all five source revisions and all six questions, including each of the eight facets. Confirm scope, current and historical selection, exact excerpts, supported claims, missing owner/manager judgments and the two-source conflict. Request corrections where needed; schema validity alone does not approve the labels.
 
-Record the human reviewer identity, decision, corrections and reviewed fixture revision through the coordinator. Until that happens, keep `human_review.state` as `pending` and `human_review.reviewer` as null. No approval or integrity seal is created by this guide or by agent review. Once approved, the coordinator follows the protocol's separate sealing and evaluation gates.
+Record the human reviewer identity, decision, corrections and reviewed fixture revision through the coordinator. The project user supplied that decision on 2026-11-03. The prior pending revision is preserved in [the approval record](approval.json); agent review did not supply approval. The coordinator follows the protocol's separate sealing and evaluation gates.
 
 A useful failure example is q03: quoting the Orchid Willow desk would be wrong even though the document ID matches. Optional exercise: explain why the Café 🙂 excerpt uses more UTF-8 bytes than characters. Learning practice remains unassessed.

@@ -1,0 +1,27 @@
+{
+  "decision": "I approved",
+  "limitations": "Initial agent authors, independent reviewer, root and the human reviewer were exposed before sealing. Small synthetic pre-exposed suite; not a blind external benchmark.",
+  "previous_failed_run": "evaluation/reports/V6/V6-02E3-live-attempt.md",
+  "reviewed_files_before_metadata_update": {
+    "README.md": "9ae2b30f210c8cf242fca375b9b107e85dd0b2f4522ff5c1e33b2a250bbeaca5",
+    "corpus/cobalt-routing-r1.md": "021f7272431edad67d5c82dce39f6e4c925cbe7798922dd30b4000740a8d9c0b",
+    "corpus/manifest.json": "808898934474a185d2a8e6777111d9598a526279091fffb9314f4b5465c9d96e",
+    "corpus/orchid-delivery-bulletin-r1.md": "a854a76b21c2ecfbf00b515cd76b18892c30b9dc14cfa4fa0caa7cc73383f7a1",
+    "corpus/orchid-delivery-guide-r1.md": "0bb2fa73f1abf59262e076142b38dd7598d3467505f9715e98a52fadef810c74",
+    "corpus/orchid-routing-r1.md": "455b6c71790ccc6f09f247735be1bb49f32f456f30bbd969b872c76a60aad11f",
+    "corpus/orchid-routing-r2.md": "20e3f8f782fe21c01089c7eb661bb4f30fee53df8d14b6ae61124bba7606cbc2",
+    "questions/held_out.json": "7bbfaeed22b15065624b76526491442fb973de3ad2f7af580bbbd0cc986a953b"
+  },
+  "reviewed_on": "2026-11-03",
+  "reviewed_revision_sha256": "2318dfda7a52fb25119bcab21786408fc2e32d91005d9002bcca5e211998cbdd",
+  "reviewer": "project-user",
+  "revision": "recovery-review-r1",
+  "scope": {
+    "facets": 8,
+    "questions": 6,
+    "source_revisions": 5
+  },
+  "semantic_question_source_edits_after_approval": false,
+  "source": "Explicit user reply in this Codex conversation to the six-question/eight-facet review request",
+  "state": "approved"
+}

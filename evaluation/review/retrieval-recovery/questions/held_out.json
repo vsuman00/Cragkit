@@ -2,8 +2,8 @@
   "schema_version": "0.1",
   "origin": "synthetic",
   "human_review": {
-    "state": "pending",
-    "reviewer": null
+    "state": "approved",
+    "reviewer": "project-user"
   },
   "questions": [
     {

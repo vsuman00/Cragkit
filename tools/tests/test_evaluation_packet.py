@@ -25,6 +25,8 @@ def write(root, path, value):
 def packet_root(tmp_path, monkeypatch):
     """Synthetic approval replaces the pin only inside this test fixture."""
     configuration = json.loads((binding.ROOT/'evaluation/release/V6-candidate.json').read_text())
+    configuration['evaluation_revision'] = 'original-r1'
+    configuration['held_out']['path'] = 'evaluation/questions/held_out.json'
     documents = []
     inventory = []
     for split, name in [('development', 'dev'), ('held_out', 'held')]:
@@ -42,7 +44,7 @@ def packet_root(tmp_path, monkeypatch):
         inventory.append(dict(path=path, sha256=write(tmp_path, path, dataset)))
     path = 'evaluation/corpus/manifest.json'
     inventory.append(dict(path=path, sha256=write(tmp_path, path, dict(schema_version='0.1', documents=documents))))
-    seal = dict(schema_version='0.1', state='sealed', human_review=dict(state='approved'), files=inventory)
+    seal = dict(schema_version='0.1', state='sealed', human_review=dict(state='approved', reviewer='test'), files=inventory)
     seal_digest = write(tmp_path, 'evaluation/review/seal.json', seal)
     monkeypatch.setattr(binding, 'APPROVED_SEAL_SHA256', seal_digest)
     for name in binding._INPUT_LIMITS:
@@ -270,3 +272,185 @@ def test_candidate_git_identity_refuses_dirty_source_and_wrong_package_tree(tmp_
     wrong = deepcopy(config);wrong['package_tree'] = '0'*40
     with pytest.raises(binding.PacketBindingError, match='package_tree'):
         binding.verify_candidate_source(tmp_path, wrong)
+
+
+@pytest.fixture
+def recovery_root(packet_root, monkeypatch):
+    """Build a separately pinned synthetic recovery packet, never real labels."""
+    import evaluation_profiles
+    base = evaluation_profiles.RECOVERY_ROOT
+    source = b'Synthetic recovery evidence only.\n'
+    source_path = base+'/corpus/recovery.md'
+    digest = write(packet_root, source_path, source)
+    manifest_path = base+'/corpus/manifest.json'
+    manifest = dict(schema_version='0.1', documents=[dict(tenant_id='recovery-tenant',
+        collection='test-collection', document_id='fresh-doc', revision_id='r1', family_id='fresh-family',
+        split='held_out', active=True, path='recovery.md', canonical_sha256=digest)])
+    manifest_digest = write(packet_root, manifest_path, manifest)
+    labels_path = base+'/questions/held_out.json'
+    labels = dict(schema_version='0.1', origin='synthetic', human_review=dict(state='approved', reviewer='test'),
+        questions=[dict(question_id='fresh-q', tenant_id='recovery-tenant', collection='test-collection',
+            query='synthetic recovery question', required_filters=[], answerability='answerable',
+            facets=[dict(facet_id='fresh-f', question='RECOVERY_LABEL_CANARY', state='supported', support=[])])])
+    labels_digest = write(packet_root, labels_path, labels)
+    seal = dict(schema_version='0.1', state='sealed', human_review=dict(state='approved', reviewer='test'),
+        files=[dict(path=source_path, sha256=digest), dict(path=manifest_path, sha256=manifest_digest),
+               dict(path=labels_path, sha256=labels_digest)])
+    seal_path = base+'/seal.json'
+    pin = write(packet_root, seal_path, seal)
+    monkeypatch.setattr(evaluation_profiles, 'RECOVERY_SEAL_SHA256', pin)
+    candidate_path = 'evaluation/release/V6-candidate.json'
+    candidate = json.loads((packet_root/candidate_path).read_text())
+    candidate['evaluation_revision'] = 'recovery-r1'
+    candidate['inputs'].update({manifest_path:manifest_digest, seal_path:pin})
+    candidate['held_out']['path'] = labels_path
+    candidate['held_out']['sha256'] = labels_digest
+    write(packet_root, candidate_path, candidate)
+    monkeypatch.setattr(binding, 'verify_candidate_source', lambda *args:'a'*40)
+    return packet_root
+
+
+def test_recovery_profile_projects_only_selected_inputs_and_snapshots_labels(recovery_root):
+    bound = binding.bind_packet(recovery_root, split='held_out', allow_held_out=True)
+    packet = bound.runtime_packet()
+    assert [row['document_id'] for row in packet['documents']] == ['fresh-doc']
+    assert [row['question_id'] for row in packet['queries']] == ['fresh-q']
+    assert 'RECOVERY_LABEL_CANARY' not in json.dumps(packet)
+    assert bound.provenance()['packet_revision'] == 'recovery-r1'
+    assert bound.provenance()['labels_path'].endswith('retrieval-recovery/questions/held_out.json')
+    questions = bound.reviewed_questions(recovery_root)
+    assert questions[0]['facets'][0]['question'] == 'RECOVERY_LABEL_CANARY'
+    questions[0]['query'] = 'changed returned copy'
+    assert bound.reviewed_questions(recovery_root)[0]['query'] == 'synthetic recovery question'
+    assert bound.runtime_packet() == packet
+
+
+def test_recovery_configuration_keeps_original_development_packet(recovery_root):
+    bound = binding.bind_packet(recovery_root)
+    assert bound.provenance()['packet_revision'] == 'original-r1'
+    assert bound.provenance()['labels_path'] == 'evaluation/questions/dev.json'
+    assert bound.runtime_packet()['queries'][0]['question_id'] == 'dev'
+
+
+@pytest.mark.parametrize('revision', ['unknown', None, 1, [], {}])
+def test_unknown_profile_refuses_before_label_decode(packet_root, monkeypatch, revision):
+    path = 'evaluation/release/V6-candidate.json'
+    configuration = json.loads((packet_root/path).read_text())
+    configuration['evaluation_revision'] = revision
+    write(packet_root, path, configuration)
+    with pytest.raises(binding.PacketBindingError, match='release_configuration_invalid'):
+        binding.bind_packet(packet_root)
+
+
+def test_recovery_source_gate_precedes_label_decode(recovery_root, monkeypatch):
+    decoded = []
+    original = binding._json
+    def spy(raw):
+        if b'RECOVERY_LABEL_CANARY' in raw:
+            decoded.append(True)
+        return original(raw)
+    monkeypatch.setattr(binding, '_json', spy)
+    def refuse(*args):
+        raise binding.PacketBindingError('evaluation_candidate_dirty')
+    monkeypatch.setattr(binding, 'verify_candidate_source', refuse)
+    with pytest.raises(binding.PacketBindingError, match='candidate_dirty'):
+        binding.bind_packet(recovery_root, split='held_out', allow_held_out=True)
+    assert decoded == []
+
+
+@pytest.mark.parametrize('kind', ['replaced_seal', 'original_seal', 'label_path', 'source', 'symlink'])
+def test_recovery_profile_rejects_independent_identity_changes(recovery_root, kind):
+    base = 'evaluation/review/retrieval-recovery'
+    candidate_path = 'evaluation/release/V6-candidate.json'
+    config = json.loads((recovery_root/candidate_path).read_text())
+    if kind == 'replaced_seal':
+        path = base+'/seal.json'
+        seal = json.loads((recovery_root/path).read_text())
+        seal['human_review']['reviewer'] = 'unapproved replacement'
+        config['inputs'][path] = write(recovery_root, path, seal)
+    elif kind == 'original_seal':
+        path = 'evaluation/review/seal.json'
+        seal = json.loads((recovery_root/path).read_text())
+        seal['human_review']['reviewer'] = 'unapproved replacement'
+        config['inputs'][path] = write(recovery_root, path, seal)
+    elif kind == 'label_path':
+        config['held_out']['path'] = 'evaluation/questions/held_out.json'
+    elif kind == 'source':
+        write(recovery_root, base+'/corpus/recovery.md', b'changed evidence')
+    else:
+        path = recovery_root/(base+'/questions/held_out.json')
+        raw = path.read_bytes(); path.unlink()
+        target = recovery_root/'redirected.json';target.write_bytes(raw);path.symlink_to(target)
+    write(recovery_root, candidate_path, config)
+    with pytest.raises(binding.PacketBindingError):
+        binding.bind_packet(recovery_root, split='held_out', allow_held_out=True)
+
+
+@pytest.mark.parametrize('kind', ['seal', 'labels'])
+def test_synthetically_pinned_pending_recovery_is_not_approval(recovery_root, monkeypatch, kind):
+    import evaluation_profiles
+    base = evaluation_profiles.RECOVERY_ROOT
+    seal_path = base+'/seal.json'
+    seal = json.loads((recovery_root/seal_path).read_text())
+    config_path = 'evaluation/release/V6-candidate.json'
+    config = json.loads((recovery_root/config_path).read_text())
+    if kind == 'seal':
+        seal['human_review'] = dict(state='pending', reviewer=None)
+    else:
+        path = base+'/questions/held_out.json'
+        labels = json.loads((recovery_root/path).read_text())
+        labels['human_review'] = dict(state='pending', reviewer=None)
+        digest = write(recovery_root, path, labels)
+        next(row for row in seal['files'] if row['path'] == path)['sha256'] = digest
+        config['held_out']['sha256'] = digest
+    pin = write(recovery_root, seal_path, seal)
+    monkeypatch.setattr(evaluation_profiles, 'RECOVERY_SEAL_SHA256', pin)
+    config['inputs'][seal_path] = pin
+    write(recovery_root, config_path, config)
+    with pytest.raises(binding.PacketBindingError, match='approval_missing'):
+        binding.bind_packet(recovery_root, split='held_out', allow_held_out=True)
+
+
+def test_reviewed_questions_refuses_unissued_wrong_root_and_tampered_labels(recovery_root, tmp_path):
+    fake = object.__new__(binding.BoundEvaluationPacket)
+    with pytest.raises(binding.PacketBindingError, match='not_issued'):
+        fake.reviewed_questions(recovery_root)
+    bound = binding.bind_packet(recovery_root, split='held_out', allow_held_out=True)
+    with pytest.raises(binding.PacketBindingError, match='binding_root'):
+        bound.reviewed_questions(tmp_path/'other-root')
+    path = 'evaluation/review/retrieval-recovery/questions/held_out.json'
+    write(recovery_root, path, dict(human_review=dict(state='approved'), questions=[]))
+    with pytest.raises(binding.PacketBindingError, match='input_drift'):
+        bound.reviewed_questions(recovery_root)
+
+
+def test_scoring_snapshot_does_not_follow_later_profile_pin_changes(recovery_root, monkeypatch):
+    import evaluation_profiles
+    bound = binding.bind_packet(recovery_root, split='held_out', allow_held_out=True)
+    provenance = bound.provenance()
+    monkeypatch.setattr(evaluation_profiles, 'RECOVERY_SEAL_SHA256', '0'*64)
+    assert bound.provenance() == provenance
+    assert bound.reviewed_questions(recovery_root)[0]['question_id'] == 'fresh-q'
+
+
+def test_recovery_label_replacement_cannot_self_approve_with_candidate_digest(recovery_root):
+    base = 'evaluation/review/retrieval-recovery'
+    labels_path = base+'/questions/held_out.json'
+    labels = json.loads((recovery_root/labels_path).read_text())
+    labels['questions'][0]['facets'][0]['question'] = 'forged replacement label'
+    digest = write(recovery_root, labels_path, labels)
+    candidate_path = 'evaluation/release/V6-candidate.json'
+    candidate = json.loads((recovery_root/candidate_path).read_text())
+    candidate['held_out']['sha256'] = digest
+    write(recovery_root, candidate_path, candidate)
+    with pytest.raises(binding.PacketBindingError, match='held_out_seal'):
+        binding.bind_packet(recovery_root, split='held_out', allow_held_out=True)
+
+
+def test_unregistered_input_cannot_add_a_caller_selected_seal(recovery_root):
+    path = 'evaluation/release/V6-candidate.json'
+    candidate = json.loads((recovery_root/path).read_text())
+    candidate['inputs']['evaluation/review/caller-seal.json'] = 'a'*64
+    write(recovery_root, path, candidate)
+    with pytest.raises(binding.PacketBindingError, match='preregistration_inputs'):
+        binding.bind_packet(recovery_root)
