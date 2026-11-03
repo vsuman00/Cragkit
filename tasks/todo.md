@@ -326,7 +326,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V6-01: [Freeze release scope and thresholds](versions/V6-release.md#v6-01-freeze-release-scope-and-thresholds) — [preregistration acceptance](../evaluation/reports/V6/V6-01.md).
 
-- [ ] V6-02: [Held-out retrieval evaluation](versions/V6-release.md#v6-02-held-out-retrieval-evaluation) — evidence: pending.
+- [x] V6-02: [Held-out retrieval evaluation](versions/V6-release.md#v6-02-held-out-retrieval-evaluation) — [approved recovery live/replay acceptance and limitations](../evaluation/reports/V6/V6-02-recovery.md). Original failed attempt retained; full V6 remains open.
   - [x] V6-02B: Explicit PostgreSQL profile storage and dispatch mechanics — [native acceptance and limits](../evaluation/reports/V6/V6-02B.md). Successful genuine-vector publication and the live comparison remain required by the parent task.
   - [x] V6-02C1: Fixed HTTP, exact admission and approved-payload primitives — [offline acceptance](../evaluation/reports/V6/V6-02C-io.md). Later packet/recording/runtime prerequisites are accepted below; genuine live acceptance remains open.
   - [x] V6-02C2/C3: Durable recording/sender and native Node provider replay — [mechanical acceptance](../evaluation/reports/V6/V6-02C-recording.md). Native execution is accepted below; genuine-provider quality remains open.
@@ -334,11 +334,11 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V6-02D4: Sealed original-packet binding and source-access gate — [binding evidence](../evaluation/reports/V6/V6-02D-packet.md). Clean execution identity is accepted below; genuine held-out execution remains open.
   - [x] V6-02E1/E2: Runtime identity, independent same-shortlist scoring and bounded parent mechanics — [offline implementation](../evaluation/reports/V6/V6-02E-candidate-execution.md) and [actual clean-runtime acceptance](../evaluation/reports/V6/V6-02F-clean-runtime.md). No genuine quality claim.
   - [x] V6-02F: Coherent RC metadata/engine identities and isolated execution preparation — [local artifacts](../evaluation/reports/V6/V6-02F-identity.md) and [clean identity](../evaluation/reports/V6/V6-02F-clean-runtime.md).
-  - [ ] V6-02E3: Explicit caller-owned benchmark credentials, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. The user selected and saved the explicit private OpenAI test credential; local format, permissions and scoped credential preflight passed. Both providers authenticated in the genuine live attempt, and hardened-source identity passed. The run failed with an incomplete Cohere recording; replay and quality remain unaccepted. See [failed attempt](../evaluation/reports/V6/V6-02E3-live-attempt.md). No built-in library key is used. See [credential preflight](../evaluation/reports/V6/V6-02E3-credential-preflight.md).
+  - [x] V6-02E3: Explicit private credentials, actual recovery live run, complete native Python/Node recording replay, independent scoring and manual examples — [recovery evidence](../evaluation/reports/V6/V6-02-recovery.md). Original failed journal remains unsealed; recovery used a distinct approved packet/admission.
 
   - [x] V6-02H: Offline pacing, safe failure categories and recorder integration. H4 terminal-time correction passed [173 focused/3,727 Python checks](../evaluation/reports/V6/V6-02H4-terminal.md); historical H1-H3 also passed 41 Node checks. No live rerun or held-out acceptance.
 
-  - [ ] V6-02I: Fresh recovery packet review, separate approved binding and candidate/input/runtime refreeze. I1 human review approved by the project user on 3 November 2026; separate nine-file seal prepared. I2 trusted binding and I3 candidate/runtime refreeze IN_PROGRESS; genuine evaluation remains open.
+  - [x] V6-02I: Human recovery-label approval, separate pinned profile binding and actual candidate/runtime refreeze — [approval/binding](../evaluation/reports/V6/V6-02I-approved-binding.md) and [clean runtime](../evaluation/reports/V6/V6-02I-runtime.md).
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -4362,3 +4362,51 @@ configuration passed 3,780 tests/four existing intentional warnings. Next: commi
 this selection, create fresh isolated worktree and offline frozen dependency/
 tokenizer preparation, ECR prepare/verify, native development rehearsal before
 a separately recorded bounded live recovery comparison. No paid calls yet.
+
+
+V6-02 final recovery evidence assignment: actual native recovery run PASSED,
+39/39 completedlivecalls, sealedhealthyjournal, Pythonlive/Pythonreplay/Node
+replay complete, normalizedparity/metric targets/cleanup true. Rootexact-key
+scan found0matchesin131generatedfiles; no remaining PostgreSQLprocess. Shared
+outcome: final independent execution/accounting and scoring/manual-example review
+before V6-02 acceptance. Sol transport_pacing owns read-only quality/denominator/
+manualexamples audit; Sol transport_diagnostics owns read-only provenance/journal/
+replay/accounting audit and ASSEMBLES. Root owns repo reports/tracker/Git and
+final acceptance. Peers write safe /tmp reports only, resolve concrete findings
+directly, outcome/protected disagreements through root to Astra if unresolved.
+Actual new held-out labels may now be read solely for this post-run review;
+no rawHTTPresponses/keys/privateDBconfigs/.env, no source/label/seal/tape edits,
+no test/service/network/provider call. Originalfailedattempt preserved. Root
+has already inspected result gates, exactcall39 and zero replayHTTP; fullV6
+remains incomplete. State assigned, one final integrator root.
+
+
+V6-02 final acceptance: COMPLETE for frozen small-corpus reporting/reproduction
+criteria. User-approved recovery-r1 at source 25275e4/checkout 34b5748 passed
+actual ECR prepare/verify 9,414 files, identity 59af39c6cb0a5d118c73511dbb67b5fd22b2289a731ffeaaa5fc488d4105b993.
+Explicit 3.14.6 offline Python corrected default 3.14.4; missing receipt parent created
+0700; npm offline ENOTCACHED retained, exact 1,706 Node-dependency bytes verified
+against prior ECR/identical lock reused and rebuilt. Matrix/guards unchanged.
+Native dev rehearsal passed 240 rows/18 receipts, parity/cleanup, 0 HTTP. New live
+run completed 39/39 (29 OpenAI, 10 Cohere), healthy seal and fresh native Python/Node
+replays each 30 rows/5 receipts, exact normalized parity/metric gates/cleanup true,
+replay HTTP 0. Estimate USD 0.00004206, actual billing unknown; serial peak reservation
+.00200432 total/.00199138 Cohere below .02/.01 caps. Root key scan 0/131 files;
+original 121 failed-run files and old marker hash-identical, one new legitimate admission.
+Both Sol reviewers checked accounting/provenance and independently derived quality/
+manual examples, resolved historical scope using old V2/dev docs, assembled and stopped.
+Root accepted only frozen gates/reporting:6 pre-exposed synthetic questions, 5 positive
+ranking denominators, lexical 0/nonlexical .8, hybrid gain +.8/rerank 0/corrective 0.
+All 30 live outputs non-sufficient, 3/3 answerable abstention, conflict miss 1/1;
+historical q02 excluded by known active-only search. No useful sufficiency, historical
+candidate-search, conflict detection or downstream quality/production claim.
+Reports V6-02-recovery.md/fullverificationJSON and V6-02I-runtime.md/JSON bind
+identities/results/uncertainty/latency/accounting/failures. Frozen configuration
+pre-run pending/access wording retained byte-exact, current tracker is authoritative.
+All scoped code/unit regressions passed 179 focused/3,780 full Python-tools (4 known
+intentional warnings), 46 isolation fixture tests, source and original 16 seals retained.
+Resources 25.2 GiB/48 percent free; owned PG processes closed, no watcher, hosted DB write
+or local model download. Learning practice unassessed. Next V6-03 resource/concurrency
+measurement under frozen targets; later V6 gates remain required. Root final prose/
+links/schema/security checks and scoped commit/immediate push/sync; user dirty
+source/audits/tracker draft remain excluded. Full goal not complete.

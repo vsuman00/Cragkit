@@ -1,5 +1,21 @@
 # Cragkit development
 
+## Recovery evaluation acceptance
+
+[V6-02 recovery evidence](../evaluation/reports/V6/V6-02-recovery.md) records
+39 completed live calls, a healthy sealed tape and matched Python/Node recorded
+replays. Six synthetic questions passed the frozen relative targets; all results
+withheld sufficiency, historical search remained active-generation-only and
+conflict detection missed its one case. This is scoped evaluation/reproduction
+acceptance, not general relevance or production-readiness evidence.
+
+The [runtime preparation record](../evaluation/reports/V6/V6-02I-runtime.md)
+records explicit Python 3.14.6 selection, verified frozen Node dependency reuse
+and the owner-only output parent needed before receipt preparation. The frozen
+candidate's pending gate/access wording is its pre-run snapshot; current task
+acceptance belongs in the tracker. Preserve receipt-bound candidate bytes when
+recording post-run completion.
+
 ## Reviewed evaluation packet profiles
 
 The [EPR-r1 binding contract](../contracts/EVALUATION_PACKET_REVISIONS_V6.md)

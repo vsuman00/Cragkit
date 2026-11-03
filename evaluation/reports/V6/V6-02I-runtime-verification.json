@@ -1,0 +1,96 @@
+{
+  "candidate_checkout_commit": "34b5748",
+  "configuration_sha256": "fd5524e9cc9598011ffd8782f511cde49d802884d15d0e18a34bff900950ab5d",
+  "failed_prerequisites": [
+    {
+      "code": "ENOTCACHED",
+      "resolution": "Verified copy of all 1,706 recorded dependency files, identical lock and package tree.",
+      "stage": "npm frozen offline install"
+    },
+    {
+      "actual": "3.14.4",
+      "required": "3.14.6",
+      "resolution": "Explicit retained 3.14.6 interpreter, frozen offline sync.",
+      "stage": "initial interpreter selection"
+    },
+    {
+      "resolution": "Created missing task-owned 0700 parent after verifying absence; no validator weakened.",
+      "stage": "receipt output creation"
+    }
+  ],
+  "identity_sha256": "59af39c6cb0a5d118c73511dbb67b5fd22b2289a731ffeaaa5fc488d4105b993",
+  "inventory_files": 9414,
+  "native_development_mechanics": {
+    "cleanup_verified": true,
+    "live_http_calls_this_run": {
+      "exact": 0,
+      "lower_bound": 0,
+      "upper_bound": 0
+    },
+    "metric_targets_passed": true,
+    "normalized_parity": true,
+    "packet": {
+      "candidate_source_verified": false,
+      "compiled_artifacts_verified": false,
+      "held_out_opened": false,
+      "labels_path": "evaluation/questions/dev.json",
+      "labels_sha256": "bb2258d0b9fda1ac8874d7389a298906ba4934376b049d19aec9c7492ccd2de4",
+      "packet_revision": "original-r1",
+      "packet_sha256": "3b306b4654c7044e95345644ea3ceb1aacd678e21cbdfce036ba19b12b2854de",
+      "seal_sha256": "210ddce9237847d271db35dbff1d7c74a1ba1f30323a3f4119f939a604a83f81",
+      "source_commit": null,
+      "split": "development"
+    },
+    "runtime_identity_sha256": "59af39c6cb0a5d118c73511dbb67b5fd22b2289a731ffeaaa5fc488d4105b993",
+    "state": "passed"
+  },
+  "native_rows": {
+    "node_mechanics": {
+      "receipts": 9,
+      "rows": 120
+    },
+    "python_mechanics": {
+      "receipts": 9,
+      "rows": 120
+    }
+  },
+  "node_dependency_provenance": {
+    "all_recorded_node_dependency_bytes_match": true,
+    "failed_npm_install": "ENOTCACHED; private log retained; no partial node_modules existed",
+    "inventory_files": 1706,
+    "inventory_sha256": "89f2dd59101a65b15f822730c08c63a29385639e7c87dab5c8276325af7daa1e",
+    "lockfiles_identical": true,
+    "network_downloads": 0,
+    "source_package_tree": "05fdc769488f496ef71ec6b988383fa8d1f18b1c",
+    "source_runtime_identity": "2a1dfaf529bb314c280c8403bc65b116021fec80f64a84c50c4a91ea6217ab10",
+    "state": "verified_frozen_dependency_copy"
+  },
+  "package_tree": "05fdc769488f496ef71ec6b988383fa8d1f18b1c",
+  "raw_evidence": {
+    "recovery-native-mechanics.log": {
+      "bytes": 1060,
+      "sha256": "f2f739fa76b7aeae6ac8f157a840fe3bafc12c92c81395644bd83947c5d8e61b"
+    },
+    "recovery-runtime-final-prepare.log": {
+      "bytes": 213,
+      "sha256": "49b9ea38eed7b78411eade22e753f1a2803941bd55aca03f1e0a2b7ebe9c6b41"
+    },
+    "recovery-runtime-verify.log": {
+      "bytes": 213,
+      "sha256": "0c3c03b15b6183ce5b84207bb38f67bf1c226069ec54879eb5a27a5422803409"
+    }
+  },
+  "receipt_directory_mode": "0o700",
+  "receipt_mode": "0o600",
+  "revision": "recovery-runtime-r1",
+  "runtime_versions": {
+    "node": "26.5.0",
+    "npm": "11.17.0",
+    "python": "3.14.6",
+    "python_bytecode_writes": false,
+    "typescript": "7.0.2"
+  },
+  "source_commit": "25275e447c64ecfd243ef6bc26c87031d5e2e472",
+  "state": "verified",
+  "tokenizer_sha256": "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+}
