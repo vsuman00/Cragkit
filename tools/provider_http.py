@@ -93,58 +93,84 @@ class HttpProviderSend:
             raise ProviderAdapterError('deadline_exceeded')
         self._inflight = True
         failure = None
+        result = None
+        started = False
+        cancelled = False
         try:
-            async with asyncio.timeout(deadline - time.monotonic()):
-                if self._pacer is not None:
-                    await self._pacer.wait(request.provider, deadline=deadline)
-                if asyncio.current_task().cancelling():
-                    raise asyncio.CancelledError()
-                if time.monotonic() >= deadline:
-                    raise ProviderAdapterError('deadline_exceeded')
-                async with self._client.stream('POST', url, content=request.body, headers={
-                        'Authorization': 'Bearer ' + self._keys[request.provider],
-                        'Content-Type': 'application/json', 'Accept': 'application/json',
-                        'Accept-Encoding': 'identity'}) as response:
-                    if response.status_code != 200:
-                        if response.status_code in (401, 403):
-                            code = 'provider_http_auth_failed'
-                        elif response.status_code == 429:
-                            code = 'provider_http_rate_limited'
-                        elif 500 <= response.status_code <= 599:
-                            code = 'provider_http_server_failed'
-                        else:
-                            code = 'provider_http_failed'
-                        raise ProviderAdapterError(code)
-                    content_type = response.headers.get('content-type', '').split(';')[0].strip().lower()
-                    encoding = response.headers.get('content-encoding', 'identity').strip().lower()
-                    length = response.headers.get('content-length')
-                    if (content_type != 'application/json'
-                            or encoding != 'identity' or (length is not None and
-                            (not length.isascii() or not length.isdecimal() or int(length) > max_response_bytes))):
-                        raise ProviderAdapterError('provider_http_failed')
-                    chunks, size = [], 0
-                    async for chunk in response.aiter_raw():
-                        size += len(chunk)
-                        if size > max_response_bytes:
-                            raise ProviderAdapterError('provider_http_failed')
-                        chunks.append(chunk)
+            try:
+                async with asyncio.timeout(deadline - time.monotonic()):
+                    if self._pacer is not None:
+                        await self._pacer.wait(request.provider, deadline=deadline)
+                    if asyncio.current_task().cancelling():
+                        raise asyncio.CancelledError()
                     if time.monotonic() >= deadline:
                         raise ProviderAdapterError('deadline_exceeded')
-                    return b''.join(chunks)
-        except TimeoutError:
-            failure = 'deadline_exceeded'
-        except ProviderAdapterError as error:
-            code = (error.args[0] if type(error) is ProviderAdapterError and len(error.args) == 1
-                    and type(error.args[0]) is str else None)
-            failure = code if code in {
-                'provider_http_auth_failed', 'provider_http_rate_limited',
-                'provider_http_server_failed', 'provider_http_failed',
-                'provider_pacing_invalid', 'provider_pacing_failed', 'concurrent_dispatch',
-                'deadline_exceeded'} else 'provider_http_failed'
-        except Exception:
-            failure = 'provider_http_failed'
+                    started = True
+                    async with self._client.stream('POST', url, content=request.body, headers={
+                            'Authorization': 'Bearer ' + self._keys[request.provider],
+                            'Content-Type': 'application/json', 'Accept': 'application/json',
+                            'Accept-Encoding': 'identity'}) as response:
+                        if response.status_code != 200:
+                            if response.status_code in (401, 403):
+                                code = 'provider_http_auth_failed'
+                            elif response.status_code == 429:
+                                code = 'provider_http_rate_limited'
+                            elif 500 <= response.status_code <= 599:
+                                code = 'provider_http_server_failed'
+                            else:
+                                code = 'provider_http_failed'
+                            raise ProviderAdapterError(code)
+                        content_type = response.headers.get('content-type', '').split(';')[0].strip().lower()
+                        encoding = response.headers.get('content-encoding', 'identity').strip().lower()
+                        length = response.headers.get('content-length')
+                        if (content_type != 'application/json'
+                                or encoding != 'identity' or (length is not None and
+                                (not length.isascii() or not length.isdecimal() or int(length) > max_response_bytes))):
+                            raise ProviderAdapterError('provider_http_failed')
+                        chunks, size = [], 0
+                        async for chunk in response.aiter_raw():
+                            size += len(chunk)
+                            if size > max_response_bytes:
+                                raise ProviderAdapterError('provider_http_failed')
+                            chunks.append(chunk)
+                        if time.monotonic() >= deadline:
+                            raise ProviderAdapterError('deadline_exceeded')
+                        result = b''.join(chunks)
+            except asyncio.CancelledError:
+                cancelled = True
+            except TimeoutError:
+                failure = 'deadline_exceeded'
+            except ProviderAdapterError as error:
+                code = (error.args[0] if type(error) is ProviderAdapterError and len(error.args) == 1
+                        and type(error.args[0]) is str else None)
+                failure = code if code in {
+                    'provider_http_auth_failed', 'provider_http_rate_limited',
+                    'provider_http_server_failed', 'provider_http_failed',
+                    'provider_pacing_invalid', 'provider_pacing_failed', 'concurrent_dispatch',
+                    'deadline_exceeded'} else 'provider_http_failed'
+            except Exception:
+                failure = 'provider_http_failed'
+            if started and self._pacer is not None:
+                try:
+                    self._pacer.finish(request.provider)
+                except asyncio.CancelledError:
+                    cancelled = True
+                except ProviderAdapterError as error:
+                    code = (error.args[0] if type(error) is ProviderAdapterError
+                            and len(error.args) == 1 and type(error.args[0]) is str else None)
+                    failure = code if code in {
+                        'provider_pacing_invalid', 'provider_pacing_failed',
+                        'concurrent_dispatch', 'deadline_exceeded'} else 'provider_http_failed'
+                except Exception:
+                    failure = 'provider_http_failed'
+            # Decide outcomes outside all handlers, without retaining private
+            # transport/cleanup/finalization exceptions. Cancellation wins.
+            if cancelled or asyncio.current_task().cancelling():
+                raise asyncio.CancelledError()
+            if failure is not None:
+                raise ProviderAdapterError(failure)
+            if time.monotonic() >= deadline:
+                raise ProviderAdapterError('deadline_exceeded')
+            return result
         finally:
             self._inflight = False
-        # Raise after leaving the exception handler: do not retain an HTTPX
-        # exception whose request may contain an Authorization header or body.
-        raise ProviderAdapterError(failure)

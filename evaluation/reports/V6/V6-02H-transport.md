@@ -3,6 +3,10 @@
 Status: COMPLETE for H1/H2/H3 offline implementation and verification.
 V6-02 held-out acceptance and full V6 remain open.
 
+This is the historical H1-H3 checkpoint. A later delayed-dispatch probe exposed
+a gap in its admission-only pacing anchor. [H4 terminal-time correction](V6-02H4-terminal.md)
+supersedes that anchor and records the new regression and verification.
+
 For example, eleven synthetic Cohere dispatches now span at least 61 seconds
 on the fake clock. The same sender refuses a second call when its pacing wait
 cannot fit inside the original deadline; no HTTP request is sent for that call.

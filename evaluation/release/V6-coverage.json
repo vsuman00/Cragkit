@@ -3962,14 +3962,15 @@
     {
       "id": "E107",
       "trigger": "A trial evaluation bursts reranker calls or a pacing wait outlives the original deadline",
-      "requirement": "Space one sender's Cohere dispatches at least 6.1 seconds, reject concurrent waiters, recheck time/cancellation before send and preserve failed-slot state. Mock tests exercise the production branch without live calls.",
-      "owner": "V6-02H2, V6-02H3",
+      "requirement": "Anchor the next Cohere admission at least 6.1 seconds after the previous started HTTP operation fully unwinds; delayed connection/stream cleanup must not collapse dispatch spacing. Reject concurrent waiters, recheck deadline/cancellation and preserve failed-wait state. Mock tests exercise the production branch without live calls.",
+      "owner": "V6-02H2, V6-02H3, V6-02H4",
       "required_layer": "U",
       "evidence": [
         "tasks/EDGE_CASES.md",
         "tools/tests/test_evaluation_pacing.py",
         "tools/tests/test_provider_http.py",
-        "evaluation/reports/V6/V6-02H-transport.md"
+        "evaluation/reports/V6/V6-02H-transport.md",
+        "evaluation/reports/V6/V6-02H4-terminal.md"
       ],
       "state": "offline_verified",
       "limitations": [

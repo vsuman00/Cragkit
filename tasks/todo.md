@@ -336,7 +336,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V6-02F: Coherent RC metadata/engine identities and isolated execution preparation — [local artifacts](../evaluation/reports/V6/V6-02F-identity.md) and [clean identity](../evaluation/reports/V6/V6-02F-clean-runtime.md).
   - [ ] V6-02E3: Explicit caller-owned benchmark credentials, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. The user selected and saved the explicit private OpenAI test credential; local format, permissions and scoped credential preflight passed. Both providers authenticated in the genuine live attempt, and hardened-source identity passed. The run failed with an incomplete Cohere recording; replay and quality remain unaccepted. See [failed attempt](../evaluation/reports/V6/V6-02E3-live-attempt.md). No built-in library key is used. See [credential preflight](../evaluation/reports/V6/V6-02E3-credential-preflight.md).
 
-  - [x] V6-02H: Offline pacing, safe failure categories and recorder integration — [143 focused/3,697 Python/41 Node checks](../evaluation/reports/V6/V6-02H-transport.md). No live rerun or held-out acceptance.
+  - [x] V6-02H: Offline pacing, safe failure categories and recorder integration. H4 terminal-time correction passed [173 focused/3,727 Python checks](../evaluation/reports/V6/V6-02H4-terminal.md); historical H1-H3 also passed 41 Node checks. No live rerun or held-out acceptance.
 
   - [ ] V6-02I: Fresh recovery packet review, separate approved binding and candidate/input/runtime refreeze. I1 draft/mechanical preparation passed; [human review pending](../evaluation/review/retrieval-recovery/README.md) for six questions/eight facets.
 
@@ -4238,3 +4238,43 @@ or V6-03 acceptance. Resources 25.3 GiB/40 percent free memory; no owned service
 installs. User-owned source/audits/tracker draft remain excluded. Root final
 links/prose/scope/security checks and commit/immediatepush/sync own this handoff.
 Learning practice remains unassessed.
+
+
+V6-02H4 / ETP-r2 assignment: IN_PROGRESS. Previous turn was progress (verified
+H1-H3 correction and concrete pending review bundle committed/pushed). Fresh
+state still has pending recovery human review; no new decision arrived. Root
+confirmed a separate bounded pacing defect with a production-branch fakeclient:
+10-second initial transport delay yielded min dispatchgap0 and11dispatches in
+54.9simulatedseconds. No HTTP/network/account call. Corrective outcome: anchor
+next serial Cohere admission to the previous started HTTP operation's terminal
+time after cleanup, keeping original deadlines/cancellation/no retry/secret
+boundaries. Sol pacing owns evaluation_pacing.py and tests; Sol HTTP owns
+provider_http.py and tests and assembles. Root owns ETP-r2 amendment, tracker,
+verification/reports/Git. Peers resolve finish(provider) semantics directly;
+outcome/protected changes escalate through root to Astra if unresolved. One
+root test process, no services/install/keys/privateconfig/oldheldoutlabel or
+admission/tape/manifest/core/threshold changes. Initial outcome and acceptance
+frozen in ETP-r2; no sealing or live dispatch while label review is pending.
+
+
+V6-02H4 final handoff: COMPLETE offline ETP-r2 correction. Root reproduced
+initial ten-second transport delay: min gap 0, 11 dispatches within 54.9 simulated
+seconds, no network. Sol helper/HTTP peers agreed finish(provider), wrote four
+owned source/test files, assembled and returned ownership. Root source review
+and 173 focused/3,727 full Python-tool tests passed (four existing intentional
+Pydantic warnings). Same after-fix probe: min gap 6.1000000000000085/span
+61.0000000000002 simulated seconds. Terminal-time anchor includes stream cleanup;
+next wait respects original deadline; started fail/timeout/cancel finalize;
+no-request waits do not finish; invalid terminal clocks block future admission;
+cancellation wins faults and errors exclude private contexts. No retry or scope
+change. E107/release coverage/development commands and historical report pointer
+synchronized; current report V6-02H4-terminal.md and verification JSON. Original
+121 run files and 1 admission marker hash-identical, review bundle/hash/pending state
+unchanged. Human review still required, no approval inferred from goal continue.
+No private keys/config/old labels read by peers, no paid call/native fixture or
+install. Resource 25.2 GiB/44 percent free memory, one suite plus brief fake probe;
+no owned persistent process. Learning practice unassessed. Next smallest action:
+actual recovery human label decision; then separate approved seal/profile binding
+and candidate/runtime refreeze. V6-02 and V6-03 onward stay OPEN. Root final
+prose/links/preservation/security/index checks and scoped commit/immediatepush/
+synchronization; unrelated user edits/audits/tracker draft remain excluded.

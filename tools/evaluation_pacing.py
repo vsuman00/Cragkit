@@ -14,6 +14,8 @@ class EvaluationPacer:
         self._sleep = asyncio.sleep
         self._busy = False
         self._last_cohere = None
+        self._last_terminal_cohere = None
+        self._invalidated = False
         self._observed = None
 
     def _now(self):
@@ -33,6 +35,29 @@ class EvaluationPacer:
         self._observed = value
         return value
 
+    def finish(self, provider):
+        """Anchor the next admission after a started operation has unwound."""
+        if type(provider) is not str or provider not in ('openai', 'cohere'):
+            raise ProviderAdapterError('provider_pacing_invalid')
+        if self._busy:
+            raise ProviderAdapterError('concurrent_dispatch')
+        if self._invalidated:
+            raise ProviderAdapterError('provider_pacing_invalid')
+        self._busy = True
+        try:
+            failed = False
+            try:
+                now = self._now()
+            except ProviderAdapterError:
+                self._invalidated = True
+                failed = True
+            if failed:
+                raise ProviderAdapterError('provider_pacing_invalid')
+            if provider == 'cohere':
+                self._last_terminal_cohere = now
+        finally:
+            self._busy = False
+
     async def wait(self, provider, *, deadline):
         if type(provider) is not str or provider not in ('openai', 'cohere'):
             raise ProviderAdapterError('provider_pacing_invalid')
@@ -46,6 +71,8 @@ class EvaluationPacer:
             raise ProviderAdapterError('provider_pacing_invalid')
         if self._busy:
             raise ProviderAdapterError('concurrent_dispatch')
+        if self._invalidated:
+            raise ProviderAdapterError('provider_pacing_invalid')
         self._busy = True
         try:
             task = asyncio.current_task()
@@ -53,9 +80,12 @@ class EvaluationPacer:
                 raise asyncio.CancelledError()
             now = self._now()
             target = now
-            if provider == 'cohere' and self._last_cohere is not None:
-                next_slot = self._last_cohere + 6.1
-                if next_slot - self._last_cohere < 6.1:
+            anchors = [value for value in (self._last_cohere, self._last_terminal_cohere)
+                       if value is not None]
+            if provider == 'cohere' and anchors:
+                anchor = max(anchors)
+                next_slot = anchor + 6.1
+                if next_slot - anchor < 6.1:
                     next_slot = math.nextafter(next_slot, math.inf)
                 target = max(now, next_slot)
             if now >= deadline or target >= deadline:

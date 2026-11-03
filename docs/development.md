@@ -13,8 +13,12 @@ production path with a fake client and clock:
 uv run --project packages/python --frozen --no-sync python -B -m pytest tools/tests/test_evaluation_pacing.py tools/tests/test_provider_http.py tools/tests/test_recorded_provider.py tools/tests/test_provider_journal.py -q
 ```
 
-Verified locally: 143 focused tests, 3,697 Python/tool regression tests and 41
-Node provider-replay tests, serially. See [the correction report](../evaluation/reports/V6/V6-02H-transport.md).
+Current terminal-time correction: 173 focused tests and 3,727 Python/tool
+regression tests passed. The next interval starts after a started HTTP operation
+fully unwinds, including stream cleanup; delayed connection setup cannot consume
+that interval. See [the terminal-time report](../evaluation/reports/V6/V6-02H4-terminal.md).
+The prior [H1-H3 check](../evaluation/reports/V6/V6-02H-transport.md) also passed
+41 Node provider-replay tests; H4 changes Python evaluation transport only.
 The failed original live run remains unsealed and cannot be resumed by this
 change. Any later evaluation requires its own reviewed input and frozen identity.
 

@@ -54,3 +54,37 @@ fixed HTTP categories without response reads, one send/no retry, private error
 context exclusion, journal propagation and healthy/unhealthy seal behavior.
 One root-owned test process at a time; no service, install, secret file, original
 held-out label or provider access. Preserve failed-run evidence and frozen inputs.
+
+## ETP-r2 amendment: terminal-time pacing (V6-02H4)
+
+A controlled fake-client probe on 3 November exposed a gap in ETP-r1's admission
+anchor: delaying the first transport dispatch by ten seconds yielded two dispatch
+observations at the same time, with eleven within 54.9 seconds. No network or
+account was used. This amendment supersedes the admission-only spacing anchor.
+
+`EvaluationPacer.finish(provider)` is synchronous and records a monotonic
+terminal timestamp after a started HTTP operation has fully unwound, including
+stream/response cleanup. The next Cohere admission must be at least 6.1 seconds
+after both its previous admission and that operation's terminal timestamp.
+OpenAI has no added interval. Invalid/backwards terminal clocks fail with a
+fixed pacing code and invalidate future pacing admission; do not silently reuse
+an older unsafe timestamp. Concurrent helper use is refused. Failed/cancelled
+waits and pre-dispatch refusal do not call finish or consume a new slot.
+
+The sender keeps its single-inflight ownership through finish. Mark an HTTP
+operation started immediately before entering the client stream. Finish it on
+success, status/body/stream failure, timeout and cancellation, without adding a
+sleep at the end of the operation or extending its deadline. Return bytes only
+after response close and pacing finalization. A finalization fault must not
+retain private exception context or convert cancellation into a normal error.
+Capture fixed outcomes then raise outside exception handlers; release inflight
+ownership in an outer finally. Unknown callbacks remain sanitized.
+
+H4a Sol pacing owns helper/tests; H4b Sol HTTP owns sender/tests and assembles.
+Root owns this amendment, tracker, combined verification, reports and Git. Peers
+coordinate directly on finish semantics; protected/outcome issues go to root,
+unresolved decisions to Astra. Four implementation/test files, no recorder or
+public-core API change. Tests must include delayed dispatch, delayed stream
+cleanup, failed/cancelled operations, finalization faults and no-request waits.
+No keys, services, live calls, original labels/admissions/tapes or release targets
+are involved. Human review of the new recovery labels remains a separate gate.

@@ -288,19 +288,19 @@ class PacingClock:
         self.now += delay
 
 
-def production_sender_with_fake_client(monkeypatch, clock, calls):
+def production_sender_with_fake_client(monkeypatch, clock, calls, handler=None):
     """Exercise transport=None without opening a network connection."""
     from types import SimpleNamespace
     import provider_http
     actual = httpx.AsyncClient
 
-    def handler(row):
+    def default_handler(row):
         calls.append((str(row.url), clock.now))
         return httpx.Response(200, headers={'content-type': 'application/json'}, stream=Stream())
 
     def client(**options):
         assert options['transport'] is None
-        options['transport'] = httpx.MockTransport(handler)
+        options['transport'] = httpx.MockTransport(handler or default_handler)
         return actual(**options)
 
     monkeypatch.setattr(provider_http.httpx, 'AsyncClient', client)
@@ -403,3 +403,204 @@ def test_untrusted_adapter_exception_stringifier_is_never_called():
             assert error.value.__context__ is None and error.value.__cause__ is None
 
     asyncio.run(run())
+
+
+def test_delayed_first_dispatch_still_spaces_eleven_actual_dispatches(monkeypatch):
+    clock, calls = PacingClock(), []
+    def handler(row):
+        if not calls:
+            clock.now += 10
+        calls.append(clock.now)
+        return httpx.Response(200, headers={'content-type': 'application/json'}, stream=Stream())
+    send = production_sender_with_fake_client(monkeypatch, clock, calls, handler)
+    async def run():
+        async with send:
+            for _ in range(11):
+                assert await invoke(send, request('cohere'), deadline=clock.now + 25) == b'{}'
+    asyncio.run(run())
+    assert len(calls) == 11
+    assert all(right - left >= 6.1 for left, right in zip(calls, calls[1:]))
+    assert calls[-1] - calls[0] >= 61
+
+
+def test_stream_cleanup_holds_inflight_and_anchors_next_dispatch(monkeypatch):
+    clock, calls = PacingClock(), []
+    entered, release = asyncio.Event(), asyncio.Event()
+    class ClosingStream(Stream):
+        async def aclose(self):
+            entered.set()
+            await release.wait()
+            clock.now += 10
+            await super().aclose()
+    stream = ClosingStream()
+    def handler(row):
+        calls.append(clock.now)
+        return httpx.Response(200, headers={'content-type': 'application/json'},
+            stream=stream if len(calls) == 1 else Stream())
+    send = production_sender_with_fake_client(monkeypatch, clock, calls, handler)
+    finishes = []
+    actual_finish = send._pacer.finish
+    def finish(provider):
+        assert send._inflight and stream.closed
+        finishes.append(clock.now)
+        actual_finish(provider)
+    send._pacer.finish = finish
+    async def run():
+        async with send:
+            task = asyncio.create_task(invoke(send, request('cohere'), deadline=125))
+            await entered.wait()
+            assert not task.done() and finishes == []
+            with pytest.raises(ProviderAdapterError, match='^concurrent_dispatch$'):
+                await invoke(send, request('cohere'), deadline=125)
+            release.set()
+            assert await task == b'{}'
+            assert finishes == [110]
+            assert await invoke(send, request('cohere'), deadline=150) == b'{}'
+    asyncio.run(run())
+    assert len(calls) == 2 and calls[1] - finishes[0] >= 6.1
+
+
+@pytest.mark.parametrize('fault', ['status', 'network', 'stream', 'timeout', 'cancel'])
+def test_started_failures_finalize_and_space_next_dispatch(monkeypatch, fault):
+    clock, calls, finishes = PacingClock(), [], []
+    entered = asyncio.Event()
+    class FaultStream(Stream):
+        async def __aiter__(self):
+            if fault == 'stream':
+                raise httpx.ReadError('synthetic-private-fault')
+            if fault in ('timeout', 'cancel'):
+                entered.set()
+                await asyncio.Event().wait()
+            yield b'{}'
+        async def aclose(self):
+            clock.now += 10
+            await super().aclose()
+    stream = FaultStream()
+    def handler(row):
+        calls.append(clock.now)
+        if len(calls) == 1 and fault == 'network':
+            clock.now += 10
+            raise httpx.ConnectError('synthetic-private-fault', request=row)
+        return httpx.Response(429 if len(calls) == 1 and fault == 'status' else 200,
+            headers={'content-type': 'application/json'}, stream=stream if len(calls) == 1 else Stream())
+    send = production_sender_with_fake_client(monkeypatch, clock, calls, handler)
+    actual_finish = send._pacer.finish
+    def finish(provider):
+        assert send._inflight
+        finishes.append(clock.now)
+        actual_finish(provider)
+    send._pacer.finish = finish
+    async def run():
+        async with send:
+            if fault == 'cancel':
+                task = asyncio.create_task(invoke(send, request('cohere'), deadline=125))
+                await entered.wait()
+                task.cancel('synthetic-private-cancellation')
+                with pytest.raises(asyncio.CancelledError) as error:
+                    await task
+                assert error.value.args == ()
+                assert error.value.__context__ is None and error.value.__cause__ is None
+            else:
+                code = ('provider_http_rate_limited' if fault == 'status' else
+                    'deadline_exceeded' if fault == 'timeout' else 'provider_http_failed')
+                with pytest.raises(ProviderAdapterError, match='^' + code + '$') as error:
+                    await invoke(send, request('cohere'),
+                        deadline=clock.now + (.01 if fault == 'timeout' else 25))
+                assert error.value.__context__ is None and error.value.__cause__ is None
+            assert finishes == [110] and not send._inflight
+            assert await invoke(send, request('cohere'), deadline=150) == b'{}'
+    asyncio.run(run())
+    assert len(calls) == 2 and calls[1] - finishes[0] >= 6.1
+    assert fault == 'network' or stream.closed
+
+
+@pytest.mark.parametrize('cancel', [False, True])
+@pytest.mark.parametrize('fixed', [False, True])
+def test_finish_fault_sanitized_and_cancellation_wins(monkeypatch, cancel, fixed):
+    clock, calls = PacingClock(), []
+    entered = asyncio.Event()
+    async def wait():
+        entered.set()
+        await asyncio.Event().wait()
+    stream = Stream(wait=wait if cancel else None)
+    def handler(row):
+        calls.append(clock.now)
+        return httpx.Response(200, headers={'content-type': 'application/json'}, stream=stream)
+    send = production_sender_with_fake_client(monkeypatch, clock, calls, handler)
+    finishes = []
+    def finish(provider):
+        assert send._inflight and stream.closed
+        finishes.append(provider)
+        if fixed:
+            raise ProviderAdapterError('provider_pacing_invalid')
+        raise RuntimeError('synthetic-private-finalization')
+    send._pacer.finish = finish
+    async def run():
+        async with send:
+            if cancel:
+                task = asyncio.create_task(invoke(send, request('cohere'), deadline=125))
+                await entered.wait()
+                task.cancel('synthetic-private-cancellation')
+                with pytest.raises(asyncio.CancelledError) as error:
+                    await task
+                assert error.value.args == ()
+            else:
+                code = 'provider_pacing_invalid' if fixed else 'provider_http_failed'
+                with pytest.raises(ProviderAdapterError, match='^' + code + '$') as error:
+                    await invoke(send, request('cohere'), deadline=125)
+            assert error.value.__context__ is None and error.value.__cause__ is None
+            assert 'synthetic-private' not in ''.join(traceback.format_exception(error.value))
+            assert not send._inflight
+    asyncio.run(run())
+    assert finishes == ['cohere'] and len(calls) == 1
+
+
+@pytest.mark.parametrize('cancel', [False, True])
+def test_failed_wait_does_not_finalize_or_send(monkeypatch, cancel):
+    clock, calls = PacingClock(), []
+    send = production_sender_with_fake_client(monkeypatch, clock, calls)
+    finishes = []
+    async def wait(provider, *, deadline):
+        if cancel:
+            raise asyncio.CancelledError('synthetic-private-wait')
+        raise ProviderAdapterError('provider_pacing_failed')
+    send._pacer.wait = wait
+    send._pacer.finish = lambda provider: finishes.append(provider)
+    async def run():
+        async with send:
+            if cancel:
+                with pytest.raises(asyncio.CancelledError) as error:
+                    await invoke(send, request('cohere'), deadline=125)
+                assert error.value.args == ()
+            else:
+                with pytest.raises(ProviderAdapterError, match='^provider_pacing_failed$'):
+                    await invoke(send, request('cohere'), deadline=125)
+            assert not send._inflight
+    asyncio.run(run())
+    assert calls == [] and finishes == []
+
+
+def test_late_response_cleanup_finalizes_but_cannot_return_success(monkeypatch):
+    clock, calls, finishes = PacingClock(), [], []
+    class LateClose(Stream):
+        async def aclose(self):
+            clock.now += 30
+            await super().aclose()
+    stream = LateClose()
+    def handler(row):
+        calls.append(clock.now)
+        return httpx.Response(200, headers={'content-type': 'application/json'}, stream=stream)
+    send = production_sender_with_fake_client(monkeypatch, clock, calls, handler)
+    actual_finish = send._pacer.finish
+    def finish(provider):
+        assert stream.closed and send._inflight
+        finishes.append(clock.now)
+        actual_finish(provider)
+    send._pacer.finish = finish
+    async def run():
+        async with send:
+            with pytest.raises(ProviderAdapterError, match='^deadline_exceeded$'):
+                await invoke(send, request('cohere'), deadline=125)
+            assert not send._inflight
+    asyncio.run(run())
+    assert calls == [100] and finishes == [130]
