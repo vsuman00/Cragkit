@@ -1,0 +1,272 @@
+{
+  "revision": "V6-08-preparation-r1",
+  "state": "prepared_verified",
+  "parent_task": "V6-08",
+  "parent_complete": false,
+  "publication_authorized": false,
+  "published": false,
+  "source_commit": "0c7c568d5cb71638eebab2dea97c5973b0f8cc08",
+  "package_tree": "60a251c2bf94402cb562d0398403c218875454f3",
+  "manifest_sha256": "7ced6f15ee096752d8e974d793d1bd99a8f41d77181fb061d2871d890aeb5dc5",
+  "products": [
+    {
+      "path": "products/npm/cragkit-1.0.0-rc.1.tgz",
+      "package": "cragkit",
+      "registry": "npm",
+      "kind": "npm",
+      "version": "1.0.0-rc.1",
+      "original_sha256": "339e1004df372a5fe111296b96b964a0e90533dfc0db414ce996a0c7805932b3",
+      "prepared_sha256": "891c52f94e61f9c5d025ae44cc08e2b0033b93cbbe8971e76bd1359e5b42cbf5",
+      "bytes": 220658,
+      "member_count": 103
+    },
+    {
+      "path": "products/npm/cragkit-langchain-1.0.0-rc.1.tgz",
+      "package": "cragkit-langchain",
+      "registry": "npm",
+      "kind": "npm",
+      "version": "1.0.0-rc.1",
+      "original_sha256": "1f3b63c232dde69a5fef9bd986000c5828cfe272b354e339b7e011e311b07364",
+      "prepared_sha256": "84536cd28c4e484678a41396abf7a190c82b66ad92f093d31362e57322f8d9d8",
+      "bytes": 5579,
+      "member_count": 5
+    },
+    {
+      "path": "products/npm/cragkit-mcp-1.0.0-rc.1.tgz",
+      "package": "cragkit-mcp",
+      "registry": "npm",
+      "kind": "npm",
+      "version": "1.0.0-rc.1",
+      "original_sha256": "88d2aa6507f9ae6bfc4c1cb7448a8e62bfbf3683007c3aa59ea154c8f1181ed5",
+      "prepared_sha256": "daa8ef4a35df7d025c2d0f2c56c2b4884ba02d811c8f6c4a190e705a9348a565",
+      "bytes": 6194,
+      "member_count": 5
+    },
+    {
+      "path": "products/pypi/cragkit-1.0.0rc1-py3-none-any.whl",
+      "package": "cragkit",
+      "registry": "pypi",
+      "kind": "wheel",
+      "version": "1.0.0rc1",
+      "original_sha256": "ad8e7c928363bdf23cf69d479657219a0e662e498706f7254e211554e11ca599",
+      "prepared_sha256": "ad8e7c928363bdf23cf69d479657219a0e662e498706f7254e211554e11ca599",
+      "bytes": 233144,
+      "member_count": 57
+    },
+    {
+      "path": "products/pypi/cragkit-1.0.0rc1.tar.gz",
+      "package": "cragkit",
+      "registry": "pypi",
+      "kind": "sdist",
+      "version": "1.0.0rc1",
+      "original_sha256": "107d66d1f678d21a279e630ecd6dabe9012cbfe8b1394a37c4e88d7b32e39cd1",
+      "prepared_sha256": "107d66d1f678d21a279e630ecd6dabe9012cbfe8b1394a37c4e88d7b32e39cd1",
+      "bytes": 421214,
+      "member_count": 117
+    },
+    {
+      "path": "products/pypi/cragkit_langchain-1.0.0rc1-py3-none-any.whl",
+      "package": "cragkit-langchain",
+      "registry": "pypi",
+      "kind": "wheel",
+      "version": "1.0.0rc1",
+      "original_sha256": "479347d93c913e1f723aaa3109d8d6014bababb5292ec1a655c7d7032d462c83",
+      "prepared_sha256": "479347d93c913e1f723aaa3109d8d6014bababb5292ec1a655c7d7032d462c83",
+      "bytes": 5851,
+      "member_count": 7
+    },
+    {
+      "path": "products/pypi/cragkit_langchain-1.0.0rc1.tar.gz",
+      "package": "cragkit-langchain",
+      "registry": "pypi",
+      "kind": "sdist",
+      "version": "1.0.0rc1",
+      "original_sha256": "bdddc499fc03aa29501e0dc40392c7d3e7388f8ddb9dcff354f0ead291e15059",
+      "prepared_sha256": "bdddc499fc03aa29501e0dc40392c7d3e7388f8ddb9dcff354f0ead291e15059",
+      "bytes": 60955,
+      "member_count": 9
+    },
+    {
+      "path": "products/pypi/cragkit_mcp-1.0.0rc1-py3-none-any.whl",
+      "package": "cragkit-mcp",
+      "registry": "pypi",
+      "kind": "wheel",
+      "version": "1.0.0rc1",
+      "original_sha256": "8e90f98762d3a030e20a6f23b5a3f6e2e5759a672161d77ef3d2a34197a625f7",
+      "prepared_sha256": "8e90f98762d3a030e20a6f23b5a3f6e2e5759a672161d77ef3d2a34197a625f7",
+      "bytes": 6982,
+      "member_count": 7
+    },
+    {
+      "path": "products/pypi/cragkit_mcp-1.0.0rc1.tar.gz",
+      "package": "cragkit-mcp",
+      "registry": "pypi",
+      "kind": "sdist",
+      "version": "1.0.0rc1",
+      "original_sha256": "25d0faf4d66853d71b7efbf3f50499cb2e4de9db2fee4472c4f70e191471227b",
+      "prepared_sha256": "25d0faf4d66853d71b7efbf3f50499cb2e4de9db2fee4472c4f70e191471227b",
+      "bytes": 56388,
+      "member_count": 10
+    }
+  ],
+  "focused": {
+    "command": "uv run --project packages/python --frozen --no-sync pytest tools/tests/test_prepare_release_products.py tools/tests/test_check_ci_bundle.py tools/tests/test_artifact_licensing.py -q",
+    "passed": 161,
+    "seconds": 0.45
+  },
+  "full_python_tools": {
+    "command": "uv run --project packages/python --frozen --no-sync pytest packages/python/tests tools/tests -q",
+    "passed": 4156,
+    "skipped": 0,
+    "warnings": 4,
+    "seconds": 19.45
+  },
+  "local_consumer": {
+    "revision": "PPR-consumer-r1",
+    "state": "passed",
+    "published": false,
+    "npm_install": "public dependency downloads; empty auth configs; scripts disabled; fresh consumer; pinned lock integrity",
+    "npm_products": 3,
+    "npm_members_equal": 113,
+    "locked_dependency_identities": 14,
+    "native_evidence_parity": true,
+    "evidence_counts": {
+      "source": 23,
+      "context": 8,
+      "token": 127,
+      "packing": 17,
+      "assessment": 35,
+      "pipeline": 6
+    },
+    "source": "public synthetic fixtures and fake SQL; no live backend or model-quality claim",
+    "python": "unchanged exact CI core wheel, reused accepted environment; isolated interpreter",
+    "commands": [
+      {
+        "command": [
+          "npm",
+          "ci",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund"
+        ],
+        "cwd": "artifacts/V6/publication-consumer-verified/node",
+        "returncode": 0
+      },
+      {
+        "command": [
+          "node",
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/artifacts/V6/publication-consumer-verified/node/probe_installed_evidence.mjs",
+          "--fixtures",
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/contracts/fixtures",
+          "--tokenizer",
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/artifacts/tokenizers/cl100k_base.tiktoken",
+          "--prefix",
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/artifacts/V6/publication-consumer-verified/node"
+        ],
+        "cwd": "artifacts/V6/publication-consumer-verified/node",
+        "returncode": 0
+      },
+      {
+        "command": [
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/artifacts/V6/release-candidate-rc1/packages/python/.venv/bin/python",
+          "-I",
+          "-B",
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/tools/probe_installed_evidence.py",
+          "--fixtures",
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/contracts/fixtures",
+          "--tokenizer",
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/artifacts/tokenizers/cl100k_base.tiktoken",
+          "--prefix",
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/artifacts/V6/release-candidate-rc1/packages/python/.venv"
+        ],
+        "cwd": "artifacts/V6/publication-consumer-verified/node",
+        "returncode": 0
+      },
+      {
+        "command": [
+          "node",
+          "/Users/vaibhavsuman/Development/Presonal Project/Cragkit/artifacts/V6/publication-consumer-verified/node/imports.mjs"
+        ],
+        "cwd": "artifacts/V6/publication-consumer-verified/node",
+        "returncode": 0
+      }
+    ]
+  },
+  "secret_scan": {
+    "state": "passed",
+    "products": 9,
+    "members": 320,
+    "unpacked_bytes": 4938553,
+    "matches": 0,
+    "credential_files": 2,
+    "credential_storage": "regular/current-owner/single-link/0600; immediate parents private",
+    "scope": "Selected provider values/base64 plus OpenAI/GitHub/private-key patterns; not universal secret detection.",
+    "excluded_asset_suffixes": true
+  },
+  "records": [
+    {
+      "path": "artifacts/V6/publication-rc1/publication-manifest.json",
+      "sha256": "7ced6f15ee096752d8e974d793d1bd99a8f41d77181fb061d2871d890aeb5dc5"
+    },
+    {
+      "path": "artifacts/V6/publication-consumer-verified/results.json",
+      "sha256": "b3b618deda4f7d6ce06eab00846e0475f2ed16c4715bd56dd9b8af6b0d26b24b"
+    },
+    {
+      "path": "artifacts/V6/v6-08-python.log",
+      "sha256": "ca37225e6a3855e7b2de444cc1522f08e8fd42acd4c6e69d9f9b07828c60f598"
+    },
+    {
+      "path": "artifacts/V6/v6-08-secret-scan.json",
+      "sha256": "2a688e80e6fc8c8b79e450ed67e1075f22bc4ff0cbc145328dc5df85430fd472"
+    },
+    {
+      "path": "artifacts/V6/check_publication_consumer.py",
+      "sha256": "42e2285828a1b95fa93c5cab664b3580c5e16691018bc627e7e19852ee96aae6"
+    },
+    {
+      "path": "artifacts/V6/publication-consumer/install.stderr",
+      "sha256": "d29a6cc96909f69d8a711a9862de9fdb18842e04104bd00743c3985d75f21629"
+    },
+    {
+      "path": "artifacts/V6/publication-consumer-locked/install.stderr",
+      "sha256": "3385014c9d79955f5b5b819e9d461b61c89c3a557e29af21538bdc1112a98ed7"
+    },
+    {
+      "path": "artifacts/V6/v6-08-prose-links.json",
+      "sha256": "4602427388d766b7486f7150dd548a900b2fd41b42d7df4893f92adc2430d37d"
+    }
+  ],
+  "tools": [
+    {
+      "path": "tools/prepare_release_products.py",
+      "sha256": "7a5c073831d37df70e7c3ab9bd9cbfc4189379315a72579d120c00d57c50dc5b"
+    },
+    {
+      "path": "tools/tests/test_prepare_release_products.py",
+      "sha256": "58f052481271be786e07b6792c0efef441b40356f2c6ffec3ddbe7b8215e02af"
+    }
+  ],
+  "resource": {
+    "before_system_free_percent": 36,
+    "after_system_free_percent": 42,
+    "disk_available_gib": 23,
+    "after_swapouts": 7287520,
+    "in_run_pressure_series": false,
+    "load_benchmark": false,
+    "owned_background_services": 0
+  },
+  "pending": [
+    "secure PyPI/npm account identities and six project permissions",
+    "reviewed publication workflow and artifact transport",
+    "specific publication and any new workflow-cost authorization",
+    "registry fetch/hash/install/source-linked smoke",
+    "V6-09 maintenance handoff and V6-C3/exit"
+  ],
+  "prose_links": {
+    "paths": 10,
+    "missing_links": 0,
+    "suspicious_unicode": 0,
+    "density_tiers": "low; no rewrite required"
+  }
+}

@@ -15,7 +15,7 @@ This guide explains the release path while [V6](../tasks/versions/V6-release.md)
 
 The three distribution names are currently `cragkit`, `cragkit-langchain` and `cragkit-mcp` in both ecosystems. Import names differ: Python uses `cragkit_langchain` and `cragkit_mcp`; Node uses the distribution names. Before publishing, verify account ownership and accepted names on each registry. A name in a local manifest does not reserve it. PyPI supports a pending trusted publisher for creating a new project, but that configuration itself does not reserve the name. See [PyPI project creation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
 
-The user selected MIT. Add the correct copyright holder/year, ship the license and synchronize package metadata. MIT permits reuse under its notice conditions; it does not replace dependency or model notices. Preserve those separately. The authoritative text is [OSI's MIT license](https://opensource.org/license/mit).
+The user selected MIT. The six candidate packages now declare MIT and ship the reviewed copyright/license and distribution notice. MIT permits reuse under its notice conditions; it does not replace dependency or model notices. Preserve those separately. The authoritative text is [OSI's MIT license](https://opensource.org/license/mit).
 
 ## 1. Prepare a release checkout without losing ongoing work
 
@@ -32,7 +32,7 @@ Replace `<reviewed-commit>` before execution. Choose a new destination. Do not c
 
 ## 2. Fix the release contract before measuring it
 
-Confirm runtime constraints from the manifests: Python `>=3.14,<3.15` and Node `>=26.5.0 <27` are the present declarations. Wider support requires evidence. Choose the candidate version, synchronize optional packages' core dependency versions, review public names and remove npm's current `private: true` only when publication is authorized. Retain strict runtime/dependency bounds unless a separately tested change expands them.
+Confirm runtime constraints from the manifests: Python `>=3.14,<3.15` and Node `>=26.5.0 <27` are the present declarations. Wider support requires evidence. The RC1 candidate version and optional core pins are aligned. Keep tracked npm `private: true`; the [reviewed local preparation](publication.md) produces separate public tarballs with only that token changed. Publication still requires its own authorization and secure registry setup. Retain strict runtime/dependency bounds unless a separately tested change expands them.
 
 Freeze quality/resource thresholds and benchmark configuration before held-out evaluation. Run the ordered V6 gates: retrieval evaluation, resource tests, boundary/artifact audit, independent developer trial, exact package/CI checks, migration rehearsal, publication and maintenance handoff. A missing participant or required measurement stays pending. [Coverage inventory](../evaluation/release/V6-coverage.json) locates evidence owners; it is not a pass report.
 

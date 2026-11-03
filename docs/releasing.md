@@ -85,12 +85,20 @@ restoring an old package must not restore revoked access or bypass a newer
 required schema/profile. Keep migration checksums and recovery instructions with
 the candidate.
 
-Prepare the changelog and exact reviewed archive hashes. Current npm packages
-remain `private: true` to prevent accidental publication. A prospective public
-build needs its own explicit metadata review and final artifact checks before
-permission to publish; do not simply remove the guard and upload an unchecked
-replacement. Configure registry ownership and scoped/trusted publishing through
-the account's secure workflow. Never put a registry token in Git or chat.
+The [RC1 notes](releases/V6.md) and [disclosure packet](../evaluation/reports/V6/V6-08-disclosure.md)
+now accompany nine locally prepared products. Tracked npm packages remain
+`private: true`. The offline [preparation tool](../tools/prepare_release_products.py)
+copies Python archives unchanged and changes only npm's private token in separate
+tarballs. Its verifier derives expected bytes from the pinned CI bundle instead
+of trusting a replacement manifest. This local acceptance is recorded in
+[V6-08 preparation](../evaluation/reports/V6/V6-08-preparation.md).
+
+Follow the [publication procedure](publication.md) for the remaining secure
+registry ownership/bootstrap, workflow and authorization steps. No publishing
+workflow or registry permission is configured yet. Never put a registry token in
+Git or chat. The GitHub repository stays private; public packages disclose their
+own contents. npm provenance is unavailable from private source repositories,
+as documented in [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
 
 Publication, repository visibility and package releases need their specific user
 approval. After authorized publication, fetch the registry products into fresh

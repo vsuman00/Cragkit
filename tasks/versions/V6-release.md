@@ -155,6 +155,13 @@ Dependency: V6-07. Target: one focused slice; split cross-runtime work into expl
 
 Build: Prepare a changelog and evidence bundle, obtain publication authorization if not already given, then publish through the configured workflow.
 
+Implementation slices: A/B prepare and verify separate local RC1 products and
+disclosure/release notes under [PPR-r1](../../contracts/PUBLICATION_PREPARATION_V6.md).
+C establishes verified registry permissions, secure bootstrap and a reviewed
+publication workflow/product transport. D obtains the specific authorization,
+publishes and verifies clean registry downloads/install/source access. Preparation
+does not remove tracked npm guards or complete the parent publication task.
+
 Acceptance: Local readiness and publication are separate tracker states; published versions install and pass a source-linked smoke query.
 
 Verification: Before publication inspect exact artifacts; afterward fetch published packages into clean environments and verify version/hash policy.

@@ -1,6 +1,6 @@
 # V0 local CI profile
 
-The V0 check entrypoint is `python3 tools/check_core_pipeline.py`, run from a checkout with Python 3.14, Node 26.5 or later in the declared 26.x range, npm and uv available. Local compatibility evidence is limited to the exact versions recorded in [development.md](development.md). The private [GitHub repository](https://github.com/vsuman00/Cragkit) and local `main` branch were created after V0 acceptance. Hosted CI and branch protection remain unconfigured and unrun; repository creation alone does not establish either.
+The V0 check entrypoint is `python3 tools/check_core_pipeline.py`, run from a checkout with Python 3.14, Node 26.5 or later in the declared 26.x range, npm and uv available. Local compatibility evidence is limited to the exact versions recorded in [development.md](development.md). The private [GitHub repository](https://github.com/vsuman00/Cragkit) and local `main` branch were created after V0 acceptance. The later manual candidate workflow has [one verified V6 run](../evaluation/reports/V6/V6-06-ci.md). That result does not establish branch protection or authorize another run or publication.
 
 The runner installs from the frozen Python and npm locks, verifies the explicit pinned tokenizer asset, then runs typing, Python/tool tests, TypeScript tests/build, schema drift, native execution/planning/corrective/event and request/result/embedding and vector-generation/dense/identifier-fusion/hybrid/reranker/context/packing/assessment/evidence-pipeline parity, approved development-corpus checks, sealed-input integrity and clean package verification. The 27 stages execute one subprocess at a time and stop at the first failed or timed-out stage. Failed checks return nonzero; a success summary appears only after every stage passes.
 
@@ -20,11 +20,11 @@ Routine corpus validation reads development labels only. The seal checker hashes
 
 For example, corrupting a sealed source file makes the integrity stage fail before package acceptance. A source file that hashes correctly may still contain false information; the checksum does not establish source truth. An optional exercise is to inspect the runner's stage order and identify which command would reject a request-schema change without updated fixtures.
 
-## Future hosted job
+## Historical hosted-job proposal
 
-When implementing hosted CI, create one job on pull requests and pushes using a clean supported runner. Check out the code, install the recorded Python/Node/uv toolchain, and run the same entrypoint. Keep test processes serial and exclude models, provider credentials and database services from V0. Retain the archives and acceptance report as job artifacts, without publishing packages. Configure branch protection separately when the hosted job has actually been observed to pass.
+The original V0 proposal was one job on pull requests and pushes. The accepted V6 implementation is manual-only to control private-runner cost. It uses the recorded Python/Node/uv toolchain, serial checks and no provider/database credentials or persistent service, then retains candidate archives without publishing packages. See [the current workflow](../.github/workflows/candidate-validation.yml) and [release guide](releasing.md). Branch protection remains a separate configuration outcome.
 
-Cross-platform execution, hosted runner behavior and branch protection remain unvalidated until that real job runs. The local job definition is documented here rather than claiming an unavailable hosted CI result.
+Hosted evidence covers the recorded macOS ARM64 tuple. Other operating systems and architectures lack release acceptance evidence; branch protection is not established by the passing job.
 
 ## V4 optional SDK checkpoint
 

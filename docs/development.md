@@ -1846,3 +1846,25 @@ Failed logs remain in the verification record. The operator tool has separate
 local evidence; the earlier paid CI did not execute it. See the
 [recovery guide](migrations-and-recovery.md) for private config, explicit check/
 apply commands, exit statuses and supported bounded catalog states.
+
+
+## V6-08 verified local publication preparation
+
+The [preparation report](../evaluation/reports/V6/V6-08-preparation.md) records
+161 focused preparation/CIB/licensing tests, 4,156 full local Python/tool tests
+and fresh projected npm consumer/evidence checks. The exact prepare/verify
+commands are in [the publication procedure](publication.md). They are offline,
+use the retained pinned CI ZIP/metadata and refuse an existing output directory.
+The successful output already exists; verification may be repeated read-only,
+but preparation needs a fresh task-owned path.
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_prepare_release_products.py tools/tests/test_check_ci_bundle.py tools/tests/test_artifact_licensing.py -q
+python3 tools/prepare_release_products.py verify --archive artifacts/V6/hosted-candidate-0c7c568.zip --run artifacts/V6/ci-run.json --jobs artifacts/V6/ci-jobs.json --artifact artifacts/V6/ci-artifact.json --prepared artifacts/V6/publication-rc1
+```
+
+Preparation preserves all tracked npm private guards and the original CI products.
+A replacement runtime byte or manifest digest is refused. Public dependency
+downloads were needed for the separate fresh consumer install; they were not
+model calls or registry uploads. Registry permissions, the publication workflow,
+authorized upload and post-registry smoke remain pending. No new CI ran.

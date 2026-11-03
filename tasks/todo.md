@@ -355,7 +355,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [x] V6-07: [Migration and rollback rehearsal](versions/V6-release.md#v6-07-migration-and-rollback-rehearsal) — [scoped native recovery and required operator repair](../evaluation/reports/V6/V6-07-recovery.md).
   - [x] V6-07F1: Explicit bounded legacy lexical repair; [upgrade and operator evidence](../evaluation/reports/V6/V6-07-upgrade.md). No applied migration or package changed.
 
-- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — evidence: pending.
+- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — local A/B preparation verified; registry setup/workflow, authorization, upload and post-registry smoke pending. [Preparation](../evaluation/reports/V6/V6-08-preparation.md).
 
 - [ ] V6-09: [Maintenance handoff](versions/V6-release.md#v6-09-maintenance-handoff) — evidence: pending.
 
@@ -4847,3 +4847,58 @@ storage edits, original tracker draft and three audits stay excluded. Next is
 V6-08 reviewable release products/notes and publication authorization; V6-09,
 C3 and version exit remain incomplete. No new paid CI, registry publication or
 repository visibility change is authorized.
+
+
+V6-08A/B assignment: IN_PROGRESS after V6-07 acceptance and synchronized
+fc88f7d. PPR-r1 is frozen in contracts/PUBLICATION_PREPARATION_V6.md. Shared
+outcome: nine locally prepared RC1 products with exact CI ancestry, a strict
+manifest-only npm projection, release notes and a concrete disclosure review.
+Sol publication_products owns tools/prepare_release_products.py and its test.
+Sol publication_guidance owns docs/releases/V6.md, docs/publication.md and
+evaluation/reports/V6/V6-08-disclosure.md; guidance ASSEMBLES. Root owns contract,
+tracker, workflow/shared files, execution/test slot, final evidence and Git.
+Peers communicate concrete dependencies directly; ownership transfers require
+agreement and stopped writes. Protected/outcome changes return to root, then
+Astra if unresolved. Peers do light editing only, no tests/installs/services/
+network mutations. Original package manifests, locks, migrations and user edits
+are protected. No new CI, registry upload, tag or visibility change is authorized.
+Acceptance: focused offline tests, actual nine-product prepare/verify, bounded
+serial consumer checks, disclosure/secret/prose/link inspection. Publication,
+registry account ownership and post-registry smoke remain pending.
+
+
+V6-08A/B final handoff: COMPLETE scoped local preparation; V6-08 parent OPEN.
+Sol product peer delivered tools/prepare_release_products.py and 47 new focused
+regression cases; Sol guidance peer delivered docs/releases/V6.md,
+docs/publication.md and V6-08-disclosure.md, inspected the tool/actual manifest
+and assembled. Both transferred ownership/stopped writes. Root inspected source,
+ran 161 combined preparation/CIB/ALC tests and the full local Python/tool suite:
+4,156 passed, zero skips, four existing intentional warnings in19.45s.
+
+Actual fixed-CI prepare and independent verify passed. Nine products/manifest
+remain under ignored artifacts/V6/publication-rc1; six Python archives exact,
+three npm archives only private token true-to-false. Manifest SHA7ced6f15...
+Full original/prepared hashes are committed in V6-08-verification.json; original
+ZIP/rebuilt wheels remain retained. Source/manifests/locks/migrations untouched.
+Fresh Node consumer installed all three projected tarballs, matched113members
+and14locked production identities, and matched unchanged exact-wheel Python
+evidence probes across216synthetic cases per runtime. Initial offline attempts
+identified absent cached metadata then a tokenizer tarball. Preserved failures;
+final npm ci used reviewed locked URL/integrity data, public downloads, empty
+auth configs and disabled scripts. No model calls, registry uploads or new CI.
+
+Root scanned nine products/320members: selected provider values/base64 and
+declared provider/GitHub/private-key patterns0matches, selected private storage
+checks passed. This is scoped evidence, not universal secret detection.
+Disk23GiB/system free36before42after; no in-run pressure series or load claim,
+no owned service started. Prose/link/consistency and scoped stage/secret review
+precede commit/immediate push/sync. Preserve the nine unrelated source/storage
+edits, original tracker draft and three user audits. README structure unchanged.
+
+Learning example: private metadata projection changes archive identity; forged
+manifest replacement cannot legitimize a changed runtime byte. Exercise remains
+unassessed. Next smallest action V6-08C: user public registry usernames/secure
+account setup, six permission checks, reviewed workflow and durable product
+transport. The pending user question asks only public PyPI/npm usernames, never
+secrets. Package publication/specific workflow cost still need authorization;
+GitHub stays private. V6-08D registry smoke, V6-09/C3/exit remain incomplete.
