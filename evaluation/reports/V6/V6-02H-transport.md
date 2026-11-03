@@ -43,6 +43,7 @@ Actual checks, run from the project root:
 uv run --project packages/python --frozen --no-sync python -B -m pytest tools/tests/test_evaluation_pacing.py tools/tests/test_provider_http.py tools/tests/test_recorded_provider.py tools/tests/test_provider_journal.py -q
 uv run --project packages/python --frozen --no-sync python -B -m pytest packages/python/tests tools/tests -q
 node --test --test-concurrency=1 tools/tests/provider_replay.test.mjs
+python3 tools/check_release_readiness.py
 ```
 
 Results: **143 focused tests passed**, **3,697 Python/tool tests passed** with
@@ -52,6 +53,12 @@ client closure, private exception faults, journal propagation, unknown billing,
 unsealed-tape refusal, eleven-call pacing, cross-provider independence,
 insufficient/elapsed deadlines, early/late wakeup, malformed/backwards clocks,
 concurrency and propagated/suppressed cancellation. E106/E107 record these faults.
+The actual preregistration checker also verified ten requirements, 107 edge-case
+owners/evidence paths and six original input digests. Its no-held-out-read flag
+describes that checker invocation, not the already documented original run
+exposure. This check does not prove release readiness. New E106/E107 entries
+are synchronized in the release coverage index.
+
 No core package, public API, manifest, lockfile, migration, scoring function,
 original label, quality threshold, old admission or recording was changed.
 

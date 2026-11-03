@@ -3928,6 +3928,64 @@
         "hosted_ci": "No configured .github workflow in audited checkout.",
         "published_artifact": "None; packages remain provisional 0.0.0."
       }
+    },
+    {
+      "id": "E106",
+      "trigger": "Evaluation HTTP error bodies or exception chains contain credentials, and status failures become indistinguishable",
+      "requirement": "Persist only allowlisted auth/rate/server categories, consume no error body, retain unknown usage, send once and leave failed journals unsealed.",
+      "owner": "V6-02H1, V6-02H3",
+      "required_layer": "U",
+      "evidence": [
+        "tasks/EDGE_CASES.md",
+        "tools/tests/test_provider_http.py",
+        "tools/tests/test_recorded_provider.py",
+        "tools/tests/test_provider_journal.py",
+        "evaluation/reports/V6/V6-02H-transport.md"
+      ],
+      "state": "offline_verified",
+      "limitations": [
+        "Fake-clock/HTTP tests do not establish live provider behavior or account-wide quota enforcement.",
+        "The failed original live run remains unsealed and unaccepted; no rerun is authorized."
+      ],
+      "evidence_layers": {
+        "unit_contract": [
+          "tools/tests/test_provider_http.py",
+          "tools/tests/test_recorded_provider.py",
+          "tools/tests/test_provider_journal.py"
+        ],
+        "native_integration": "No changed native package or database behavior in this correction.",
+        "live_provider": "Not run for this correction.",
+        "hosted_ci": "Not run for this correction.",
+        "published_artifact": "Not published."
+      }
+    },
+    {
+      "id": "E107",
+      "trigger": "A trial evaluation bursts reranker calls or a pacing wait outlives the original deadline",
+      "requirement": "Space one sender's Cohere dispatches at least 6.1 seconds, reject concurrent waiters, recheck time/cancellation before send and preserve failed-slot state. Mock tests exercise the production branch without live calls.",
+      "owner": "V6-02H2, V6-02H3",
+      "required_layer": "U",
+      "evidence": [
+        "tasks/EDGE_CASES.md",
+        "tools/tests/test_evaluation_pacing.py",
+        "tools/tests/test_provider_http.py",
+        "evaluation/reports/V6/V6-02H-transport.md"
+      ],
+      "state": "offline_verified",
+      "limitations": [
+        "Fake-clock/HTTP tests do not establish live provider behavior or account-wide quota enforcement.",
+        "The failed original live run remains unsealed and unaccepted; no rerun is authorized."
+      ],
+      "evidence_layers": {
+        "unit_contract": [
+          "tools/tests/test_evaluation_pacing.py",
+          "tools/tests/test_provider_http.py"
+        ],
+        "native_integration": "No changed native package or database behavior in this correction.",
+        "live_provider": "Not run for this correction.",
+        "hosted_ci": "Not run for this correction.",
+        "published_artifact": "Not published."
+      }
     }
   ]
 }
