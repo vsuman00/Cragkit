@@ -1787,3 +1787,27 @@ PostgreSQL binaries and stable headroom are required for its native checks.
 Do not overwrite the original frozen candidate or treat the replay as new quality
 evidence. All six default resource targets and twelve native checks per runtime
 passed for these exact products; full details and limits are in the checkpoint.
+
+
+## V6-07 backup recovery child checkpoint
+
+The [backup rehearsal](../evaluation/reports/V6/V6-07-backup.md) passed on a
+single disposable PostgreSQL cluster, using the exact installed CI core wheel
+and Node dist. This completes child B; the [legacy upgrade/repair](migrations-and-recovery.md)
+and parent V6-07 remain open. The result retains the MRR-r1 backup label;
+[MRR-r2](../contracts/RECOVERY_REHEARSAL_V6.md) adds the separate legacy repair
+without changing the backup lane's requirements.
+
+```sh
+uv run --project packages/python --frozen --no-sync pytest tools/tests/test_check_backup_recovery.py -q
+env -u PYTHONPATH -u PYTHONHOME -u NODE_PATH -u NODE_OPTIONS artifacts/V6/release-candidate-rc1/packages/python/.venv/bin/python -I -B tools/check_backup_recovery.py --sdk-root artifacts/V6/release-candidate-rc1/packages/typescript --prepared-postgres-bin artifacts/V6/V6-02A/private-pg/prefix/Cellar/postgresql@17/17.11/bin --output artifacts/V6/backup-recovery-verified --allow-local-processes
+```
+
+The executed output directory is retained; select a fresh directory to reproduce.
+The focused suite passed 32 cases. All ten native recovery checks and five
+source-access cases per runtime passed with zero HTTP calls and verified cleanup.
+An isolated `--quarantine-probe` first verified the driver's missing startup
+SQLSTATE; the corrected gate retains independent NOLOGIN, zero-session, exact
+healthy-target and failed runtime-connection checks. No raw driver diagnostic
+is accepted as report text. Pressure was 44-43 percent free, without swapout
+increase. No hosted database or second paid CI job was used.

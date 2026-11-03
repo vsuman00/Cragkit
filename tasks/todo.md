@@ -4738,3 +4738,62 @@ required before commit/push. Learning: artifact identity was demonstrated with
 two rejected changes; the exercise remains unassessed. Next is V6-07, disposable
 migration, interrupted upgrade, backup/restore and revocation-safe rollback.
 V6-08/09/C3/EXIT remain required; full V6 is incomplete.
+
+
+V6-07 A/B assignment: IN_PROGRESS after V6-06/C2 acceptance and synchronized
+commit a32760e. MRR-r1 frozen in contracts/RECOVERY_REHEARSAL_V6.md. Shared outcome:
+explicit upgrades and backup recovery preserve recoverability and current access.
+Sol release_compatibility owns A: tools/check_migration_recovery.py and its test,
+plus evaluation/reports/V6/V6-07-upgrade.md. Sol release_ci_bundle owns B:
+tools/check_backup_recovery.py, tools/recovery_source_checks.mjs, its Python test
+and evaluation/reports/V6/V6-07-backup.md; B ASSEMBLES. Root owns contract, old
+artifact environment preparation, commands/test slot, operations guide, tracker,
+final acceptance/Git. Peers communicate concrete dependencies directly, agree
+ownership transfers, and escalate protected/outcome changes to root then Astra.
+No migrations, locks, core code, user edits or paid services may be changed.
+One test process/fixture at a time; root grants native execution only after
+stable headroom. Latest 35 percent free with some system swap growth; peers do
+light editing only. Next: inspect retained V5 hashes and implement bounded cases.
+
+
+V6-07 diagnostic handoff: B passed 32 focused tests and the complete native
+backup rehearsal after an isolated probe confirmed psycopg startup refusals omit
+SQLSTATE. Both before-config logins and target admin were healthy; NOLOGIN,
+zero sessions and actual refusals remain mandatory. All ten backup checks and
+five source cases per runtime passed, three synthetic documents, zero HTTP,
+cleanup true, 44-43 percent free with unchanged swapouts 7050832.
+
+A passed nine focused cases. First observation used nonexistent to_regconfig;
+SQLSTATE 42883 identified a harness-only error. Supported casts then natively
+confirmed unchanged 0002 stores simple, with all canonical/active/prior-history
+hashes intact. Old package admission stopped; direct typed outcomes in both
+runtimes still need recording. No fixture normalization or migration change.
+Astra read-only migration_decision recommends a separately versioned explicit
+operator repair with writer exclusion and strict before/after invariants.
+Root accepts bounded V6-07F1 under amended MRR-r2; package/CI identities remain
+unchanged. New repair artifact/tool/tests must pass local acceptance before A
+can complete. Outcome is upgrade plus required operator repair, never a claim
+that the unchanged upgrade alone worked. No new paid CI/provider authority.
+
+
+V6-07B final child checkpoint: COMPLETE scoped backup recovery, parent OPEN.
+Sol B implemented the helper/Node consumer and 32 focused cases; root ran them
+and isolated the original quarantine failure. Probe confirmed successful target
+connections before disabling, then OperationalError with BAD connection and no
+SQLSTATE, two NOLOGIN roles, no sessions and healthy target admin. Gate correction
+accepts only the observed startup form or known authorization state with those
+independent proofs. Native backup-recovery-verified then passed all ten checks
+and five source cases per runtime. Three synthetic documents restored; exact
+ACL/policy/content/profile/history snapshots preserved, latest grants/revisions/
+tombstones reconciled before login. Missing/incomplete authority and bad archive
+hash refused while quarantined. Zero HTTP calls; all owned services closed.
+
+Raw result SHA d4e42e50... and backup SHA 1a5290ef... retained under ignored
+artifacts/V6. Source backup is owner-only. Pressure 44-43 percent free with
+swapouts unchanged at 7050832. Root publishes only report hashes/check IDs, not
+backup data, configs, role passwords or private authority files. MRR-r2 adds
+future explicit legacy repair; the tested backup requirements are unchanged.
+Guide/development commands updated; parent A/F1 remain in progress. Root owns
+scoped validation, commit/push/sync, preserves all user edits and excludes A's
+unvalidated files. Next smallest action is F1 implementation/assembly and native
+upgrade verification; no new CI or registry publication is authorized.
