@@ -334,7 +334,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
   - [x] V6-02D4: Sealed original-packet binding and source-access gate — [binding evidence](../evaluation/reports/V6/V6-02D-packet.md). Clean execution identity is accepted below; genuine held-out execution remains open.
   - [x] V6-02E1/E2: Runtime identity, independent same-shortlist scoring and bounded parent mechanics — [offline implementation](../evaluation/reports/V6/V6-02E-candidate-execution.md) and [actual clean-runtime acceptance](../evaluation/reports/V6/V6-02F-clean-runtime.md). No genuine quality claim.
   - [x] V6-02F: Coherent RC metadata/engine identities and isolated execution preparation — [local artifacts](../evaluation/reports/V6/V6-02F-identity.md) and [clean identity](../evaluation/reports/V6/V6-02F-clean-runtime.md).
-  - [ ] V6-02E3: Explicit caller-owned benchmark credentials, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. The user selected and saved the explicit private OpenAI test credential; local format, permissions and scoped credential preflight passed. Live authentication, fresh hardened-source execution identity and genuine quality remain pending. No built-in library key is used. See [credential preflight](../evaluation/reports/V6/V6-02E3-credential-preflight.md).
+  - [ ] V6-02E3: Explicit caller-owned benchmark credentials, genuine held-out execution, complete recorded native replay, independent quality report and manual examples. The user selected and saved the explicit private OpenAI test credential; local format, permissions and scoped credential preflight passed. Both providers authenticated in the genuine live attempt, and hardened-source identity passed. The run failed with an incomplete Cohere recording; replay and quality remain unaccepted. See [failed attempt](../evaluation/reports/V6/V6-02E3-live-attempt.md). No built-in library key is used. See [credential preflight](../evaluation/reports/V6/V6-02E3-credential-preflight.md).
 
 - [ ] V6-03: [Concurrency and resource testing](versions/V6-release.md#v6-03-concurrency-and-resource-testing) — evidence: pending.
 
@@ -4101,3 +4101,51 @@ weakening. Next: commit/refreeze the hardened tools, prepare and verify a fresh
 runtime identity, then execute the authorized once-only live/replay evaluation
 with freshly reviewed prices. Resources: 26 GiB disk, 35 percent free memory;
 serial tests, no owned persistent service. Learning practice unassessed.
+
+
+V6-02E3 failed-live audit assignment: root owns final integration and reports;
+Sol postgres_node_finish owns read-only transport/journal/accounting analysis,
+Sol v601_metrics owns scoring/denominators/preregistration/manual examples and
+assembles both safe temporary reports. Concrete outcome: accurately preserve
+the failed once-only live run and identify a policy-compliant next action.
+Both peers coordinate directly; no provider calls, services, tests, keys/private
+config access or source/label/config/journal edits. Escalate protected/outcome
+changes through root to Astra if unresolved. Actual live attempt ended failed:
+37 admissions,36 completed,one Cohere transport failure; recordings unsealed,
+so both replays correctly refused. No retry is authorized by this assignment.
+Post-run exact-key scan: zero matches in 121 generated files. Full V6 remains
+open; reports cannot substitute unrun native replay with fake success.
+
+
+V6-02E3 live-attempt final handoff: FAILED; V6-02 remains OPEN. The user-selected
+OpenAI credential and existing Cohere credential both authenticated. Hardened
+source de683a241d0da3cd5b7f0edd2946cd949dc8c972 was refrozen at checkout 34f5222;
+ECR prepare and independent verify passed 9,414 files under identity
+2a1dfaf529bb314c280c8403bc65b116021fec80f64a84c50c4a91ea6217ab10.
+Native development mechanics passed Python/Node parity with zero HTTP calls.
+Actual held-out attempt returned 30 Python rows (six questions/five modes),
+37 admissions and 36 completions (26 OpenAI,ten Cohere). Cohere admission 37
+failed at transport; journal unsealed, unknown final usage, no replay or retry.
+Eleven Cohere admissions in 14.82 seconds support a trial-rate-limit hypothesis
+under the official 10/min table, but discarded HTTP status prevents confirmation.
+Independent metrics retain 2 q30 operational failures and all denominators;
+full-run same-shortlist and quality targets fail. False-sufficient 0/28 accompanies
+withholding on all 3 answerable questions; no unsupported acceptance example exists.
+Manual q25/q29 examples and conflict denominator 0 are documented without general
+quality claims. Parent cleanup flag stays false for incomplete required stages;
+worker/recorder cleanup passed and no PostgreSQL process remained.
+Both Sol peers substantively audited the failed result, messaged each other,
+assembled findings and returned ownership. Root inspected all reports and wrote
+`evaluation/reports/V6/V6-02E3-live-attempt.md` plus full safe verification JSON.
+Post-run exact-key scan found zero matches in 121 generated files; no provider
+response body or private configuration is staged. Previous source safety tests
+passed 80 focused/3,635 full Python-tools plus 34 freeze checks; all 16 seals intact.
+Source/locks/sealed labels/thresholds and original admission/tape remain unchanged
+after held-out access. Exposure now recorded; frozen unopened wording is historical.
+Next smallest corrective proposal: offline bounded trial-key pacing and fixed
+safe HTTP-status categories on development fixtures, followed by explicit
+contamination/fresh human-reviewed held-out/refreeze/budget decisions for any
+later unbiased live comparison. Do not bypass original no-resend ownership or
+accept V6-03 onward. Resource observation 26 GiB/35 percent free memory; one suite
+at a time, owned services closed, no model download. Learning practice unassessed.
+Root owns final scoped checks/commit/immediatepush/sync; user edits/audits excluded.
