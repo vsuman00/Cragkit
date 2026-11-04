@@ -1,7 +1,7 @@
 {
   "revision": "RC1-publication-r1",
   "state": "core_published_langchain_publisher_authorization_refused",
-  "observed_at": "2026-11-04T09:09:03.490856+00:00",
+  "observed_at": "2026-11-04T09:13:54.502123+00:00",
   "parent_complete": false,
   "manifest_sha256": "7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663",
   "candidate_source": "a3ff7e81332d849724407356d220c991e8a8411d",
@@ -291,6 +291,34 @@
       "elapsed_seconds": 2.535,
       "origin": "Fresh canonical registry Python core wheel and three npm packages; fixture harness from reviewed checkout.",
       "first_attempt": "Admission failed before PostgreSQL start: helper-only httpx absent. Confirmed by isolated import; optional helper dependencies installed offline from frozen hashed lock. No product or guard changed."
+    },
+    "core_source_install": {
+      "state": "passed",
+      "origin": "Canonical registry core source archive; offline build and fresh isolated installation outside checkout.",
+      "source_archive_sha256": "69423c2563c57368907a8cbb3c9cc104ef89092abe0a2d9e228883b454a1fdca",
+      "published_wheel_sha256": "8ed2d5be9c965f9b8c70088f5e3625ac589c4efae00ec6f45441786f99799ccc",
+      "rebuilt_wheel_sha256": "8ed2d5be9c965f9b8c70088f5e3625ac589c4efae00ec6f45441786f99799ccc",
+      "rebuilt_wheel_archive_equal": true,
+      "member_files_equal": 57,
+      "default_import_guard_passed": true,
+      "evidence_equal_to_registry_wheel": true,
+      "evidence_counts": {
+        "source_cases": 23,
+        "packing": 17,
+        "assessment": 35,
+        "pipeline": 6,
+        "context": 8,
+        "token": 127
+      },
+      "elapsed_seconds": 1.68,
+      "build_network": "offline",
+      "provider_calls": 0,
+      "rebuild_published": false,
+      "limitations": [
+        "Cached locked runtime dependencies and pinned source build backend on macOS ARM64 only.",
+        "Source fixture tests use deterministic providers and no database; prior exact-wheel native source evidence is separate."
+      ],
+      "python_version": "3.14.6"
     }
   },
   "receipt_retention_correction": {

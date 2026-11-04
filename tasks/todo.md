@@ -372,7 +372,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [x] V6-07: [Migration and rollback rehearsal](versions/V6-release.md#v6-07-migration-and-rollback-rehearsal) — [scoped native recovery and required operator repair](../evaluation/reports/V6/V6-07-recovery.md).
   - [x] V6-07F1: Explicit bounded legacy lexical repair; [upgrade and operator evidence](../evaluation/reports/V6/V6-07-upgrade.md). No applied migration or package changed.
 
-- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — corrected local products/workflow verified and deployment intent authorized; authenticated registry setup, hosted upload and post-registry smoke pending. [Current acceptance](../evaluation/reports/V6/V6-08R-acceptance.md).
+- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — PARTIAL: three npm products and core PyPI pair published and byte-verified; core/Node installed smoke passed. LangChain publisher authorization, remaining Python adapters and full registry acceptance are open. [Current registry evidence](../evaluation/reports/V6/V6-08D-publication.md).
 
 - [x] V6-08C1: Durable local transport and exact nine-product replay verified.
 - [x] V6-08C2: Read-only registry verifier and bounded process cleanup verified.
@@ -5819,3 +5819,25 @@ progress report/JSON and this handoff; no additional code fix justified before
 account evidence. Learning unassessed. Next smallest action: inspect owner's
 current settings, resolve precise identity mismatch, then one controlled
 missing-only phase; Python SDK installs/09/C3/EXIT remain incomplete.
+
+
+V6-08D core source-install checkpoint: COMPLETE for both published core
+distribution formats; parent remains PARTIAL. Actual canonical registry source
+archive rebuilt offline into a byte-identical published core wheel (57 members).
+A separate fresh environment outside the checkout passed default import
+network/process/optional isolation and shared evidence parity:23 source,8
+context,127 token counts,17 packing,35 assessment,6 pipeline cases. Frozen
+hash-checked runtime dependencies; pinned build backend;1.68s elapsed. No
+source/product changes, provider calls, database processes, publication or
+Actions job. Prior exact-wheel native source acceptance remains separate,
+connected by actual full wheel-byte equality; no repeat database run needed.
+
+Root updated the stale V6-08 summary row and publication report/JSON; user
+tracker draft and other dirty work preserved. One implementation/test slot;
+this dependent artifact slice used one writer. Disk observation13GiB free,
+no large download or model runtime. Learning unassessed; failure example:
+a valid wheel cannot stand in for a broken source archive, hence the fresh
+source build/install check. Await actual owner PyPI pending/project fields
+after HTTP400 before any LangChain retry or MCP setup. No live work handle
+remains. V6-09 depends on08;09/C3/EXIT cannot be marked complete. Root owns
+scoped prose/link/secret review, commit/push/sync and next account-state check.

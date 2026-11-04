@@ -169,3 +169,21 @@ Observed compute estimates now total USD0.414 before included allowance,
 rounding and small one-day storage. Two further capped phases would bring
 compute to at most USD0.714, below the user's USD2 limit. This is an estimate,
 not an invoice or authorization for speculative retries. Full V6 remains open.
+
+
+## Core source-distribution installation
+
+The canonical published core source archive was built offline with its pinned
+build backend. The resulting wheel is byte-identical to the published wheel
+(SHA-256 `8ed2d5be9c965f9b8c70088f5e3625ac589c4efae00ec6f45441786f99799ccc`);
+all 57 member files also match. The rebuilt wheel was installed into a separate
+fresh environment outside the checkout with frozen, hash-checked dependencies.
+Default imports passed the network/process and optional-dependency guards.
+
+Installed evidence checks agree with the canonical registry-wheel consumer:
+23 source cases, 8 context cases, 127 token counts, 17 packing cases,
+35 assessment cases and 6 pipeline cases. Build, install and checks took
+1.68 seconds on the recorded local macOS ARM64/Python 3.14.6 environment.
+This verifies both published core distribution formats; it does not expand
+the supported platform evidence. No provider call, database startup, registry
+upload or hosted job ran. The rebuilt file was not published.
