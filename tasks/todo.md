@@ -7,12 +7,12 @@ Owner bootstrap and actual PyPI OIDC are verified; npm OIDC remains untested
 after saved configuration. Publishing is disabled between authorized releases.
 Reviewed security findings retain their [scoped closure](../evaluation/reports/V6/V6-04R-closure.md);
 qualified CSO coverage is partial and production-target acceptance is separate.
-V6-09/C3 remain active; formal V6-EXIT awaits user-deferred public evidence
+V6-09/C3 passed; formal V6-EXIT awaits user-deferred public evidence
 disclosure and file/publication choices. GitHub remains private.
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). V3-02: COMPLETE for native injectable adapters and the bounded Cohere comparison; [evidence](../evaluation/reports/V3/V3-02D.md). V3-03/V3-C1: COMPLETE for standalone strict context accounting. V3-04: COMPLETE for PK-r1 packing/native opt-in source snapshots. V3-05: COMPLETE for AS-r1 curated coverage. V3-06/V3-C2: COMPLETE for EP-r1. V3-07: COMPLETE for the frozen development comparison. V3-08/V3-C3/V3-EXIT: COMPLETE for the declared native/curated development milestone; [exit evidence](../evaluation/reports/V3/V3-08-exit.md). Current next action: maintenance handoff and final C3 acceptance; RC1 registry publication passed. Generalized live-model quality remains unestablished.
+V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). V3-02: COMPLETE for native injectable adapters and the bounded Cohere comparison; [evidence](../evaluation/reports/V3/V3-02D.md). V3-03/V3-C1: COMPLETE for standalone strict context accounting. V3-04: COMPLETE for PK-r1 packing/native opt-in source snapshots. V3-05: COMPLETE for AS-r1 curated coverage. V3-06/V3-C2: COMPLETE for EP-r1. V3-07: COMPLETE for the frozen development comparison. V3-08/V3-C3/V3-EXIT: COMPLETE for the declared native/curated development milestone; [exit evidence](../evaluation/reports/V3/V3-08-exit.md). Current next action: user review of private file/disclosure packet; RC1 publication, maintenance and C3 passed. Generalized live-model quality remains unestablished.
 V4: COMPLETE for the internal native/synthetic development milestone, all tasks/checkpoints through V4-EXIT. [Final evidence and limits](../evaluation/reports/V4/V4-08-exit.md).
 
 
@@ -375,9 +375,9 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 
 - [x] V6-09: [Maintenance handoff](versions/V6-release.md#v6-09-maintenance-handoff) — contribution/support/maintenance guidance and simulated regression walkthrough passed. [Acceptance](../evaluation/reports/V6/V6-09-maintenance.md).
 
-- [ ] V6-C3: Demonstration, relevant regression checks, learning review and resource note through V6-09.
+- [x] V6-C3: Complete 42-stage clean-source suite, exact registry bridge, failure demonstration and resource observations passed. [Evidence](../evaluation/reports/V6/V6-C3.md). Learning practice unassessed.
 
-- [ ] V6-EXIT: PENDING user-deferred public limitations/benchmark disclosure; private evidence does not satisfy the public criterion. C3 must also pass.
+- [ ] V6-EXIT: PENDING user-deferred public limitations/benchmark disclosure; private evidence does not satisfy the public criterion. C3 passed.
 
 ## Session handoff
 
@@ -5982,3 +5982,47 @@ resource15GiB/62percentfree memory; learning practice unassessed. FormalEXIT
 requires public benchmark/limitations disclosure; Astra B accepted, not waived.
 Prepare concrete private review packet while preserving user's final file/public
 decision and private GitHub. Full goal remains incomplete.
+
+
+V6-C3 final handoff COMPLETE for engineering acceptance. Reviewed commit
+661caff1fd06450366f11813670d227e5d180a6a exported cleanly, excluding all protected
+user edits; package tree63dafe3b unchanged. Exact prescribed34 core/LangChain
+stages plus8 MCP/postbuild/optional/metadata stages passed,42 total in103.186s.
+Python/tool4431 passed,3 initial build-order skips and5 intentional fixture
+warnings; all3 skipped cases then passed postbuild. Node core1639, LC113/108,
+MCP54/42; installed LC/core120/112 and MCP54/42; all12 optional profiles passed.
+All6 Python archives byte-identical to canonical registry files; npm member
+bytes, metadata and modes equal under reviewed private-flag projection only.
+Frozen inputs/seals/108-edge metadata verified without held-out decoding.
+Fresh108-case crosswalk retains historical native/live/manual limits and
+conditional cache/index/demo dispositions; no blanket current native/live pass.
+
+Actual local host reports macOS27.2/build26B123,ARM64 AppleM4/16GiB with pinned
+Python3.14.6/Node26.5/npm11.17/uv0.11.8; historical hosted15.8.2 remains distinct.
+Free-memory start60/end61percent, zero swapout pages; helper temp environments
+cleaned, no paid CI/live providers/model download or persistent service. One
+serial test process. Initial GitHub push got HTTP500, remote readback showed
+old parent; one normal retry succeeded and exact remote/0-0 sync confirmed.
+No force push or duplicate package publish. Original private C3 logs/input/
+output retained; immutable candidate/registry/transport receipts untouched.
+
+Root corrected a documentation mislabel:15.8.2 was the hosted tuple, not this
+local27.2 run. Post-C3 changes are evidence/status prose only, no package/test/
+fixture/lock changes; complete suite is not repeated for that clarification.
+Maintenance walkthrough and guides accepted; learning exercise offered, practice
+unassessed. Actual remaining gate is formal public limitations/benchmark
+disclosure under master plan153/architecture336. Prepare owner-only review
+packet and refreshed inventory; no archive moves, visibility changes, stable
+release or new public host without user's deferred decision. Full goal is not
+complete. Root owns final review, scoped commit/push/sync and user handoff.
+
+
+V6 final owner-review preparation: private evidence/disclosure draft and refreshed
+per-file inventory prepared outside Git;18 historical/reference candidates
+(5,293,881bytes) remain proposals only. Current snapshot1062 nonignored files,
+1056 tracked and6 untracked before staging the3 new C3 records;3 other untracked
+security drafts remain user-owned. Root verified42 actual C3 stages,9 canonical
+registry downloads,108 disposition rows/952 evidence hashes,653 local link
+targets and unchanged README structure/protected edits. No moves, deletion,
+history rewrite, visibility/stable release or new public host. FormalEXIT awaits
+the owner's deferred file and public-evidence decision; full goal remains active.

@@ -28,7 +28,7 @@ The separate V6 live benchmark needs a test credential; using the library does
 not require our development key or the Codex key-setup plugin.
 
 > [!IMPORTANT]
-> Python `1.0.0rc1` and npm `1.0.0-rc.1` identify the published MIT-licensed RC1. All six registry packages and nine files passed exact download and installed-consumer acceptance. Maintenance/C3 verification and formal public-evidence exit remain in progress.
+> Python `1.0.0rc1` and npm `1.0.0-rc.1` identify the published MIT-licensed RC1. All six registry packages and nine files passed exact download and installed-consumer acceptance. Maintenance and C3 passed; formal public-evidence exit remains pending.
 
 ## What Cragkit Does
 
@@ -53,7 +53,7 @@ The **npm** package runs natively in Node.js — no Python server required. The 
 | **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
 | **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [V4 exit evidence](evaluation/reports/V4/V4-08-exit.md) |
 | **V5** | Qdrant publication and repair, existing indexes and optional MCP | ✅ Complete for the declared local native milestone | [V5 exit evidence](evaluation/reports/V5/V5-exit.md) · [Install and operations guide](docs/v5-operations.md) |
-| **V6** | Evaluation and release | 🚧 In progress; all six registry packages published and verified; maintenance/C3 in progress; public-evidence exit pending | [V6 plan](tasks/versions/V6-release.md) · [Replacement CI](evaluation/reports/V6/V6-08C-CI2.md) · [Registry progress](evaluation/reports/V6/V6-08D-publication.md) |
+| **V6** | Evaluation and release | 🚧 In progress; all six registry packages published and verified; maintenance/C3 passed; public-evidence exit pending | [V6 plan](tasks/versions/V6-release.md) · [Replacement CI](evaluation/reports/V6/V6-08C-CI2.md) · [Registry progress](evaluation/reports/V6/V6-08D-publication.md) |
 
 > [!NOTE]
 > V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. V6 records limited live-model results and declared-platform CI. Local migration acceptance passed. Reviewed security leads are closed, while qualified CSO coverage remains partial. RC1 registry acceptance passed; public-evidence exit and production acceptance remain separate gates.

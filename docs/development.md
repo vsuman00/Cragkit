@@ -1959,5 +1959,7 @@ deferred; stable `1.0.0` is not authorized.
 Fresh installed checks passed 174 combined Python adapter/core security tests,
 108 LangChain and 42 MCP Node tests, and exact immutable member comparisons.
 Native source-access, missing-evidence and typed operational-failure checks
-passed with verified disposable-fixture cleanup. The complete final C3 suite is
-recorded separately after its clean reviewed export run.
+passed with verified disposable-fixture cleanup. The [complete final C3 suite](../evaluation/reports/V6/V6-C3.md) passed in a clean
+reviewed export: 42 serial stages, with fresh verification outputs and offline
+frozen caches. The machine record contains each actual command and result.
+Local macOS 27.2 evidence remains separate from hosted macOS 15.8.2.

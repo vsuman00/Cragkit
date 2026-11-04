@@ -50,5 +50,6 @@
     "Formal V6-EXIT remains pending public limitations/benchmark disclosure under deferred user choice."
   ],
   "learning": "Explanation and optional exercise offered; user practice unassessed.",
-  "c3_complete": false
+  "c3_complete": true,
+  "c3_evidence": "V6-C3-verification.json"
 }

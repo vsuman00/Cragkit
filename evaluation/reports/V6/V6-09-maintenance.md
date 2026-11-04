@@ -61,7 +61,7 @@ edits and immutable release products were preserved.
 
 The repository stays private. These guides provide a maintenance path for
 collaborators with access; they do not establish a public support inbox,
-response SLA or independent adoption evidence. C3 must still run the complete
+response SLA or independent adoption evidence. [C3 subsequently passed](V6-C3.md) the complete
 reviewed-source acceptance suite. Formal exit also requires public limitations
 and benchmark evidence, deferred to the user's file/publication decision.
 

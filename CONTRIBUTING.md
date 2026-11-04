@@ -14,7 +14,7 @@ Reduce the problem to one synthetic document, request and scope. Record the pack
 
 Share exact reproduction commands and short redacted logs. Never include API keys, tokens, database connection strings, passwords, raw private queries or documents. Replace sensitive input with synthetic text before attaching anything. A report that requires live access should first describe the missing reproduction step; routine contribution work does not need paid calls or built-in project API keys.
 
-The measured local toolchain is macOS 15.8.2 ARM64, Python 3.14.6, Node 26.5.0, npm 11.17.0 and uv 0.11.8. Manifest engine ranges describe installation constraints; they do not prove every OS, patch version or optional profile has passed. Report other environments explicitly and consult the [release compatibility evidence](docs/releases/V6.md).
+The corrected hosted candidate used macOS 15.8.2 ARM64, Python 3.14.6, Node 26.5.0, npm 11.17.0 and uv 0.11.8. The [local C3 report](evaluation/reports/V6/V6-C3.md) records the separate macOS 27.2 run with the same language/tool versions. Manifest engine ranges describe installation constraints; they do not prove every OS, patch version or optional profile has passed. Report other environments explicitly and consult the [release compatibility evidence](docs/releases/V6.md).
 
 ## Set up and check a small change
 
