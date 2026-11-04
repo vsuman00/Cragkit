@@ -19,11 +19,12 @@ This guide implements the local preparation boundary in
 [PPR-r2](../contracts/REPLACEMENT_PUBLICATION_V6.md), retaining
 [PPR-r1](../contracts/PUBLICATION_PREPARATION_V6.md) product rules. The repository remains
 private. The [registry progress receipt](../evaluation/reports/V6/V6-08D-publication.md)
-records all three npm products published and byte-verified; PyPI publication is pending. The manual
+records all three npm products and the core PyPI pair published and byte-verified;
+the two Python adapters remain pending. The manual
 [publishing workflow](../.github/workflows/publish-candidate.yml) now has local
 checks. Its first run failed at private draft metadata access before any upload;
 [PWB-r1](../contracts/PUBLICATION_BOOTSTRAP_V6.md) defines the corrected two-job,
-selected-project procedure. The separate
+selected-project procedure, whose core publication phase passed. The separate
 [candidate workflow](../.github/workflows/candidate-validation.yml) validates
 candidates and has no registry-upload role. Local preparation, account setup,
 publication authorization, an upload and post-publication smoke are separate
@@ -86,9 +87,11 @@ For each registry, verify who owns or may create `cragkit`, `cragkit-langchain`
 and `cragkit-mcp`. Earlier public metadata responses do not reserve a name or
 prove account permission. The user supplied `vaibhavsuman00` for both registries
 and reported 2FA enabled. npm now authenticated as that owner with write-2FA
-confirmed. The screenshot verifies only the `cragkit` pending PyPI publisher;
+confirmed. The screenshot initially verified only the `cragkit` pending PyPI publisher;
 the earlier instruction to create three identical pending configurations was
-wrong. Keep that core entry. See the
+wrong. Core first use has since passed; the owner confirmed the next LangChain
+pending configuration. Register each remaining name only after the prior entry
+converts. See the
 [account setup record](../evaluation/reports/V6/V6-08C-accounts.md) and current
 [bootstrap contract](../contracts/PUBLICATION_BOOTSTRAP_V6.md).
 A scope/name change would require a new reviewed
@@ -169,9 +172,16 @@ The amended workflow separates repository-write access from registry identity:
    inner size/hash and existing candidate/manifest/product checks run again.
 
 The reviewed draft must target the exact executing `GITHUB_SHA`. Rebind and
-reread that private draft after workflow changes; never relax the equality check.
+reread that private draft after workflow changes; supply both exact tag and target
+in the update, because a target-only PATCH can reset a draft tag. Run the full
+existing metadata validator on the fresh response; never relax the equality check.
 Artifact ID comes from the fetch job output, not dispatch input. No PAT,
 reusable workflow, new environment or public GitHub release is introduced.
+
+The core phase passed, but its receipt step omitted hidden-directory files.
+The corrected step includes hidden files only at the three explicit nonsecret
+JSON paths and fails if none are found. Keep that allowlist; never archive the
+workspace, private source, credentials or whole hidden directories.
 
 Both jobs require owner `vsuman00`, private `vsuman00/Cragkit`, manual dispatch
 from `main`, first attempt, exact executing-SHA acknowledgment, publication/cost/

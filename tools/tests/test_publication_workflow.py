@@ -85,6 +85,23 @@ def test_executable_transport_command_matches_reviewed_policy_and_admission_orde
     assert 'timeout-minutes: 5' in fetch and 'timeout-minutes: 20' in publisher
 
 
+def test_publication_receipts_include_hidden_paths_without_archiving_secrets():
+    workflow = (Path(__file__).resolve().parents[2]
+                / '.github/workflows/publish-candidate.yml').read_text()
+    # The real core upload passed but this step silently omitted every receipt
+    # under its hidden directories. Keep hidden traversal scoped to these files.
+    step = workflow.split('      - name: Retain nonsecret publication receipts\n', 1)[1]
+    assert 'include-hidden-files: true' in step
+    assert 'if-no-files-found: error' in step
+    assert 'retention-days: 1' in step
+    paths = step.split('          path: |\n', 1)[1].splitlines()
+    assert [path.strip() for path in paths if path.strip()] == [
+        '.release-preflight/registry-report.json',
+        '.release-upload/workflow-plan.json',
+        '.release-post-*/registry-report.json',
+    ]
+
+
 def test_reviewed_bootstrap_clearance_does_not_admit_unconfigured_hosted_publication():
     approved = W.policy()
     assert approved['security_hold'] is False

@@ -5740,3 +5740,54 @@ readyforrootcompletionreview. Alluser-ownedsource/storage/tracker/audits and
 archivechoicepreserved. One serialtestprocess,noprovider/model/databasecalls
 ornewtoolsdownloads; reusedactionlint. Learningunassessed; examplesexplain
 selectedphaseauthorityandwhyHTTP202doesnotproveimmediateinstallability.
+
+
+V6-08D-RS assignment: IN_PROGRESS registry-consumer and hosted-receipt integration.
+Shared outcome: verify the actually published core PyPI pair and three npm
+products, preserve exact nine-product identity, and prepare the remaining
+selected-project phases without claiming full publication. PWB-r1/PWP-r2/PUP-r2
+and immutable V6-08R summary remain frozen. Sol release_binding owns only private
+registry-native-diagnosis.md and registry-native-harness.py under the active
+owner-only release task directory; diagnose the failed argument admission and
+propose a clean-consumer source smoke without changing guards. Sol
+release_guidance owns only private registry-core-evidence.md/json and assembles
+both peer reports. Peers read actual scripts/receipts, coordinate directly,
+and do no tests, installs, network, services, Git or tracked-file edits. Root
+owns all execution, external actions, shared receipts/docs/tracker and final
+integration. One local test process; synthetic data only; no model/provider
+calls or new tools. Protected user changes, runtime/package bytes, contracts,
+archive choices and private GitHub visibility are unchanged. Outcome/protected/
+other-lane changes go to root before edits; unresolved material decisions go
+to Astra through root. This assignment is not acceptance.
+
+
+V6-08D-RS checkpoint: core PyPI OIDC publication COMPLETE; parent remains OPEN.
+Successful run 41799900669/source14ee35e8 passed fetch19s/publish105s with only
+the core Python pair uploaded. Independent canonical reads verified5 files;
+Python adapters4 files remain absent. Earlier run41798494028 could read the
+draft but refused a tag reset caused by target-only PATCH; exact tag+target
+update and fresh full unchanged validator resolved it. No upload was retried.
+Observed job compute estimate USD0.402; two remaining capped phases USD0.30,
+projected USD0.702 before allowance/rounding/small one-day storage, below USD2.
+
+Root integrated both Sol reports and fresh consumer evidence:113 npm member
+files equal, installed core/import guard and deterministic parity passed;
+installed Node LangChain108/MCP42 passed. Native source/recovery smoke passed
+10 common plus5/runtime checks, cleanup verified, zero provider HTTP,2.535s.
+First native admission failed on helper-only httpx before service startup;
+confirmed import diagnosis and offline frozen hashed optional dependencies
+fixed the harness without product/guard changes. Actual hosted log confirmed
+receipt files skipped because hidden traversal was false. Root corrected only
+three allowlisted nonsecret JSON paths with hidden traversal/empty-error and
+one-day retention;98 focused tests passed (one expected duplicate ZIP warning),
+actionlint1.7.12 passed both workflows. Hosted receipt retention awaits the
+next legitimate adapter phase; no independent attestation payload claim.
+
+Owner explicitly confirmed LangChain pending setup; no further setup permission
+is required for that selected phase. Root owns scoped commit/push/sync, complete
+private draft rebind to new SHA/full fresh metadata validation, one LangChain
+dispatch and terminal verification, then next MCP pending request. No concurrent
+writers/tests/services; all task-owned PostgreSQL processes closed. Runtime
+artifacts/contracts/user edits/archive choice/private GitHub remain protected.
+Learning unassessed. Failure example: successful upload plus silently omitted
+receipts is partial operational evidence, never complete final publication.

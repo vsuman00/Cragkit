@@ -1,7 +1,7 @@
 {
   "revision": "RC1-publication-r1",
-  "state": "npm_verified_pypi_bootstrap_correction",
-  "observed_at": "2026-11-04T07:27:19.470949+00:00",
+  "state": "npm_and_core_pypi_verified_python_adapters_pending",
+  "observed_at": "2026-11-04T08:56:35.483315+00:00",
   "parent_complete": false,
   "manifest_sha256": "7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663",
   "candidate_source": "a3ff7e81332d849724407356d220c991e8a8411d",
@@ -133,26 +133,29 @@
   ],
   "npm_trust_expiry": "A new configuration requires a first successful OIDC publish within two days; saved fields and skipped uploads do not prove OIDC. Recreate near the next legitimate publish if expired.",
   "pypi_pending_publishers": {
-    "evidence": "owner_screenshot_corrects_prior_confirmation",
-    "configured": false,
+    "evidence": "Successful core trusted-publisher upload plus owner confirmation of LangChain pending setup.",
     "projects": [
-      "cragkit"
+      "cragkit-langchain"
     ],
     "owner": "vsuman00",
     "repository": "Cragkit",
     "workflow": "publish-candidate.yml",
     "environment": null,
-    "actual_oidc_publish_verified": false
+    "core_oidc_publish_verified": true,
+    "langchain_setup_owner_confirmed": true,
+    "mcp_setup_confirmed": false
   },
   "registry_receipt": {
-    "path": "artifacts/V6/registry-after-bootstrap-cragkit-mcp-17a661c/registry-report.json",
-    "sha256": "81b83b6b05060f5c31d2be06f0b116107245a49560213218e74eff19cf242b2c",
-    "state": "partial"
+    "path": "artifacts/V6/registry-after-core-pypi-41799900669/registry-report.json",
+    "sha256": "ace698eec0afe70b957a6a462ca72e6a650a6af71567fb4f9b6098c16ff306cd",
+    "state": "partial",
+    "verified_files": 5,
+    "absent_files": 4
   },
   "remaining": [
-    "Implement and verify PWB-r1 first-use amendment locally.",
-    "Sequential selected-project PyPI publishing after matching pending/normal publisher confirmation, within USD2.",
-    "Final nine-product registry verification, clean installs/source smoke and maintenance/exit."
+    "Publish confirmed LangChain Python pair, verify conversion, then configure and publish MCP.",
+    "Verify all nine canonical registry files; install both Python SDKs and run installed tests.",
+    "Complete V6-09 maintenance, C3 and version exit audit."
   ],
   "limitations": [
     "Observed latest also aliases RC1; distribution is not next-only. No stable1.0.0 release was published.",
@@ -174,5 +177,141 @@
     "all_registry_upload_steps": "skipped",
     "release_enable_variable": "removed",
     "retry_dispatched": false
+  },
+  "core_pypi_products": [
+    {
+      "bytes": 233235,
+      "package": "cragkit",
+      "path": "products/pypi/cragkit-1.0.0rc1-py3-none-any.whl",
+      "registry": "pypi",
+      "sha256": "8ed2d5be9c965f9b8c70088f5e3625ac589c4efae00ec6f45441786f99799ccc",
+      "state": "verified",
+      "version": "1.0.0rc1"
+    },
+    {
+      "bytes": 421917,
+      "package": "cragkit",
+      "path": "products/pypi/cragkit-1.0.0rc1.tar.gz",
+      "registry": "pypi",
+      "sha256": "69423c2563c57368907a8cbb3c9cc104ef89092abe0a2d9e228883b454a1fdca",
+      "state": "verified",
+      "version": "1.0.0rc1"
+    }
+  ],
+  "core_hosted_phase": {
+    "run_id": 41799900669,
+    "source_commit": "14ee35e829cb718dc998d2e4e42d93fb84d7648c",
+    "status": "completed",
+    "conclusion": "success",
+    "scope": "cragkit",
+    "fetch_job": {
+      "id": 126472836180,
+      "seconds": 19
+    },
+    "publish_job": {
+      "id": 126472985806,
+      "seconds": 105
+    },
+    "adapter_uploads": "skipped",
+    "npm_uploads": 0,
+    "selected_phase_complete": true,
+    "all_nine_complete": false,
+    "compute_estimate_usd": 0.018,
+    "release_enable_variable": "removed",
+    "hosted_receipts_retained": false,
+    "receipt_gap": "Actual action log confirms hidden receipt paths were skipped. Explicit allowlist corrected before next phase.",
+    "attestation_payload_independently_verified": false
+  },
+  "draft_binding_repair": {
+    "failed_run_id": 41798494028,
+    "fetch_job_id": 126468216187,
+    "seconds": 17,
+    "compute_estimate_usd": 0.006,
+    "reason": "Transport read succeeded; validator rejected tag reset after target-only PATCH.",
+    "uploads": 0,
+    "repair": "PATCH exact tag and target together, reread and run complete unchanged validator."
+  },
+  "registry_consumers": {
+    "state": "npm_and_python_core_registry_consumers_passed",
+    "all_six_packages_complete": false,
+    "npm_products": 3,
+    "npm_member_files_equal": 113,
+    "python_core_registry_wheel": true,
+    "python_optional_profiles": [
+      "postgres",
+      "tokenizers"
+    ],
+    "native_evidence_parity": true,
+    "langchain_node_tests": 108,
+    "mcp_node_tests": 42,
+    "native_source": {
+      "state": "passed",
+      "revision": "MRR-r1",
+      "checks": {
+        "backup_hash_refused": true,
+        "cleanup_verified": true,
+        "current_authority_reconciled": true,
+        "immutable_content_profiles_history_preserved": true,
+        "incomplete_authority_refused": true,
+        "missing_authority_refused": true,
+        "restore_acl_policies_preserved": true,
+        "revoked_access_not_restored": true,
+        "runtime_guards_passed": true,
+        "runtime_quarantine": true
+      },
+      "python": {
+        "checks": {
+          "allowed_exact_source": true,
+          "foreign_tenant_denied": true,
+          "held_old_scope_denied": true,
+          "revoked_denied": true,
+          "tombstone_denied": true
+        },
+        "provider_http_calls": 0,
+        "revision": "MRR-r1",
+        "runtime": "python"
+      },
+      "node": {
+        "checks": {
+          "allowed_exact_source": true,
+          "foreign_tenant_denied": true,
+          "held_old_scope_denied": true,
+          "revoked_denied": true,
+          "tombstone_denied": true
+        },
+        "provider_http_calls": 0,
+        "revision": "MRR-r1",
+        "runtime": "node"
+      },
+      "provider_http_calls": 0,
+      "limitations": [
+        "Same-cluster synthetic restore with existing global roles only.",
+        "Requires a separately trusted complete current authority snapshot; no production PITR claim."
+      ],
+      "elapsed_seconds": 2.535,
+      "origin": "Fresh canonical registry Python core wheel and three npm packages; fixture harness from reviewed checkout.",
+      "first_attempt": "Admission failed before PostgreSQL start: helper-only httpx absent. Confirmed by isolated import; optional helper dependencies installed offline from frozen hashed lock. No product or guard changed."
+    }
+  },
+  "receipt_retention_correction": {
+    "focused_tests_passed": 98,
+    "expected_duplicate_zip_warning": 1,
+    "actionlint": "1.7.12 passed both workflows",
+    "path_scope": [
+      ".release-preflight/registry-report.json",
+      ".release-upload/workflow-plan.json",
+      ".release-post-*/registry-report.json"
+    ],
+    "retention_days": 1,
+    "hidden_receipts_enabled": true,
+    "empty_selection_fails": true,
+    "hosted_validation": "Next legitimate selected-project phase; no extra probe run."
+  },
+  "cost": {
+    "observed_job_compute_estimate_usd": 0.402,
+    "remaining_two_phases_capped_compute_usd": 0.3,
+    "projected_total_compute_ceiling_usd": 0.702,
+    "user_total_limit_usd": 2,
+    "included_allowance_and_invoice": "Unverified; before allowance, rounding and small one-day artifact storage."
   }
 }

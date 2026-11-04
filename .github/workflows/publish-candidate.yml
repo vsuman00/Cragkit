@@ -249,7 +249,8 @@ jobs:
         with:
           name: publication-receipts-${{ github.run_id }}
           retention-days: 1
-          if-no-files-found: ignore
+          if-no-files-found: error
+          include-hidden-files: true
           path: |
             .release-preflight/registry-report.json
             .release-upload/workflow-plan.json

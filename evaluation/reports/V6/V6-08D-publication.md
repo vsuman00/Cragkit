@@ -1,8 +1,9 @@
 # V6-08D registry publication
 
 4 November 2026. Publication is in progress. All three npm RC1 products are
-public and their canonical downloads match the reviewed SHA-256/size. PyPI
-upload, clean registry-installed smoke and V6-09/C3/version exit remain pending.
+public and their canonical downloads match the reviewed SHA-256/size. The Python
+core wheel and sdist are also published and byte-verified. Five of nine fixed
+files are verified; Python adapters and V6-09/C3/version exit remain pending.
 The [machine receipt](V6-08D-publication.json) records actual product identities
 and registry observations; [local acceptance](V6-08R-acceptance.md) remains a
 separate earlier checkpoint.
@@ -59,15 +60,16 @@ new version just to validate a trust configuration.
 The earlier owner confirmation was corrected by screenshots: only `cragkit`
 is pending under the intended GitHub identity. PyPI rejected simultaneous
 identical pending identities for the other project names. The original setup
-instructions were incorrect. Keep core pending; the new [first-use contract](../../../contracts/PUBLICATION_BOOTSTRAP_V6.md)
+instructions were incorrect. The new [first-use contract](../../../contracts/PUBLICATION_BOOTSTRAP_V6.md)
 uses selected-project phases and conversion before registering the next name.
-No PyPI token or credential was requested. Actual OIDC first use remains pending.
+No PyPI token or credential was requested. Core OIDC first use subsequently
+passed; the owner confirmed the next LangChain pending configuration.
 
-The hosted workflow remains default-disabled until the reviewed private transport
-and exact executing SHA are bound. One Linux job, 20-minute timeout and one-day
-nonsecret receipts fit the approved USD2 ceiling with the recorded earlier
-USD0.186 replacement-CI estimate; proposed job compute is at most USD0.12 before
-allowance/storage. No new paid validation is included. Repository visibility and
+The hosted workflow remains default-disabled between phases. Each phase binds
+the reviewed transport to the exact executing SHA. Observed job compute totals
+USD0.402 before allowance/storage; the two remaining phases cap additional
+compute at USD0.30. These estimates fit the approved USD2 ceiling; the invoice
+and included allowance are unverified. No new paid validation is included. Repository visibility and
 archive decisions remain deferred. Historical preparation receipts remain fixed.
 
 
@@ -86,5 +88,44 @@ OIDC uploading. It also adds explicit selected-project and pending-identity
 admission, exact at-most-two-file phase plans and partial/full postflight.
 Warehouse can create a project during minting before file upload: inspect actual
 pending/normal state after every partial attempt rather than assuming no project
-was created. Proposed changes require local checks and an actual revised run;
-the failed run is not acceptance evidence for them.
+was created. The failed run is not acceptance evidence for the revised path.
+
+## Core PyPI publication and installed source checks
+
+Run 41798494028 reached the private draft successfully but refused its changed
+tag after a target-only PATCH. Its 17-second fetch job performed no uploads.
+The repair supplies the exact tag and target together, rereads all metadata
+and passes the existing validator without weakening its checks.
+
+[Run 41799900669](https://github.com/vsuman00/Cragkit/actions/runs/41799900669),
+workflow source `14ee35e8`, then passed both jobs: 19 seconds fetch and 105 seconds
+publish. Only the two core Python files were uploaded; adapter actions were
+skipped and npm uploaded zero files. Selected-phase postflight passed. Canonical
+downloads independently match the fixed core wheel and sdist. Product source
+remains `a3ff7e8`; executing workflow source and packaged source are distinct.
+
+Fresh consumers outside the checkout installed the actual registry core wheel
+and all three npm tarballs. All 113 installed npm member files match their
+archives. Installed-origin and default-import isolation checks passed; shared
+evidence fixtures agree across runtimes. The installed Node LangChain suite
+passed 108 tests and MCP passed 42. Python adapter installs await their publication.
+
+The first database-smoke admission failed before PostgreSQL startup because
+the fixture helper imports optional `httpx`. An isolated import confirmed the
+missing module. Adding reviewed helper dependencies offline from hashed frozen
+locks fixed the harness; no product or guard changed. The unchanged recovery
+helper then passed ten backup/authority checks and five source-access cases per
+runtime in 2.535 seconds. Allowed UTF-8 bytes/digests/spans matched; revoked,
+foreign-tenant, tombstoned and held-old-scope access was denied. Cleanup was
+verified and provider HTTP calls were zero. This is synthetic disposable
+PostgreSQL evidence, not production recovery or model-quality acceptance.
+
+The core run's receipt step succeeded without uploading its hidden-directory
+files. Actual logs confirm `include-hidden-files: false` and no files found.
+The next workflow enables hidden traversal only for the three explicit JSON
+receipt paths, fails on an empty selection and retains them for one day.
+The regression suite passed 98 tests with one expected duplicate-ZIP warning;
+actionlint 1.7.12 passed both workflows. The next legitimate adapter phase will
+verify hosted retention. The separate local canonical-download receipt is
+retained; hosted receipt payloads and independent attestation verification are
+not claimed for the core run.

@@ -187,8 +187,9 @@ remain deferred. No additional paid validation is included.
 [PWB-r1](../../contracts/PUBLICATION_BOOTSTRAP_V6.md) adds selected-project
 first use after the observed draft-read/pending-identity blockers. Private
 transport fetching and OIDC uploading use separate jobs; local
-[acceptance](../../evaluation/reports/V6/V6-08D-bootstrap.md) does not establish
-revised hosted success. Final all-nine registry and installed smoke gates remain.
+[acceptance](../../evaluation/reports/V6/V6-08D-bootstrap.md) is separate from
+the later successful core phase recorded in [registry progress](../../evaluation/reports/V6/V6-08D-publication.md).
+Final all-nine registry and installed smoke gates remain.
 
 Acceptance: Local readiness and publication are separate tracker states; published versions install and pass a source-linked smoke query.
 
