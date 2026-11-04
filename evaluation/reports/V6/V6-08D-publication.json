@@ -1,7 +1,7 @@
 {
   "revision": "RC1-publication-r1",
-  "state": "core_published_langchain_publisher_authorization_refused",
-  "observed_at": "2026-11-04T09:13:54.502123+00:00",
+  "state": "npm_core_and_langchain_verified_mcp_pending",
+  "observed_at": "2026-11-04T09:33:10.818909+00:00",
   "parent_complete": false,
   "manifest_sha256": "7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663",
   "candidate_source": "a3ff7e81332d849724407356d220c991e8a8411d",
@@ -139,22 +139,23 @@
     "repository": "Cragkit",
     "workflow": "publish-candidate.yml",
     "environment": null,
-    "core_oidc_publish_verified": true,
     "langchain_setup_owner_confirmed": true,
     "mcp_setup_confirmed": false,
-    "matching_langchain_identity": "Unverified after HTTP400; current owner-only pending/project settings requested before any further attempt.",
-    "owner_reported_project": "cragkit-langchain"
+    "matching_langchain_identity": "Successful corrected selected-project OIDC upload; owner reported spelling correction.",
+    "owner_reported_project": null,
+    "langchain_oidc_publish_verified": true,
+    "core_oidc_publish_verified": true
   },
   "registry_receipt": {
-    "path": "artifacts/V6/registry-after-langchain-attempt-41803938051/registry-report.json",
-    "sha256": "ace698eec0afe70b957a6a462ca72e6a650a6af71567fb4f9b6098c16ff306cd",
+    "path": "artifacts/V6/registry-after-langchain-corrected-41807132666/registry-report.json",
+    "sha256": "d45fbac24c4c724e7860ad3757e0fedb3919bdda42488c01e05806f2b45fa861",
     "state": "partial",
-    "verified_files": 5,
-    "absent_files": 4
+    "verified_files": 7,
+    "absent_files": 2
   },
   "remaining": [
-    "Inspect actual owner pending/project settings after LangChain HTTP400; resolve matching project identity before one controlled attempt.",
-    "Publish and verify remaining Python adapter files, then finish clean installed SDK tests and all-nine registry acceptance.",
+    "Configure matching MCP pending/normal publisher, publish only its missing Python pair and verify canonical bytes.",
+    "Finish installed MCP tests and strict all-nine registry acceptance.",
     "Complete V6-09 maintenance, C3 and version exit audit."
   ],
   "limitations": [
@@ -319,6 +320,30 @@
         "Source fixture tests use deterministic providers and no database; prior exact-wheel native source evidence is separate."
       ],
       "python_version": "3.14.6"
+    },
+    "langchain_python": {
+      "state": "passed",
+      "package": "cragkit-langchain",
+      "version": "1.0.0rc1",
+      "registry_files_verified": 2,
+      "wheel_sha256": "84f0df209a07874f4150fbcd12e103e0ca1c4174a047143ed9ec1c38cac02002",
+      "source_sha256": "d43c80e37485bcf414b6c60f0ceb4fd85aa4e6c477436fb8b076b8d4f2d98eb6",
+      "source_rebuilt_members_equal": true,
+      "source_rebuilt_archive_equal": true,
+      "installed_members_equal": 6,
+      "installer_record_excluded": [
+        "cragkit_langchain-1.0.0rc1.dist-info/RECORD"
+      ],
+      "installed_origins_verified": true,
+      "prior_dependency_versions_preserved": true,
+      "tests_passed": 120,
+      "elapsed_seconds": 3.98,
+      "provider_calls": 0,
+      "limitations": [
+        "Cached frozen dependencies; local macOS ARM64/Python3.14 only.",
+        "Copied published-API tests use deterministic providers; no live model quality claim."
+      ],
+      "harness_correction": "First helper invocation used a relative archive path after changing cwd. Resolved paths before build; original failed output retained. No product change."
     }
   },
   "receipt_retention_correction": {
@@ -347,11 +372,11 @@
     }
   },
   "cost": {
-    "observed_job_compute_estimate_usd": 0.414,
-    "remaining_two_phases_capped_compute_usd": 0.3,
-    "projected_total_compute_ceiling_usd": 0.714,
+    "observed_job_compute_estimate_usd": 0.432,
+    "projected_total_compute_ceiling_usd": 0.582,
     "user_total_limit_usd": 2,
-    "included_allowance_and_invoice": "Unverified; before allowance, rounding and small one-day artifact storage."
+    "included_allowance_and_invoice": "Unverified; before allowance, rounding and small one-day artifact storage.",
+    "remaining_one_phase_capped_compute_usd": 0.15
   },
   "langchain_hosted_attempt": {
     "run_id": 41803938051,
@@ -382,5 +407,62 @@
     "release_enable_variable": "removed",
     "automatic_retry": false,
     "pending_or_empty_project_state": "Not inferable from missing distribution files; await owner view."
-  }
+  },
+  "langchain_corrected_phase": {
+    "run_id": 41807132666,
+    "source_commit": "4ccede906ed64f646c4f388d4ccee8d2c137eebe",
+    "state": "passed",
+    "scope": "cragkit-langchain",
+    "setup_evidence": "User reported spelling correction and explicitly authorized retry.",
+    "fetch_job": {
+      "id": 126496850434,
+      "seconds": 21
+    },
+    "publish_job": {
+      "id": 126497046967,
+      "seconds": 107
+    },
+    "phase_complete": true,
+    "publication_complete": false,
+    "compute_estimate_usd": 0.018,
+    "release_enable_variable": "removed",
+    "receipt": {
+      "artifact_id": 13310765885,
+      "bytes": 5576,
+      "sha256": "7d2c892c81a49f9d5e59a775dbb5a4ae835a7639ca9f05d8fa817b19f4ea1e8f",
+      "members": [
+        ".release-post-1/registry-report.json",
+        ".release-post-2/registry-report.json",
+        ".release-post-3/registry-report.json",
+        ".release-post-4/registry-report.json",
+        ".release-preflight/registry-report.json",
+        ".release-upload/workflow-plan.json"
+      ],
+      "read_only_observations": 4,
+      "postflight_verified_files": 7,
+      "phase": "cragkit-langchain",
+      "state": "passed",
+      "inspector_correction": "Initial inspector assumed one postflight; actual four bounded read-only observations are allowed by workflow. No upload retry occurred."
+    }
+  },
+  "langchain_pypi_products": [
+    {
+      "bytes": 6095,
+      "package": "cragkit-langchain",
+      "path": "products/pypi/cragkit_langchain-1.0.0rc1-py3-none-any.whl",
+      "registry": "pypi",
+      "sha256": "84f0df209a07874f4150fbcd12e103e0ca1c4174a047143ed9ec1c38cac02002",
+      "state": "verified",
+      "version": "1.0.0rc1"
+    },
+    {
+      "bytes": 61869,
+      "package": "cragkit-langchain",
+      "path": "products/pypi/cragkit_langchain-1.0.0rc1.tar.gz",
+      "registry": "pypi",
+      "sha256": "d43c80e37485bcf414b6c60f0ceb4fd85aa4e6c477436fb8b076b8d4f2d98eb6",
+      "state": "verified",
+      "version": "1.0.0rc1"
+    }
+  ]
 }

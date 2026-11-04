@@ -372,7 +372,7 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [x] V6-07: [Migration and rollback rehearsal](versions/V6-release.md#v6-07-migration-and-rollback-rehearsal) — [scoped native recovery and required operator repair](../evaluation/reports/V6/V6-07-recovery.md).
   - [x] V6-07F1: Explicit bounded legacy lexical repair; [upgrade and operator evidence](../evaluation/reports/V6/V6-07-upgrade.md). No applied migration or package changed.
 
-- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — PARTIAL: three npm products and core PyPI pair published and byte-verified; core/Node installed smoke passed. LangChain publisher authorization, remaining Python adapters and full registry acceptance are open. [Current registry evidence](../evaluation/reports/V6/V6-08D-publication.md).
+- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — PARTIAL: three npm products and core/LangChain PyPI pairs published and byte-verified; installed core, Node and LangChain smoke passed. MCP publication and full registry acceptance are open. [Current registry evidence](../evaluation/reports/V6/V6-08D-publication.md).
 
 - [x] V6-08C1: Durable local transport and exact nine-product replay verified.
 - [x] V6-08C2: Read-only registry verifier and bounded process cleanup verified.
@@ -5863,3 +5863,35 @@ scoped prose/secret review and commit/push/sync. Resume with the nonsecret
 current PyPI settings; then resolve exact identity and rebind the private
 transport's exact tag+target to the executing main SHA before one selected
 missing-only attempt. Full completion has not been claimed.
+
+
+V6-08D resumed LangChain checkpoint: COMPLETE selected phase after owner's
+reported spelling correction and explicit retry authorization. Full goal and08
+remain incomplete. Run41807132666/source4ccede9 passed fetch21s/publish107s;
+independent strict phase check and canonical downloads verify7 files,2 MCP
+files absent. Exact existing tag+target binding and full unchanged validator
+passed on fresh metadata before one dispatch. Enable marker removed after
+terminal success. Hosted receipt artifact13310765885,5576bytes, SHA
+7d2c892c81a49f9d5e59a775dbb5a4ae835a7639ca9f05d8fa817b19f4ea1e8f
+contains preflight/selected plan/four bounded read-only observations; final7/2.
+No automatic upload retry; original failed run and inspector assumption retained.
+
+Actual published LangChain source rebuild is byte-identical to its wheel.
+Clean consumer install preserved prior dependency versions;6 immutable members
+equal (installer RECORD explicitly excluded), installed origins verified,120
+LangChain/core planner-security tests passed;3.98s total, cached frozen hashed
+dependencies, no provider calls. Private helper cwd-relative path error was
+diagnosed before build and fixed by normalization; no product/guard changed.
+Root owns dependent publication and serial test slot; no independent peer
+lane is useful until08 completes. MCP publisher request is pending, with exact
+cragkit-mcp/owner/repo/workflow/blank-environment fields; use existing-project
+settings if its project already exists. Actual next action is one MCP selected
+phase after that confirmation, full9 registry/install acceptance, then09/C3/EXIT.
+
+Observed compute USD0.432; one capped phase projects USD0.582 before allowance/
+rounding/small storage, below USD2. No new paid validation, services, models or
+large install. Learning unassessed; example: a misspelled pending project cannot
+authorize a differently named package. Current report/JSON and task row now
+reflect the successful retry. User edits, immutable products/contracts, private
+GitHub and archive choice remain protected. Root owns final prose/link/secret
+review, scoped commit/push/sync and the next exact-SHA draft rebind if needed.

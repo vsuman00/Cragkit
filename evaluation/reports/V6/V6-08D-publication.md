@@ -2,8 +2,8 @@
 
 4 November 2026. Publication is in progress. All three npm RC1 products are
 public and their canonical downloads match the reviewed SHA-256/size. The Python
-core wheel and sdist are also published and byte-verified. Five of nine fixed
-files are verified; Python adapters and V6-09/C3/version exit remain pending.
+core and LangChain wheel/sdist pairs are also published and byte-verified. Seven
+of nine fixed files are verified; MCP and V6-09/C3/version exit remain pending.
 The [machine receipt](V6-08D-publication.json) records actual product identities
 and registry observations; [local acceptance](V6-08R-acceptance.md) remains a
 separate earlier checkpoint.
@@ -187,3 +187,43 @@ Installed evidence checks agree with the canonical registry-wheel consumer:
 This verifies both published core distribution formats; it does not expand
 the supported platform evidence. No provider call, database startup, registry
 upload or hosted job ran. The rebuilt file was not published.
+
+
+## Corrected LangChain publication and installed acceptance
+
+The owner reported a spelling correction and explicitly requested one retry.
+The same fixed LangChain products passed in
+[run 41807132666](https://github.com/vsuman00/Cragkit/actions/runs/41807132666),
+workflow source `4ccede9`: fetch 21 seconds, publish 107 seconds. Only LangChain's
+missing pair was uploaded. Independent canonical downloads match wheel SHA-256
+`84f0df209a07874f4150fbcd12e103e0ca1c4174a047143ed9ec1c38cac02002`
+and source SHA-256
+`d43c80e37485bcf414b6c60f0ceb4fd85aa4e6c477436fb8b076b8d4f2d98eb6`.
+Selected-phase verification passed; complete publication remains false because
+the two MCP files are absent. The release-enable marker was removed afterward.
+
+The 5,576-byte hosted receipt archive, artifact `13310765885`, has SHA-256
+`7d2c892c81a49f9d5e59a775dbb5a4ae835a7639ca9f05d8fa817b19f4ea1e8f`.
+It contains preflight, the two-file missing-only plan and four bounded read-only
+postflight observations. The fourth observation verifies seven files; earlier
+observations retain the valid five-file state while registry visibility catches
+up. No upload was retried within the run. An initial local inspector assumed a
+single observation; reading the actual members corrected that assumption to
+the workflow's declared one-to-ten bound.
+
+The published LangChain source archive rebuilds offline to the exact published
+wheel. Installing the canonical wheel into the clean registry consumer preserved
+all prior dependency versions. Installed origins and all six immutable member
+files match; installer-managed `RECORD` is excluded from byte comparison.
+Copied LangChain and core planner-security suites passed 120 tests in an
+isolated interpreter. The full build/install/check sequence took 3.98 seconds,
+with frozen hash-checked cached dependencies and zero provider calls.
+The first helper attempt used a relative archive path after changing cwd and
+stopped before building; resolving paths fixed only the private harness.
+
+MCP is the only unpublished product. The owner has been asked to configure its
+exact publisher before the final selected phase. Estimated observed compute
+now totals USD0.432; one further capped phase projects at most USD0.582 before
+allowance, rounding and small one-day storage. No additional paid validation
+was started. Earlier failed runs and qualified security/quality/platform
+limitations remain part of the evidence.

@@ -19,8 +19,8 @@ This guide implements the local preparation boundary in
 [PPR-r2](../contracts/REPLACEMENT_PUBLICATION_V6.md), retaining
 [PPR-r1](../contracts/PUBLICATION_PREPARATION_V6.md) product rules. The repository remains
 private. The [registry progress receipt](../evaluation/reports/V6/V6-08D-publication.md)
-records all three npm products and the core PyPI pair published and byte-verified;
-the two Python adapters remain pending. The manual
+records all three npm products and the core/LangChain PyPI pairs published and
+byte-verified; MCP remains pending. The manual
 [publishing workflow](../.github/workflows/publish-candidate.yml) now has local
 checks. Its first run failed at private draft metadata access before any upload;
 [PWB-r1](../contracts/PUBLICATION_BOOTSTRAP_V6.md) defines the corrected two-job,
@@ -89,8 +89,8 @@ prove account permission. The user supplied `vaibhavsuman00` for both registries
 and reported 2FA enabled. npm now authenticated as that owner with write-2FA
 confirmed. The screenshot initially verified only the `cragkit` pending PyPI publisher;
 the earlier instruction to create three identical pending configurations was
-wrong. Core first use has since passed; the owner confirmed the next LangChain
-pending configuration. Register each remaining name only after the prior entry
+wrong. Core and LangChain first use have since passed; the owner has been asked to
+configure MCP. Register each remaining name only after the prior entry
 converts. See the
 [account setup record](../evaluation/reports/V6/V6-08C-accounts.md) and current
 [bootstrap contract](../contracts/PUBLICATION_BOOTSTRAP_V6.md).
