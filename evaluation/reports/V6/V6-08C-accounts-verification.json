@@ -1,0 +1,225 @@
+{
+  "revision": "V6-08C-account-r2",
+  "date": "2026-11-04",
+  "state": "read_only_preparation_complete_authenticated_setup_pending",
+  "base_commit": "79dcd21f952dcc1ab651f60c27b2c2065257f72e",
+  "package_tree": "63dafe3b3906778e456b1cd2aefb7f99cd896e43",
+  "declared_accounts": {
+    "pypi": "vaibhavsuman00",
+    "npm": "vaibhavsuman00",
+    "two_factor_enabled": {
+      "pypi": "user_reported_yes",
+      "npm": "user_reported_yes"
+    },
+    "authenticated_identity_verified": false,
+    "verified_email_checked": false
+  },
+  "public_profiles": {
+    "pypi": {
+      "url": "https://pypi.org/user/vaibhavsuman00/",
+      "result": "profile displays supplied username; no projects",
+      "authentication_evidence": false
+    },
+    "npm": {
+      "url": "https://www.npmjs.com/~vaibhavsuman00",
+      "result": "web fetch HTTP403",
+      "identity_verified": false
+    }
+  },
+  "public_preflight": {
+    "timestamp_utc": "2026-11-04T04:38:15.771589+00:00",
+    "requests": 6,
+    "public_no_credentials": true,
+    "products": [
+      {
+        "registry": "pypi",
+        "package": "cragkit",
+        "endpoint": "https://pypi.org/pypi/cragkit/json",
+        "status": "not_found",
+        "http_status": 404,
+        "ownership_verified": false
+      },
+      {
+        "registry": "pypi",
+        "package": "cragkit-langchain",
+        "endpoint": "https://pypi.org/pypi/cragkit-langchain/json",
+        "status": "not_found",
+        "http_status": 404,
+        "ownership_verified": false
+      },
+      {
+        "registry": "pypi",
+        "package": "cragkit-mcp",
+        "endpoint": "https://pypi.org/pypi/cragkit-mcp/json",
+        "status": "not_found",
+        "http_status": 404,
+        "ownership_verified": false
+      },
+      {
+        "registry": "npm",
+        "package": "cragkit",
+        "endpoint": "https://registry.npmjs.org/cragkit",
+        "status": "not_found",
+        "http_status": 404,
+        "ownership_verified": false
+      },
+      {
+        "registry": "npm",
+        "package": "cragkit-langchain",
+        "endpoint": "https://registry.npmjs.org/cragkit-langchain",
+        "status": "not_found",
+        "http_status": 404,
+        "ownership_verified": false
+      },
+      {
+        "registry": "npm",
+        "package": "cragkit-mcp",
+        "endpoint": "https://registry.npmjs.org/cragkit-mcp",
+        "status": "not_found",
+        "http_status": 404,
+        "ownership_verified": false
+      }
+    ],
+    "reported_accounts": {
+      "pypi": "vaibhavsuman00",
+      "npm": "vaibhavsuman00",
+      "two_factor": "user_reported_enabled_on_both",
+      "authenticated_permission_checks": false
+    },
+    "limits": "Public 404 does not reserve a name or prove creation permission."
+  },
+  "browser": {
+    "inventory": "browser access host unavailable",
+    "native_chrome_fallback": "timeoutReached",
+    "signed_in_state_obtained": false,
+    "login_performed": false
+  },
+  "publisher_fields": {
+    "names": [
+      "cragkit",
+      "cragkit-langchain",
+      "cragkit-mcp"
+    ],
+    "github_owner": "vsuman00",
+    "github_repository": "Cragkit",
+    "workflow_filename": "publish-candidate.yml",
+    "environment": null,
+    "pypi": "pending entries not configured; no first upload needed for setup",
+    "npm": "package must already exist; future direct-publish permission required; no existing-package setup performed"
+  },
+  "bootstrap_review": {
+    "missing_only_planner_inspected": true,
+    "interactive_exact_approved_npm_rc1_then_missing_only_pypi": "structurally supported, after corrected candidate/packet/hold review and explicit upload approval",
+    "actual_execution": false,
+    "skipped_npm_oidc_not_verified": true,
+    "new_npm_trust_first_use_expiry_days": 2,
+    "staged_placeholder_created": false,
+    "staged_placeholder_in_scope": false,
+    "permission_checks_complete": false,
+    "registry_setup_confirmed": false
+  },
+  "ci_proposal": {
+    "workflow": ".github/workflows/candidate-validation.yml",
+    "workflow_sha256": "7701a1591e58605e7533b5f73571337f292dd9f0ad4b3abca0d84ceebafbec58",
+    "dispatch_ref": "main",
+    "exact_source_sha": "verify final pushed reviewed commit before dispatch and returned run head_sha",
+    "jobs": 1,
+    "attempts_authorized": 0,
+    "proposed_attempts": 1,
+    "runner": "macos-15",
+    "expected_architecture": "arm64",
+    "timeout_minutes": 30,
+    "artifact_retention_days": 1,
+    "permissions": {
+      "contents": "read"
+    },
+    "registry_upload_steps": false,
+    "repository_visibility_change": false,
+    "rate_usd_per_minute": 0.062,
+    "estimated_compute_usd_before_included_usage": 1.86,
+    "storage": "Additional one-day artifact storage; actual allowance/usage unverified",
+    "included_allowance_verified": false,
+    "cost_approval": "not_received",
+    "workflow_dispatched": false,
+    "automatic_rerun": false,
+    "sources": [
+      "https://docs.github.com/en/billing/reference/actions-runner-pricing",
+      "https://docs.github.com/en/billing/concepts/product-billing/github-actions"
+    ]
+  },
+  "source_sha256": {
+    ".github/workflows/candidate-validation.yml": "7701a1591e58605e7533b5f73571337f292dd9f0ad4b3abca0d84ceebafbec58",
+    ".github/workflows/publish-candidate.yml": "3b94255592089b0fd9be486a4c10227b185bcadcfe51de9fe8087b2f5c7b99b6",
+    "tools/publication_workflow.py": "dc33a5dfc999791ee5a45d3be17774528e2b0dbb9d030dce868e12add0b05048",
+    "tools/check_registry_products.py": "bd4591294848fa896b80a64b5abca9589b6ef75ea8870e38309f4952f3e46bd1",
+    "evaluation/release/V6-publication.json": "3d97670eb649aa646424c0b8e65579928b3a2bdf09d9f5b2a2df223dd8c555f3",
+    "evaluation/reports/V6/V6-08-verification.json": "9c972d52f9aaf578611f98b258cdb223ba11b180523809adf0262cce1d347af2"
+  },
+  "primary_sources": [
+    "https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/",
+    "https://docs.pypi.org/trusted-publishers/adding-a-publisher/",
+    "https://docs.pypi.org/project-management/choosing-a-name/",
+    "https://docs.pypi.org/your-account/managing-your-account/",
+    "https://docs.npmjs.com/cli/v11/commands/npm-trust/",
+    "https://docs.npmjs.com/trusted-publishers/",
+    "https://docs.npmjs.com/staged-publishing/"
+  ],
+  "work_performed": [
+    "read-only exact six-name public HTTPS preflight",
+    "two complementary Sol primary-document research lanes with npm assembly",
+    "root source/workflow/planner inspection",
+    "account setup and bounded CI proposal documentation"
+  ],
+  "not_performed": [
+    "authenticated registry permission verification",
+    "pending-publisher or trust configuration",
+    "credential inspection or generation",
+    "package placeholder or upload",
+    "paid CI dispatch",
+    "product code changes or test suites"
+  ],
+  "security_hold": true,
+  "publication_authorized": false,
+  "resource_observations": {
+    "available_disk_gib": 15,
+    "activity": "small text/public metadata reads; no installs, test processes or persistent services"
+  },
+  "next_actions": [
+    "owner secure PyPI pending publisher setup and signed-in account checks",
+    "one separately authorized corrected candidate CI run",
+    "replacement packet/hold review",
+    "explicitly authorized exact npm bootstrap and later publisher setup",
+    "authorized publishing job and post-registry smoke"
+  ],
+  "acceptance": "Only reported account declarations, public metadata, primary-source setup research and local proposal preparation are complete; V6-08C/08D/version exit remain pending.",
+  "local_documentation_checks": {
+    "prose": [
+      {
+        "path": "docs/publication.md",
+        "suspicious": 0,
+        "density": "low",
+        "clean_exit": 0,
+        "byte_identical": true
+      },
+      {
+        "path": "evaluation/reports/V6/V6-08C-accounts.md",
+        "suspicious": 0,
+        "density": "low",
+        "clean_exit": 0,
+        "byte_identical": true
+      },
+      {
+        "path": "tasks/todo.md",
+        "suspicious": 0,
+        "density": "low",
+        "clean_exit": 0,
+        "byte_identical": true
+      }
+    ],
+    "local_links": 370,
+    "anchors": 71,
+    "errors": 0,
+    "source_hashes": "matched",
+    "public_identity_not_authenticated_permission": true
+  }
+}

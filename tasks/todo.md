@@ -11,6 +11,10 @@ packet review and registry gates.
 [Current evidence](../evaluation/reports/V6/V6-04R-closure.md).
 V6-08, production acceptance and version exit remain incomplete.
 
+Registry checkpoint: the user supplied PyPI/npm account `vaibhavsuman00` and
+confirmed 2FA enabled on both. Public six-name preflight completed; authenticated
+permissions/publisher setup remain pending. [Account record](../evaluation/reports/V6/V6-08C-accounts.md).
+
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
 V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). V3-02: COMPLETE for native injectable adapters and the bounded Cohere comparison; [evidence](../evaluation/reports/V3/V3-02D.md). V3-03/V3-C1: COMPLETE for standalone strict context accounting. V3-04: COMPLETE for PK-r1 packing/native opt-in source snapshots. V3-05: COMPLETE for AS-r1 curated coverage. V3-06/V3-C2: COMPLETE for EP-r1. V3-07: COMPLETE for the frozen development comparison. V3-08/V3-C3/V3-EXIT: COMPLETE for the declared native/curated development milestone; [exit evidence](../evaluation/reports/V3/V3-08-exit.md). Next: V4-01 shared execution ledger. Registry publication, generalized live-model quality and hosted CI evidence remain pending.
@@ -5266,3 +5270,75 @@ authorized candidate CI, then replacement packet/hold review; registry owners/
 permissions, explicit upload authorization and registry smoke remain required.
 V6-08D/V6-09/C3/exit remain unchecked. Learning is unassessed; the closure report
 offers a data-versus-SQL-syntax exercise and explains trusted-plugin limitations.
+
+
+V6-08C-account-r2 assignment: IN_PROGRESS after the user supplied public PyPI and
+npm username vaibhavsuman00 and confirmed 2FA enabled on both. This is user-
+reported identity/account protection, not authenticated permission evidence.
+Concrete outcome: determine current six-name metadata status and exact secure
+setup steps, prepare replacement candidate CI approval details, preserve holds.
+Two Sol peers: registry_pypi owns private pypi.md (PyPI first/existing-project
+requirements); registry_npm owns private npm.md and ASSEMBLES assembly.md (npm
+bootstrap/trusted publishing and combined requirements). Read-only repo, separate
+private writes under cragkit-registry-readiness-i011gods; no tests/installs,
+credentials, login, account mutation, workflow dispatch or upload. Direct peer
+coordination, shared PPR-r1/PWP-r1 constraints; scope/protected ownership changes
+escalate to root, unresolved material decisions to Astra. Root owns actual public
+preflight, signed-in state inspection if available, cost review, combined checks,
+report/tracker/Git. Preserve user dirty source/storage/tracker/audits. Acceptance:
+public absence distinguished from ownership, public identity distinguished from
+logged-in permission, current primary documentation, accurate explicit remaining
+user steps and one concrete CI proposal without dispatch.
+
+
+V6-08C-account-r2 final handoff: COMPLETE for the account declaration, primary-
+source setup research, six-name public preflight and reviewable CI proposal;
+V6-08C parent and authenticated setup remain incomplete. Public account names
+are vaibhavsuman00 for both registries; 2FA is user-reported enabled. PyPI public
+profile matches and has no projects; npm profile web fetch HTTP403 is not absence.
+Six exact project/package metadata requests returned404, no operational error,
+no credentials, verified HTTPS and bounded time/size. Absence reserves no name
+and proves no create permission. Browser host unavailable; native Chrome fallback
+timed out. No signed-in state, email/2FA or package permissions were verified.
+
+Sol registry_pypi owned private pypi.md; Sol registry_npm owned npm.md and
+ASSEMBLED assembly.md. Both did substantive complementary official-document
+research and coordinated directly. Root inspected both and the actual workflow/
+missing-only planner. Shared PPR-r1/PWP-r1 boundaries held; no overlapping repo
+writes or unresolved peer decision required Astra. Root owns report, verification
+JSON, publication guide and tracker changes, final checks and scoped Git. User
+source/storage edits, tracker draft and three audit drafts remain protected.
+
+Verified design facts: PyPI pending publishers need no first upload; use project
+names cragkit/cragkit-langchain/cragkit-mcp, GitHub owner vsuman00, repo Cragkit,
+filename publish-candidate.yml, environment blank. No publisher was saved. npm
+requires an existing package before trust configuration. After replacement CI/
+packet/hold review and explicit upload approval, interactive exact npm RC1
+bootstrap can precede saved trusts and a guarded missing-only PyPI job. This is
+source-inspected compatibility, not execution. Skipped npm steps do not prove
+OIDC. New trust expires without first successful publish within two days. A new-
+name staged npm operation creates a public placeholder and is outside the held
+nine-product set; no stage, placeholder, scope/name change or weakened flag.
+
+CI proposal: one candidate-validation.yml macos-15 ARM64 job on reviewed main,
+30-minute timeout, contents read, one-day artifacts, no registry upload, provider
+key or repo visibility change. Fresh official rateUSD0.062/min gives estimated
+compute up toUSD1.86 before included usage, plus storage; allowance unverified.
+No new approval/dispatch/rerun; earlier single-job approval was consumed. Exact
+final pushed SHA and workflow digest must match before dispatch/returned run.
+security_hold true, registry_setup_confirmed false, publication unauthorized.
+
+Checks: actual public preflight and primary-document/source review; local prose,
+links/JSON/digest and scoped staged hygiene checks precede commit. No artificial
+product tests for this documentation slice or repeat of passing security suites.
+About15GiB disk available; small text/network reads, no install/model/database/
+service or persistent process. Next smallest action: obtain specific one-job CI
+approval and owner secure PyPI setup; they can proceed independently. Then new
+packet/hold review and separately approved publication/bootstrap/registry smoke.
+Learning remains unassessed; report explains registry user versus GitHub owner
+and public absence versus authenticated publishing rights.
+Final local documentation checks: 370 local links/71 anchors resolved, three
+prose files zero suspicious Unicode/low density/byte-identical cleaning. JSON
+preflight/counts, cost arithmetic, workflow/source digests and retained hold
+matched. Scoped staged secret/whitespace checks and protected baseline review
+precede commit; no authenticated permission is inferred from these checks.

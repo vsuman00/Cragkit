@@ -72,8 +72,10 @@ ownership/authentication/smoke. It is a local receipt, not registry provenance.
 
 For each registry, verify who owns or may create `cragkit`, `cragkit-langchain`
 and `cragkit-mcp`. Earlier public metadata responses do not reserve a name or
-prove account permission. Current account identities, credentials and all six
-permissions remain unverified. A scope/name change would require a new reviewed
+prove account permission. The user supplied `vaibhavsuman00` for both registries
+and reported 2FA enabled; authenticated sessions and all six publishing permissions
+remain unverified. See the [account setup record](../evaluation/reports/V6/V6-08C-accounts.md).
+A scope/name change would require a new reviewed
 candidate, metadata and dependency pins; do not silently rename these products.
 
 Use the registries' signed-in account pages and enable account protection. Prefer
@@ -101,6 +103,24 @@ If the authorized bootstrap requires interactive publication, use the owner's
 secure CLI login/2FA flow. If a token is necessary, use the narrowest supported
 short-lived credential in an approved secret store, then revoke it when no longer
 needed. No token has been requested or configured here.
+
+For first publication, [npm requires an existing package before trust setup](https://docs.npmjs.com/cli/v11/commands/npm-trust/).
+The guarded publishing job cannot bootstrap an absent npm package through a trust
+that has not yet been configured. After corrected candidate CI, packet review,
+hold removal and specific upload approval, the owner can bootstrap the exact
+three approved npm RC1 tarballs through interactive login/2FA. Only afterward can
+those packages receive trusted publishers. The missing-only planner can then
+verify existing npm bytes and the `next` tags and upload only missing PyPI files.
+A skipped npm upload does not validate npm OIDC. New npm trust configurations
+expire without a first successful publish within two days; time their setup for
+an approved publishable version. These are later authorized steps, not completed
+account setup. Do not set `registry_setup_confirmed` from usernames alone.
+
+The [owner setup checklist](../evaluation/reports/V6/V6-08C-accounts.md#owner-setup)
+gives exact publisher fields. GitHub owner `vsuman00` differs from registry user
+`vaibhavsuman00`. PyPI pending publishers need no bootstrap upload. npm staged
+publishing of a new name creates a public placeholder, so it is not a harmless
+way to prepare these absent names or bypass the held nine-product RC1 packet.
 
 ## Workflow controls and private transport
 
