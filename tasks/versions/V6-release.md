@@ -104,8 +104,9 @@ separate from local engineering results. See the
 V6-04R-CLOSE: retained scanner findings and later reachable-history leads have
 inspected dispositions; installed-security test selection gaps are fixed.
 [Local acceptance](../../evaluation/reports/V6/V6-04R-closure.md) passed for the
-replacement products. Qualified CSO coverage remains partial; replacement
-candidate CI, release-packet review, registry and production gates remain separate.
+replacement products. [Replacement candidate CI](../../evaluation/reports/V6/V6-08C-CI2.md)
+also passed. Qualified CSO coverage remains partial; release-packet review,
+registry and production gates remain separate.
 
 ### V6-05: Developer usability trial
 

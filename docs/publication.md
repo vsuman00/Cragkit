@@ -3,8 +3,8 @@
 Publication remains on security hold. The later
 [security closure](../evaluation/reports/V6/V6-04R-closure.md) resolves the retained
 findings and passes local replacement-artifact checks. The retained release
-packet still predates the corrected code: replacement candidate CI and packet
-review must precede explicit hold removal. Do not use the manual upload examples
+packet still predates the corrected code. [Replacement candidate CI](../evaluation/reports/V6/V6-08C-CI2.md)
+has passed; replacement-packet review must precede explicit hold removal. Do not use the manual upload examples
 below to bypass the hold. Account setup and publication authorization remain separate.
 
 For example, a wheel already tested in CI can be copied unchanged for upload.

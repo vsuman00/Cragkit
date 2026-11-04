@@ -6,8 +6,8 @@ candidates and eleven later Git-history occurrences have inspected dispositions;
 no unresolved product vulnerability was established in those paths. Installed
 security test-selection gaps are fixed. Qualified CSO coverage remains PARTIAL;
 separate native parsing, fresh dependency/history checks and installed tests
-have their own evidence. Publication stays on hold for replacement candidate CI,
-packet review and registry gates.
+have their own evidence. [Replacement candidate CI](../evaluation/reports/V6/V6-08C-CI2.md)
+now passed; publication stays on hold for replacement packet review and registry gates.
 [Current evidence](../evaluation/reports/V6/V6-04R-closure.md).
 V6-08, production acceptance and version exit remain incomplete.
 
@@ -5345,13 +5345,13 @@ precede commit; no authenticated permission is inferred from these checks.
 
 
 V6-08C-CI2 assignment: IN_PROGRESS. Latest user instruction authorizes the next
-validation with a totalUSD2 ceiling (supersedes the earlierUSD1 suggestion).
+validation with a total USD 2 ceiling (supersedes the earlier USD 1 suggestion).
 Root owns one dependent workflow/budget/dispatch/evidence lane; no useful
 independent implementation writer. Applying CI/CD automation and self-contained
-prose skills. Shorten manual candidate-validation timeout30to25minutes, cap
-selected artifact payload100MiB/100files with no symlinks, retain one day. At
-verifiedUSD0.062/min, estimated computeUSD1.55 before included allowance, leaving
-margin underUSD2 for small artifact storage and overhead. No new registry
+prose skills. Shorten manual candidate-validation timeout 30 to 25 minutes, cap
+selected artifact payload 100 MiB / 100 files with no symlinks, retain one day. At
+verified USD 0.062/min, estimated compute USD 1.55 before included allowance, leaving
+margin under USD 2 for small artifact storage and overhead. No new registry
 publication, model/hosted database call, visibility change, persistent runner or
 automatic retry. Current read-only billing API returned404 and browser host is
 unavailable; free allowance is not claimed. Preserve all user-owned dirty files
@@ -5360,3 +5360,63 @@ checks, focused candidate/tool tests, reviewed scoped commit/push, one exact
 reviewed-source manual run, inspect real steps/archive identity, retain honest
 failed or successful evidence and measured job duration/cost estimate. Root
 updates final evidence/tracker; no higher compute or second run is assumed.
+
+
+V6-08C-CI2 final handoff: COMPLETE for the single authorized replacement hosted
+run and exact retained-artifact acceptance. User's latest USD 2 total ceiling
+superseded the earlier USD 1 suggestion and resolved the old pending cost question
+for this one job. Root used one writer; no independent implementation lane was
+useful. Workflow a3ff7e81332d849724407356d220c991e8a8411d shortened timeout to
+25 minutes, bounded artifacts 100 MiB / 100 files/no links/one day; 6 real inline guard
+cases and 23 focused CIB/SDK tests passed before scoped commit/push and dispatch.
+
+Exactly one private run 41777862696 / job 126402305700 / attempt 1 succeeded as owner
+vsuman00, source a3ff7e81332d849724407356d220c991e8a8411d, package tree
+63dafe3b3906778e456b1cd2aefb7f99cd896e43. All 18 job steps passed. Actual tuple:
+macOS 15.8.2 (24H232), ARM64, Python 3.14.6, Node 26.5.0, npm 11.17.0, uv 0.11.8.
+Source cases: 4374 Python core/tools passed with 3 initial prebuild skips / 4 existing
+serializer warnings; all 3 skipped entrypoint parameterizations later passed in
+explicit post-build step. Core Node 1639, LangChain 113 Python / 108 Node, MCP 54 / 42
+passed; all 34 serial pipeline stages passed. Installed security regressions:
+LangChain/core 120 Python + 112 Node and MCP 54 Python + 42 Node passed, all 12 optional
+profiles passed. No test count or initial skip result retroactively relabelled.
+
+Artifact 13297269766 ZIP 1,286,413 bytes SHA256
+422cb0367bdd11b61416b287378abffbd78c60442f1ceb1ce7523280d58858be matched GitHub
+metadata. Existing CIB-r1 verifier passed exact run/source/job/step/artifact,
+15-file/12-product inventories, every recorded command status, hashes/counts,
+licenses/notices, guarded contents and rebuilt-wheel members. 9 Python archives
+match local security-acceptance bytes; 3 npm gzip archives differ but decompressed
+tar bytes/member bytes/modes match exactly. No repeated content scan or local
+suite/install was needed for identical inspected contents after hosted success.
+ZIP/metadata retained under ignored artifacts/V6/replacement-candidate-a3ff7e8;
+raw log private outside Git. Frozen V6-08 receipt/pins unchanged.
+
+Budget: job 168 seconds, API run 172 seconds; 3 rounded minutes at USD 0.062 gives
+USD 0.186 compute before included allowance, plus estimated one-day storage about
+USD 0.00001. Even full 100 MiB storage estimate leaves total under USD 0.19, below
+approved USD 2. Timing API currently reports 0 billable MACOS milliseconds. This is
+observed API data and a conservative estimate, not a verified final invoice;
+free allowance remains unverified. No billing setting changed, second dispatch,
+automatic retry, provider/model fee, hosted DB write, registry upload or repo
+visibility change. Monitor/temporary archive-inspection processes are closed.
+
+Changed workflow/docs/ci preparation plus new V6-08C-CI2 report/verification and
+current publication/version/tracker pointers. Protected source/storage edits,
+tracker draft and three audit drafts remain excluded from scoped commits. Root
+owns final prose/link/JSON/digest/staged-secret/whitespace checks and evidence
+commit/immediate push/sync. Local resource use was small API/file reads and six
+short sparse-file guard fixtures; no persistent process/service or model install.
+Next smallest action: prepare/review replacement publication packet from this
+verified candidate, then hold review/authenticated registry setup/explicit upload
+authorization/post-registry smoke. V6-08D/V6-09/C3/version exit and production
+acceptance remain incomplete. Qualified CSO remains partial. Learning unassessed;
+report explains exact artifacts versus green job and explicit skip follow-up.
+
+CI2 final local evidence checks:393local links/72anchors resolved, five prose
+files had zero suspicious Unicode/low density/byte-identical deterministic
+cleaning. All retained ZIP/metadata/receipt/workflow hashes matched; local source
+checks and gross cost arithmetic remained consistent. Hold explanation now
+records the passing replacement CI; hold true, old packet pins and publication
+unauthorized state preserved. Final scoped staging/secret/whitespace checks and
+remote synchronization follow; no second CI job is triggered by this docs push.

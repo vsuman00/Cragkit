@@ -12,7 +12,7 @@
   "runner": "ubuntu-24.04",
   "timeout_minutes": 20,
   "security_hold": true,
-  "security_hold_reason": "V6-04R-CLOSE resolved retained findings and passed local replacement-artifact checks. The retained packet predates corrected code; replacement candidate CI and packet review remain required before reviewed hold removal.",
+  "security_hold_reason": "V6-04R-CLOSE findings and replacement CI/archive acceptance passed. The retained publication packet predates corrected code; replacement-packet review and registry gates remain required before reviewed hold removal.",
   "publication_authorized": false,
   "workflow_dispatched": false
 }
