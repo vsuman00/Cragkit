@@ -1,6 +1,9 @@
 """Release admission and partial-upload plans never infer publication authority."""
 import hashlib
 import json
+import io
+import zipfile
+import stat
 from pathlib import Path
 import re
 import shlex
@@ -20,13 +23,16 @@ def admitted():
                 PUBLICATION_AUTHORIZED='true', RUNNER_COST_ACKNOWLEDGED='true',
                 REGISTRY_SETUP_CONFIRMED='true', CRAGKIT_RELEASE_ENABLED='reviewed-rc1',
                 GITHUB_SHA='a' * 40, REVIEWED_WORKFLOW_SHA='a' * 40,
-                TRANSPORT_RELEASE_ID='123', TRANSPORT_ASSET_ID='456')
+                TRANSPORT_RELEASE_ID='123', TRANSPORT_ASSET_ID='456',
+                PYPI_PROJECT='all', PYPI_PENDING_PROJECT='none', GITHUB_RUN_ID='789',
+                GITHUB_REPOSITORY_ID='321', TRANSPORT_ARTIFACT_ID='987')
 
 
 @pytest.fixture
 def reviewed_policy(tmp_path, monkeypatch):
     approved = W.R.parse_json(W.P.read_file(W.POLICY, 16 * 1024))
     approved['security_hold'] = False
+    approved['revision'] = 'PWP-r2'
     path = tmp_path / 'reviewed-publication-policy.json'
     path.write_text(json.dumps(approved))
     monkeypatch.setattr(W, 'POLICY', path)
@@ -54,20 +60,36 @@ def test_executable_transport_command_matches_reviewed_policy_and_admission_orde
                  'inputs.publication_authorized && inputs.runner_cost_acknowledged',
                  "inputs.registry_setup_confirmed && vars.CRAGKIT_RELEASE_ENABLED == 'reviewed-rc1'"):
         assert gate in workflow
-    guard = workflow.index('run: python tools/publication_workflow.py guard')
-    asset = workflow.index('python tools/publication_workflow.py asset --release')
-    unpack_position = workflow.index('python tools/release_transport.py unpack')
-    preflight = workflow.index('python tools/check_registry_products.py --allow-missing')
-    plan = workflow.index('python tools/publication_workflow.py plan')
-    upload = workflow.index('uses: pypa/gh-action-pypi-publish@')
-    assert guard < asset < unpack_position < preflight < plan < upload
+    assert 'pypi_project:' in workflow and 'pypi_pending_project:' in workflow
+    assert 'PYPI_PROJECT:' in workflow and 'PYPI_PENDING_PROJECT:' in workflow
+    # Identity comes from immutable runner defaults; workflows must not override them.
+    assert not re.search(r'^      GITHUB_(?:RUN_ID|REPOSITORY_ID):', workflow, re.MULTILINE)
+    assert 'TRANSPORT_ARTIFACT_ID:' in workflow and 'needs.' in workflow
+    assert 'head -c 4194305' in workflow and 'pipefail' in workflow
+    assert '--pypi-project' in workflow
+    assert 'unwrap-artifact' in workflow and 'postflight' in workflow
+    # Read-only visibility retries must be downstream of the single publish action.
+    assert workflow.count('uses: pypa/gh-action-pypi-publish@') == 3
+    assert '15' in workflow and '10' in workflow
+    jobs = re.split(r'^  (?=[A-Za-z][A-Za-z0-9_-]*:\n)', workflow, flags=re.MULTILINE)
+    fetch = next(job for job in jobs if 'contents: write' in job)
+    publisher = next(job for job in jobs if 'id-token: write' in job)
+    assert fetch != publisher and 'id-token: none' in fetch
+    assert 'contents: read' in publisher and 'actions: read' in publisher
+    assert 'contents: write' not in publisher
+    assert 'pypa/gh-action-pypi-publish' not in fetch and ' unpack' not in fetch
+    for job in (fetch, publisher):
+        assert 'publication_workflow.py guard' in job
+        assert "github.actor == 'vsuman00'" in job
+        assert 'inputs.reviewed_workflow_sha == github.sha' in job
+    assert 'timeout-minutes: 5' in fetch and 'timeout-minutes: 20' in publisher
 
 
 def test_reviewed_bootstrap_clearance_does_not_admit_unconfigured_hosted_publication():
     approved = W.policy()
     assert approved['security_hold'] is False
     assert approved['publication_authorized'] is True
-    assert approved['workflow_dispatched'] is False
+    assert approved['workflow_dispatched'] is True
     for key in ('REGISTRY_SETUP_CONFIRMED', 'CRAGKIT_RELEASE_ENABLED'):
         environment = admitted()
         environment[key] = ''
@@ -159,7 +181,7 @@ def packet(tmp_path, monkeypatch, reviewed_policy):
                   state='partial', products=[{key: item[key] for key in
                     ('path', 'registry', 'package', 'version', 'bytes')} |
                     dict(sha256=item['prepared_sha256'], state='absent') for item in products],
-                  npm_next_tags=[dict(package=name, state='absent') for name in W.ORDER])
+                  npm_next_tags=[dict(package=name, expected='1.0.0-rc.1', observed=None, state='absent') for name in W.ORDER])
     path = preflight / 'registry-report.json'
     def save():
         path.write_text(json.dumps(report))
@@ -175,9 +197,10 @@ def test_missing_only_plan_and_upload_order(packet, tmp_path):
     target = report_path.parent / verified['path']
     target.parent.mkdir(parents=True)
     target.write_bytes((prepared / verified['path']).read_bytes())
-    next(item for item in report['npm_next_tags'] if item['package'] == verified['package'])['state'] = 'match'
+    next(item for item in report['npm_next_tags'] if item['package'] == verified['package']).update(
+        state='match', observed='1.0.0-rc.1')
     save()
-    plan = W.prepare_uploads(prepared=prepared, report_path=report_path, output=tmp_path / 'upload')
+    plan = W.prepare_uploads(prepared=prepared, report_path=report_path, output=tmp_path / 'upload', pypi_project='all')
     assert len(plan['missing']) == 8 and len(plan['npm_missing']) == 2
     assert all(plan['pypi_groups'].values())
     assert sorted(path.name for path in (tmp_path / 'upload/pypi/cragkit').iterdir()) == sorted(
@@ -203,7 +226,7 @@ def test_bad_preflight_never_produces_upload_plan(packet, tmp_path, fault):
     else: (prepared / W.P.MANIFEST_NAME).write_bytes(b'changed')
     save()
     with pytest.raises((W.P.PreparationError, W.R.RegistryError)):
-        W.prepare_uploads(prepared=prepared, report_path=report_path, output=tmp_path / 'upload')
+        W.prepare_uploads(prepared=prepared, report_path=report_path, output=tmp_path / 'upload', pypi_project='all')
     assert not (tmp_path / 'upload').exists()
 
 
@@ -213,10 +236,10 @@ def test_existing_output_and_failed_first_upload_are_preserved(packet, tmp_path)
     output.mkdir()
     (output / 'keep').write_bytes(b'keep')
     with pytest.raises(W.P.PreparationError, match='output_exists'):
-        W.prepare_uploads(prepared=prepared, report_path=report_path, output=output)
+        W.prepare_uploads(prepared=prepared, report_path=report_path, output=output, pypi_project='all')
     assert (output / 'keep').read_bytes() == b'keep'
     output = tmp_path / 'fresh'
-    W.prepare_uploads(prepared=prepared, report_path=report_path, output=output)
+    W.prepare_uploads(prepared=prepared, report_path=report_path, output=output, pypi_project='all')
     calls = []
     def fail(command, **kwargs):
         calls.append(command)
@@ -225,3 +248,231 @@ def test_existing_output_and_failed_first_upload_are_preserved(packet, tmp_path)
         W.publish_npm(prepared=prepared, plan_path=output / 'workflow-plan.json',
                       environment=admitted(), runner=fail)
     assert len(calls) == 1 and Path(calls[0][2]).name == 'cragkit-1.0.0-rc.1.tgz'
+
+
+@pytest.mark.parametrize('selected,pending', [('', 'none'), ('unknown', 'none'),
+    ('all', 'cragkit'), ('cragkit', 'cragkit-mcp'), ('cragkit', ''), ('cragkit', 'unknown')])
+def test_selector_and_pending_conflicts_refuse_before_access(reviewed_policy, selected, pending):
+    with pytest.raises(W.P.PreparationError):
+        W.admit(admitted() | dict(PYPI_PROJECT=selected, PYPI_PENDING_PROJECT=pending))
+
+
+@pytest.mark.parametrize('selected,pending', [('all', 'none'), ('cragkit', 'cragkit'),
+    ('cragkit-langchain', 'none'), ('cragkit-mcp', 'cragkit-mcp')])
+def test_selected_binding_is_admitted_without_claiming_all_bindings(reviewed_policy, selected, pending):
+    W.admit(admitted() | dict(PYPI_PROJECT=selected, PYPI_PENDING_PROJECT=pending))
+
+
+def verify_records(packet, predicate):
+    prepared, report_path, _, report, save = packet
+    for item in report['products']:
+        if predicate(item):
+            item['state'] = 'verified'
+            path = report_path.parent / item['path']
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((prepared / item['path']).read_bytes())
+    for item in report['npm_next_tags']:
+        if any(record['registry'] == 'npm' and record['package'] == item['package']
+               and record['state'] == 'verified' for record in report['products']):
+            item.update(state='match', observed='1.0.0-rc.1')
+    report['state'] = 'complete' if all(item['state'] == 'verified' for item in report['products']) else 'partial'
+    save()
+
+
+@pytest.mark.parametrize('selected', ['cragkit', 'cragkit-langchain', 'cragkit-mcp'])
+def test_selected_phase_only_authorizes_its_pair(packet, tmp_path, selected):
+    verify_records(packet, lambda item: item['registry'] == 'npm' or
+                   (selected != 'cragkit' and item['package'] == 'cragkit'))
+    prepared, report_path, _, _, _ = packet
+    output = tmp_path / 'phase'
+    plan = W.prepare_uploads(prepared=prepared, report_path=report_path, output=output,
+                             pypi_project=selected)
+    assert plan['revision'] == 'PUP-r2' and plan['pypi_project'] == selected
+    assert len(plan['missing']) == 2 and len(plan['all_missing']) >= 2
+    assert plan['npm_missing'] == []
+    assert all('/pypi/' in '/' + path and selected.replace('-', '_') in Path(path).name
+               for path in plan['missing'])
+    assert sum(path.is_file() for path in (output / 'pypi').rglob('*')) == 2
+    calls = []
+    W.publish_npm(prepared=prepared, plan_path=output / 'workflow-plan.json',
+                  environment=admitted() | dict(PYPI_PROJECT=selected),
+                  runner=lambda *a, **kw: calls.append(a))
+    assert calls == []
+
+
+@pytest.mark.parametrize('fault', ['missing_npm', 'missing_core', 'unselected_error', 'unselected_drift'])
+def test_phase_dependencies_and_unselected_failures_block(packet, tmp_path, fault):
+    verify_records(packet, lambda item: item['registry'] == 'npm' or item['package'] == 'cragkit')
+    prepared, report_path, _, report, save = packet
+    if fault == 'missing_npm':
+        report['products'][0]['state'] = 'absent'
+    elif fault == 'missing_core':
+        next(item for item in report['products'] if item['registry'] == 'pypi' and item['package'] == 'cragkit')['state'] = 'absent'
+    else:
+        item = next(item for item in report['products'] if item['package'] == 'cragkit-mcp' and item['registry'] == 'pypi')
+        item['state'] = 'error' if fault == 'unselected_error' else 'verified'
+        if fault == 'unselected_drift':
+            path = report_path.parent / item['path']
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'wrong')
+    save()
+    with pytest.raises((W.P.PreparationError, W.R.RegistryError)):
+        W.prepare_uploads(prepared=prepared, report_path=report_path, output=tmp_path / 'refused',
+                          pypi_project='cragkit-langchain')
+    assert not (tmp_path / 'refused').exists()
+
+
+@pytest.mark.parametrize('fault', ['npm_injection', 'scope_mismatch'])
+def test_tampered_phase_cannot_reach_npm_runner(packet, tmp_path, fault):
+    verify_records(packet, lambda item: item['registry'] == 'npm')
+    prepared, report_path, products, _, _ = packet
+    output = tmp_path / 'phase'
+    W.prepare_uploads(prepared=prepared, report_path=report_path, output=output, pypi_project='cragkit')
+    path = output / 'workflow-plan.json'
+    plan = json.loads(path.read_text())
+    if fault == 'npm_injection':
+        plan['npm_missing'] = [products[0]['path']]
+        plan['missing'].append(products[0]['path'])
+    else:
+        plan['pypi_project'] = 'all'
+    path.write_text(json.dumps(plan))
+    with pytest.raises(W.P.PreparationError):
+        W.publish_npm(prepared=prepared, plan_path=path,
+                      environment=admitted() | dict(PYPI_PROJECT='cragkit'),
+                      runner=lambda *a, **kw: pytest.fail('unexpected npm mutation'))
+
+
+def test_postflight_distinguishes_complete_phase_from_complete_publication(packet):
+    verify_records(packet, lambda item: item['registry'] == 'npm' or item['package'] == 'cragkit')
+    _, report_path, _, _, _ = packet
+    result = W.verify_postflight(report_path=report_path, pypi_project='cragkit')
+    assert result['phase_complete'] is True and result['publication_complete'] is False
+    result = W.verify_postflight(report_path=report_path, pypi_project='all')
+    assert result['phase_complete'] is False and result['publication_complete'] is False
+    verify_records(packet, lambda item: True)
+    result = W.verify_postflight(report_path=report_path, pypi_project='all')
+    assert result['phase_complete'] is True and result['publication_complete'] is True
+
+
+def artifact_metadata():
+    return dict(id=987, name='reviewed-rc1-transport-789', expired=False, size_in_bytes=1024,
+                archive_download_url='https://api.github.com/repos/vsuman00/Cragkit/actions/artifacts/987/zip',
+                workflow_run=dict(id=789, repository_id=321, head_repository_id=321,
+                                  head_branch='main', head_sha='a' * 40))
+
+
+@pytest.mark.parametrize('field,value', [('id', 988), ('name', 'foreign'), ('expired', True),
+    ('expired', 0), ('size_in_bytes', 0), ('size_in_bytes', 4194305),
+    ('archive_download_url', 'https://attacker.invalid/archive')])
+def test_foreign_expired_or_unbounded_artifact_is_refused(reviewed_policy, field, value):
+    metadata = artifact_metadata()
+    W.validate_transport_artifact(metadata, admitted())
+    with pytest.raises(W.P.PreparationError):
+        W.validate_transport_artifact(metadata | {field: value}, admitted())
+
+
+@pytest.mark.parametrize('field,value', [('id', 790), ('repository_id', 322),
+    ('head_repository_id', 322), ('head_branch', 'other'), ('head_sha', 'b' * 40)])
+def test_artifact_must_belong_to_same_reviewed_run_and_repository(reviewed_policy, field, value):
+    metadata = artifact_metadata()
+    metadata['workflow_run'][field] = value
+    with pytest.raises(W.P.PreparationError):
+        W.validate_transport_artifact(metadata, admitted())
+
+
+@pytest.fixture
+def sealed_wrapper(tmp_path, reviewed_policy):
+    inner = b'fixed synthetic sealed transport'
+    reviewed_policy.update(transport_bytes=len(inner), transport_sha256=hashlib.sha256(inner).hexdigest())
+    W.POLICY.write_text(json.dumps(reviewed_policy))
+    archive = tmp_path / 'artifact.zip'
+    def write(members=None):
+        with zipfile.ZipFile(archive, 'w') as wrapper:
+            for name, raw, mode in members or [('release-transport.zip', inner, stat.S_IFREG | 0o600)]:
+                member = zipfile.ZipInfo(name)
+                member.create_system = 3
+                member.external_attr = mode << 16
+                wrapper.writestr(member, raw)
+    write()
+    return archive, inner, write
+
+
+def test_exact_wrapper_exclusively_extracts_fixed_inner(sealed_wrapper, tmp_path):
+    archive, inner, _ = sealed_wrapper
+    output = tmp_path / 'unwrapped'
+    W.unwrap_transport_artifact(archive=archive, output=output)
+    assert (output / 'release-transport.zip').read_bytes() == inner
+    with pytest.raises(W.P.PreparationError):
+        W.unwrap_transport_artifact(archive=archive, output=output)
+    assert (output / 'release-transport.zip').read_bytes() == inner
+
+
+@pytest.mark.parametrize('fault', ['extra', 'duplicate', 'traversal', 'symlink', 'directory', 'changed', 'malformed', 'oversize'])
+def test_wrapper_corruption_never_creates_output(sealed_wrapper, tmp_path, fault):
+    archive, inner, write = sealed_wrapper
+    regular = stat.S_IFREG | 0o600
+    if fault == 'malformed': archive.write_bytes(b'not zip')
+    elif fault == 'oversize': archive.write_bytes(b'x' * 4194305)
+    elif fault == 'extra': write([('release-transport.zip', inner, regular), ('extra', b'x', regular)])
+    elif fault == 'duplicate': write([('release-transport.zip', inner, regular)] * 2)
+    elif fault == 'traversal': write([('../release-transport.zip', inner, regular)])
+    elif fault == 'symlink': write([('release-transport.zip', inner, stat.S_IFLNK | 0o777)])
+    elif fault == 'directory': write([('release-transport.zip/', inner, stat.S_IFDIR | 0o700)])
+    else: write([('release-transport.zip', b'changed', regular)])
+    output = tmp_path / 'refused'
+    with pytest.raises(W.P.PreparationError):
+        W.unwrap_transport_artifact(archive=archive, output=output)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize('selected', ['', 'unknown'])
+def test_plan_requires_explicit_known_selector(packet, tmp_path, selected):
+    prepared, report_path, _, _, _ = packet
+    with pytest.raises(W.P.PreparationError):
+        W.prepare_uploads(prepared=prepared, report_path=report_path, output=tmp_path / 'unknown',
+                          pypi_project=selected)
+    assert not (tmp_path / 'unknown').exists()
+
+
+def test_cli_plan_selector_must_match_admitted_scope(packet, tmp_path, monkeypatch):
+    prepared, report_path, _, _, _ = packet
+    for key, value in (admitted() | dict(PYPI_PROJECT='cragkit')).items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv('GITHUB_OUTPUT', str(tmp_path / 'job-output'))
+    result = W.main(['plan', '--prepared', str(prepared), '--report', str(report_path),
+                     '--output', str(tmp_path / 'wrong-scope'), '--pypi-project', 'all'])
+    assert result == 1 and not (tmp_path / 'wrong-scope').exists()
+
+
+def test_cli_postflight_absence_is_pending_not_success(packet, monkeypatch):
+    _, report_path, _, _, _ = packet
+    assert W.main(['postflight', '--report', str(report_path), '--pypi-project', 'all']) == 2
+
+
+def test_postflight_conflict_is_failure_without_private_diagnostics(packet, capsys):
+    _, report_path, _, report, save = packet
+    report['products'][0].update(state='error', reason='private-provider-text')
+    save()
+    assert W.main(['postflight', '--report', str(report_path), '--pypi-project', 'all']) == 1
+    captured = capsys.readouterr()
+    assert 'private-provider-text' not in captured.out + captured.err
+
+
+@pytest.mark.parametrize('fault', ['encrypted', 'declared_size'])
+def test_wrapper_metadata_is_rejected_before_member_read(sealed_wrapper, tmp_path, monkeypatch, fault):
+    import struct
+    archive, inner, _ = sealed_wrapper
+    raw = bytearray(archive.read_bytes())
+    central = raw.index(b'PK\x01\x02')
+    if fault == 'encrypted':
+        struct.pack_into('<H', raw, 6, struct.unpack_from('<H', raw, 6)[0] | 1)
+        struct.pack_into('<H', raw, central + 8, struct.unpack_from('<H', raw, central + 8)[0] | 1)
+    else:
+        struct.pack_into('<I', raw, 22, len(inner) + 1)
+        struct.pack_into('<I', raw, central + 24, len(inner) + 1)
+    archive.write_bytes(raw)
+    monkeypatch.setattr(zipfile.ZipFile, 'open', lambda *a, **kw: pytest.fail('invalid member read'))
+    output = tmp_path / 'invalid-metadata'
+    with pytest.raises(W.P.PreparationError, match='artifact_member'):
+        W.unwrap_transport_artifact(archive=archive, output=output)
+    assert not output.exists()

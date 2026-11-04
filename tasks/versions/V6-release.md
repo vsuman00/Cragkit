@@ -184,6 +184,12 @@ The user resumed RC1 deployment; secure registry setup and actual publication/
 post-registry smoke remain required. Archive choices and public GitHub conversion
 remain deferred. No additional paid validation is included.
 
+[PWB-r1](../../contracts/PUBLICATION_BOOTSTRAP_V6.md) adds selected-project
+first use after the observed draft-read/pending-identity blockers. Private
+transport fetching and OIDC uploading use separate jobs; local
+[acceptance](../../evaluation/reports/V6/V6-08D-bootstrap.md) does not establish
+revised hosted success. Final all-nine registry and installed smoke gates remain.
+
 Acceptance: Local readiness and publication are separate tracker states; published versions install and pass a source-linked smoke query.
 
 Verification: Before publication inspect exact artifacts; afterward fetch published packages into clean environments and verify version/hash policy.

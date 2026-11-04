@@ -1,0 +1,144 @@
+{
+  "revision": "PWB-r1-local-acceptance",
+  "state": "local_passed_hosted_unvalidated",
+  "parent_complete": false,
+  "products_rebuilt": false,
+  "new_paid_validation_runs": 0,
+  "contract": {
+    "path": "contracts/PUBLICATION_BOOTSTRAP_V6.md",
+    "sha256": "539dc3e7c5219cbd04fee5c91a16bb8499dd75c7c8a4b677d014cc77742cac0f"
+  },
+  "source_failures": {
+    "private_draft_read": {
+      "run_id": 41793016849,
+      "job_id": 126450534987,
+      "status": 403,
+      "all_uploads": "skipped",
+      "seconds": 36,
+      "compute_estimate_usd": 0.006
+    },
+    "pypi_pending": "Only core screenshot-confirmed; duplicate pending GitHub identity for other project names rejected."
+  },
+  "tests": {
+    "argv": [
+      "uv",
+      "run",
+      "--project",
+      "packages/python",
+      "--frozen",
+      "--no-sync",
+      "pytest",
+      "tools/tests/test_prepare_release_products.py",
+      "tools/tests/test_check_ci_bundle.py",
+      "tools/tests/test_artifact_licensing.py",
+      "tools/tests/test_release_transport.py",
+      "tools/tests/test_check_registry_products.py",
+      "tools/tests/test_publication_workflow.py",
+      "-q",
+      "--tb=short"
+    ],
+    "returncode": 0,
+    "elapsed_seconds": 2.886,
+    "passed": 431,
+    "failed": 0,
+    "expected_warnings": 1,
+    "warning": "ZIP duplicate-name fixture intentionally builds duplicate entries.",
+    "log_sha256": "1a2cdf4dfbd5222af393e9c0d27afcb714e1be9d936ba8dac74648824fca14d8"
+  },
+  "focused_workflow_tests": 97,
+  "new_red_baseline": {
+    "expected_failed": 11,
+    "note": "Missing phase/artifact helper interfaces before implementation; not an external service failure."
+  },
+  "actionlint": {
+    "version": "1.7.12",
+    "state": "passed",
+    "workflows": [
+      ".github/workflows/publish-candidate.yml",
+      ".github/workflows/candidate-validation.yml"
+    ]
+  },
+  "actual_local_selection": {
+    "all_missing": 6,
+    "authorized_missing": 2,
+    "npm_missing": 0,
+    "pypi_project": "cragkit",
+    "pypi_groups": {
+      "cragkit": true,
+      "cragkit-langchain": false,
+      "cragkit-mcp": false
+    },
+    "phase_complete_before_upload": false,
+    "publication_complete_before_upload": false
+  },
+  "actual_inner_wrapper_replay": {
+    "state": "passed",
+    "inner_bytes": 1496502,
+    "inner_sha256": "609f3f84924417d4c0e9baefeb2097e10d35cc5e1e43cc283add970a60545d48",
+    "outer_bytes": 1309884,
+    "actual_prior_actions_wrapper_regular_mode_and_classic_eocd_observed": true,
+    "new_single_member_wrapper": "locally constructed using observed format; revised hosted handoff not yet exercised"
+  },
+  "runner_context": "Use immutable GitHub default run/repository IDs without workflow overrides.",
+  "token_permissions": {
+    "fetch": {
+      "contents": "write",
+      "id-token": "none",
+      "timeout_minutes": 5
+    },
+    "publish": {
+      "contents": "read",
+      "actions": "read",
+      "id-token": "write",
+      "timeout_minutes": 20
+    }
+  },
+  "account_state": {
+    "pypi_pending_project": "cragkit",
+    "other_pypi_pending_projects": "not_registered",
+    "npm_canonical_products_verified": 3,
+    "npm_trust_fields_verified": 3,
+    "npm_oidc_first_publish_verified": false
+  },
+  "budget": {
+    "observed_jobs": [
+      {
+        "job_id": 125883197705,
+        "scope": "original_candidate",
+        "seconds": 152.0,
+        "rounded_minutes": 3,
+        "rate_usd_per_minute": 0.062,
+        "compute_estimate_usd": 0.186
+      },
+      {
+        "job_id": 126402305700,
+        "scope": "replacement_candidate",
+        "seconds": 168.0,
+        "rounded_minutes": 3,
+        "rate_usd_per_minute": 0.062,
+        "compute_estimate_usd": 0.186
+      },
+      {
+        "job_id": 126450534987,
+        "scope": "first_publisher_stopped_before_upload",
+        "seconds": 36.0,
+        "rounded_minutes": 1,
+        "rate_usd_per_minute": 0.006,
+        "compute_estimate_usd": 0.006
+      }
+    ],
+    "observed_compute_estimate_before_allowance": 0.378,
+    "additional_three_phase_max_runner_minutes": 75,
+    "additional_compute_ceiling_estimate": 0.45,
+    "including_all_observed_jobs_projected_compute_ceiling": 0.828,
+    "user_ceiling_usd": 2,
+    "actual_invoice_verified": false,
+    "storage_separate": "One-day small artifacts; estimate remains comfortably below2USD."
+  },
+  "remaining": [
+    "Scoped staged review/commit/push, rebind private draft to the new executing source SHA and reread metadata.",
+    "Actual core-only fetch/publish phase with matching pending identity.",
+    "Only after confirmed conversion register/publish LangChain then MCP; inspect state after any failed mint/upload.",
+    "Strict all-nine download/install/source smoke and V6-09/C3/EXIT."
+  ]
+}

@@ -10,7 +10,7 @@ development acceptance, hosted candidate CI and a production deployment are
 separate evidence. See the [finding closure](../evaluation/reports/V6/V6-04R-closure.md)
 for the current findings, commands, corrections and remaining gaps.
 
-## Keep the corrected release on hold
+## Enforce reviewed release gates
 
 The [publication policy](../evaluation/release/V6-publication.json) uses an
 explicit boolean `security_hold`. While it is `true`, publication admission must
@@ -29,7 +29,8 @@ replacement artifact.
 
 Removing a hold is a reviewed release decision. It does not authorize a new
 paid CI run, registry/account setup, publication, public release or production
-deployment. Registry publishing remains unauthorized. Follow the
+deployment. The resumed RC1 deployment is authorized; npm bootstrap is
+byte-verified and selected PyPI first use remains in progress. Follow the
 [publication procedure](publication.md), [release guide](releasing.md) and
 [tracker](../tasks/todo.md) for those separate gates.
 

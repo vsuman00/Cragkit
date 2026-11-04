@@ -1,6 +1,6 @@
 {
   "revision": "RC1-publication-r1",
-  "state": "npm_published_pypi_pending",
+  "state": "npm_verified_pypi_bootstrap_correction",
   "observed_at": "2026-11-04T07:27:19.470949+00:00",
   "parent_complete": false,
   "manifest_sha256": "7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663",
@@ -133,12 +133,10 @@
   ],
   "npm_trust_expiry": "A new configuration requires a first successful OIDC publish within two days; saved fields and skipped uploads do not prove OIDC. Recreate near the next legitimate publish if expired.",
   "pypi_pending_publishers": {
-    "evidence": "owner_confirmation",
-    "configured": true,
+    "evidence": "owner_screenshot_corrects_prior_confirmation",
+    "configured": false,
     "projects": [
-      "cragkit",
-      "cragkit-langchain",
-      "cragkit-mcp"
+      "cragkit"
     ],
     "owner": "vsuman00",
     "repository": "Cragkit",
@@ -152,14 +150,29 @@
     "state": "partial"
   },
   "remaining": [
-    "Finish any remaining npm publisher field checks.",
-    "One bounded PyPI hosted publication job, then exact nine-file registry verification.",
-    "Clean registry installs/source-linked smoke, maintenance handoff and final V6 audit."
+    "Implement and verify PWB-r1 first-use amendment locally.",
+    "Sequential selected-project PyPI publishing after matching pending/normal publisher confirmation, within USD2.",
+    "Final nine-product registry verification, clean installs/source smoke and maintenance/exit."
   ],
   "limitations": [
     "Observed latest also aliases RC1; distribution is not next-only. No stable1.0.0 release was published.",
     "Placeholder observed during normal bootstrap; no stage command was run and cause is not independently established.",
     "Artifact verification does not assert absence of extra registry versions or aliases.",
     "Repository remains private and archive selections are deferred."
-  ]
+  ],
+  "first_hosted_run": {
+    "run_id": 41793016849,
+    "job_id": 126450534987,
+    "source_commit": "103ecb0e085b7cbdc58a86c15e15a26c8d7c55f2",
+    "status": "completed",
+    "conclusion": "failure",
+    "failure_step": "Verify the approved private draft and asset metadata",
+    "failure_reason": "First draft-release GET rejected HTTP403 under contents-read integration token.",
+    "job_seconds": 36,
+    "rounded_job_minutes": 1,
+    "compute_estimate_usd": 0.006,
+    "all_registry_upload_steps": "skipped",
+    "release_enable_variable": "removed",
+    "retry_dispatched": false
+  }
 }

@@ -4,12 +4,12 @@ The user has resumed completion of V6, including RC1 package deployment. That
 instruction supersedes the earlier publication pause; repeat upload-intent
 approval is not required. Corrected-packet acceptance and owner npm login/write-2FA checks have passed.
 The artifact hold is cleared for the exact reviewed owner bootstrap. The hosted
-workflow remains disabled until all required registry setup checks pass. The
+workflow requires verified setup for its explicitly selected phase. The
 [security closure](../evaluation/reports/V6/V6-04R-closure.md) records closed
 reviewed leads; qualified CSO coverage remains partial. Corrected
 [CI acceptance](../evaluation/reports/V6/V6-08C-CI2.md) and
 [prepared products](../evaluation/reports/V6/V6-08R-verification.json) replace
-the earlier held packet. Do not bypass the remaining hold with manual commands.
+the earlier held packet. Keep operational admission checks in force.
 
 For example, a wheel already tested in CI can be copied unchanged for upload.
 An npm tarball with `private: true` needs a separately reviewed local projection
@@ -21,7 +21,9 @@ This guide implements the local preparation boundary in
 private. The [registry progress receipt](../evaluation/reports/V6/V6-08D-publication.md)
 records all three npm products published and byte-verified; PyPI publication is pending. The manual
 [publishing workflow](../.github/workflows/publish-candidate.yml) now has local
-checks but has not been enabled or run. The separate
+checks. Its first run failed at private draft metadata access before any upload;
+[PWB-r1](../contracts/PUBLICATION_BOOTSTRAP_V6.md) defines the corrected two-job,
+selected-project procedure. The separate
 [candidate workflow](../.github/workflows/candidate-validation.yml) validates
 candidates and has no registry-upload role. Local preparation, account setup,
 publication authorization, an upload and post-publication smoke are separate
@@ -84,8 +86,11 @@ For each registry, verify who owns or may create `cragkit`, `cragkit-langchain`
 and `cragkit-mcp`. Earlier public metadata responses do not reserve a name or
 prove account permission. The user supplied `vaibhavsuman00` for both registries
 and reported 2FA enabled. npm now authenticated as that owner with write-2FA
-confirmed; The owner confirmed all three PyPI pending publishers; actual OIDC first use is pending. Initial npm create
-permission and all six workflow configurations remain unverified. See the [account setup record](../evaluation/reports/V6/V6-08C-accounts.md).
+confirmed. The screenshot verifies only the `cragkit` pending PyPI publisher;
+the earlier instruction to create three identical pending configurations was
+wrong. Keep that core entry. See the
+[account setup record](../evaluation/reports/V6/V6-08C-accounts.md) and current
+[bootstrap contract](../contracts/PUBLICATION_BOOTSTRAP_V6.md).
 A scope/name change would require a new reviewed
 candidate, metadata and dependency pins; do not silently rename these products.
 
@@ -98,16 +103,17 @@ configured; keep that trust boundary explicit. Never paste a registry token or o
 reports or a command recorded in shell history.
 
 PyPI supports a pending trusted publisher for a new project; it creates the
-project only on actual first publication and does not reserve the name. Existing
+project during first-use token minting and does not reserve the name. Existing
 projects need an authorized owner to add the publisher. See
 [PyPI first-use setup](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
 and [existing-project setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
-No pending publisher or project was created during preparation.
+Local product preparation itself creates no publisher or registry project.
 
 npm trusted publishing supports private source repositories but cannot generate
 provenance from them. It requires npm >=11.5.1 and Node >=22.14.0 on supported
 hosted runners. Its setup uses package settings, so first-publication ownership
-for these uncreated packages still needs a verified bootstrap path. Do not assume
+needs a verified bootstrap path; the three npm packages now have observed owner
+bootstrap and exact-byte download evidence. Do not assume
 that a configured workflow claims a name. See
 [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
 If the authorized bootstrap requires interactive publication, use the owner's
@@ -122,7 +128,7 @@ artifact hold clearance and verified owner npm login/write-2FA, the owner can bo
 three approved npm RC1 tarballs through interactive login/2FA. This initial owner
 step does not require nonexistent npm trust configuration. Only afterward can
 those packages receive trusted publishers; keep workflow setup confirmation false
-until npm ownership/trust and PyPI publisher fields are checked. The missing-only planner can then
+until required npm setup and the selected PyPI binding are checked. The missing-only planner can then
 verify existing npm bytes and the `next` tags and upload only missing PyPI files.
 A skipped npm upload does not validate npm OIDC. New npm trust configurations
 expire without a first successful publish within two days; time their setup for
@@ -146,22 +152,35 @@ the corrected CI `candidate.zip`, its three metadata records and the reviewed pu
 products and rechecks their identities. The original one-day hosted artifact is
 not required once this retained transport is available.
 
-The proposed later storage is one private draft release named by tag
-`rc1-transport-20261104-a3ff7e8`, targeting the reviewed workflow commit. Creation and asset upload belong to the resumed deployment scope, after
-combined acceptance and authenticated setup. Neither is claimed complete. The publishing job receives numeric
-release/asset IDs, verifies draft/commit/name/size/digest/membership, and downloads
-the asset through a read-only repository token. No tag or public GitHub release
-is created by the publishing job. Draft creation, asset access and hosted behavior
-remain to be verified during execution.
+The private draft uses tag `rc1-transport-20261104-a3ff7e8`. The first hosted
+attempt failed with HTTP 403 at draft metadata retrieval before uploads. Draft
+visibility requires push access; a general read permission is insufficient.
+The amended workflow separates repository-write access from registry identity:
 
-Only owner `vsuman00` can admit the job, from `main`, on its first attempt, with
-the executing SHA explicitly acknowledged and all three publication/cost/setup
-flags true. Repository variable `CRAGKIT_RELEASE_ENABLED` must equal
-`reviewed-rc1`; it is currently absent. There are no push/PR triggers. The job
-has read-only repository access and upload-job OIDC permission, without a stored
-PyPI/npm token. Core precedes adapters. Preflight validates present files and
-plans only missing files; postflight fetches all nine and checks npm `next`.
-It never blindly skips conflicting files or retries a partial publication.
+1. The five-minute fetch job has `contents: write` and `id-token: none`. It runs
+   admission, verifies draft/asset identity and fixed transport bytes, and uploads
+   only the sealed transport as `reviewed-rc1-transport-GITHUB_RUN_ID`, retained
+   one day. It neither unpacks products nor invokes registries.
+2. The twenty-minute publisher has `contents: read`, `actions: read` and
+   `id-token: write`. It independently runs admission, validates the fetch output's
+   artifact ID against this run, repository, source, main branch, expiry, name,
+   bounded size and canonical URL, then downloads at most 4 MiB plus one byte.
+   The wrapper must contain exactly one regular `release-transport.zip`; fixed
+   inner size/hash and existing candidate/manifest/product checks run again.
+
+The reviewed draft must target the exact executing `GITHUB_SHA`. Rebind and
+reread that private draft after workflow changes; never relax the equality check.
+Artifact ID comes from the fetch job output, not dispatch input. No PAT,
+reusable workflow, new environment or public GitHub release is introduced.
+
+Both jobs require owner `vsuman00`, private `vsuman00/Cragkit`, manual dispatch
+from `main`, first attempt, exact executing-SHA acknowledgment, publication/cost/
+setup flags, hold clearance and enable marker `reviewed-rc1`. Both selectors are
+mandatory: `pypi_project` is `all` or one exact project name, and
+`pypi_pending_project` is `none` or one exact project name. Conflicting pending
+identity is rejected before draft access or token minting. `all` requires no
+pending identity. Setup acknowledgment refers to the selected pending/normal
+binding and required npm setup; it must not falsely assert all six configurations.
 
 This is a single-maintainer flow that trusts the owner account and repository
 writers; matching a SHA does not prove independent review. GitHub's environment
@@ -181,26 +200,43 @@ Account creation/configuration and interactive bootstrap need the owner's secure
 participation; public usernames are sufficient for coordination. Never share a
 password, key or token in chat.
 
-The proposed job is one `ubuntu-24.04` run, with a 20-minute timeout and one-day
-nonsecret receipt storage. At the reviewed Linux two-core rate of USD 0.006 per
-minute, compute would be up to USD 0.12 before included usage, rounding and
-separate storage. Allowance and actual charges are unknown. The resumed deployment scope includes this bounded publish job within the USD 2
-ceiling. Include the replacement validation estimate USD 0.186 in that budget;
-actual billing and included usage remain unverified. See
-[GitHub runner pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing).
-npm owner bootstrap and trusted-publisher configuration ran. PyPI dispatch and
-private transport upload remain pending at this checkpoint.
+Budget at the reviewed Linux rate USD 0.006 per minute: at most three phases,
+each five fetch minutes plus twenty publishing minutes, estimate USD 0.45.
+Prior replacement validation and the failed 36-second publish attempt estimate
+USD 0.192 combined; proposed compute total is USD 0.642 before storage,
+allowances and rounding, below the USD 2 ceiling. Record actual durations and
+remaining budget before each dispatch; no new paid validation is included.
 
-## Review the proposed first upload
+## Publish one PyPI project at a time
 
-Deployment intent is already authorized. Corrected packet acceptance and secure
-registry login/publishing permissions remain operational prerequisites, not a
-request to repeat that intent. The current read-only registry preflight is
-partial: nine requests found all target files and npm `next` tags absent. This
-does not establish authenticated permissions. npm owner authentication and write-2FA have now been verified. The owner confirmed all three PyPI pending publishers. Actual OIDC first use
-will validate the configured binding. Repository
-visibility and archive choices remain deferred; stable publication is outside
-this RC1 scope.
+Keep the screenshot-confirmed core pending entry: owner `vsuman00`, repository
+`Cragkit`, workflow `publish-candidate.yml`, no environment. Pending GitHub
+identity uniqueness excludes the project name, so simultaneous identical pending
+entries for the adapters cannot be registered. Follow this sequence:
+
+1. Admit `pypi_project=cragkit` with `pypi_pending_project=cragkit`, or `none`
+   only after its normal binding is verified for a retry. Verify all nine local
+   products and every present remote product. All three npm files and matching
+   `next` tags must already verify. Upload only the selected missing wheel/sdist.
+2. Confirm both exact core files by registry download and inspect pending-to-normal
+   conversion and ownership. Minting may create the project before uploading;
+   after any failure inspect actual state before choosing retry selectors.
+3. Only then register `cragkit-langchain` under the same GitHub binding. Select it
+   explicitly; both core Python files must verify in addition to npm. Confirm its
+   pair and conversion, then repeat for `cragkit-mcp`.
+
+Each selected phase permits at most two missing Python files and no npm upload.
+Other Python projects may be absent, but any unselected conflict or operational
+error blocks the phase. Missing, unknown or conflicting selectors are errors;
+there is no default-to-all behavior. `all` mode is reserved for verified normal
+bindings and retains nine-product missing-only checks.
+
+Postflight validates the full report and downloaded present bytes again. It
+reports `phase_complete` independently of `publication_complete`; only all nine
+verified files and npm tags establish the latter. Valid absent required files
+return exit 2 and permit at most ten read-only observations with fifteen-second
+waits. Errors/conflicts stop immediately; no upload retry occurs in that loop.
+Final clean installs and source-linked smoke still gate V6-08 completion.
 
 After the remaining acceptance and authenticated setup gates pass, publish only the reviewed files, core
 before its optional adapters. PyPI receives the six wheel/sdist files at
@@ -227,8 +263,8 @@ These behaviors are documented in
 [npm publish](https://docs.npmjs.com/cli/v11/commands/npm-publish/).
 Setting `--provenance=false` records the private-source limitation; it does not
 create an attestation or justify a provenance badge. Upload clients and the PyPI
-upload invocation are fixed in the prepared workflow. Its hosted upload,
-OIDC/account configuration and draft-asset read still lack execution evidence.
+upload invocation are fixed in the prepared workflow. The first hosted attempt failed before these uploads; the amended transport and
+PyPI first-use sequence still need their own execution evidence.
 
 ## Handle a partial upload
 

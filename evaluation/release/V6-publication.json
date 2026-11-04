@@ -1,5 +1,5 @@
 {
-  "revision": "PWP-r1",
+  "revision": "PWP-r2",
   "repository": "vsuman00/Cragkit",
   "workflow": "publish-candidate.yml",
   "admission_model": "owner_manual",
@@ -12,7 +12,8 @@
   "runner": "ubuntu-24.04",
   "timeout_minutes": 20,
   "security_hold": false,
-  "security_hold_reason": "Corrected packet and installed consumers accepted; all three owner npm bootstraps and exact registry bytes verified. npm publisher fields read back; owner confirmed three PyPI pending publishers. Hosted first-use publication still needs exact-SHA manual admission and post-registry smoke. Archive/public GitHub choices remain deferred.",
+  "security_hold_reason": "Fixed nine-product packet and npm registry bytes remain accepted. The first hosted run stopped at private-draft GET403 before uploads. PWB-r1 isolates write-token fetch and adds selected-project pending-publisher admission. Only core PyPI pending is confirmed; enable marker is removed until revised local checks and exact-SHA admission.",
   "publication_authorized": true,
-  "workflow_dispatched": false
+  "workflow_dispatched": true,
+  "fetch_timeout_minutes": 5
 }

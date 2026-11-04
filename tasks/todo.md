@@ -5666,3 +5666,77 @@ Next root commits/pushes current progress then binds private draft transport to
 that reviewed SHA and runs one bounded missing-only PyPI job. All six Python
 files, registry-installed source smoke, V6-09/C3/exit remain required. No new
 paid validation, archive move, public GitHub conversion or runtime change.
+
+
+V6-08D-B0 assignment: user screenshot corrects prior publisher confirmation.
+ONLYcragkitpending; duplicateidentityforadapterprojectsrejected. Coreentrykept.
+Firsthostedrun41793016849/job126450534987failed36satfirstdraftGET403, alluploads
+skipped. Usererrornotcauseof403. Variabledisabled; cancellationnotneededbecause
+terminalalready. EstimatedcomputeUSD0.006, pluspriorUSD0.186=USD0.192beforestorage.
+TwoSolsource reviews+assembly andAstraboundedreview support first-useamendment:
+onependingidentityatatime, explicitselectedproject andpendingidentityadmission,
+isolatedfive-minutecontentswrite/noOIDCfetch, read/actionsread+OIDCpublisher
+twentyminutes, exactsame-runartifactwrapper+innerfixedtransportproof. Noextra
+product/version/PAT/environment/publicGitHubrelease orvisibilitychange. Three
+phasesceilingUSD0.45 pluspriorUSD0.192=USD0.642beforestorage/allowance/rounding.
+Actualcosttrackedseparately; nonewpaidvalidation orautomaticretry.
+
+Rootfreezescontracts/PUBLICATION_BOOTSTRAP_V6.md(PWB-r1), ownspolicy, testslot,
+evidence/tracker/Git andrealruns. Solrelease_guidance owns focusedpublication
+tests+procedure/releaseguidance andASSEMBLES; Solrelease_binding owns only
+publication_workflow.py andpublish-candidate.yml implementation. Starttestlane
+first; rootrecordsnewfocusedtestsredbeforeimplementationwriterstarts. Nopeer
+tests/services/accountmutations/CI. Directdependencycoordination; scope/protected
+changesroot, unresolvedAstra. Sharedoutcome: supportedexactRC1selectedfirst-use
+withtruthfulpartialpostflight andallninereconciliationstillrequired. Preserve
+alluserdirtysource/storage/tracker/audits andimmutableproducts/receipts. Before
+nextdispatchrootmustrebinddrafttargettonewreviewedSHA, notrelaxidentitycheck.
+
+WarehousemintprioritizespendingandcancreateprojectBEFOREfileupload. Confirm
+pendingbelongsselectedprojectorabsentforeachattempt; allmodeallowsonlynone.
+Afterconversion/failureinspectpendingandnormalpublisherstatebeforeanyretry.
+No speculativeknown-unconfiguredjob. Pypicoreonlyfirst; registeradapterpending
+onlyafterpriorconversion/actualregistryproof. Npmthreeproductsremainpublished
+andexact; observedlatest/placeholderpreservedanddisclosed. FullV6goalactive.
+
+
+V6-08D-B0 local acceptance: COMPLETE locally, new hosted path UNVALIDATED.
+Sol implementation/test-doc lanes coordinateddirectly; guidanceassembled;
+rootreviewedboth andAstrasix-invariantplan. Rednewsubset11failedbeforeABI
+implementation; firstgreen97focused; combinedsixreleasegroups431passed2.57s
+withoneexpectedduplicateZIPfixturewarning. Rootcorrectedoldtesttagobserved
+value, addedencrypted/declared-size pre-readrefusalcases, andremovedredundant
+reservedGITHUB_RUN_ID/REPOSITORY_IDenv assignments perofficialservice-default
+rules. Existinghold/manual/owner/private/main/SHA/firstattemptguardsretained.
+Actionlint1.7.12passedbothworkflows. ActualretainedActionsZIPmodes32768regular/
+classicEOCDobserved; localwrapperreplayedfixed1,496,502-bytetransportexactSHA.
+Realpublicpreflightproducedlocalcorephase6allmissing/2authorized/0npm, only
+coreflagtrue; pre-uploadphase/publicationbothfalse. No simulatedpassreported
+asnewhostedproof. Nineproducts/summary/manifestunchanged.
+
+CurrentPWP-r2/PUP-r2PWB-r1helperrequiresselected+pendingidentity, validatesall
+9snapshots, selectednpmforbidden, coredependencyforadapters, andhonestphasevs
+fullpostflight. Write/noOIDCfetch5minpassesonlysealedziptosame-runID; publisher
+read/actionsread+OIDC20minvalidatesmetadata/wrapper/innerdigestandmissing-only
+selectedfiles, boundedreadonlyvisibilitywait(no uploadretry). Rootobservedtotal
+ofbothcandidatejobs+failedpublisherestimatesUSD0.378; threecappedphasesUSD0.45
+projectsUSD0.828beforeallowance/smallstorage, belowUSD2. Invoiceunverified.
+
+CurrentacceptanceV6-08D-bootstrap.md/json. Correctedpublicationnarrativeand
+production-security staleunauthorizedstate; useroriginalonlycorependingscreenshot
+nowauthoritativeselectedsetup. No peer or root newhostedrun duringimplementation.
+Rootownsprose/links/pins/protectedbaseline/scopedstage/secretchecks andcommit
+immediatepush/sync. Then PATCH/reread drafttarget to newreviewedSHA BEFORE core
+phase; do not weakenexacttargetbinding. Keepcurrentcorependingentryunchanged,
+selectcore/pendingcore; after verifiedconversionasknextpendingoneatatime.
+Afteranymint/uploadfailureinspectactualpending/normalprojectstatebefore retry.
+Fullnine-registryinstall/source smoke then09/C3/EXITstillopen.
+
+IndependentSolV6requirementsauditorreviewed26rows+17retainedhashcomparisons
+and6manifests: noearlier01-07/C1/C2reopeningrequiredwithinrecordedscopes.
+Unavailableindependenthumantrial/partialCSO/historicalqualityandreplaylimits
+remainexplicit; no broadqualityorproduction-targetclaim. Privateauditmatrix
+readyforrootcompletionreview. Alluser-ownedsource/storage/tracker/audits and
+archivechoicepreserved. One serialtestprocess,noprovider/model/databasecalls
+ornewtoolsdownloads; reusedactionlint. Learningunassessed; examplesexplain
+selectedphaseauthorityandwhyHTTP202doesnotproveimmediateinstallability.

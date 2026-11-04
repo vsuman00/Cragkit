@@ -56,11 +56,12 @@ and cannot validate it. Expired configuration must be recreated near a future
 legitimate release. Do not claim permanent automation readiness or publish a
 new version just to validate a trust configuration.
 
-The owner confirmed the three PyPI pending publishers with exact GitHub
-owner/repository/workflow fields and a blank environment. This is owner
-confirmation, not independent browser verification; the browser host remains
-unavailable. Actual OIDC first-use publication will provide execution evidence.
-No PyPI token or credential was requested.
+The earlier owner confirmation was corrected by screenshots: only `cragkit`
+is pending under the intended GitHub identity. PyPI rejected simultaneous
+identical pending identities for the other project names. The original setup
+instructions were incorrect. Keep core pending; the new [first-use contract](../../../contracts/PUBLICATION_BOOTSTRAP_V6.md)
+uses selected-project phases and conversion before registering the next name.
+No PyPI token or credential was requested. Actual OIDC first use remains pending.
 
 The hosted workflow remains default-disabled until the reviewed private transport
 and exact executing SHA are bound. One Linux job, 20-minute timeout and one-day
@@ -68,3 +69,22 @@ nonsecret receipts fit the approved USD2 ceiling with the recorded earlier
 USD0.186 replacement-CI estimate; proposed job compute is at most USD0.12 before
 allowance/storage. No new paid validation is included. Repository visibility and
 archive decisions remain deferred. Historical preparation receipts remain fixed.
+
+
+## First hosted attempt and supported correction
+
+Run41793016849/job126450534987, source103ecb0, failed with HTTP403 at the first
+private draft metadata GET. All registry upload steps were skipped. The run
+was already terminal when inspected; no cancellation or rerun was sent. The
+release-enable variable was removed. The36-second Linux job estimates one
+rounded minute/USD0.006 before allowance/storage; actual billing is unverified.
+This failure is separate from the PyPI pending-identity registration constraint.
+
+The [first-use amendment](../../../contracts/PUBLICATION_BOOTSTRAP_V6.md) isolates
+five-minute write-token/no-OIDC transport fetching from twenty-minute read-token/
+OIDC uploading. It also adds explicit selected-project and pending-identity
+admission, exact at-most-two-file phase plans and partial/full postflight.
+Warehouse can create a project during minting before file upload: inspect actual
+pending/normal state after every partial attempt rather than assuming no project
+was created. Proposed changes require local checks and an actual revised run;
+the failed run is not acceptance evidence for them.
