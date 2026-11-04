@@ -1,0 +1,165 @@
+{
+  "revision": "RC1-publication-r1",
+  "state": "npm_published_pypi_pending",
+  "observed_at": "2026-11-04T07:27:19.470949+00:00",
+  "parent_complete": false,
+  "manifest_sha256": "7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663",
+  "candidate_source": "a3ff7e81332d849724407356d220c991e8a8411d",
+  "npm_products": [
+    {
+      "bytes": 220645,
+      "package": "cragkit",
+      "path": "products/npm/cragkit-1.0.0-rc.1.tgz",
+      "registry": "npm",
+      "sha256": "c1705a2ef1338fe855f83e22fef991718f5498ea95f19ab8cf6803f425e59c66",
+      "state": "verified",
+      "version": "1.0.0-rc.1"
+    },
+    {
+      "bytes": 5753,
+      "package": "cragkit-langchain",
+      "path": "products/npm/cragkit-langchain-1.0.0-rc.1.tgz",
+      "registry": "npm",
+      "sha256": "c33a439f77e50fff35aa92f13149ebc77522bb89ed96138669fb5e2242da9b7e",
+      "state": "verified",
+      "version": "1.0.0-rc.1"
+    },
+    {
+      "bytes": 6194,
+      "package": "cragkit-mcp",
+      "path": "products/npm/cragkit-mcp-1.0.0-rc.1.tgz",
+      "registry": "npm",
+      "sha256": "daa8ef4a35df7d025c2d0f2c56c2b4884ba02d811c8f6c4a190e705a9348a565",
+      "state": "verified",
+      "version": "1.0.0-rc.1"
+    }
+  ],
+  "npm_tag_and_version_observations": [
+    {
+      "package": "cragkit",
+      "tags": {
+        "latest": "1.0.0-rc.1",
+        "next": "1.0.0-rc.1"
+      },
+      "versions_observed": [
+        "0.0.0-stage",
+        "1.0.0-rc.1"
+      ],
+      "placeholder_description": "Temporary package placeholder for staged publishing",
+      "maintainers": [
+        "vaibhavsuman00"
+      ]
+    },
+    {
+      "package": "cragkit-langchain",
+      "tags": {
+        "latest": "1.0.0-rc.1",
+        "next": "1.0.0-rc.1"
+      },
+      "versions_observed": [
+        "0.0.0-stage",
+        "1.0.0-rc.1"
+      ],
+      "placeholder_description": "Temporary package placeholder for staged publishing",
+      "maintainers": [
+        "vaibhavsuman00"
+      ]
+    },
+    {
+      "package": "cragkit-mcp",
+      "tags": {
+        "latest": "1.0.0-rc.1",
+        "next": "1.0.0-rc.1"
+      },
+      "versions_observed": [
+        "0.0.0-stage",
+        "1.0.0-rc.1"
+      ],
+      "placeholder_description": "Temporary package placeholder for staged publishing",
+      "maintainers": [
+        "vaibhavsuman00"
+      ]
+    }
+  ],
+  "no_tag_or_unpublish_mutation": true,
+  "normal_publish_command_used": true,
+  "npm_oidc_publish_verified": false,
+  "npm_trusted_publishers": [
+    {
+      "package": "cragkit",
+      "state": "configured_fields_verified",
+      "configuration": {
+        "id": "f3b92247-25c4-4a92-acfa-f887975d25f7",
+        "type": "github",
+        "file": "publish-candidate.yml",
+        "repository": "vsuman00/Cragkit",
+        "permissions": [
+          "createPackage",
+          "createStagedPackage"
+        ]
+      },
+      "oidc_publish_verified": false
+    },
+    {
+      "package": "cragkit-langchain",
+      "state": "configured_fields_verified",
+      "configuration": {
+        "id": "1811271a-799d-4d00-a166-002415dee92e",
+        "type": "github",
+        "file": "publish-candidate.yml",
+        "repository": "vsuman00/Cragkit",
+        "permissions": [
+          "createPackage",
+          "createStagedPackage"
+        ]
+      },
+      "oidc_publish_verified": false
+    },
+    {
+      "package": "cragkit-mcp",
+      "state": "configured_fields_verified",
+      "configuration": {
+        "id": "1b5a63ef-a13c-4765-99d8-5582399b7670",
+        "type": "github",
+        "file": "publish-candidate.yml",
+        "repository": "vsuman00/Cragkit",
+        "permissions": [
+          "createPackage",
+          "createStagedPackage"
+        ]
+      },
+      "oidc_publish_verified": false
+    }
+  ],
+  "npm_trust_expiry": "A new configuration requires a first successful OIDC publish within two days; saved fields and skipped uploads do not prove OIDC. Recreate near the next legitimate publish if expired.",
+  "pypi_pending_publishers": {
+    "evidence": "owner_confirmation",
+    "configured": true,
+    "projects": [
+      "cragkit",
+      "cragkit-langchain",
+      "cragkit-mcp"
+    ],
+    "owner": "vsuman00",
+    "repository": "Cragkit",
+    "workflow": "publish-candidate.yml",
+    "environment": null,
+    "actual_oidc_publish_verified": false
+  },
+  "registry_receipt": {
+    "path": "artifacts/V6/registry-after-bootstrap-cragkit-mcp-17a661c/registry-report.json",
+    "sha256": "81b83b6b05060f5c31d2be06f0b116107245a49560213218e74eff19cf242b2c",
+    "state": "partial"
+  },
+  "remaining": [
+    "Finish any remaining npm publisher field checks.",
+    "One bounded PyPI hosted publication job, then exact nine-file registry verification.",
+    "Clean registry installs/source-linked smoke, maintenance handoff and final V6 audit."
+  ],
+  "limitations": [
+    "Observed latest also aliases RC1; distribution is not next-only. No stable1.0.0 release was published.",
+    "Placeholder observed during normal bootstrap; no stage command was run and cause is not independently established.",
+    "Artifact verification does not assert absence of extra registry versions or aliases.",
+    "Repository remains private and archive selections are deferred."
+  ]
+}

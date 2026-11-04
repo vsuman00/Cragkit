@@ -18,7 +18,8 @@ before publication. A version string alone does not establish that relationship.
 This guide implements the local preparation boundary in
 [PPR-r2](../contracts/REPLACEMENT_PUBLICATION_V6.md), retaining
 [PPR-r1](../contracts/PUBLICATION_PREPARATION_V6.md) product rules. The repository remains
-private and no package has been published. The manual
+private. The [registry progress receipt](../evaluation/reports/V6/V6-08D-publication.md)
+records all three npm products published and byte-verified; PyPI publication is pending. The manual
 [publishing workflow](../.github/workflows/publish-candidate.yml) now has local
 checks but has not been enabled or run. The separate
 [candidate workflow](../.github/workflows/candidate-validation.yml) validates
@@ -83,7 +84,7 @@ For each registry, verify who owns or may create `cragkit`, `cragkit-langchain`
 and `cragkit-mcp`. Earlier public metadata responses do not reserve a name or
 prove account permission. The user supplied `vaibhavsuman00` for both registries
 and reported 2FA enabled. npm now authenticated as that owner with write-2FA
-confirmed; PyPI pending publishers are not configured yet. Initial npm create
+confirmed; The owner confirmed all three PyPI pending publishers; actual OIDC first use is pending. Initial npm create
 permission and all six workflow configurations remain unverified. See the [account setup record](../evaluation/reports/V6/V6-08C-accounts.md).
 A scope/name change would require a new reviewed
 candidate, metadata and dependency pins; do not silently rename these products.
@@ -187,7 +188,8 @@ separate storage. Allowance and actual charges are unknown. The resumed deployme
 ceiling. Include the replacement validation estimate USD 0.186 in that budget;
 actual billing and included usage remain unverified. See
 [GitHub runner pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing).
-No dispatch, registry/account change or private asset upload has run.
+npm owner bootstrap and trusted-publisher configuration ran. PyPI dispatch and
+private transport upload remain pending at this checkpoint.
 
 ## Review the proposed first upload
 
@@ -195,8 +197,8 @@ Deployment intent is already authorized. Corrected packet acceptance and secure
 registry login/publishing permissions remain operational prerequisites, not a
 request to repeat that intent. The current read-only registry preflight is
 partial: nine requests found all target files and npm `next` tags absent. This
-does not establish authenticated permissions. npm owner authentication and write-2FA have now been verified. PyPI pending
-publishers are not configured yet; the owner is completing that secure setup. Repository
+does not establish authenticated permissions. npm owner authentication and write-2FA have now been verified. The owner confirmed all three PyPI pending publishers. Actual OIDC first use
+will validate the configured binding. Repository
 visibility and archive choices remain deferred; stable publication is outside
 this RC1 scope.
 
@@ -216,8 +218,11 @@ following form after hold removal and secure authentication:
 npm publish ./artifacts/V6/publication-replacement-a3ff7e8/products/npm/cragkit-1.0.0-rc.1.tgz --registry=https://registry.npmjs.org/ --access=public --tag=next --ignore-scripts --provenance=false
 ```
 
-This command has not run. `next` avoids npm's default `latest` tag; the explicit
-tarball selects the reviewed bytes. npm will not reuse a published name/version.
+This command form ran for the three reviewed npm products. The explicit
+tarball selects the reviewed bytes and `next` is required. The registry also
+returned `latest` pointing to RC1 and a placeholder during initial bootstrap;
+distribution is not next-only. Preserve that observation and pin the desired
+prerelease explicitly. npm will not reuse a published name/version.
 These behaviors are documented in
 [npm publish](https://docs.npmjs.com/cli/v11/commands/npm-publish/).
 Setting `--provenance=false` records the private-source limitation; it does not

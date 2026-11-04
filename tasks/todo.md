@@ -5639,3 +5639,30 @@ source/storage/tracker draft/audits. No archives moved or public visibility
 changed. Local work serial, no model/database/services/watchers; observed disk
 16GiB/free memory42percent. Learning unassessed; guide explains why runtime-byte
 drift needs new acceptance and why missing test fixtures require harness repair.
+
+
+V6-08D registry progress: all three npmRC1 canonical tarballs now byte-verified
+with next matching1.0.0-rc.1. Core normal publish returned0/PUT202; first public
+reads404 caused controller to stop before adapters. Read-only reconciliation
+confirmed write permission and eventual exact bytes; official npm scanning
+delay documented. Adapter controller used bounded metadata waits, no repeated
+upload, then strict byte verification; both passed. Metadata also shows an
+observed0.0.0-stage placeholder and latest aliasRC1 for each package. No stage
+command, deletion or tag edit ran; origin of placeholder not independently
+proved. Two Sol peers raised bounded scope question; Astra recommended preserve
+and disclose, continue approved exact products because latest-absence was never
+an acceptance criterion. RPK checks next only, not exclusive channel or absence
+of extra versions. No stable1.0.0 claim.
+
+All three npm publisher fields read back as exactrepo/workflow/no environment;
+provider adds documented default staging permission alongside requested direct
+publish. Core private helper initially rejected that extra permission; actual
+response/docs inspected and closed expected set corrected without recreating
+config. User confirmed three PyPI pending publishers configured. npm OIDC first
+use remains unproven; new configs expire after two days without first publish,
+so maintenance must recreate near next legitimate release when expired.
+Sanitized progress V6-08D-publication.md/json; raw auth logs owner-only outsideGit.
+Next root commits/pushes current progress then binds private draft transport to
+that reviewed SHA and runs one bounded missing-only PyPI job. All six Python
+files, registry-installed source smoke, V6-09/C3/exit remain required. No new
+paid validation, archive move, public GitHub conversion or runtime change.
