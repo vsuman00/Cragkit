@@ -5420,3 +5420,25 @@ checks and gross cost arithmetic remained consistent. Hold explanation now
 records the passing replacement CI; hold true, old packet pins and publication
 unauthorized state preserved. Final scoped staging/secret/whitespace checks and
 remote synchronization follow; no second CI job is triggered by this docs push.
+
+
+V6 user pause before publication: user requested stop before publishing and needs
+to modify README before final publication. Release work PAUSED at this boundary;
+README is user-owned and was not edited. Keep repository private while edits are
+in progress; public package publishing does not require making repository history
+public. Actual GitHub read confirms private repository and zero publishing runs/
+active publishing jobs. No publishing job, package upload, private transport
+release asset or repository visibility mutation was performed. Publication policy
+retains security_hold true, publication_authorized false, workflow_dispatched
+false and now records the README gate. The prior CI and exact-artifact acceptance
+remain bound to a3ff7e8; they cannot approve changed packaged bytes automatically.
+
+Current replacement-packet turn performed only governing-document/source reads
+and created a private baseline; no package/preparation/registry helper was edited
+or publication packet generated. Two new peers were not spawned. Existing user
+source/storage/tracker draft/audits and README remain protected. Root owns only
+the pause record/hold explanation, scoped JSON/prose/whitespace/Git validation
+and authorized commit/push. No test/install/model/database/CI process started.
+Next action after user resumes: inspect README diff within its established
+structure, determine affected artifact inputs, then continue replacement packet
+preparation and remaining V6 gates. Do not publish from a generic continuation.

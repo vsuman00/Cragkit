@@ -12,7 +12,7 @@
   "runner": "ubuntu-24.04",
   "timeout_minutes": 20,
   "security_hold": true,
-  "security_hold_reason": "V6-04R-CLOSE findings and replacement CI/archive acceptance passed. The retained publication packet predates corrected code; replacement-packet review and registry gates remain required before reviewed hold removal.",
+  "security_hold_reason": "User paused release work before publication to edit README. Keep the repository private; review completed README changes and any affected candidate artifacts, then obtain explicit final publication authorization before hold removal. Replacement CI/archive acceptance remains historical evidence for its exact source.",
   "publication_authorized": false,
   "workflow_dispatched": false
 }
