@@ -5342,3 +5342,21 @@ prose files zero suspicious Unicode/low density/byte-identical cleaning. JSON
 preflight/counts, cost arithmetic, workflow/source digests and retained hold
 matched. Scoped staged secret/whitespace checks and protected baseline review
 precede commit; no authenticated permission is inferred from these checks.
+
+
+V6-08C-CI2 assignment: IN_PROGRESS. Latest user instruction authorizes the next
+validation with a totalUSD2 ceiling (supersedes the earlierUSD1 suggestion).
+Root owns one dependent workflow/budget/dispatch/evidence lane; no useful
+independent implementation writer. Applying CI/CD automation and self-contained
+prose skills. Shorten manual candidate-validation timeout30to25minutes, cap
+selected artifact payload100MiB/100files with no symlinks, retain one day. At
+verifiedUSD0.062/min, estimated computeUSD1.55 before included allowance, leaving
+margin underUSD2 for small artifact storage and overhead. No new registry
+publication, model/hosted database call, visibility change, persistent runner or
+automatic retry. Current read-only billing API returned404 and browser host is
+unavailable; free allowance is not claimed. Preserve all user-owned dirty files
+and old frozen release receipts. Acceptance: actual upload guard success/failure
+checks, focused candidate/tool tests, reviewed scoped commit/push, one exact
+reviewed-source manual run, inspect real steps/archive identity, retain honest
+failed or successful evidence and measured job duration/cost estimate. Root
+updates final evidence/tracker; no higher compute or second run is assumed.

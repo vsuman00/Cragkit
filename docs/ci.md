@@ -26,6 +26,15 @@ The original V0 proposal was one job on pull requests and pushes. The accepted V
 
 Hosted evidence covers the recorded macOS ARM64 tuple. Other operating systems and architectures lack release acceptance evidence; branch protection is not established by the passing job.
 
+The replacement run has a user-approved USD 2 ceiling for one attempt. Its
+workflow timeout is 25 minutes and uploads are limited to 100 MiB/100 selected
+files with one-day retention; links are rejected before upload. At the reviewed
+USD 0.062 macOS minute rate, estimated compute is at most USD 1.55 before included
+usage, plus small artifact storage. This is a conservative execution budget,
+not an independently verified billing receipt. No automatic retry, registry
+publication or provider key is included. Remaining free allowance is unverified.
+The earlier 30-minute proposal is superseded for this authorized replacement.
+
 ## V4 optional SDK checkpoint
 
 `python3 tools/check_sdk_packages.py --artifacts-dir artifacts/V4/acceptance` runs the 27 core stages and seven optional SDK stages serially. Optional SDK installs have their own frozen locks; they do not change the default core import/dependency gate. The final stage builds and installs optional adapter archives outside the checkout, checks SDK versions/integrities and reruns the real SDK tests against installed products. Database acceptance remains an explicit separate run with private configuration and test-write authorization. A passing local V4 command does not establish hosted CI or registry publication.
