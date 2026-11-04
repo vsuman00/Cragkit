@@ -129,3 +129,43 @@ actionlint 1.7.12 passed both workflows. The next legitimate adapter phase will
 verify hosted retention. The separate local canonical-download receipt is
 retained; hosted receipt payloads and independent attestation verification are
 not claimed for the core run.
+
+
+## LangChain authorization refusal and receipt verification
+
+[Run 41803938051](https://github.com/vsuman00/Cragkit/actions/runs/41803938051),
+source `cf98dc0`, passed the 19-second fetch job and publisher admission,
+transport, product, registry and missing-only checks. PyPI rejected the
+LangChain upload with HTTP 400: "Non-user identities cannot create new projects."
+The publisher job ended after 45 seconds. MCP and npm uploads and postflight
+were skipped. The release-enable marker was removed; no retry was dispatched.
+
+Both reviewed LangChain archives carry the correct `Name: cragkit-langchain`
+and `Version: 1.0.0rc1`; MCP metadata was checked separately as well. The error
+requires inspecting the actual pending publisher and project state, rather than
+changing reviewed package bytes. PyPI's [troubleshooting guide](https://docs.pypi.org/trusted-publishers/troubleshooting/#upload-errors)
+describes this project-name mismatch. A previously configured normal publisher
+can also authenticate without authorizing a different absent project. Current
+[Warehouse minting](https://github.com/pypi/warehouse/blob/main/warehouse/oidc/views.py) checks pending identity before normal identity, so the error
+alone does not prove which owner setting is wrong. Root requested the current
+nonsecret project, repository, workflow and environment fields. No project,
+publisher or tag was deleted, and no token was requested.
+
+A fresh independent registry check still verifies five fixed files and records
+four absent adapter files. Absent distribution files do not prove an empty
+project was not created during minting. Resolve actual account state before
+registering another pending identity or dispatching another phase.
+
+Receipt retention is now verified on the real hosted path: artifact
+`13308612984` is a 1,496-byte ZIP, SHA-256
+`d541c123db0f965b7111a662abede24e9b389581390e6024971a2d58a19b8fb0`.
+Its only members are the preflight registry JSON and missing-only plan JSON.
+Downloaded contents confirm five verified/four absent files and exactly the
+LangChain pair selected, with zero npm uploads authorized. No postflight receipt
+exists because that step was skipped. The receipt fix is accepted independently
+of the failed registry authorization.
+
+Observed compute estimates now total USD0.414 before included allowance,
+rounding and small one-day storage. Two further capped phases would bring
+compute to at most USD0.714, below the user's USD2 limit. This is an estimate,
+not an invoice or authorization for speculative retries. Full V6 remains open.

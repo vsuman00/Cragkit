@@ -1,7 +1,7 @@
 {
   "revision": "RC1-publication-r1",
-  "state": "npm_and_core_pypi_verified_python_adapters_pending",
-  "observed_at": "2026-11-04T08:56:35.483315+00:00",
+  "state": "core_published_langchain_publisher_authorization_refused",
+  "observed_at": "2026-11-04T09:09:03.490856+00:00",
   "parent_complete": false,
   "manifest_sha256": "7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663",
   "candidate_source": "a3ff7e81332d849724407356d220c991e8a8411d",
@@ -134,27 +134,27 @@
   "npm_trust_expiry": "A new configuration requires a first successful OIDC publish within two days; saved fields and skipped uploads do not prove OIDC. Recreate near the next legitimate publish if expired.",
   "pypi_pending_publishers": {
     "evidence": "Successful core trusted-publisher upload plus owner confirmation of LangChain pending setup.",
-    "projects": [
-      "cragkit-langchain"
-    ],
+    "projects": null,
     "owner": "vsuman00",
     "repository": "Cragkit",
     "workflow": "publish-candidate.yml",
     "environment": null,
     "core_oidc_publish_verified": true,
     "langchain_setup_owner_confirmed": true,
-    "mcp_setup_confirmed": false
+    "mcp_setup_confirmed": false,
+    "matching_langchain_identity": "Unverified after HTTP400; current owner-only pending/project settings requested before any further attempt.",
+    "owner_reported_project": "cragkit-langchain"
   },
   "registry_receipt": {
-    "path": "artifacts/V6/registry-after-core-pypi-41799900669/registry-report.json",
+    "path": "artifacts/V6/registry-after-langchain-attempt-41803938051/registry-report.json",
     "sha256": "ace698eec0afe70b957a6a462ca72e6a650a6af71567fb4f9b6098c16ff306cd",
     "state": "partial",
     "verified_files": 5,
     "absent_files": 4
   },
   "remaining": [
-    "Publish confirmed LangChain Python pair, verify conversion, then configure and publish MCP.",
-    "Verify all nine canonical registry files; install both Python SDKs and run installed tests.",
+    "Inspect actual owner pending/project settings after LangChain HTTP400; resolve matching project identity before one controlled attempt.",
+    "Publish and verify remaining Python adapter files, then finish clean installed SDK tests and all-nine registry acceptance.",
     "Complete V6-09 maintenance, C3 and version exit audit."
   ],
   "limitations": [
@@ -305,13 +305,54 @@
     "retention_days": 1,
     "hidden_receipts_enabled": true,
     "empty_selection_fails": true,
-    "hosted_validation": "Next legitimate selected-project phase; no extra probe run."
+    "hosted_validation": {
+      "state": "passed",
+      "run_id": 41803938051,
+      "artifact_id": 13308612984,
+      "bytes": 1496,
+      "sha256": "d541c123db0f965b7111a662abede24e9b389581390e6024971a2d58a19b8fb0",
+      "members": [
+        ".release-preflight/registry-report.json",
+        ".release-upload/workflow-plan.json"
+      ],
+      "postflight": "Skipped because upload failed; no postflight success claimed."
+    }
   },
   "cost": {
-    "observed_job_compute_estimate_usd": 0.402,
+    "observed_job_compute_estimate_usd": 0.414,
     "remaining_two_phases_capped_compute_usd": 0.3,
-    "projected_total_compute_ceiling_usd": 0.702,
+    "projected_total_compute_ceiling_usd": 0.714,
     "user_total_limit_usd": 2,
     "included_allowance_and_invoice": "Unverified; before allowance, rounding and small one-day artifact storage."
+  },
+  "langchain_hosted_attempt": {
+    "run_id": 41803938051,
+    "source_commit": "cf98dc0ab34826fbcf251678c4e1cf3fe27bec6d",
+    "status": "completed",
+    "conclusion": "failure",
+    "scope": "cragkit-langchain",
+    "fetch_job": {
+      "id": 126486211323,
+      "seconds": 19,
+      "conclusion": "success"
+    },
+    "publish_job": {
+      "id": 126486396000,
+      "seconds": 45,
+      "conclusion": "failure"
+    },
+    "failure_step": "Publish missing LangChain Python files through its trusted publisher",
+    "http_status": 400,
+    "safe_error": "Non-user identities cannot create new projects.",
+    "observed_upload_outcome": "No LangChain RC1 file visible in strict independent canonical verification.",
+    "artifact_metadata_names_verified": [
+      "cragkit-langchain",
+      "cragkit-mcp"
+    ],
+    "artifact_version": "1.0.0rc1",
+    "hosted_plan_verified": "Exactly LangChain pair; zero npm and no other Python files.",
+    "release_enable_variable": "removed",
+    "automatic_retry": false,
+    "pending_or_empty_project_state": "Not inferable from missing distribution files; await owner view."
   }
 }

@@ -5791,3 +5791,31 @@ writers/tests/services; all task-owned PostgreSQL processes closed. Runtime
 artifacts/contracts/user edits/archive choice/private GitHub remain protected.
 Learning unassessed. Failure example: successful upload plus silently omitted
 receipts is partial operational evidence, never complete final publication.
+
+
+V6-08D LangChain terminal handoff: publication PARTIAL, external account-state
+clarification pending. Commit cf98dc0ab34826fbcf251678c4e1cf3fe27bec6d pushed;
+local/origin/GitHub main matched with 0/0 divergence. Complete exact tag+target
+rebind and existing full fresh metadata validator passed before dispatch. Owner
+confirmed LangChain setup twice. One selected run41803938051 passed fetch19s,
+but publisher45s failed at PyPI HTTP400 non-user project creation. No automatic
+retry. Correct Name/Version in both adapter archive pairs verified; no product,
+guard or publisher deletion/change was made to bypass the refusal. Root asked
+for current owner-only pending/project names and nonsecret configuration fields;
+source review confirms pending-first minting but cannot establish actual account
+state. Do not infer pending conversion or empty-project absence from RC1 404.
+
+Actual hosted receipts downloaded and inspected: artifact13308612984,1496bytes,
+SHA d541c123db0f965b7111a662abede24e9b389581390e6024971a2d58a19b8fb0. Exactly
+preflight/plan JSON;5 verified4 absent, LangChain pair only, zero npm scope.
+Receipt retention fix COMPLETE hosted; upload/postflight acceptance failed or
+skipped. Fresh strict registry recheck unchanged5/4; enable marker removed.
+Observed compute estimate USD0.414; two capped phases project USD0.714 before
+allowance/rounding/small storage, below USD2. Root holds one test/execution slot;
+no services, provider calls, model downloads or new dependency installs after
+prior native cleanup. All peer writers stopped. Protected user work, immutable
+products, archive decision and private GitHub remain intact. Changed scope only
+progress report/JSON and this handoff; no additional code fix justified before
+account evidence. Learning unassessed. Next smallest action: inspect owner's
+current settings, resolve precise identity mismatch, then one controlled
+missing-only phase; Python SDK installs/09/C3/EXIT remain incomplete.
