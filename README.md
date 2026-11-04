@@ -28,7 +28,7 @@ The separate V6 live benchmark needs a test credential; using the library does
 not require our development key or the Codex key-setup plugin.
 
 > [!IMPORTANT]
-> Candidate metadata uses Python `1.0.0rc1` and npm `1.0.0-rc.1`; release acceptance is still in progress. The project uses MIT; package-name ownership and registry publication remain separate. Declared candidate CI checks passed.
+> Candidate metadata uses Python `1.0.0rc1` and npm `1.0.0-rc.1`; release acceptance is still in progress. The project uses MIT; package-name ownership and registry publication remain separate. Corrected candidate CI and local nine-product preparation passed; packages remain unpublished.
 
 ## What Cragkit Does
 
@@ -53,10 +53,10 @@ The **npm** package runs natively in Node.js — no Python server required. The 
 | **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
 | **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [V4 exit evidence](evaluation/reports/V4/V4-08-exit.md) |
 | **V5** | Qdrant publication and repair, existing indexes and optional MCP | ✅ Complete for the declared local native milestone | [V5 exit evidence](evaluation/reports/V5/V5-exit.md) · [Install and operations guide](docs/v5-operations.md) |
-| **V6** | Evaluation and release | 🚧 In progress; candidate artifacts, CI and migration verified; publication pending | [V6 plan](tasks/versions/V6-release.md) · [CI evidence](evaluation/reports/V6/V6-06-ci.md) · [Checkpoint](evaluation/reports/V6/V6-C2.md) |
+| **V6** | Evaluation and release | 🚧 In progress; corrected candidate CI and local publication products verified; registry acceptance pending | [V6 plan](tasks/versions/V6-release.md) · [Replacement CI](evaluation/reports/V6/V6-08C-CI2.md) · [Local packet checks](evaluation/reports/V6/V6-08R-acceptance.md) |
 
 > [!NOTE]
-> V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. V6 records limited live-model results and declared-platform CI. Migration, publication and production acceptance remain separate gates.
+> V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. V6 records limited live-model results and declared-platform CI. Local migration acceptance passed. Reviewed security leads are closed, while qualified CSO coverage remains partial. Registry publication and production acceptance remain separate gates.
 
 Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
 
@@ -68,8 +68,12 @@ Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
 |------|---------|
 | Python | 3.14 |
 | Node.js | `>=26.5.0, <27` |
-| npm | latest |
-| uv | latest |
+| npm | 11.17.0 |
+| uv | 0.11.8 |
+
+The corrected hosted candidate used Python 3.14.6, Node 26.5.0, npm 11.17.0
+and uv 0.11.8 on macOS 15.8.2 ARM64. This measured tuple does not establish
+acceptance for every version in the declared ranges or for other platforms.
 
 ### Run Local Checks
 
@@ -158,4 +162,4 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 
 GitHub: [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) (private) · Remote: `origin` (HTTPS)
 
-The initial V0 baseline was committed and pushed to `main` as [`feb2bdd`](https://github.com/vsuman00/Cragkit/commit/feb2bdd). Current milestone evidence and Git handoffs are recorded in the [task tracker](tasks/todo.md). No hosted CI run is claimed here; local pipeline results do not establish a hosted run.
+The initial V0 baseline was committed and pushed to `main` as [`feb2bdd`](https://github.com/vsuman00/Cragkit/commit/feb2bdd). Current milestone evidence and Git handoffs are recorded in the [task tracker](tasks/todo.md). The [corrected candidate hosted CI run](https://github.com/vsuman00/Cragkit/actions/runs/41777862696) passed for source `a3ff7e81332d849724407356d220c991e8a8411d`; its exact retained archive passed independent verification. Local preparation is separate from registry publication. Repository visibility and archive choices remain deferred.

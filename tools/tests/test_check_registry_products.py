@@ -90,7 +90,23 @@ def test_real_committed_reviewed_inventory_is_pinned_without_network():
     products = R.reviewed_products()
     assert len(products) == 9
     assert {item['registry'] for item in products} == {'pypi', 'npm'}
-    assert R.MANIFEST_SHA256 == '7ced6f15ee096752d8e974d793d1bd99a8f41d77181fb061d2871d890aeb5dc5'
+    assert R.MANIFEST_SHA256 == '7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663'
+
+
+@pytest.mark.parametrize('source', [
+    json.loads((R.ROOT / 'evaluation/reports/V6/V6-08-verification.json').read_bytes())['source_commit'],
+    '0' * 40,
+])
+def test_replaced_summary_metadata_cannot_select_historical_or_wrong_source(
+        tmp_path, registry, monkeypatch, source):
+    summary = json.loads(R.SUMMARY.read_bytes())
+    summary['source_commit'] = source
+    R.SUMMARY.write_bytes(encoded(summary))
+    # Even a replacement summary digest cannot authorize another source identity.
+    monkeypatch.setattr(R, 'SUMMARY_SHA256', hashlib.sha256(R.SUMMARY.read_bytes()).hexdigest())
+    with pytest.raises(R.RegistryError, match='reviewed_summary_identity'):
+        R.reviewed_products()
+    assert not registry[3].calls and not (tmp_path / 'registry').exists()
 
 
 def test_complete_exact_bytes_receipt_and_eighteen_serial_bounded_gets(tmp_path, registry):

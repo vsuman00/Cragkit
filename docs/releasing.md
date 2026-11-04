@@ -52,20 +52,20 @@ actual code being released rather than relabel the old run.
 
 [Candidate validation](../.github/workflows/candidate-validation.yml) is manual
 only. It uses a read-only repository token, no provider/database credentials,
-immutable action commits, one macOS ARM64 job and a 30-minute job timeout.
+immutable action commits, one macOS ARM64 job and a 25-minute job timeout.
 Core, framework and MCP checks run serially; exact archive/install profiles follow.
 It starts no persistent service, publishes nothing and retains candidate files
 for one day. A workflow definition is not a CI pass.
 
-The [single approved candidate run](../evaluation/reports/V6/V6-06-ci.md) passed
-for source `0c7c568`. Its downloaded products and hashes are retained locally
-beyond hosted expiry. This approval covers that completed run only; future paid
-CI, registry publication and repository visibility need their own authorization.
+The [replacement candidate run](../evaluation/reports/V6/V6-08C-CI2.md) passed
+for source `a3ff7e81332d849724407356d220c991e8a8411d`. Its exact archive and
+metadata are retained locally beyond hosted expiry. Earlier run receipts remain
+historical. No additional paid validation run is included in the current scope.
 
 GitHub documents standard runners as free for public repositories. Private
 repositories draw on included usage and then incur charges. At the recorded
-review, standard macOS compute is listed at USD 0.062 per minute: 30 minutes would
-be USD 1.86 before included usage, rounding and separately billed storage. Current
+review, standard macOS compute is listed at USD 0.062 per minute: 25 minutes would
+be USD 1.55 before included usage, rounding and separately billed storage. Current
 account allowance was not accessible through the available API; no free private
 run is assumed. See [runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 and [current pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing).
@@ -91,17 +91,22 @@ now accompany nine locally prepared products. Tracked npm packages remain
 copies Python archives unchanged and changes only npm's private token in separate
 tarballs. Its verifier derives expected bytes from the pinned CI bundle instead
 of trusting a replacement manifest. This local acceptance is recorded in
-[V6-08 preparation](../evaluation/reports/V6/V6-08-preparation.md).
+[corrected V6-08 preparation](../evaluation/reports/V6/V6-08R-verification.json);
+[the original preparation report](../evaluation/reports/V6/V6-08-preparation.md)
+remains historical evidence.
 
 Follow the [publication procedure](publication.md) for the remaining secure
-registry ownership/bootstrap, workflow and authorization steps. The publishing workflow is prepared and
+registry ownership/bootstrap and workflow admission steps. The publishing workflow is prepared and
 default-disabled; registry permissions/bootstrap remain unverified. Never put a registry token in
 Git or chat. The GitHub repository stays private; public packages disclose their
 own contents. npm provenance is unavailable from private source repositories,
 as documented in [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
 
-Publication, repository visibility and package releases need their specific user
-approval. After authorized publication, fetch the registry products into fresh
+The user has resumed RC1 deployment; repeat upload-intent approval is not needed.
+Corrected packet acceptance and npm owner/write-2FA checks passed, clearing
+the artifact hold for the exact owner bootstrap. Hosted admission remains
+disabled until the required registry/trust configurations are verified.
+Repository visibility and archive choices remain deferred. After publication, fetch the registry products into fresh
 environments and verify version/hash policy plus a source-linked smoke query.
 Keep prerelease/stable claims distinct. A broken published version generally needs
 a new corrective version; do not pretend that replacing local bytes repairs what

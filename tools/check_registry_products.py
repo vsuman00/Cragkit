@@ -22,9 +22,9 @@ from urllib.parse import urlsplit
 import prepare_release_products as P
 
 ROOT = Path(__file__).resolve().parents[1]
-SUMMARY = ROOT / 'evaluation/reports/V6/V6-08-verification.json'
-SUMMARY_SHA256 = '9c972d52f9aaf578611f98b258cdb223ba11b180523809adf0262cce1d347af2'
-MANIFEST_SHA256 = '7ced6f15ee096752d8e974d793d1bd99a8f41d77181fb061d2871d890aeb5dc5'
+SUMMARY = ROOT / 'evaluation/reports/V6/V6-08R-verification.json'
+SUMMARY_SHA256 = '32b3251e3ef7d9536830f15ed1c196a45f2c1a91c31093dce2d99aed99471312'
+MANIFEST_SHA256 = '7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663'
 PACKAGES = ('cragkit', 'cragkit-langchain', 'cragkit-mcp')
 MAX_METADATA = 256 * 1024
 MAX_REQUESTS = 18

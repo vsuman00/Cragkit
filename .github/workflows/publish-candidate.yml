@@ -99,7 +99,7 @@ jobs:
         run: >-
           python tools/release_transport.py unpack
           --archive .release-download/release-transport.zip
-          --expected-sha256 6b817c8c627e1cdd0fe882b25617b2be17fe6ff7dc75e45b3d8a26d69c0db0d0
+          --expected-sha256 609f3f84924417d4c0e9baefeb2097e10d35cc5e1e43cc283add970a60545d48
           --output .release-candidate
       - name: Pin npm without running package hooks
         run: npm install --global --ignore-scripts --no-audit --no-fund npm@11.17.0

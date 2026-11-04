@@ -1890,7 +1890,7 @@ apply commands, exit statuses and supported bounded catalog states.
 
 ## V6-08 verified local publication preparation
 
-The [preparation report](../evaluation/reports/V6/V6-08-preparation.md) records
+The historical [preparation report](../evaluation/reports/V6/V6-08-preparation.md) records
 161 focused preparation/CIB/licensing tests, 4,156 full local Python/tool tests
 and fresh projected npm consumer/evidence checks. The exact prepare/verify
 commands are in [the publication procedure](publication.md). They are offline,
@@ -1900,19 +1900,18 @@ but preparation needs a fresh task-owned path.
 
 ```sh
 uv run --project packages/python --frozen --no-sync pytest tools/tests/test_prepare_release_products.py tools/tests/test_check_ci_bundle.py tools/tests/test_artifact_licensing.py -q
-python3 tools/prepare_release_products.py verify --archive artifacts/V6/hosted-candidate-0c7c568.zip --run artifacts/V6/ci-run.json --jobs artifacts/V6/ci-jobs.json --artifact artifacts/V6/ci-artifact.json --prepared artifacts/V6/publication-rc1
+python3 tools/prepare_release_products.py verify --archive artifacts/V6/replacement-candidate-a3ff7e8/candidate.zip --run artifacts/V6/replacement-candidate-a3ff7e8/run.json --jobs artifacts/V6/replacement-candidate-a3ff7e8/jobs.json --artifact artifacts/V6/replacement-candidate-a3ff7e8/artifact.json --prepared artifacts/V6/publication-replacement-a3ff7e8
 ```
 
 Preparation preserves all tracked npm private guards and the original CI products.
 A replacement runtime byte or manifest digest is refused. Public dependency
 downloads were needed for the separate fresh consumer install; they were not
-model calls or registry uploads. Registry permissions, the publication workflow,
-authorized upload and post-registry smoke remain pending. No new CI ran.
+model calls or registry uploads. Those results describe the original packet, not corrected candidate acceptance.
 
 
 ## V6-08 local workflow and registry checker
 
-[Scoped acceptance](../evaluation/reports/V6/V6-08-workflow.md) records the final
+Historical [scoped acceptance](../evaluation/reports/V6/V6-08-workflow.md) records the final
 4,360-test local Python/tool pass, 68 transport, 103 registry and 33 workflow
 focused passes, plus Actionlint 1.7.12 for both workflows. The registry focused
 cases use fake HTTP and two real non-network supervised children; no test sends
@@ -1928,3 +1927,32 @@ workflow and pending secure setup. A single actual read-only preflight returned
 all nine products absent with no operational errors. Repeating a live preflight
 uses public GETs and a fresh output path; it is not a routine offline test or
 proof of account permission. No new hosted workflow or upload ran.
+
+
+### Corrected V6-08R packet and resumed deployment
+
+[Replacement CI](../evaluation/reports/V6/V6-08C-CI2.md) and the
+[current prepared-product summary](../evaluation/reports/V6/V6-08R-verification.json)
+identify source `a3ff7e81332d849724407356d220c991e8a8411d` and manifest
+`7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663`.
+Corrected nine-product preparation/verification passed. The retained transport is
+`artifacts/V6/replacement-transport-a3ff7e8/release-transport.zip`, 1,496,502 bytes,
+SHA-256 `609f3f84924417d4c0e9baefeb2097e10d35cc5e1e43cc283add970a60545d48`;
+policy tag `rc1-transport-20261104-a3ff7e8` selects it. Historical receipts remain
+unchanged; rerun preparation only into a fresh task-owned directory.
+
+The user's resumed goal authorizes RC1 deployment. Combined acceptance and
+secure authenticated registry setup still gate uploads; current preparation
+receipts keep their false authorization/publication fields. A later read-only
+preflight made nine requests and found all target files and npm `next` tags
+absent, without proving publishing permissions. Owner npm login and PyPI publisher
+setup remain pending. No upload, configured-account or successful npm OIDC result
+is claimed. Follow the current [publication procedure](publication.md); repository
+visibility and archive decisions remain deferred.
+
+[Current corrected local acceptance](../evaluation/reports/V6/V6-08R-acceptance.md)
+records 378 combined checks, native installed evidence parity, 108 LangChain and
+42 MCP Node tests, and an exact 113-member npm installation comparison. npm owner
+login/write-2FA is verified; PyPI pending publishers are not configured yet.
+Artifact hold clearance permits only the reviewed owner bootstrap. Hosted setup
+confirmation remains false until all required registry configurations are checked.

@@ -1,0 +1,188 @@
+{
+  "revision": "PPR-r2-acceptance",
+  "task": "V6-08R",
+  "state": "local_acceptance_passed_registry_setup_pending",
+  "verified_at": "2026-11-04T06:58:13.196915+00:00",
+  "published": false,
+  "parent_complete": false,
+  "candidate": {
+    "source_commit": "a3ff7e81332d849724407356d220c991e8a8411d",
+    "package_tree": "63dafe3b3906778e456b1cd2aefb7f99cd896e43",
+    "run_id": 41777862696,
+    "job_id": 126402305700,
+    "artifact_id": 13297269766,
+    "archive_sha256": "422cb0367bdd11b61416b287378abffbd78c60442f1ceb1ce7523280d58858be"
+  },
+  "fixed_inputs": {
+    "manifest_sha256": "7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663",
+    "immutable_summary": "evaluation/reports/V6/V6-08R-verification.json",
+    "immutable_summary_sha256": "32b3251e3ef7d9536830f15ed1c196a45f2c1a91c31093dce2d99aed99471312",
+    "transport_sha256": "609f3f84924417d4c0e9baefeb2097e10d35cc5e1e43cc283add970a60545d48",
+    "transport_bytes": 1496502
+  },
+  "preparation": {
+    "products": 9,
+    "python_exact_copies": 6,
+    "npm_private_boolean_projections": 3,
+    "verify_command": [
+      "python3",
+      "tools/prepare_release_products.py",
+      "verify",
+      "--archive",
+      "artifacts/V6/replacement-candidate-a3ff7e8/candidate.zip",
+      "--run",
+      "artifacts/V6/replacement-candidate-a3ff7e8/run.json",
+      "--jobs",
+      "artifacts/V6/replacement-candidate-a3ff7e8/jobs.json",
+      "--artifact",
+      "artifacts/V6/replacement-candidate-a3ff7e8/artifact.json",
+      "--prepared",
+      "artifacts/V6/publication-replacement-a3ff7e8"
+    ],
+    "verify_state": "verified_local",
+    "transport_unpack_state": "passed",
+    "replayed_products_byte_equal": 9,
+    "original_frozen_summary_unchanged": true,
+    "initial_operator_error": "An unset checksum argument was rejected before output; rerun with fixed reviewed transport digest passed."
+  },
+  "focused_tests": {
+    "argv": [
+      "uv",
+      "run",
+      "--project",
+      "packages/python",
+      "--frozen",
+      "--no-sync",
+      "pytest",
+      "tools/tests/test_prepare_release_products.py",
+      "tools/tests/test_check_ci_bundle.py",
+      "tools/tests/test_artifact_licensing.py",
+      "tools/tests/test_release_transport.py",
+      "tools/tests/test_check_registry_products.py",
+      "tools/tests/test_publication_workflow.py",
+      "-q"
+    ],
+    "passed": 378,
+    "failed": 0,
+    "returncode": 0,
+    "elapsed_seconds": 2.643,
+    "private_log_sha256": "489dabbf014e0f80fd17ac82ce730995ca0e3877917cc04d477162d8a9e7c0e7"
+  },
+  "projected_consumer": {
+    "state": "passed",
+    "outside_checkout": true,
+    "fresh_python_core_install": true,
+    "python_default_import_external_io_guard": "passed",
+    "npm_products": 3,
+    "npm_member_files_equal": 113,
+    "installed_locked_dependencies": 26,
+    "allowed_locked_dependency_identities": 63,
+    "all_dependency_versions_integrities_match_reviewed_locks": true,
+    "imports_from_installed_products": true,
+    "native_evidence_parity": true,
+    "evidence_counts": {
+      "source_cases": 23,
+      "packing": 17,
+      "assessment": 35,
+      "pipeline": 6,
+      "context": 8,
+      "token": 127
+    },
+    "langchain_node_tests_passed": 108,
+    "mcp_node_tests_passed": 42,
+    "langchain_node_tests_skipped": 0,
+    "mcp_node_tests_skipped": 0,
+    "dependency_installation": "offline cached packages, lifecycle hooks disabled, empty npm auth configs",
+    "prior_harness_setup_failure": {
+      "code": "ERR_MODULE_NOT_FOUND",
+      "missing_test_only_package": "@modelcontextprotocol/client",
+      "test_files_failed_to_load": 2,
+      "product_mutated": false
+    },
+    "affected_rerun": "Only MCP test loading rerun after installing the exact locked test client; prior passing stages retained."
+  },
+  "payload_review": {
+    "products": 9,
+    "member_files": 323,
+    "credential_or_private_asset_path_matches": 0,
+    "gitleaks_findings": 0,
+    "gitleaks_returncode": 0,
+    "redaction": "100 percent",
+    "scope": "All 323 member files decoded through bounded parsers to flat numbered private files for static scanning; no member executed.",
+    "excluded_from_products": [
+      "research papers",
+      "provider credentials",
+      "private evaluation recordings",
+      "database backups",
+      "local environments"
+    ],
+    "gitleaks_version": "8.30.1"
+  },
+  "registry_preflight": {
+    "path": "artifacts/V6/replacement-registry-preflight-a3ff7e8/registry-report.json",
+    "sha256": "1905c4dab3fdc35eb7a127b6925dee74301786f4cbe19385f5d8758f0b6abd87",
+    "requests": 9,
+    "state": "partial",
+    "publication_complete": false,
+    "all_target_product_files_absent": true,
+    "all_npm_next_tags_absent": true,
+    "ownership_proved": false
+  },
+  "account_setup": {
+    "npm_authenticated": true,
+    "pypi_pending_publishers": "owner_confirmed_not_configured",
+    "owner_participation_required": true,
+    "browser_access_host": "unavailable",
+    "github_visibility_observed": "private",
+    "github_visibility_changed": false,
+    "npm_username_matches": true,
+    "npm_two_factor_mode": "auth-and-writes"
+  },
+  "budget": {
+    "currency": "USD",
+    "approved_ceiling": 2,
+    "prior_replacement_ci_compute_estimate": 0.186,
+    "this_local_work_hosted_compute": 0,
+    "planned_publish_job_compute_ceiling_estimate": 0.12,
+    "final_invoice_verified": false,
+    "allowance_verified": false
+  },
+  "remaining": [
+    "Bootstrap exact reviewed npm RC1 products under verified owner/write-2FA; verify actual registry identity and ownership.",
+    "Verify three PyPI pending publishers; bootstrap npm exact reviewed RC1 products and verify package ownership/trust setup.",
+    "Keep hosted publication disabled until six registry/trust configurations are verified.",
+    "Actual registry publication, exact nine-file downloads, clean installs and source-access smoke.",
+    "V6-09 maintenance handoff, C3 and final version-exit audit."
+  ],
+  "limitations": [
+    "Local consumer checks are not registry-installed evidence.",
+    "Historical quality, migration and recorded replay results keep their original candidate scope.",
+    "Qualified CSO coverage remains partial; scoped lead closure is not universal security assurance.",
+    "User-owned source/storage/tracker/audit edits and historical immutable receipts remain protected.",
+    "Archive retention and public GitHub conversion remain deferred."
+  ],
+  "artifact_hold_cleared_for": "exact reviewed npm owner bootstrap; hosted setup gate stays required",
+  "focused_tests_after_bootstrap_admission": {
+    "argv": [
+      "uv",
+      "run",
+      "--project",
+      "packages/python",
+      "--frozen",
+      "--no-sync",
+      "pytest",
+      "tools/tests/test_prepare_release_products.py",
+      "tools/tests/test_check_ci_bundle.py",
+      "tools/tests/test_artifact_licensing.py",
+      "tools/tests/test_release_transport.py",
+      "tools/tests/test_check_registry_products.py",
+      "tools/tests/test_publication_workflow.py",
+      "-q"
+    ],
+    "returncode": 0,
+    "elapsed_seconds": 2.895,
+    "passed": 378,
+    "failed": 0,
+    "private_log_sha256": "ccbdacb0e52d57bc22bd652dd842c2bf9672e25963eee81a583374d01331a521"
+  }
+}

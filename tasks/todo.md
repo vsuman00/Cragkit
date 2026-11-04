@@ -7,7 +7,9 @@ no unresolved product vulnerability was established in those paths. Installed
 security test-selection gaps are fixed. Qualified CSO coverage remains PARTIAL;
 separate native parsing, fresh dependency/history checks and installed tests
 have their own evidence. [Replacement candidate CI](../evaluation/reports/V6/V6-08C-CI2.md)
-now passed; publication stays on hold for replacement packet review and registry gates.
+now passed. [Corrected packet acceptance](../evaluation/reports/V6/V6-08R-acceptance.md)
+passed; owner npm login/write-2FA verified. Artifact hold cleared for exact npm
+bootstrap; hosted publication remains disabled pending registry configuration.
 [Current evidence](../evaluation/reports/V6/V6-04R-closure.md).
 V6-08, production acceptance and version exit remain incomplete.
 
@@ -17,7 +19,7 @@ permissions/publisher setup remain pending. [Account record](../evaluation/repor
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). V3-02: COMPLETE for native injectable adapters and the bounded Cohere comparison; [evidence](../evaluation/reports/V3/V3-02D.md). V3-03/V3-C1: COMPLETE for standalone strict context accounting. V3-04: COMPLETE for PK-r1 packing/native opt-in source snapshots. V3-05: COMPLETE for AS-r1 curated coverage. V3-06/V3-C2: COMPLETE for EP-r1. V3-07: COMPLETE for the frozen development comparison. V3-08/V3-C3/V3-EXIT: COMPLETE for the declared native/curated development milestone; [exit evidence](../evaluation/reports/V3/V3-08-exit.md). Next: V4-01 shared execution ledger. Registry publication, generalized live-model quality and hosted CI evidence remain pending.
+V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). V3-02: COMPLETE for native injectable adapters and the bounded Cohere comparison; [evidence](../evaluation/reports/V3/V3-02D.md). V3-03/V3-C1: COMPLETE for standalone strict context accounting. V3-04: COMPLETE for PK-r1 packing/native opt-in source snapshots. V3-05: COMPLETE for AS-r1 curated coverage. V3-06/V3-C2: COMPLETE for EP-r1. V3-07: COMPLETE for the frozen development comparison. V3-08/V3-C3/V3-EXIT: COMPLETE for the declared native/curated development milestone; [exit evidence](../evaluation/reports/V3/V3-08-exit.md). Current next action: secure RC1 registry setup and publication; scoped hosted CI passed. Generalized live-model quality remains unestablished.
 V4: COMPLETE for the internal native/synthetic development milestone, all tasks/checkpoints through V4-EXIT. [Final evidence and limits](../evaluation/reports/V4/V4-08-exit.md).
 
 
@@ -370,11 +372,12 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [x] V6-07: [Migration and rollback rehearsal](versions/V6-release.md#v6-07-migration-and-rollback-rehearsal) — [scoped native recovery and required operator repair](../evaluation/reports/V6/V6-07-recovery.md).
   - [x] V6-07F1: Explicit bounded legacy lexical repair; [upgrade and operator evidence](../evaluation/reports/V6/V6-07-upgrade.md). No applied migration or package changed.
 
-- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — local products and disabled workflow verified; registry setup, hosted execution/authorization, upload and post-registry smoke pending. [Preparation](../evaluation/reports/V6/V6-08-preparation.md).
+- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — corrected local products/workflow verified and deployment intent authorized; authenticated registry setup, hosted upload and post-registry smoke pending. [Current acceptance](../evaluation/reports/V6/V6-08R-acceptance.md).
 
 - [x] V6-08C1: Durable local transport and exact nine-product replay verified.
 - [x] V6-08C2: Read-only registry verifier and bounded process cleanup verified.
 - [x] V6-08C3-local: Default-disabled owner/manual publication workflow and missing-file planner verified locally; hosted execution unrun. [Evidence](../evaluation/reports/V6/V6-08-workflow.md).
+- [x] V6-08R: Corrected nine-product preparation, transport replay, projected installed consumers and current workflow binding. [Scoped acceptance](../evaluation/reports/V6/V6-08R-acceptance.md).
 - [ ] V6-08C-account: Six account permissions, secure bootstrap and trusted-publisher configuration.
 
 - [ ] V6-09: [Maintenance handoff](versions/V6-release.md#v6-09-maintenance-handoff) — evidence: pending.
@@ -5442,3 +5445,197 @@ and authorized commit/push. No test/install/model/database/CI process started.
 Next action after user resumes: inspect README diff within its established
 structure, determine affected artifact inputs, then continue replacement packet
 preparation and remaining V6 gates. Do not publish from a generic continuation.
+
+
+PUB-INVENTORY-01 assignment: user requests analysis/list before README edits,
+public visibility or choosing archive destination. Scope is inventory only: no
+move/delete, README/code change, public visibility, publishing or paid execution.
+V6 goal stays paused. Two Sol read-only lanes: public_dependency_inventory owns
+technical references/removal impacts in private dependency-review.md/index;
+public_disclosure_inventory owns docs/tasks/research/prototype audience review
+and ASSEMBLES assembly.md. Separate private writes under
+cragkit-public-inventory-612f3cl9; no repo writers except root's handoff. Both
+coordinate direct concrete dependencies, escalate protected/outcome/ownership
+changes to root and unresolved material decisions to Astra. Root owns actual
+tracked/ignored/history/remote inventory, final inspection, prose and handoff.
+Acceptance: current paths/status/counts, keep versus candidate classification,
+concrete breakage and history/disclosure caveats, no automatic blanket removal
+of tests/docs, complete file list for later user destination choice. Preserve
+user dirty source/storage/tracker draft/audits; no tests/installs/services needed.
+
+
+PUB-INVENTORY-01 final handoff: COMPLETE read-only inventory/recommendation, no
+cleanup execution. Current1,041tracked paths (~19.6MiB working-copy bytes),
+232files in test directories,225tracked report files.18strong tracked archive
+candidates (~5.05MiB): six-file historical proposal/review/explorer bundle, six
+research PDFs+provenance manifest, two dated review/research documents, three
+duplicate architecture PNGs. Three untracked user audit drafts remain untracked.
+31ignored directory/path summaries already exclude generated artifacts, virtual
+environments, dependencies, builds/caches; no need to move those for Git clarity.
+
+Sol technical lane delivered dependency-review.md/index; Sol disclosure lane
+delivered disclosure-review.md and ASSEMBLED assembly.md. Direct peer dependency
+coordination completed; root inspected all reports and exact dependency examples.
+Do not blanket-archive tests/docs/evaluation/tools/contracts/storage. Tests read
+V2/V2-08-results.json; registry verifier hash-pins V6/V6-08-verification.json;
+corpus/labels/seals/schema/fixtures/SQL/examples feed current checks. Root found
+and assembler checked public-transition blockers: publish workflow:46 requires
+private repo; publication_workflow.py:36 and check_ci_bundle.py:70 also enforce
+private state. These need later policy/verification review, not removal. Current
+repo private, two terminal candidate Actions runs, no publication/visibility
+mutation. Public visibility exposes Actions history/logs; moving current files
+does not remove Git history. No history rewrite or archive destination chosen.
+
+Full review public-source-inventory.md and1,044-row CSV (all tracked+3draft paths)
+are owner-only outside repo at ~/.gstack/cragkit-public-inventory-612f3cl9.
+Classification counts/path coverage/existence checked; zero suspicious Unicode,
+low prose density, deterministic cleaning unchanged. Scoped static reference
+review only; no removal test, unit suite, install, service, model/provider call,
+paid job, move/delete or README edit. No project artifacts are copied into the
+private archive yet: only inventory reports exist. No commit/push for this advisory
+inventory; root changed only this local handoff. Protected source/storage/user
+drafts preserved; index unchanged. Contribution/security entrypoint files are
+missing by conventional filename and are future public-readiness work, not
+removal candidates. Next: user chooses scope/destination; only then plan actual
+moves, link/path/pin repair and meaningful verification. V6 stays paused.
+
+
+V6 resumed under the user's new active goal: complete all remaining product work
+including deploying Python/npm packages. Prior publication pause is revoked by
+that explicit resume/deployment request; public repository conversion and file
+archive choices remain deferred to user until finished. Interpret resume as
+project/handoff continuation. Do not create a CV or redefine the goal.
+
+V6-08R/PPR-r2 assignment: IN_PROGRESS. Corrected candidate a3ff7e8, run41777862696,
+job126402305700/artifact13297269766/ZIP422cb036... is the sole current input;
+old frozen receipts remain unchanged. Root owns prepare_release_products pins,
+contract/current summary/policy/procedure/tracker/tests/Git. Sol release_binding
+owns transport and registry binding source plus focused registry tests after
+manifest/summary digest freeze. Sol release_guidance owns README and V6 release
+guide and ASSEMBLES both lanes. Nonoverlapping writes, direct dependencies;
+escalate outcome/protected ownership changes root, unresolved decisions Astra.
+One local test slot, no peer installs/tests/services/account mutations/uploads.
+No archive moves, public visibility or new paid validation. Preserve dirty user
+source/storage/tracker draft/audits. Root verifies local nine-product preparation,
+transport/regressions/consumer checks, then authenticates required registry
+permissions before actual upload. USD2 compute ceiling retained; prior validation
+estimateUSD0.186 and planned bounded Linux publish estimateUSD0.12 fit within it.
+Actual charges/allowance remain unverified. Goal remains full remaining V6 and
+distribution acceptance, not local-only preparation.
+
+
+PUB-INVENTORY-02 assignment: current user requests a list before deciding archive
+scope or destination. This read-only review supersedes prior resume/deployment
+instructions for this turn. No README/code edits, moves, deletions, staging,
+commits, pushes, publication or visibility changes. Existing dirty work is
+protected. Root owns tracker and final integration. Two Sol peers share a current
+dependency-aware inventory outcome: public_technical_refresh owns technical test,
+fixture, tool, package and evidence dependencies; public_docs_refresh owns
+documentation/research/prototype review and ASSEMBLES. Private nonoverlapping
+reports under ~/.gstack/cragkit-public-review-mdlndlnp; direct peer dependency
+coordination, root resolves scope/ownership changes and requests Astra for
+unresolved material issues. No tests, installs, services or provider calls.
+Acceptance: verify tracked/untracked/ignored distinction and candidate existence,
+record specific move impacts and current pins, preserve useful public tests/docs,
+provide full file list outside repo with destination left for user decision.
+
+
+PUB-INVENTORY-02 final handoff: COMPLETE analysis/list only. Two substantive
+Sol peers delivered technical and documentation reports; documentation peer
+assembled their concrete references and notified root. Direct peer coordination
+resolved dependencies without overlap or Astra escalation. Root inspected both
+reports, assembly, package inclusion settings, current release pins, example
+consumers and official GitHub history/visibility guidance.
+
+Current inventory covers1,041tracked+5untracked=1,046paths,232test-source files,
+225tracked report files.18stronger tracked archive candidates total5,293,881bytes:
+six-file proposal/review/prototype bundle, six PDFs+manifest, two dated documents,
+three duplicate PNGs. These require link/layout repairs; no removal safety test
+or paper redistribution clearance is claimed. Three user audit drafts may be
+archived privately; current untracked replacement contract/summary remain live
+release work. Both original and replacement publication summaries are current
+read inputs. Evidence/PostgreSQL examples also feed clean-artifact acceptance.
+Historical PNG/PDF unread/withheld security scope remains unchanged.
+
+Do not move tests/docs/tools/contracts/storage/evaluation wholesale.31ignored
+path summaries already exclude environments, builds, dependencies and artifacts;
+important retained bundles should be preserved privately. Workflow/policy
+transport digest mismatch is existing incomplete release integration; public-only
+policy adaptation, contribution/security entry points and history/Actions-log
+disclosure review remain future work. No runtime/security clearance is inferred.
+
+Final review and1,046-rowCSV are owner-only outside checkout at
+~/.gstack/cragkit-public-review-mdlndlnp/public-release-review.md and
+file-inventory.csv. Destination remains USER_TO_DECIDE. No project files moved,
+deleted or archived, README/code edited, tests/installs/services/provider calls
+or paid jobs run, staging/commit/push/publication/visibility change performed.
+Root changed only this local tracker handoff; existing dirty work remains intact.
+Bounded local reads used no persistent processes or downloads. Prose low density,
+zero suspicious Unicode, deterministic cleanup unchanged. Learning unassessed;
+report distinguishes test source/results and public tree/package contents. Next
+smallest action: user chooses archive scope/location; then plan selected moves,
+reference/path/pin repair and focused verification.
+
+
+V6-08R2 assignment: active deployment goal resumed after completed archive
+inventory. Goal remains all remaining V6 products, publication, registry smoke
+and maintenance/exit; archive decisions and GitHub public conversion stay with
+user. Previous goal turn produced verified inventory/dependency evidence, so it
+was progress. Root owns frozen packet/policy/summary, serial checks, installed
+consumers, auth, handoff and Git. Existing Sol release_binding now exclusively
+owns workflow digest binding and tools/tests/test_publication_workflow.py; Sol
+release_guidance owns docs/publication.md, docs/releasing.md and current
+publication subsection of docs/development.md, and ASSEMBLES. Direct dependency
+coordination, no overlap. Shared outcome: current corrected packet/procedure and
+workflow consistency before secure upload; preserve owner/manual/private/hold
+gates and historical immutable receipts. Root verifies combined regressions and
+real transport/projected installed consumers; no new paid validation. One test
+process, no peer services/network/auth/uploads. Headroom16GiB disk/42%free memory.
+Root found old combined-test handle missing, so its terminal result is unproven;
+after workflow edit one captured combined run will establish current acceptance.
+Retained public registry preflight exists:9requests, targetfiles/nexttags absent;
+no login or create permission follows from404. Pending private npm login/PyPI
+publisher setup still needs owner completion. Existing dirty runtime/storage,
+protected tracker draft and audit files remain excluded.
+
+
+V6-08R2 local acceptance: COMPLETE for corrected packet/procedure and installed
+consumers; V6-08 parent remains open. Root integrated Sol binding/procedure lanes
+and assembly. All378combined preparation/CIB/licensing/transport/registry/
+workflow tests passed, then378passed again after verified owner bootstrap
+admission changed the current policy/test state. Fixed immutable summary and
+manifest hashes unchanged; actual verifier and nine-product transport replay
+passed. Fresh outside-checkout consumers installed cached frozen dependencies
+offline with hooks disabled/empty npm auth configs.113npm member files equal,
+three installed imports, native evidence parity (23source/8context/127token/
+17packing/35assessment/6pipeline), LangChain108and MCP42Node tests passed.
+MCP first failed two module loads because root's test harness lacked test-only
+client SDK; diagnosed ERR_MODULE_NOT_FOUND, installed exact locked client and
+reran only affected MCP checks. No product change; failed evidence retained.
+
+Gitleaks8.30.1 with full redaction/empty ignore/no allow-comments scanned323
+numbered decoded package member files:0findings; selected private asset paths0.
+This is scoped package acceptance, not universal security or history clearance.
+Current README structure preserved; guide/policy/workflow select corrected
+609f3f...transport, original receipts protected. Current/sanitized acceptance:
+evaluation/reports/V6/V6-08R-acceptance.md/json, immutable preparation summary
+remains separate. No runtime, package manifest/lock or migration edits included.
+
+Owner now completed npm login. Root verified whoami/profile asvaibhavsuman00,
+write2FA auth-and-writes, no pending setup. User confirms PyPI pending publishers
+not configured yet; exact three-project owner instructions sent privately.
+Artifact security hold cleared for exact reviewed owner npm bootstrap, under
+existing PWK separate-bootstrap contract; publication intent authorized by active
+goal. Workflow remains default-disabled and registry setup cannot be confirmed
+until npm ownership/trust and PyPI pending fields verified. Clearing hold alone
+does not admit workflow; rejection regression covers missing setup/repo flag.
+No registry upload/asset upload/dispatch yet; GitHub still private. Remaining:
+exact npm bootstrap, all secure registry setup, PyPI publish and nine downloaded
+products/clean source-access smoke, then V6-09/C3/exit. No new paid validation;
+priorUSD0.186estimate+plannedUSD0.12publish remain belowUSD2 before smallstorage.
+Raw logs outsideGit owner-only. Root owns final prose/links/JSON/pins/staged-secret
+checks, scoped commit/push/sync, then actual owner bootstrap. Preserve user
+source/storage/tracker draft/audits. No archives moved or public visibility
+changed. Local work serial, no model/database/services/watchers; observed disk
+16GiB/free memory42percent. Learning unassessed; guide explains why runtime-byte
+drift needs new acceptance and why missing test fixtures require harness repair.

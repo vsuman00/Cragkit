@@ -177,6 +177,13 @@ publication workflow/product transport. D obtains the specific authorization,
 publishes and verifies clean registry downloads/install/source access. Preparation
 does not remove tracked npm guards or complete the parent publication task.
 
+4 November 2026 amendment: [PPR-r2](../../contracts/REPLACEMENT_PUBLICATION_V6.md)
+selects the corrected CI candidate and preserves original receipts. Corrected
+packet/transport/installed-consumer acceptance is recorded [separately](../../evaluation/reports/V6/V6-08R-acceptance.md).
+The user resumed RC1 deployment; secure registry setup and actual publication/
+post-registry smoke remain required. Archive choices and public GitHub conversion
+remain deferred. No additional paid validation is included.
+
 Acceptance: Local readiness and publication are separate tracker states; published versions install and pass a source-linked smoke query.
 
 Verification: Before publication inspect exact artifacts; afterward fetch published packages into clean environments and verify version/hash policy.

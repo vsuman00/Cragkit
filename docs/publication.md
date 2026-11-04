@@ -1,18 +1,23 @@
 # Publish the reviewed RC1 products
 
-Publication remains on security hold. The later
-[security closure](../evaluation/reports/V6/V6-04R-closure.md) resolves the retained
-findings and passes local replacement-artifact checks. The retained release
-packet still predates the corrected code. [Replacement candidate CI](../evaluation/reports/V6/V6-08C-CI2.md)
-has passed; replacement-packet review must precede explicit hold removal. Do not use the manual upload examples
-below to bypass the hold. Account setup and publication authorization remain separate.
+The user has resumed completion of V6, including RC1 package deployment. That
+instruction supersedes the earlier publication pause; repeat upload-intent
+approval is not required. Corrected-packet acceptance and owner npm login/write-2FA checks have passed.
+The artifact hold is cleared for the exact reviewed owner bootstrap. The hosted
+workflow remains disabled until all required registry setup checks pass. The
+[security closure](../evaluation/reports/V6/V6-04R-closure.md) records closed
+reviewed leads; qualified CSO coverage remains partial. Corrected
+[CI acceptance](../evaluation/reports/V6/V6-08C-CI2.md) and
+[prepared products](../evaluation/reports/V6/V6-08R-verification.json) replace
+the earlier held packet. Do not bypass the remaining hold with manual commands.
 
 For example, a wheel already tested in CI can be copied unchanged for upload.
 An npm tarball with `private: true` needs a separately reviewed local projection
 before publication. A version string alone does not establish that relationship.
 
 This guide implements the local preparation boundary in
-[PPR-r1](../contracts/PUBLICATION_PREPARATION_V6.md). The repository remains
+[PPR-r2](../contracts/REPLACEMENT_PUBLICATION_V6.md), retaining
+[PPR-r1](../contracts/PUBLICATION_PREPARATION_V6.md) product rules. The repository remains
 private and no package has been published. The manual
 [publishing workflow](../.github/workflows/publish-candidate.yml) now has local
 checks but has not been enabled or run. The separate
@@ -23,31 +28,35 @@ states. Stable `1.0.0` requires its own later decision; this packet is RC1 only.
 
 ## Review the local preparation
 
-Use the retained ZIP and original run/job/artifact metadata. They bind source
-`0c7c568d5cb71638eebab2dea97c5973b0f8cc08`, run `41625938303`, job
-`125883197705`, artifact `13226006299` and ZIP SHA-256
-`37b5fbcadc65be97556d885810a598e791b4321ba2ef9d3868877e2a67e4b17b`.
-The one approved paid CI run is consumed; neither these commands nor its result
-authorize a rerun. Preserve the original ZIP, metadata and rebuilt wheels after
-the hosted artifact expires.
+Use the corrected retained ZIP and its run/job/artifact metadata. They bind source
+`a3ff7e81332d849724407356d220c991e8a8411d`, run `41777862696`, job
+`126402305700`, artifact `13297269766` and ZIP SHA-256
+`422cb0367bdd11b61416b287378abffbd78c60442f1ceb1ce7523280d58858be`.
+Preserve original and corrected ZIPs, metadata, receipts and rebuilt wheels;
+historical inputs cannot substitute for this corrected candidate. No additional
+paid validation run is included in this procedure.
 
 The following are the local preparation/verification commands. Consult the
 [disclosure record](../evaluation/reports/V6/V6-08-disclosure.md) and tracker for
-actual execution status; a command shown here is not a passing result.
+historical disclosure scope. Corrected nine-product prepare/verify passed; the
+[immutable current summary](../evaluation/reports/V6/V6-08R-verification.json)
+binds manifest `7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663`
+and has SHA-256 `32b3251e3ef7d9536830f15ed1c196a45f2c1a91c31093dce2d99aed99471312`.
+Use a fresh output directory to repeat preparation; the accepted output exists.
 
 ```sh
 python3 tools/prepare_release_products.py prepare \
-  --archive artifacts/V6/hosted-candidate-0c7c568.zip \
-  --run artifacts/V6/ci-run.json \
-  --jobs artifacts/V6/ci-jobs.json \
-  --artifact artifacts/V6/ci-artifact.json \
-  --output artifacts/V6/publication-rc1
+  --archive artifacts/V6/replacement-candidate-a3ff7e8/candidate.zip \
+  --run artifacts/V6/replacement-candidate-a3ff7e8/run.json \
+  --jobs artifacts/V6/replacement-candidate-a3ff7e8/jobs.json \
+  --artifact artifacts/V6/replacement-candidate-a3ff7e8/artifact.json \
+  --output artifacts/V6/publication-replacement-a3ff7e8
 python3 tools/prepare_release_products.py verify \
-  --archive artifacts/V6/hosted-candidate-0c7c568.zip \
-  --run artifacts/V6/ci-run.json \
-  --jobs artifacts/V6/ci-jobs.json \
-  --artifact artifacts/V6/ci-artifact.json \
-  --prepared artifacts/V6/publication-rc1
+  --archive artifacts/V6/replacement-candidate-a3ff7e8/candidate.zip \
+  --run artifacts/V6/replacement-candidate-a3ff7e8/run.json \
+  --jobs artifacts/V6/replacement-candidate-a3ff7e8/jobs.json \
+  --artifact artifacts/V6/replacement-candidate-a3ff7e8/artifact.json \
+  --prepared artifacts/V6/publication-replacement-a3ff7e8
 ```
 
 Preparation validates a staging directory, exclusively claims a fresh output
@@ -59,7 +68,7 @@ partial directory as accepted. Verification independently derives expected bytes
 from the original candidate and rejects extra, missing or changed files. It does
 not accept a supplied replacement hash as proof of ancestry.
 
-Review `artifacts/V6/publication-rc1/publication-manifest.json`, all nine products,
+Review `artifacts/V6/publication-replacement-a3ff7e8/publication-manifest.json`, all nine products,
 their inventories, original/prepared hashes, licenses and disclosure before any
 upload. The Python wheels/sdists are byte-identical to CI. The npm projection
 changes only top-level `private` from true to false; all other JSON values,
@@ -73,14 +82,15 @@ ownership/authentication/smoke. It is a local receipt, not registry provenance.
 For each registry, verify who owns or may create `cragkit`, `cragkit-langchain`
 and `cragkit-mcp`. Earlier public metadata responses do not reserve a name or
 prove account permission. The user supplied `vaibhavsuman00` for both registries
-and reported 2FA enabled; authenticated sessions and all six publishing permissions
-remain unverified. See the [account setup record](../evaluation/reports/V6/V6-08C-accounts.md).
+and reported 2FA enabled. npm now authenticated as that owner with write-2FA
+confirmed; PyPI pending publishers are not configured yet. Initial npm create
+permission and all six workflow configurations remain unverified. See the [account setup record](../evaluation/reports/V6/V6-08C-accounts.md).
 A scope/name change would require a new reviewed
 candidate, metadata and dependency pins; do not silently rename these products.
 
 Use the registries' signed-in account pages and enable account protection. Prefer
 workflow-bound trusted publishing over long-lived credentials. Configure exact
-repository/workflow identities only after secure setup is authorized. This
+repository/workflow identities through the owner's secure authenticated setup. This
 first-maintainer workflow uses owner-only manual admission and minimal job
 permissions. No independent deployment reviewer or protected environment is
 configured; keep that trust boundary explicit. Never paste a registry token or one-time password into chat, Git,
@@ -107,13 +117,15 @@ needed. No token has been requested or configured here.
 For first publication, [npm requires an existing package before trust setup](https://docs.npmjs.com/cli/v11/commands/npm-trust/).
 The guarded publishing job cannot bootstrap an absent npm package through a trust
 that has not yet been configured. After corrected candidate CI, packet review,
-hold removal and specific upload approval, the owner can bootstrap the exact
-three approved npm RC1 tarballs through interactive login/2FA. Only afterward can
-those packages receive trusted publishers. The missing-only planner can then
+artifact hold clearance and verified owner npm login/write-2FA, the owner can bootstrap the exact
+three approved npm RC1 tarballs through interactive login/2FA. This initial owner
+step does not require nonexistent npm trust configuration. Only afterward can
+those packages receive trusted publishers; keep workflow setup confirmation false
+until npm ownership/trust and PyPI publisher fields are checked. The missing-only planner can then
 verify existing npm bytes and the `next` tags and upload only missing PyPI files.
 A skipped npm upload does not validate npm OIDC. New npm trust configurations
 expire without a first successful publish within two days; time their setup for
-an approved publishable version. These are later authorized steps, not completed
+an approved publishable version. These remain deployment steps, not completed
 account setup. Do not set `registry_setup_confirmed` from usernames alone.
 
 The [owner setup checklist](../evaluation/reports/V6/V6-08C-accounts.md#owner-setup)
@@ -125,20 +137,21 @@ way to prepare these absent names or bypass the held nine-product RC1 packet.
 ## Workflow controls and private transport
 
 The [workflow policy](../evaluation/release/V6-publication.json) fixes the
-1,486,204-byte transport SHA-256
-`6b817c8c627e1cdd0fe882b25617b2be17fe6ff7dc75e45b3d8a26d69c0db0d0`.
-The locally prepared ZIP contains exactly the original CI ZIP, its three metadata
-records and the reviewed publication manifest. Unpack regenerates the same nine
+1,496,502-byte transport SHA-256
+`609f3f84924417d4c0e9baefeb2097e10d35cc5e1e43cc283add970a60545d48`.
+The locally prepared ZIP at
+`artifacts/V6/replacement-transport-a3ff7e8/release-transport.zip` contains exactly
+the corrected CI `candidate.zip`, its three metadata records and the reviewed publication manifest. Unpack regenerates the same nine
 products and rechecks their identities. The original one-day hosted artifact is
 not required once this retained transport is available.
 
 The proposed later storage is one private draft release named by tag
-`rc1-transport-20261103`, targeting the reviewed workflow commit. Creating it and
-uploading its asset are still unauthorized. The publishing job receives numeric
+`rc1-transport-20261104-a3ff7e8`, targeting the reviewed workflow commit. Creation and asset upload belong to the resumed deployment scope, after
+combined acceptance and authenticated setup. Neither is claimed complete. The publishing job receives numeric
 release/asset IDs, verifies draft/commit/name/size/digest/membership, and downloads
 the asset through a read-only repository token. No tag or public GitHub release
 is created by the publishing job. Draft creation, asset access and hosted behavior
-remain to be verified after authorization.
+remain to be verified during execution.
 
 Only owner `vsuman00` can admit the job, from `main`, on its first attempt, with
 the executing SHA explicitly acknowledged and all three publication/cost/setup
@@ -170,20 +183,24 @@ password, key or token in chat.
 The proposed job is one `ubuntu-24.04` run, with a 20-minute timeout and one-day
 nonsecret receipt storage. At the reviewed Linux two-core rate of USD 0.006 per
 minute, compute would be up to USD 0.12 before included usage, rounding and
-separate storage. Allowance and actual charges are unknown. The earlier approved
-macOS validation run does not authorize this job. See
+separate storage. Allowance and actual charges are unknown. The resumed deployment scope includes this bounded publish job within the USD 2
+ceiling. Include the replacement validation estimate USD 0.186 in that budget;
+actual billing and included usage remain unverified. See
 [GitHub runner pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing).
 No dispatch, registry/account change or private asset upload has run.
 
 ## Review the proposed first upload
 
-This is a plan, not an executed upload or permission request. The next concrete
-authorization must name the public package/version set, exact manifest/products,
-public disclosure, owner/authentication path and any bounded workflow cost. It
-must separately cover any account configuration or workflow execution needed.
-No tag, GitHub release, repository visibility change or new paid CI is implied.
+Deployment intent is already authorized. Corrected packet acceptance and secure
+registry login/publishing permissions remain operational prerequisites, not a
+request to repeat that intent. The current read-only registry preflight is
+partial: nine requests found all target files and npm `next` tags absent. This
+does not establish authenticated permissions. npm owner authentication and write-2FA have now been verified. PyPI pending
+publishers are not configured yet; the owner is completing that secure setup. Repository
+visibility and archive choices remain deferred; stable publication is outside
+this RC1 scope.
 
-After secure setup and explicit approval, publish only the reviewed files, core
+After the remaining acceptance and authenticated setup gates pass, publish only the reviewed files, core
 before its optional adapters. PyPI receives the six wheel/sdist files at
 `1.0.0rc1`; npm receives the three projected tarballs at `1.0.0-rc.1`, explicitly
 under the prerelease tag `next`. Never use a working-tree rebuild, a wildcard
@@ -193,10 +210,10 @@ candidate and prepared hashes before upload, pins actions/tools and retains
 nonsecret receipts. Reusing old prepared bytes avoids an unreviewed rebuild.
 
 For illustration only, the npm upload of one reviewed tarball would use the
-following form after authorization and secure authentication:
+following form after hold removal and secure authentication:
 
 ```sh
-npm publish ./artifacts/V6/publication-rc1/products/npm/cragkit-1.0.0-rc.1.tgz --registry=https://registry.npmjs.org/ --access=public --tag=next --ignore-scripts --provenance=false
+npm publish ./artifacts/V6/publication-replacement-a3ff7e8/products/npm/cragkit-1.0.0-rc.1.tgz --registry=https://registry.npmjs.org/ --access=public --tag=next --ignore-scripts --provenance=false
 ```
 
 This command has not run. `next` avoids npm's default `latest` tag; the explicit

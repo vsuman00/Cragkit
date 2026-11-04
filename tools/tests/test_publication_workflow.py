@@ -2,6 +2,8 @@
 import hashlib
 import json
 from pathlib import Path
+import re
+import shlex
 import subprocess
 import sys
 
@@ -31,10 +33,46 @@ def reviewed_policy(tmp_path, monkeypatch):
     return approved
 
 
-def test_current_frozen_products_remain_on_security_hold():
-    assert W.policy()['security_hold'] is True
-    with pytest.raises(W.P.PreparationError, match='publication_security_hold'):
-        W.admit(admitted())
+def test_executable_transport_command_matches_reviewed_policy_and_admission_order():
+    approved = W.policy()
+    workflow_path = Path(__file__).resolve().parents[2] / '.github/workflows' / approved['workflow']
+    workflow = workflow_path.read_text()
+    # Inspect executable folded run blocks, rather than matching a digest in a comment.
+    commands = [shlex.split(block) for block in re.findall(
+        r'^        run: >-\n((?:          [^\n]*\n)+)', workflow, re.MULTILINE)]
+    unpack = [command for command in commands
+              if command[:3] == ['python', 'tools/release_transport.py', 'unpack']]
+    assert len(unpack) == 1
+    assert unpack[0] == ['python', 'tools/release_transport.py', 'unpack',
+                         '--archive', '.release-download/' + approved['transport_asset'],
+                         '--expected-sha256', approved['transport_sha256'],
+                         '--output', '.release-candidate']
+    assert "github.repository == '" + approved['repository'] + "'" in workflow
+    for gate in ("github.actor == 'vsuman00'", 'github.event.repository.private == true',
+                 "github.ref == 'refs/heads/main'", 'github.run_attempt == 1',
+                 'inputs.reviewed_workflow_sha == github.sha',
+                 'inputs.publication_authorized && inputs.runner_cost_acknowledged',
+                 "inputs.registry_setup_confirmed && vars.CRAGKIT_RELEASE_ENABLED == 'reviewed-rc1'"):
+        assert gate in workflow
+    guard = workflow.index('run: python tools/publication_workflow.py guard')
+    asset = workflow.index('python tools/publication_workflow.py asset --release')
+    unpack_position = workflow.index('python tools/release_transport.py unpack')
+    preflight = workflow.index('python tools/check_registry_products.py --allow-missing')
+    plan = workflow.index('python tools/publication_workflow.py plan')
+    upload = workflow.index('uses: pypa/gh-action-pypi-publish@')
+    assert guard < asset < unpack_position < preflight < plan < upload
+
+
+def test_reviewed_bootstrap_clearance_does_not_admit_unconfigured_hosted_publication():
+    approved = W.policy()
+    assert approved['security_hold'] is False
+    assert approved['publication_authorized'] is True
+    assert approved['workflow_dispatched'] is False
+    for key in ('REGISTRY_SETUP_CONFIRMED', 'CRAGKIT_RELEASE_ENABLED'):
+        environment = admitted()
+        environment[key] = ''
+        with pytest.raises(W.P.PreparationError, match='publication_not_admitted'):
+            W.admit(environment)
 
 
 @pytest.mark.parametrize('state,value', [('held', True), ('missing', None), ('null', None),

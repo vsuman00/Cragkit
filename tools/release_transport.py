@@ -16,10 +16,10 @@ import zipfile
 import prepare_release_products as P
 
 REVISION = 'PWK-r1'
-MANIFEST_SHA256 = '7ced6f15ee096752d8e974d793d1bd99a8f41d77181fb061d2871d890aeb5dc5'
+MANIFEST_SHA256 = '7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663'
 TRANSPORT_NAME = 'release-transport.zip'
 RECEIPT_NAME = 'transport-receipt.json'
-INPUT_NAMES = dict(archive='hosted-candidate-0c7c568.zip', run='ci-run.json',
+INPUT_NAMES = dict(archive='candidate.zip', run='ci-run.json',
                    jobs='ci-jobs.json', artifact='ci-artifact.json')
 MEMBER_LIMITS = {INPUT_NAMES['archive']: P.MAX_ARCHIVE,
                  **{INPUT_NAMES[key]: 1024 * 1024 for key in ('run', 'jobs', 'artifact')},
