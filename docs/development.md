@@ -1800,15 +1800,21 @@ helper accepts known PEP 639 formats 2.4–2.6 and rejects old/invalid formats. 
 working-tree previews are not the clean final artifacts. During those serial
 builds free memory was 47–48% and swapouts remained unchanged.
 
-The manual-only [candidate workflow](../.github/workflows/candidate-validation.yml)
+Historical `0c7c568` checkpoint: the manual-only [candidate workflow](../.github/workflows/candidate-validation.yml)
 has pinned official action commits, a read-only repository token and one ARM64
-macOS job with a 30-minute timeout. Its YAML and configured action inputs were
+macOS job then used a 30-minute timeout. Its YAML and configured action inputs were
 checked. The single user-approved private run passed against `0c7c568`;
 [CI evidence](../evaluation/reports/V6/V6-06-ci.md) records its exact products,
 runner, counts and three initial build-order skips. Those cases passed locally
-after builds; an added future post-build step has not run in hosted CI. No further
+after builds; the added post-build step had not run in that historical CI. No further
 run is authorized by that approval. Actual charges/free allowance remain unverified.
-The repository is private and no package was published.
+The repository was private and no package had been published at that checkpoint.
+
+The current workflow uses a 25-minute bound. [Replacement CI](../evaluation/reports/V6/V6-08C-CI2.md)
+passed its post-build follow-up and exact corrected artifacts. [Registry
+acceptance](../evaluation/reports/V6/V6-08D-publication.md) now verifies all six
+published RC1 packages and nine files. These later receipts supersede the
+historical pending statements without changing their recorded inputs.
 
 The two new offline checkers passed 32 focused tests; the final Python/tool suite
 passed 3,968 with no skips and four intentional boundary-fixture warnings:
@@ -1941,18 +1947,17 @@ SHA-256 `609f3f84924417d4c0e9baefeb2097e10d35cc5e1e43cc283add970a60545d48`;
 policy tag `rc1-transport-20261104-a3ff7e8` selects it. Historical receipts remain
 unchanged; rerun preparation only into a fresh task-owned directory.
 
-The user's resumed goal authorizes RC1 deployment. Combined acceptance and
-secure authenticated registry setup still gate uploads; current preparation
-receipts keep their false authorization/publication fields. A later read-only
-preflight made nine requests and found all target files and npm `next` tags
-absent, without proving publishing permissions. Owner npm login and PyPI publisher
-setup remain pending. No upload, configured-account or successful npm OIDC result
-is claimed. Follow the current [publication procedure](publication.md); repository
-visibility and archive decisions remain deferred.
+The resumed goal authorized RC1 deployment. The preparation receipt's false
+publication fields remain historical preparation facts. Actual [registry
+acceptance](../evaluation/reports/V6/V6-08D-publication.md) now verifies all nine
+canonical files, installed consumers and source builds. All three PyPI OIDC
+phases passed; npm owner bootstrap passed, while saved npm trust is not a
+successful OIDC publish. Release enablement is removed between authorized
+runs. GitHub visibility, archive choices and public evidence disclosure remain
+deferred; stable `1.0.0` is not authorized.
 
-[Current corrected local acceptance](../evaluation/reports/V6/V6-08R-acceptance.md)
-records 378 combined checks, native installed evidence parity, 108 LangChain and
-42 MCP Node tests, and an exact 113-member npm installation comparison. npm owner
-login/write-2FA is verified; PyPI pending publishers are not configured yet.
-Artifact hold clearance permits only the reviewed owner bootstrap. Hosted setup
-confirmation remains false until all required registry configurations are checked.
+Fresh installed checks passed 174 combined Python adapter/core security tests,
+108 LangChain and 42 MCP Node tests, and exact immutable member comparisons.
+Native source-access, missing-evidence and typed operational-failure checks
+passed with verified disposable-fixture cleanup. The complete final C3 suite is
+recorded separately after its clean reviewed export run.

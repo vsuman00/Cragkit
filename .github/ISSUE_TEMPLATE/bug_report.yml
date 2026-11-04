@@ -1,0 +1,86 @@
+name: Bug report
+description: Reproduce a Cragkit problem with synthetic input and redacted diagnostics.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use synthetic input only. Never submit keys, tokens, passwords, database connection strings, raw private queries or documents.
+        This form serves collaborators with repository access. It is not a confidential security channel or a response-time promise.
+        Complete every requested reproduction field and the redaction check. Required-field enforcement is documented for public repositories only; maintainers must review completeness and redaction here.
+        Start with CONTRIBUTING.md and docs/support.md. If sensitive details cannot be removed, do not attach them here.
+  - type: input
+    id: package-version
+    attributes:
+      label: Package versions or source commit
+      description: Name each affected core, LangChain or MCP package and its exact version; include install method or source commit.
+      placeholder: "cragkit Python 1.0.0rc1 from PyPI; cragkit npm 1.0.0-rc.1"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Runtime and platform
+      description: Include OS, architecture, Python or Node, npm or uv version, and backend or driver versions. Do not paste connection settings.
+      placeholder: |
+        OS and architecture:
+        Python or Node:
+        npm or uv:
+        Backend and driver version:
+    validations:
+      required: true
+  - type: textarea
+    id: profile
+    attributes:
+      label: Enabled profile and provider mode
+      description: List optional extras, adapters, tokenizer or embedding profile, and fake, recorded, local or live provider mode. No credentials or private endpoints.
+      placeholder: "Core with PostgreSQL and lexical retrieval; fake transport; no model calls."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal synthetic reproduction
+      description: Give exact commands and a small synthetic document, request and scope. Keep any prerequisites explicit; do not require a paid call for a routine unit reproduction.
+      placeholder: |
+        1. Install the stated version or check out the stated commit.
+        2. Create synthetic input and a fake provider.
+        3. Run the smallest command that shows the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: State the expected evidence, authorization, coverage estimate or execution outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and safe status
+      description: Include sufficient, partial or insufficient separately from complete or degraded when available, plus safe error codes. Say unknown when unavailable.
+    validations:
+      required: true
+  - type: textarea
+    id: regression
+    attributes:
+      label: Regression range and checks
+      description: Optional last working version, focused test path, commands run and results. Distinguish unrun checks and live or installed-artifact evidence.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Short redacted logs
+      description: Optional safe diagnostic codes only. Remove credentials, connection strings, private endpoints, queries and document contents before sharing.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Safe reproduction check
+      options:
+        - label: I used synthetic input and removed credentials, connection strings and private source or query data from this report.
+          required: true

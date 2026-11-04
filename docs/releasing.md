@@ -97,8 +97,8 @@ remains historical evidence.
 
 Follow the [publication procedure](publication.md) for the remaining secure
 registry ownership/bootstrap and workflow admission steps. The publishing workflow is prepared and
-default-disabled between phases. The three npm products and core/LangChain PyPI pairs have
-verified publication evidence; MCP needs its matching selected-project setup. Never put a registry token in
+default-disabled between phases. All three npm products and all six PyPI files have verified publication and
+installed-consumer evidence. Future publication needs its own reviewed scope. Never put a registry token in
 Git or chat. The GitHub repository stays private; public packages disclose their
 own contents. npm provenance is unavailable from private source repositories,
 as documented in [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).

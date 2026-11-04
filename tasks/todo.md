@@ -1,25 +1,18 @@
 # Cragkit implementation tracker
 
-Current security checkpoint (4 November 2026): V6-04R-CLOSE retained finding
-review and local replacement-product acceptance passed. All 258 retained
-candidates and eleven later Git-history occurrences have inspected dispositions;
-no unresolved product vulnerability was established in those paths. Installed
-security test-selection gaps are fixed. Qualified CSO coverage remains PARTIAL;
-separate native parsing, fresh dependency/history checks and installed tests
-have their own evidence. [Replacement candidate CI](../evaluation/reports/V6/V6-08C-CI2.md)
-now passed. [Corrected packet acceptance](../evaluation/reports/V6/V6-08R-acceptance.md)
-passed; owner npm login/write-2FA verified. Artifact hold cleared for exact npm
-bootstrap; hosted publication remains disabled pending registry configuration.
-[Current evidence](../evaluation/reports/V6/V6-04R-closure.md).
-V6-08, production acceptance and version exit remain incomplete.
-
-Registry checkpoint: the user supplied PyPI/npm account `vaibhavsuman00` and
-confirmed 2FA enabled on both. Public six-name preflight completed; authenticated
-permissions/publisher setup remain pending. [Account record](../evaluation/reports/V6/V6-08C-accounts.md).
+Current checkpoint (4 November 2026): RC1 publication and V6-08 acceptance
+passed. All six registry products/nine canonical files match reviewed bytes;
+installed source, adapter and absence/failure checks passed. [Publication evidence](../evaluation/reports/V6/V6-08D-publication.md).
+Owner bootstrap and actual PyPI OIDC are verified; npm OIDC remains untested
+after saved configuration. Publishing is disabled between authorized releases.
+Reviewed security findings retain their [scoped closure](../evaluation/reports/V6/V6-04R-closure.md);
+qualified CSO coverage is partial and production-target acceptance is separate.
+V6-09/C3 remain active; formal V6-EXIT awaits user-deferred public evidence
+disclosure and file/publication choices. GitHub remains private.
 
 This is the single implementation completion tracker. All tasks start unchecked. Plan creation is not implementation completion. Read [the master plan](plan.md) and [edge-case inventory](EDGE_CASES.md).
 
-V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). V3-02: COMPLETE for native injectable adapters and the bounded Cohere comparison; [evidence](../evaluation/reports/V3/V3-02D.md). V3-03/V3-C1: COMPLETE for standalone strict context accounting. V3-04: COMPLETE for PK-r1 packing/native opt-in source snapshots. V3-05: COMPLETE for AS-r1 curated coverage. V3-06/V3-C2: COMPLETE for EP-r1. V3-07: COMPLETE for the frozen development comparison. V3-08/V3-C3/V3-EXIT: COMPLETE for the declared native/curated development milestone; [exit evidence](../evaluation/reports/V3/V3-08-exit.md). Current next action: secure RC1 registry setup and publication; scoped hosted CI passed. Generalized live-model quality remains unestablished.
+V0: COMPLETE locally. V1: COMPLETE for the native lexical library milestone, including V1-10/V1-11/V1-12, V1-C4 and V1-EXIT. Local and hosted acceptance, artifact observations and limitations are recorded in [the final V1 report](../evaluation/reports/V1/V1-10-12.md). V2-01: COMPLETE as a design decision; hosted opt-in OpenAI text-embedding-3-small (1536 dimensions), routine fakes and live access disabled. V2-02/V2-03/V2-C1: COMPLETE locally. V2-04A-G: COMPLETE for optional setup, profile storage and native bounded generation staging/publication on the dedicated direct development target; [final evidence](../evaluation/reports/V2/V2-04G.md). V2-05: COMPLETE for internal exact dense candidates in both runtimes; [evidence](../evaluation/reports/V2/V2-05.md). V2-06/V2-C2: COMPLETE for internal exact identifiers and deterministic rank fusion in both runtimes; [evidence](../evaluation/reports/V2/V2-06.md). V2-07/V2-08/V2-C3/V2-EXIT: COMPLETE for the native/synthetic development milestone; [exit evidence](../evaluation/reports/V2/V2-07-08-exit.md). V3-01: COMPLETE as a documented contract/shortlist with recorded mechanical compatibility evidence; [report](../evaluation/reports/V3/V3-01.md). V3-02: COMPLETE for native injectable adapters and the bounded Cohere comparison; [evidence](../evaluation/reports/V3/V3-02D.md). V3-03/V3-C1: COMPLETE for standalone strict context accounting. V3-04: COMPLETE for PK-r1 packing/native opt-in source snapshots. V3-05: COMPLETE for AS-r1 curated coverage. V3-06/V3-C2: COMPLETE for EP-r1. V3-07: COMPLETE for the frozen development comparison. V3-08/V3-C3/V3-EXIT: COMPLETE for the declared native/curated development milestone; [exit evidence](../evaluation/reports/V3/V3-08-exit.md). Current next action: maintenance handoff and final C3 acceptance; RC1 registry publication passed. Generalized live-model quality remains unestablished.
 V4: COMPLETE for the internal native/synthetic development milestone, all tasks/checkpoints through V4-EXIT. [Final evidence and limits](../evaluation/reports/V4/V4-08-exit.md).
 
 
@@ -372,19 +365,19 @@ GIT-01 handoff: initialized Git and private GitHub origin, added the repository 
 - [x] V6-07: [Migration and rollback rehearsal](versions/V6-release.md#v6-07-migration-and-rollback-rehearsal) — [scoped native recovery and required operator repair](../evaluation/reports/V6/V6-07-recovery.md).
   - [x] V6-07F1: Explicit bounded legacy lexical repair; [upgrade and operator evidence](../evaluation/reports/V6/V6-07-upgrade.md). No applied migration or package changed.
 
-- [ ] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — PARTIAL: three npm products and core/LangChain PyPI pairs published and byte-verified; installed core, Node and LangChain smoke passed. MCP publication and full registry acceptance are open. [Current registry evidence](../evaluation/reports/V6/V6-08D-publication.md).
+- [x] V6-08: [Publication and post-release smoke](versions/V6-release.md#v6-08-publication-and-post-release-smoke) — COMPLETE for authorized RC1: all six registry products/nine files, installed adapters/source builds, native source/absence/failure checks passed. [Current registry evidence](../evaluation/reports/V6/V6-08D-publication.md).
 
 - [x] V6-08C1: Durable local transport and exact nine-product replay verified.
 - [x] V6-08C2: Read-only registry verifier and bounded process cleanup verified.
 - [x] V6-08C3-local: Default-disabled owner/manual publication workflow and missing-file planner verified locally; hosted execution unrun. [Evidence](../evaluation/reports/V6/V6-08-workflow.md).
 - [x] V6-08R: Corrected nine-product preparation, transport replay, projected installed consumers and current workflow binding. [Scoped acceptance](../evaluation/reports/V6/V6-08R-acceptance.md).
-- [ ] V6-08C-account: Six account permissions, secure bootstrap and trusted-publisher configuration.
+- [x] V6-08C-account: Six registry permissions and secure bootstrap/configuration verified; actual PyPI OIDC passed, npm OIDC remains untested. [Evidence](../evaluation/reports/V6/V6-08D-publication.md).
 
-- [ ] V6-09: [Maintenance handoff](versions/V6-release.md#v6-09-maintenance-handoff) — evidence: pending.
+- [x] V6-09: [Maintenance handoff](versions/V6-release.md#v6-09-maintenance-handoff) — contribution/support/maintenance guidance and simulated regression walkthrough passed. [Acceptance](../evaluation/reports/V6/V6-09-maintenance.md).
 
 - [ ] V6-C3: Demonstration, relevant regression checks, learning review and resource note through V6-09.
 
-- [ ] V6-EXIT: Version acceptance complete; evidence and limitations recorded.
+- [ ] V6-EXIT: PENDING user-deferred public limitations/benchmark disclosure; private evidence does not satisfy the public criterion. C3 must also pass.
 
 ## Session handoff
 
@@ -5895,3 +5888,97 @@ authorize a differently named package. Current report/JSON and task row now
 reflect the successful retry. User edits, immutable products/contracts, private
 GitHub and archive choice remain protected. Root owns final prose/link/secret
 review, scoped commit/push/sync and the next exact-SHA draft rebind if needed.
+
+
+V6-08D final publication assignment: MCP configured by owner. Root owns the
+indivisible external phase, all local tests, current reports/tracker/Git and
+final integration. Existing PWB-r1/PWP-r2/PUP-r2 and fixed nine-product identities
+remain frozen. Fresh seven-file preflight and complete exact private draft
+tag/target/asset validation passed at c4959fa; selected plan contains only MCP
+wheel/sdist, no npm or other Python files. One bounded dispatch requested.
+
+Independent Sol v6_release_requirements_audit rechecks prior accepted01-07/C1/C2
+and derives the exact remaining08/09/C3/EXIT proof from actual governing files.
+Writable paths only private final-requirements-audit.md/json in the active
+owner-only release task directory; no tracked writes, tests, network, services,
+installs, Git or external action. Root owns all execution. Read-only contracts,
+immutable receipts and user dirty work protected. Direct factual dependency
+messages to root now and later maintenance peers; changes to outcome/protected/
+ownership boundaries require root; unresolved material decisions go to Astra.
+State IN_PROGRESS, not acceptance. No V6-09 implementation before08 passes.
+
+
+V6-08 final handoff COMPLETE for authorized RC1. Run41809111947 passed
+fetch38s/publish135s at reviewedc4959fa. Strict canonical9/9 and next tags pass;
+MCP54 and combinedPython174 tests pass, immutable install members/source exact
+rebuilds verified. Additional installed native fixture6 checks cover positive
+source, absent evidence insufficient/complete, and closed pool typed failure
+in both runtimes; cleanup verified, zero providers. Metadata/receipts and
+original harness setup failures retained privately; no guard/product changes.
+Estimated observed compute USD0.456 before allowance/rounding/small one-day
+storage, below USD2. Enable marker removed. Earlier npm OIDC/config expiry,
+partial CSO/small quality/platform/human-trial limits remain explicit.
+
+V6-09 managed-pair assignment IN_PROGRESS now that08 passes. Shared outcome:
+contribution and maintenance handoff with a reproducible simulated bug path,
+support scope, regression/release workflow and model-policy re-evaluation.
+Sol release_binding owns ONLY new CONTRIBUTING.md and
+.github/ISSUE_TEMPLATE/bug_report.yml. Sol release_guidance owns ONLY new
+docs/support.md, docs/maintenance.md and private maintenance-walkthrough.md
+under active task directory; guidance ASSEMBLES. Root owns README, all other
+docs/reports/tracker, shared contracts, all tests/external actions and final
+integration/Git. Freeze links: CONTRIBUTING.md, docs/support.md,
+docs/maintenance.md, existing docs/development.md/releasing.md/publication.md.
+
+Both peers do substantive work and coordinate directly about exact commands,
+support boundaries, issue fields and walkthrough. Read-only primary official
+docs allowed if needed; no peer tests/processes/install/services/Git or external
+write. One root-owned test slot, no paid CI/providers/models. No invented SLA,
+email, public repo/security-reporting availability, successful user trial or
+stable release. Public GitHub/archive choice and immutable artifacts protected.
+Escalate outcome/protected/other ownership changes before dependent edits;
+unresolved root/Astra. Root accepted Astra B:08/09/C3 can close independently;
+formalEXIT/public-evidence requirement stays pending, never an accepted waiver.
+
+Root will inspect both drafts, execute a simulated bug reproduction and complete
+C3 in a clean reviewed export excluding user dirty files. Fresh output dirs,
+serial runtimes; previous frozen artifacts/receipts untouched. Disk15GiB free
+before MCP profile. Learning unassessed; exercise offered later without blocking.
+
+
+V6-09 interruption recovery: actual workspace and live-agent inventory inspected.
+Previous peer handles are absent; their four documentation drafts are preserved.
+No C3 process was started. Root reassigns their existing nonoverlapping paths
+to fresh Sol maintenance_contribution (CONTRIBUTING.md and bug_report.yml) and
+maintenance_guidance (docs/support.md, docs/maintenance.md, private walkthrough;
+ASSEMBLER). Shared outcome/links/constraints above remain unchanged. Both peers
+verify and finish substantive owned content, coordinate directly, and report
+readiness before root integration. No peer tests/services/install/Git/external
+writes; primary official documentation reads allowed. Root owns all execution,
+current-state docs/reports/tracker/Git and final C3. Protected dirty source and
+user tracker draft remain excluded. Formal public-evidence decision stays
+deferred; this recovery does not reopen package publication or authorize cost.
+
+
+V6-09 final handoff COMPLETE. Both recovered Sol peers finished substantive
+owned documents and directly coordinated schema/command/support details;
+guidance assembled, all writers stopped and root integrated. CONTRIBUTING,
+bug form, support and maintenance guides provide safe reproduction, invariant
+regression/parity, version/migration/dependency/model-policy triggers and release
+communication. Simulated unknown-reranker-leak report was not reproduced:
+actual Python2 and Node2 fallback parametrizations pass canonical error/redaction/
+accounting assertions. No artificial defect or product patch. YAML parsed with
+ten elements/nine unique IDs; public-only required enforcement caveat verified
+in official GitHub docs. Root owns final prose/link/secret checks and scoped
+commit/push/sync; user dirty draft/source/audits preserved.
+
+Next C3: full34 core/LangChain stages, MCP typing/full tests, post-build3 cases,
+12 optional installed profiles and preregistration metadata gate in a fresh
+git archive of reviewed committed HEAD. Package tree must stay63dafe3b; seed
+only fixed tokenizer asset. New private outputs never overwrite candidate,
+registry, transport or migration receipts. One test process/serial runtimes,
+offline frozen dependency caches, no paidCI/provider/model calls. Current
+resource15GiB/62percentfree memory; learning practice unassessed. FormalEXIT
+requires public benchmark/limitations disclosure; Astra B accepted, not waived.
+Prepare concrete private review packet while preserving user's final file/public
+decision and private GitHub. Full goal remains incomplete.

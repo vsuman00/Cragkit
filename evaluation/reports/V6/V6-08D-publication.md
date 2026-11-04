@@ -1,9 +1,9 @@
 # V6-08D registry publication
 
-4 November 2026. Publication is in progress. All three npm RC1 products are
-public and their canonical downloads match the reviewed SHA-256/size. The Python
-core and LangChain wheel/sdist pairs are also published and byte-verified. Seven
-of nine fixed files are verified; MCP and V6-09/C3/version exit remain pending.
+4 November 2026. V6-08 is complete for the authorized RC1 publication. All three
+packages are public on both npm and PyPI; all nine canonical downloads match
+the reviewed bytes. Fresh installed consumers, source builds and native source
+checks passed. Maintenance/C3 and formal public-evidence exit remain separate.
 The [machine receipt](V6-08D-publication.json) records actual product identities
 and registry observations; [local acceptance](V6-08R-acceptance.md) remains a
 separate earlier checkpoint.
@@ -227,3 +227,50 @@ now totals USD0.432; one further capped phase projects at most USD0.582 before
 allowance, rounding and small one-day storage. No additional paid validation
 was started. Earlier failed runs and qualified security/quality/platform
 limitations remain part of the evidence.
+
+
+## Final MCP publication and V6-08 acceptance
+
+[Run 41809111947](https://github.com/vsuman00/Cragkit/actions/runs/41809111947),
+workflow source `c4959fa`, passed fetch in 38 seconds and publish in 135 seconds.
+Only MCP's missing wheel and source archive were uploaded. Strict independent
+verification without `--allow-missing` confirms all nine files and all three
+npm `next` tags. MCP wheel SHA-256 is
+`8e90f98762d3a030e20a6f23b5a3f6e2e5759a672161d77ef3d2a34197a625f7`;
+source SHA-256 is
+`339f041a57a5fa941a6b02b3e96dd0ecdc3e4e1156c2f1cb99c7e01dc26b2a6e`.
+The release-enable marker was removed after terminal success.
+
+MCP's hosted receipt artifact `13310504691` is 6,548 bytes with SHA-256
+`57a575014111d8543745eea2a14ed882c6e176d8a21a94749655b46aecc36971`.
+Its five bounded read-only postflight observations end at nine verified files;
+preflight and the selected two-file plan are retained too. No upload was retried.
+Observed Actions compute estimates total USD0.456 before allowance, rounding and
+small one-day artifact storage; no more publication compute is planned.
+
+The canonical MCP source archive rebuilds to its exact published wheel. Clean
+installation preserved all prior dependency versions, matched all six immutable
+member files (installer `RECORD` excluded), and verified installed origins.
+All 54 MCP tests passed, including official SDK stdio subprocess checks. The
+first copied test selection omitted its `test_stdio_process` support module;
+copying that existing fixture and running all three test files corrected only
+the private harness. Both installed Python adapters then passed 174 tests
+together in 4.43 seconds, in the same clean environment. Prior Node adapter
+and core tests retain their exact-artifact evidence.
+
+The independent audit identified a required missing-evidence versus operational-
+failure case beyond the existing source/recovery checks. One new disposable
+PostgreSQL fixture exercised three checks per installed runtime: filtered
+positive source retrieval, nonexistent required document returning
+`insufficient`/`complete`, and the same retrieval after pool close raising typed
+`ProviderUnavailable`. All six passed; listener cleanup was verified and
+provider calls were zero. An operational failure was never relabeled as absence.
+
+This closes publication and registry-consumer acceptance, including the six
+registry permissions/bootstrap paths. npm trusted-publisher fields were saved
+and verified, but skipped npm OIDC uploads still do not prove future automation;
+the two-day first-use expiry limitation remains. All three PyPI projects have
+actual OIDC publication evidence. There is no stable `1.0.0` release, public
+GitHub conversion, archive move or broader production-target claim. Formal V6
+exit still requires public disclosure of limitations and benchmark evidence;
+those materials remain private under the user's deferred file/public decision.

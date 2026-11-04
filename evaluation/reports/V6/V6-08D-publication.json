@@ -1,8 +1,8 @@
 {
   "revision": "RC1-publication-r1",
-  "state": "npm_core_and_langchain_verified_mcp_pending",
-  "observed_at": "2026-11-04T09:33:10.818909+00:00",
-  "parent_complete": false,
+  "state": "complete_rc1_registry_and_consumer_acceptance",
+  "observed_at": "2026-11-04T09:56:55.578148+00:00",
+  "parent_complete": true,
   "manifest_sha256": "7ab4ba1aeebfce8b83871f7bda8bf09cfdc39e6e405f28a0ca88fe55ecbdc663",
   "candidate_source": "a3ff7e81332d849724407356d220c991e8a8411d",
   "npm_products": [
@@ -140,24 +140,27 @@
     "workflow": "publish-candidate.yml",
     "environment": null,
     "langchain_setup_owner_confirmed": true,
-    "mcp_setup_confirmed": false,
+    "mcp_setup_confirmed": true,
     "matching_langchain_identity": "Successful corrected selected-project OIDC upload; owner reported spelling correction.",
     "owner_reported_project": null,
     "langchain_oidc_publish_verified": true,
-    "core_oidc_publish_verified": true
+    "core_oidc_publish_verified": true,
+    "actual_oidc_publications_verified": [
+      "cragkit",
+      "cragkit-langchain",
+      "cragkit-mcp"
+    ],
+    "account_wide_pending_inventory": "Not independently inspected; actual reviewed project uploads succeeded."
   },
   "registry_receipt": {
-    "path": "artifacts/V6/registry-after-langchain-corrected-41807132666/registry-report.json",
-    "sha256": "d45fbac24c4c724e7860ad3757e0fedb3919bdda42488c01e05806f2b45fa861",
-    "state": "partial",
-    "verified_files": 7,
-    "absent_files": 2
+    "path": "artifacts/V6/registry-final-41809111947/registry-report.json",
+    "sha256": "a859731a628840fffc9e48e1c4f82f09cae52435f58348459fae935214c8be49",
+    "state": "complete",
+    "verified_files": 9,
+    "absent_files": 0,
+    "strict_allow_missing": false
   },
-  "remaining": [
-    "Configure matching MCP pending/normal publisher, publish only its missing Python pair and verify canonical bytes.",
-    "Finish installed MCP tests and strict all-nine registry acceptance.",
-    "Complete V6-09 maintenance, C3 and version exit audit."
-  ],
+  "remaining": [],
   "limitations": [
     "Observed latest also aliases RC1; distribution is not next-only. No stable1.0.0 release was published.",
     "Placeholder observed during normal bootstrap; no stage command was run and cause is not independently established.",
@@ -234,7 +237,7 @@
   },
   "registry_consumers": {
     "state": "npm_and_python_core_registry_consumers_passed",
-    "all_six_packages_complete": false,
+    "all_six_packages_complete": true,
     "npm_products": 3,
     "npm_member_files_equal": 113,
     "python_core_registry_wheel": true,
@@ -344,6 +347,62 @@
         "Copied published-API tests use deterministic providers; no live model quality claim."
       ],
       "harness_correction": "First helper invocation used a relative archive path after changing cwd. Resolved paths before build; original failed output retained. No product change."
+    },
+    "mcp_python": {
+      "state": "passed",
+      "package": "cragkit-mcp",
+      "version": "1.0.0rc1",
+      "registry_files_verified": 2,
+      "wheel_sha256": "8e90f98762d3a030e20a6f23b5a3f6e2e5759a672161d77ef3d2a34197a625f7",
+      "source_sha256": "339f041a57a5fa941a6b02b3e96dd0ecdc3e4e1156c2f1cb99c7e01dc26b2a6e",
+      "source_rebuilt_members_equal": true,
+      "source_rebuilt_archive_equal": true,
+      "installed_members_equal": 6,
+      "installer_record_excluded": [
+        "cragkit_mcp-1.0.0rc1.dist-info/RECORD"
+      ],
+      "installed_origins_verified": true,
+      "prior_dependency_versions_preserved": true,
+      "tests_passed": 54,
+      "installed_test_seconds": 5.217,
+      "provider_calls": 0,
+      "harness_correction": "Initial collection lacked test_stdio_process support. Copied that fixture and ran all three installed test files; previous successful build/install stages retained. No product change.",
+      "limitations": [
+        "Frozen cached dependencies and local macOS ARM64/Python3.14 only.",
+        "Synthetic official SDK/stdio tests, no live provider quality claim."
+      ]
+    },
+    "combined_python_adapters": {
+      "tests_passed": 174,
+      "elapsed_seconds": 5.416,
+      "state": "passed",
+      "same_clean_environment": true
+    },
+    "missing_vs_failure": {
+      "state": "passed",
+      "evidence": "Canonical registry core Python/npm bytes; synthetic local PostgreSQL only.",
+      "python": {
+        "state": "passed",
+        "runtime": "python",
+        "checks": {
+          "positive_filtered_source": true,
+          "absent_evidence_insufficient_complete": true,
+          "closed_pool_typed_operational_failure": true
+        },
+        "provider_calls": 0
+      },
+      "node": {
+        "state": "passed",
+        "runtime": "node",
+        "checks": {
+          "positive_filtered_source": true,
+          "absent_evidence_insufficient_complete": true,
+          "closed_pool_typed_operational_failure": true
+        },
+        "provider_calls": 0
+      },
+      "cleanup_verified": true,
+      "provider_calls": 0
     }
   },
   "receipt_retention_correction": {
@@ -372,11 +431,11 @@
     }
   },
   "cost": {
-    "observed_job_compute_estimate_usd": 0.432,
-    "projected_total_compute_ceiling_usd": 0.582,
+    "observed_job_compute_estimate_usd": 0.456,
+    "projected_total_compute_ceiling_usd": 0.456,
     "user_total_limit_usd": 2,
     "included_allowance_and_invoice": "Unverified; before allowance, rounding and small one-day artifact storage.",
-    "remaining_one_phase_capped_compute_usd": 0.15
+    "remaining_authorized_publication_compute_usd": 0
   },
   "langchain_hosted_attempt": {
     "run_id": 41803938051,
@@ -464,5 +523,67 @@
       "state": "verified",
       "version": "1.0.0rc1"
     }
+  ],
+  "publication_complete": true,
+  "mcp_hosted_phase": {
+    "run_id": 41809111947,
+    "source_commit": "c4959fab8ca82c054d13018610f4285c71cd3363",
+    "state": "passed",
+    "scope": "cragkit-mcp",
+    "fetch_job": {
+      "id": 126503653506,
+      "seconds": 38
+    },
+    "publish_job": {
+      "id": 126503874856,
+      "seconds": 135
+    },
+    "phase_complete": true,
+    "publication_complete": true,
+    "compute_estimate_usd": 0.024,
+    "release_enable_variable": "removed",
+    "receipt": {
+      "artifact_id": 13310504691,
+      "bytes": 6548,
+      "sha256": "57a575014111d8543745eea2a14ed882c6e176d8a21a94749655b46aecc36971",
+      "members": [
+        ".release-post-1/registry-report.json",
+        ".release-post-2/registry-report.json",
+        ".release-post-3/registry-report.json",
+        ".release-post-4/registry-report.json",
+        ".release-post-5/registry-report.json",
+        ".release-preflight/registry-report.json",
+        ".release-upload/workflow-plan.json"
+      ],
+      "read_only_observations": 5,
+      "postflight_verified_files": 9,
+      "phase": "cragkit-mcp",
+      "state": "passed"
+    }
+  },
+  "mcp_pypi_products": [
+    {
+      "bytes": 6982,
+      "package": "cragkit-mcp",
+      "path": "products/pypi/cragkit_mcp-1.0.0rc1-py3-none-any.whl",
+      "registry": "pypi",
+      "sha256": "8e90f98762d3a030e20a6f23b5a3f6e2e5759a672161d77ef3d2a34197a625f7",
+      "state": "verified",
+      "version": "1.0.0rc1"
+    },
+    {
+      "bytes": 58036,
+      "package": "cragkit-mcp",
+      "path": "products/pypi/cragkit_mcp-1.0.0rc1.tar.gz",
+      "registry": "pypi",
+      "sha256": "339f041a57a5fa941a6b02b3e96dd0ecdc3e4e1156c2f1cb99c7e01dc26b2a6e",
+      "state": "verified",
+      "version": "1.0.0rc1"
+    }
+  ],
+  "project_remaining": [
+    "V6-09 maintenance handoff.",
+    "Complete C3 clean reviewed source acceptance suite.",
+    "Formal V6-EXIT requires public limitations/benchmark disclosure, deferred to user file/publication decision."
   ]
 }
