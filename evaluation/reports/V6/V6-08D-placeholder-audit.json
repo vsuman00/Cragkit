@@ -1,0 +1,114 @@
+{
+  "state": "reviewed_nonoperational_placeholders_not_release_products",
+  "observed_at": "2026-11-04T10:45:38.029393+00:00",
+  "requests": 6,
+  "credential_use": false,
+  "install_or_script_execution": false,
+  "registry_mutations": false,
+  "products": [
+    {
+      "package": "cragkit",
+      "version": "0.0.0-stage",
+      "sha256": "c9eebaea4daedc60f34cce687f7f4ef2dd22ee5c497db117e6798697fbdfe4e6",
+      "bytes": 361,
+      "registry_integrity_verified": true,
+      "members": [
+        {
+          "path": "package/package.json",
+          "bytes": 139,
+          "sha256": "544c83ac9a163351a9c9cfab77764d0cd9a45f8457d693f4b48cb2210af5c162",
+          "mode": "0o644"
+        },
+        {
+          "path": "package/README.md",
+          "bytes": 190,
+          "sha256": "e9a4a2e10e03f9e46ab3c2e5020b354b3ab20cc2c89381ce91f5b2a756e6b122",
+          "mode": "0o644"
+        }
+      ],
+      "manifest_keys": [
+        "description",
+        "name",
+        "stub",
+        "version"
+      ],
+      "scripts_present": false,
+      "dependencies_present": false,
+      "stub_manifest": true,
+      "executable_members_present": false
+    },
+    {
+      "package": "cragkit-langchain",
+      "version": "0.0.0-stage",
+      "sha256": "455cac2a440ecc20cde29c1f14a5f16e2addae64eb22069e8604b60fa6588dd2",
+      "bytes": 368,
+      "registry_integrity_verified": true,
+      "members": [
+        {
+          "path": "package/package.json",
+          "bytes": 149,
+          "sha256": "be218955c9a92306afcea310ba5c6ec7855a35907928c91921847a58f1013bc4",
+          "mode": "0o644"
+        },
+        {
+          "path": "package/README.md",
+          "bytes": 190,
+          "sha256": "e9a4a2e10e03f9e46ab3c2e5020b354b3ab20cc2c89381ce91f5b2a756e6b122",
+          "mode": "0o644"
+        }
+      ],
+      "manifest_keys": [
+        "description",
+        "name",
+        "stub",
+        "version"
+      ],
+      "scripts_present": false,
+      "dependencies_present": false,
+      "stub_manifest": true,
+      "executable_members_present": false
+    },
+    {
+      "package": "cragkit-mcp",
+      "version": "0.0.0-stage",
+      "sha256": "6d378e6e2665b824a90176236da53168417e44dcabb42649d68ac8f96c9fcd39",
+      "bytes": 363,
+      "registry_integrity_verified": true,
+      "members": [
+        {
+          "path": "package/package.json",
+          "bytes": 143,
+          "sha256": "e632c13b23c04c08fa236cf09c73d1330d063261010c890fae703e1d0721c4ce",
+          "mode": "0o644"
+        },
+        {
+          "path": "package/README.md",
+          "bytes": 190,
+          "sha256": "e9a4a2e10e03f9e46ab3c2e5020b354b3ab20cc2c89381ce91f5b2a756e6b122",
+          "mode": "0o644"
+        }
+      ],
+      "manifest_keys": [
+        "description",
+        "name",
+        "stub",
+        "version"
+      ],
+      "scripts_present": false,
+      "dependencies_present": false,
+      "stub_manifest": true,
+      "executable_members_present": false
+    }
+  ],
+  "secret_scan": {
+    "tool": "Gitleaks 8.30.1",
+    "findings": 0,
+    "scope": "All downloaded metadata and separately bounded regular-file members; no ignored finding or inline suppression."
+  },
+  "limitations": [
+    "Archive inspection is not script execution or an installation check.",
+    "Placeholder creation cause remains unestablished; registry-supplied README text is not proof of which actor or client created it.",
+    "The approved release remains the fixed nine RC1 files; this supplementary audit changes no acceptance criterion."
+  ],
+  "registry_versions_or_tags_changed": false
+}

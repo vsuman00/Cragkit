@@ -274,3 +274,21 @@ actual OIDC publication evidence. There is no stable `1.0.0` release, public
 GitHub conversion, archive move or broader production-target claim. Formal V6
 exit still requires public disclosure of limitations and benchmark evidence;
 those materials remain private under the user's deferred file/public decision.
+
+
+## Supplementary npm placeholder inspection
+
+After final C3 acceptance, a read-only audit checked the public `0.0.0-stage`
+version of each npm package. Each archive contains exactly a README and a
+`stub: true` package manifest. There are no executable members, scripts or
+dependencies. All three archives matched registry SHA-512 integrity and SHA-1
+metadata; their expanded text and downloaded metadata produced zero Gitleaks
+findings. The [audit record](V6-08D-placeholder-audit.json) preserves sizes,
+member digests and scope.
+
+This establishes the inspected placeholder contents, not their creation cause.
+Registry README wording does not establish which actor or client created them.
+No install, script, provider call, registry write, deletion or tag mutation ran.
+These placeholders are not operational Cragkit releases and do not replace the
+nine approved RC1 files. Consumers should still pin the declared RC1 or choose
+`next`. Formal V6 exit remains pending the owner's public-evidence decision.

@@ -6026,3 +6026,17 @@ registry downloads,108 disposition rows/952 evidence hashes,653 local link
 targets and unchanged README structure/protected edits. No moves, deletion,
 history rewrite, visibility/stable release or new public host. FormalEXIT awaits
 the owner's deferred file and public-evidence decision; full goal remains active.
+
+
+V6-08D supplementary placeholder audit COMPLETE: each public npm0.0.0-stage
+archive downloaded read-only and verified against registry SHA512/SHA1, exactly
+README plus stub manifest, no executable members/scripts/dependencies. Expanded
+members and metadata passed Gitleaks8.30.1 with0 findings. Six unauthenticated
+public-registry requests, no installs/provider calls/paid CI or registry writes.
+Creation cause remains unestablished; metadata wording alone is not attribution.
+Fixed nine RC1 products and all release contracts/receipts remain unchanged.
+Root owns one dependent audit/documentation lane and final integration; no new
+parallel writers needed. Existing protected edits remain excluded. FormalEXIT
+still awaits the pending owner file/public-evidence decision; no new approval
+question or visibility/archive action. Refresh private inventory after scoped
+commit/push. No service was started; user learning practice remains unassessed.
