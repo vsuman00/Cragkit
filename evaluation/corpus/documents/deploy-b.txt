@@ -1,3 +1,0 @@
-Deployment runbook B
-For DEP-9, roll back using the violet-slot image.
-Require five successful health checks before routing traffic.

@@ -1,5 +1,7 @@
 # ADR 0004: Restricted managed Qdrant writes
 
+This dated decision records the design at acceptance. It does not report current implementation or release completion; use the [current roadmap](../roadmap.md) and [RC1 notes](../releases/V6.md) for that state.
+
 Status: V5-04A design. No runtime publication acceptance is implied.
 
 ## Context

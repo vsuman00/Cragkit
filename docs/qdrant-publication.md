@@ -1,6 +1,6 @@
 # Native Qdrant stage and publish
 
-The optional Python module `cragkit.qdrant_publication` and Node subpath `cragkit/qdrant-publication` provide managed stage, publication, repair and current-security convergence. [In-process evidence](../evaluation/reports/V5/V5-04F2a2ii.md), [worker evidence](../evaluation/reports/V5/V5-04F2b.md) and [public convergence evidence](../evaluation/reports/V5/V5-04G2c.md) record their native checks. Purge and the complete fault matrix remain open; this module does not yet establish full QD-r1 compatibility.
+The optional Python module `cragkit.qdrant_publication` and Node subpath `cragkit/qdrant-publication` provide managed stage, publication, repair and current-security convergence. Native in-process, worker and convergence records are retained privately. The declared local native V5 milestone passed; its detailed checks are retained privately. That milestone does not establish unrestricted QD-r1 support or production readiness. See [RC1 limits](releases/V6.md).
 
 For example, G1 remains active while G2 is staged, written and verified. Only the final SQL commit switches the active generation to G2. If that work fails first, G1 remains active.
 
@@ -68,7 +68,7 @@ A completed HTTP acknowledgment and SQL settlement are separate. If SQL's respon
 
 The final supervisor session excludes raw lifecycle changes and competing recovery while fresh authorization, verification and SQL finalization unwind. Callbacks remain outside SQL. If a callback suppresses cancellation, cancellation stays latched: it cannot later continue into publication, and new work remains refused while unfinished work drains.
 
-A preparation tied to a retired epoch uses the additive attestation repair path. It cannot be made current by changing its hash, owner, generation or intent in place. See the [tracker](../tasks/todo.md) for remaining V5 work.
+A preparation tied to a retired epoch uses the additive attestation repair path. It cannot be made current by changing its hash, owner, generation or intent in place. See the [current roadmap](roadmap.md) for current maintenance state.
 
 ## Running publication in an owned worker
 
@@ -111,7 +111,7 @@ For example, an instance-wide recovery can advance the backend epoch while a doc
 
 The native writer and recovery authority accept the exact two-migration publication profile and the exact three-migration attestation profile. Source readers also retain the original source-only profile. Applications must apply the selected migration explicitly; initialization only verifies history, structure, catalog and role permissions. The attestation table grants writers SELECT/INSERT only and grants no new access to readers or supervisors.
 
-Private `attestation_snapshot` and `attest_prepared` support native managed repair. They preserve the intent, generation and original expected pointer. Same-row retry is idempotent; another verification binding for an already attested owner/epoch is an integrity failure. A stale or copied receipt, raw supervisor session or expired helper context cannot authorize insertion. These private operations support public repair; security-replica and purge workflows remain separate. [G0 evidence](../evaluation/reports/V5/V5-04G0.md) distinguishes native acceptance from the remaining gates.
+Private `attestation_snapshot` and `attest_prepared` support native managed repair. They preserve the intent, generation and original expected pointer. Same-row retry is idempotent; another verification binding for an already attested owner/epoch is an integrity failure. A stale or copied receipt, raw supervisor session or expired helper context cannot authorize insertion. These private operations support public repair; security-replica and purge workflows remain separate. G0 evidence (retained privately) distinguishes native acceptance from the declared scope.
 
 ## Native managed repair
 
@@ -128,19 +128,19 @@ result = await manager.repair(
 
 Node uses `manager.repair(reference, scope, ledger, {deadline, signal?})`. This operation requires the exact three-migration attestation schema and native supervisor/recovery authority. Worker repair is unsupported. It accepts no owner, proof or replacement generation from caller input and reserves one logical attempt.
 
-Uncertain writes undergo real recovery and settlement before ordinary replay. Missing-only recovery can fill absent members of the original generation after inspecting every present member and the full scoped set. Corruption, extra members and inconsistent enumeration stop repair before a recovery write. Each new batch has a durable reservation and dispatch marker; only its actual completed acknowledgment settles that new row. A lost acknowledgment remains uncertain until another actual credential refence. Fresh complete verification is still required before retired settlement and reopening. A prepared retry performs fresh verification without resending points. Foreign uncertainty prevents reopening, and existing same-epoch attestations cannot be replaced after credential rotation. [Partial-repair evidence](../evaluation/reports/V5/V5-04G1b-B2b-B3.md) records the native cases; ACL/filter replication, tombstones, purge and full V5 acceptance remain separate.
+Uncertain writes undergo real recovery and settlement before ordinary replay. Missing-only recovery can fill absent members of the original generation after inspecting every present member and the full scoped set. Corruption, extra members and inconsistent enumeration stop repair before a recovery write. Each new batch has a durable reservation and dispatch marker; only its actual completed acknowledgment settles that new row. A lost acknowledgment remains uncertain until another actual credential refence. Fresh complete verification is still required before retired settlement and reopening. A prepared retry performs fresh verification without resending points. Foreign uncertainty prevents reopening, and existing same-epoch attestations cannot be replaced after credential rotation. Partial-repair evidence (retained privately) records the native cases; ACL/filter replication, tombstones and purge retain their own contract boundaries; milestone acceptance is scoped in [RC1 notes](releases/V6.md).
 
 ## Recovery session transport
 
 The actual supervisor control facade now exposes `issue_recovery_attempt(proof, binding, deadline/options)` and `recovery_transport_for(attempt)`. It accepts only its own genuine current recovery attempts. These operations are prerequisites for the recovery dispatcher; they do not settle SQL uncertainty or publish a generation.
 
-A session owns at most eight live recovery handles. Its exit rejects new work, drains admitted request bodies, closes its handles and then releases control. Unrelated borrowed handles survive. Reusing an expired facade or a copied proof fails. [B1 evidence](../evaluation/reports/V5/V5-04G1b-B1.md) separates native write/readback observations from unit cancellation timing and remaining partial-repair work.
+A session owns at most eight live recovery handles. Its exit rejects new work, drains admitted request bodies, closes its handles and then releases control. Unrelated borrowed handles survive. Reusing an expired facade or a copied proof fails. B1 evidence (retained privately) separates native write/readback observations from unit cancellation timing and partial-repair scope.
 
 ## Missing-point inspection and verification limits
 
 For example, two MiB consumed by recovery readback leaves six MiB for later generation verification in that same repair operation. Native managers now share one fixed eight-MiB budget across E2/F1 phases. Malformed returned bytes also consume it, and exhaustion stops the next verification request or ordinary point batch.
 
-The private missing-only inspector returns sorted missing IDs after validating present points and consistent full-scope enumeration. Wrong vectors, foreign payloads, extras and GET/scroll drift remain integrity failures. Missing IDs grant no write, settlement or publication authority. [B2a evidence](../evaluation/reports/V5/V5-04G1b-B2a.md) records the tests and the remaining recovery-dispatch gate.
+The private missing-only inspector returns sorted missing IDs after validating present points and consistent full-scope enumeration. Wrong vectors, foreign payloads, extras and GET/scroll drift remain integrity failures. Missing IDs grant no write, settlement or publication authority. B2a evidence (retained privately) records the tests and the recovery-dispatch boundary.
 
 ## Independent security admission
 
@@ -167,6 +167,6 @@ Node uses `{deadline, signal?}`. It genuinely refences credentials, repairs the
 full claimed replica set and authenticates current readback before setting
 replica completion. An explicit retry reconciles a lost completed HTTP reply.
 It borrows the configured writer, recovery and supervisor and closes its own
-verifiers. Tombstones are admitted independently; scoped purge remains G3.
-[Native public evidence](../evaluation/reports/V5/V5-04G2c.md) records the
+verifiers. Tombstones are admitted independently. Scoped purge is a separate bounded `QdrantPublicationManager.purge` operation with an explicit retention policy.
+Native public evidence (retained privately) records the
 tested scope and limits.

@@ -6,7 +6,7 @@ The default remains `FAKE_PROFILE`. The additive [PGO-r1 contract](../contracts/
 
 ## Upgrade explicitly
 
-Start from the existing two-step pgvector setup and the hardened private schema. Use the configured administrative scalar `PG*` environment, an owner-only password file and `PGSSLMODE=verify-full` with the correct CA. See [development setup](development.md) for prerequisites. The operator requires the schema/history owner and refuses an unknown setup history or altered catalog.
+Start from the existing two-step pgvector setup and the hardened private schema. Use the configured administrative scalar `PG*` environment, an owner-only password file and `PGSSLMODE=verify-full` with the correct CA. See [storage setup](../storage/postgres/README.md) for prerequisites. The operator requires the schema/history owner and refuses an unknown setup history or altered catalog.
 
 ```sh
 python3 tools/check_postgres_profiles.py --apply --confirm-dedicated-target
@@ -48,6 +48,6 @@ The selected profile is trusted constructor configuration, never an agent-editab
 
 ## Validate without inference
 
-The [native mechanics report](../evaluation/reports/V6/V6-02B.md) records the explicit disposable command, pinned PostgreSQL/pgvector prerequisites, rollback, permission and cross-runtime checks. Routine tests use fake embeddings. Native OpenAI dispatch probes deliberately fail before returning vectors. Successful real embedding publication and the five-mode live quality comparison remain separate acceptance work.
+The native mechanics report (retained privately) records the explicit disposable command, pinned PostgreSQL/pgvector prerequisites, rollback, permission and cross-runtime checks. Routine tests use fake embeddings. Native OpenAI dispatch probes deliberately fail before returning vectors. Real embedding publication and live quality are separate claims; the recorded small five-mode comparison and its limitations are summarized in [RC1 notes](releases/V6.md).
 
 Optional exercise: remove `UPDATE` from a disposable writer role and predict whether ingestion reaches the provider. It must fail admission first.

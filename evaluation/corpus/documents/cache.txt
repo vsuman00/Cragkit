@@ -1,4 +1,0 @@
-Cache policy
-CACHE-17 entries expire after 60 seconds.
-CACHE-17 is a cache identifier; it is not the queue error ERR-17.
-Cache eviction removes the stored response but does not retry a job.

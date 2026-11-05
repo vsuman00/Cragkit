@@ -10,7 +10,7 @@ import re
 from check_postgres import (migrations, migration_script, security_script, VECTOR_SETUP_DIRECTORY,
                             VectorCompatibilityError, vector_compatibility_error,
                             vector_inspection_script, parse_vector_inspection, vector_setup_script, vector_storage_script)
-from check_python_postgres import load_config, require_client_tls, require_neon_host
+from operator_support import load_config, require_client_tls, require_neon_host
 
 ROOT = Path(__file__).resolve().parents[1]
 CURRENT_STAGE = 'authorization'
@@ -73,9 +73,9 @@ async def check(config_path: Path, *, apply: bool, harden: bool = False,
     if harden:
         scripts.append(('hardening', (ROOT / 'storage/postgres/deployment/neon.sql').read_text(), 'cragkit_neon_hardening_ok'))
     if integration:
-        scripts.append(('integration', (ROOT / 'storage/postgres/tests/invariants.sql').read_text(), 'cragkit_migration_ok'))
+        scripts.append(('integration', (ROOT / 'storage/postgres/deployment/checks/invariants.sql').read_text(), 'cragkit_migration_ok'))
         if vector_storage:
-            scripts.append(('vector-integration', (ROOT / 'storage/postgres/tests/vectors.sql').read_text(), 'cragkit_vector_storage_ok'))
+            scripts.append(('vector-integration', (ROOT / 'storage/postgres/deployment/checks/vectors.sql').read_text(), 'cragkit_vector_storage_ok'))
     if security:
         scripts.append(('security', security_script(allow_managed_primitives=allow_managed_primitives), 'cragkit_security_probe_ok'))
     connection = None

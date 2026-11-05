@@ -1,8 +1,8 @@
 # Cragkit: complete library architecture
 
-Design baseline v0.1 | 19 October 2026 | Status: governing target architecture; implementation and verification evidence are tracked in [todo.md](../../tasks/todo.md). This document is not a claim that the full design is implemented or benchmarked.
+Design baseline v0.1 | 19 October 2026 | Status: governing target architecture; implementation and verification evidence are tracked in the [current roadmap](../roadmap.md). This document is not a claim that the full design is implemented or benchmarked.
 
-The [BRD](../product/BRD.md) records intended users, business requirements and outcome measures. The [master plan](../../tasks/plan.md) assigns delivery milestones; neither product intent nor a design diagram establishes runtime acceptance.
+Original product requirements and milestone plans are retained in the private maintainer archive. The [current roadmap](../roadmap.md) records maintenance state; neither product intent nor a design diagram establishes runtime acceptance.
 
 ## 1. The problem and the product
 
@@ -68,7 +68,7 @@ Three paths share the same engine:
 2. An optional framework tool adapter that exposes a narrow request schema.
 3. An optional MCP host that resolves identity and then invokes the library.
 
-Ingestion is a separate write path. It may run in a script, worker, or application process. Retrieval uses a read-only database role where practical. Administrative migration and deletion credentials are separate. Database integration requires access to PostgreSQL, which may be remote. On 22 October 2026, the user selected Neon to replace Supabase as the development host, retaining PostgreSQL with pgvector and native FTS. The standard PostgreSQL adapter remains the boundary; local PostgreSQL/Docker is optional and routine unit tests use fixtures. Follow the [Neon migration plan](../neon-migration-plan.md) and [runbook](../neon.md); the tracker distinguishes provisioning, security, native acceptance and cutover. Earlier Supabase results remain evidence for their tested target and do not prove Neon compatibility. Kubernetes, Redis, a task queue, and a GPU are not core requirements.
+Ingestion is a separate write path. It may run in a script, worker, or application process. Retrieval uses a read-only database role where practical. Administrative migration and deletion credentials are separate. Database integration requires access to PostgreSQL, which may be remote. On 22 October 2026, the user selected Neon to replace Supabase as the development host, retaining PostgreSQL with pgvector and native FTS. The standard PostgreSQL adapter remains the boundary; local PostgreSQL/Docker is optional and routine unit tests use fixtures. Follow the [verified PostgreSQL connection guide](../neon.md); private maintainer records distinguish provisioning, security, native acceptance and cutover. Earlier Supabase results remain evidence for their tested target and do not prove Neon compatibility. Kubernetes, Redis, a task queue, and a GPU are not core requirements.
 
 The architecture supports API-backed models and optional local models. On the previously inspected M4/16 GB machine, begin with a small corpus and one local model at a time, or provider-backed models. This is a development approach, not a benchmark or a promise that every model fits. Record measured peak memory before enabling concurrent model workloads.
 
@@ -318,7 +318,7 @@ Split train/development/held-out questions by document families where possible t
 
 Publish all compared configurations and confidence intervals where sample sizes permit. Tune on development data only. Release quality targets must be frozen before the held-out run; this document does not invent performance numbers. Gate invariant failures at zero observed violations in the defined suite, while stating the suite's scope. A test pass is evidence within that scope, not a universal guarantee.
 
-Use ablations to decide whether planning, reranking, correction, and parent expansion justify their cost. More stages do not automatically improve results. The CRAG paper motivates quality-conditioned correction, but its web-search strategy differs from this private-corpus design. [CRAG](https://arxiv.org/abs/2401.15884). The six local papers are indexed in [papers/README.md](../../papers/README.md).
+Use ablations to decide whether planning, reranking, correction, and parent expansion justify their cost. More stages do not automatically improve results. The CRAG paper motivates quality-conditioned correction, but its web-search strategy differs from this private-corpus design. [CRAG](https://arxiv.org/abs/2401.15884). Research sources are linked in the [bibliography](#research-bibliography); saved copies remain in the private maintainer archive.
 
 ## 14. Build phases and dependencies
 
@@ -338,23 +338,22 @@ These are proposed acceptance gates, not an assertion of implementation or user 
 
 The first useful milestone is Phase 1, not the entire agentic loop. It establishes the data and contract foundation on which more sophisticated retrieval depends. The first complete corrective-library alpha is Phase 5. Qdrant and MCP remain in the planned architecture with explicit later gates.
 
-## 15. Proposed repository structure
+## 15. Source checkout and private workbench
 
 ```text
-docs/architecture/         architecture, diagrams, decisions
-contracts/                JSON schemas, canonical fixtures, event specification
-packages/python/          core, ingestion, adapters, tests, pyproject.toml
-packages/typescript/      core, ingestion, adapters, tests, package.json
-integrations/             optional framework and MCP packages
-storage/postgres/         migrations, permissions, integration fixtures
-evaluation/               labelled corpus, baselines, ablations, reports
-examples/python/          direct library and framework examples
-examples/typescript/      direct library and framework examples
-tools/                    conformance and release utilities
-papers/                   unchanged research PDFs and provenance manifest
+docs/                     architecture, decisions and current operational guides
+contracts/                schemas and normative behavior contracts
+packages/python/          native Python library and manifest/lock
+packages/typescript/      native TypeScript library and manifest/lock
+packages/langchain-*/     optional native LangChain packages
+packages/mcp-*/           optional native MCP packages
+storage/                  immutable migrations and schema profiles
+tools/                    source/package checks and explicit operator utilities
 ```
 
-Only this documentation directory and its diagrams are created by this architecture task. The tree above describes future implementation files. CI should run contract and invariant tests on every change; integration jobs use disposable databases; live-provider benchmarks are separate, explicit jobs. Releases build and test wheel/sdist and npm tarballs in clean environments before publishing. No credentials or model assets are bundled by accident.
+Personal plans, tests, examples, corpora, evaluation reports and saved research PDFs are retained outside this checkout. They are not runtime or public source-build dependencies. The separate private maintainer runner verifies current public sources against retained regression material. [Development](../development.md) defines the public and private check boundaries.
+
+CI definitions do not establish a pass. Integration uses explicitly owned disposable databases; live-provider benchmarks remain deliberate separate runs. Releases build and check wheel/source-distribution and npm tarballs in clean environments. Credentials and model assets must not enter distributions.
 
 ## 16. Remaining choices and how to resolve them
 
@@ -367,4 +366,15 @@ Only this documentation directory and its diagrams are created by this architect
 | Performance and false-sufficient targets | Set targets from the first baseline and target application needs, then freeze before held-out evaluation. |
 | Hosted telemetry or monetization | Validate developer demand separately; no cloud dependency in the library design. |
 
-Use the tracker to select the next dependency-ready task rather than restarting the contract and corpus phase. Model-specific thresholds, public performance claims, and release readiness must come from implementation and evaluation rather than this design document.
+Use the [current roadmap](../roadmap.md) to select the next authorized maintenance task rather than restarting the contract and corpus phase. Model-specific thresholds, public performance claims, and release readiness must come from implementation and evaluation rather than this design document.
+
+## Research bibliography
+
+These original sources motivate design choices; they do not establish Cragkit quality or usability results.
+
+- [Hidden Technical Debt in Machine Learning Systems](https://papers.nips.cc/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf)
+- [Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf)
+- [BEIR: A Heterogeneous Benchmark for Zero-shot Evaluation of Information Retrieval Models](https://arxiv.org/abs/2104.08663)
+- [Corrective Retrieval Augmented Generation](https://arxiv.org/abs/2401.15884)
+- [RAGTruth: A Hallucination Corpus for Developing Trustworthy Retrieval-Augmented Language Models](https://aclanthology.org/2024.acl-long.585/)
+- [Enabling Large Language Models to Generate Text with Citations](https://arxiv.org/abs/2305.14627)

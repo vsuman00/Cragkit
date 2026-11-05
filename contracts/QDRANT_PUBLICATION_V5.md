@@ -510,7 +510,7 @@ Known errors are recreated with fixed safe messages; unknown subclasses and raw 
 
 The scenario fixture is synthetic unexecuted design data until a native report records actual results. Each QD-r1 row must map to a fault scenario, and native acceptance must cover actual journal/HTTP/CAS boundaries, global claim collision, same-dimensional wrong vectors, exact full membership, concurrent revocation/tombstone, retained source authorization, old live credential rejection and supervisor survival across writer-manager crash. Run Python and Node separately against the same bounded inputs; no runtime may delegate its manager to the other language.
 
-Implement B1 pure vector codec, B2 immutable manifest binding, C additive authority/writer privileges and upgraded reader compatibility, D native authority writer, E caller-owned supervisor, F stage/publish, G repair/security changes/purge, then H the complete native fault matrix. Each child has explicit owned paths, frozen contracts and a final serial integrator. No child may claim publication from thin mocks alone. [The version plan](../tasks/versions/V5-integrations.md) and tracker own the final child split and evidence state.
+Implement B1 pure vector codec, B2 immutable manifest binding, C additive authority/writer privileges and upgraded reader compatibility, D native authority writer, E caller-owned supervisor, F stage/publish, G repair/security changes/purge, then H the complete native fault matrix. Each child has explicit owned paths, frozen contracts and a final serial integrator. No child may claim publication from thin mocks alone. [current maintenance roadmap](../docs/roadmap.md) and tracker own the final child split and evidence state.
 
 
 ### G2b2d0: Native two-connection guard necessity gate

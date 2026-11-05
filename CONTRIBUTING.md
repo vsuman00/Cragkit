@@ -2,7 +2,7 @@
 
 For example, a reranker failure report can use two synthetic passages and a fake transport that raises an exception. That is enough to test error redaction without an API key or private document.
 
-Cragkit is a native Python and TypeScript retrieval library. Contributions should preserve source-linked evidence, trusted access scope, bounded execution and honest coverage estimates. Start with the [architecture](docs/architecture/ARCHITECTURE.md), [active plan](tasks/plan.md) and [tracker](tasks/todo.md). Repository agents also follow [AGENTS.md](AGENTS.md).
+Cragkit is a native Python and TypeScript retrieval library. Contributions should preserve source-linked evidence, trusted access scope, bounded execution and honest coverage estimates. Start with the [architecture](docs/architecture/ARCHITECTURE.md), [current roadmap](docs/roadmap.md) and [development guide](docs/development.md). Repository agents also follow [AGENTS.md](AGENTS.md).
 
 The repository currently remains private. These instructions and the [bug report form](.github/ISSUE_TEMPLATE/bug_report.yml) help collaborators who have access; they do not establish public issue access or a confidential security channel. See [support scope](docs/support.md) before sharing a report. No response-time commitment is offered.
 
@@ -14,7 +14,7 @@ Reduce the problem to one synthetic document, request and scope. Record the pack
 
 Share exact reproduction commands and short redacted logs. Never include API keys, tokens, database connection strings, passwords, raw private queries or documents. Replace sensitive input with synthetic text before attaching anything. A report that requires live access should first describe the missing reproduction step; routine contribution work does not need paid calls or built-in project API keys.
 
-The corrected hosted candidate used macOS 15.8.2 ARM64, Python 3.14.6, Node 26.5.0, npm 11.17.0 and uv 0.11.8. The [local C3 report](evaluation/reports/V6/V6-C3.md) records the separate macOS 27.2 run with the same language/tool versions. Manifest engine ranges describe installation constraints; they do not prove every OS, patch version or optional profile has passed. Report other environments explicitly and consult the [release compatibility evidence](docs/releases/V6.md).
+The corrected hosted candidate used macOS 15.8.2 ARM64, Python 3.14.6, Node 26.5.0, npm 11.17.0 and uv 0.11.8. The private local C3 record records the separate macOS 27.2 run with the same language/tool versions. Manifest engine ranges describe installation constraints; they do not prove every OS, patch version or optional profile has passed. Report other environments explicitly and consult the [release compatibility evidence](docs/releases/V6.md).
 
 ## Set up and check a small change
 
@@ -32,31 +32,13 @@ npm ci --ignore-scripts
 
 Installation may download dependencies. It does not authorize model downloads, database setup, hosted CI or publishing. Core imports must remain free of network access, database connections and migration side effects. PostgreSQL, Qdrant, tokenizers, LangChain and MCP have separate optional profiles; install and test only the profiles needed for your change using [development.md](docs/development.md).
 
-Begin with the affected deterministic test. This existing regression exercises a fake transport and safe error handling, from the repository root:
+Run the public type and package checks documented in [development.md](docs/development.md). The public source checkout does not include the personal regression corpus, test suites or demonstration applications. Maintainers run those retained checks through the separate private workbench against the current source; a passing public build does not establish regression, database or live-provider acceptance.
 
-```sh
-uv run --project packages/python --frozen --no-sync pytest packages/python/tests/test_reranking.py::test_unknown_transport_error_is_redacted_and_fatal -q
-```
-
-For a core change, run the relevant Python checks from the root:
-
-```sh
-uv run --project packages/python --frozen --no-sync pytest packages/python/tests -q
-uv run --project packages/python --frozen --no-sync mypy --config-file packages/python/pyproject.toml packages/python/src
-```
-
-Run the TypeScript checks separately, from `packages/typescript`:
-
-```sh
-npm run typecheck
-npm test
-```
-
-`npm test` builds before its serial test run. Start with one test process and small fake-provider fixtures. Native database integration, optional adapters and installed-artifact checks need their documented prerequisites and separate evidence; a unit pass cannot replace them. Stop resource-heavy work if memory pressure or responsiveness deteriorates.
+For a behavior change, give maintainers a synthetic reproduction and the expected failure case so it can be exercised in both native runtimes. Start with one process and small fake-provider fixtures. Native database integration and installed-artifact checks need their documented prerequisites and separate evidence. Stop resource-heavy work if memory pressure or responsiveness deteriorates.
 
 ## Submit a focused change
 
-Agree on scope against the active plan before adding a subsystem or changing public behavior. Add a regression that fails for the original bug, implement the smallest correction and check the corresponding behavior in both runtimes. Keep shared fixtures, source spans, required filters, cancellation, usage accounting and failure semantics consistent. `partial` coverage and `degraded` execution remain separate concepts; failures must not become missing-evidence success.
+Agree on scope against the current roadmap before adding a subsystem or changing public behavior. Add a regression that fails for the original bug, implement the smallest correction and check the corresponding behavior in both runtimes. Keep shared fixtures, source spans, required filters, cancellation, usage accounting and failure semantics consistent. `partial` coverage and `degraded` execution remain separate concepts; failures must not become missing-evidence success.
 
 Describe the trigger, resulting behavior, test commands actually run and their results. Mark unrun integration, live-provider or platform checks explicitly. Include limitations and any compatibility or migration effect. Preserve unrelated changes and keep dependency changes with their manifests, locks and license review. The project uses the [MIT license](LICENSE); this guide adds no separate contributor agreement.
 

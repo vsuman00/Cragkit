@@ -1,6 +1,8 @@
 # ADR 0003: Qdrant consistency profile QD-r1
 
-Date: 25 October 2026. Task: V5-01. Status: ACCEPTED as a design specification after the failure walkthrough and independent review; implementation and native acceptance remain later tasks. The [tracker](../../tasks/todo.md) owns completion state. The normative scenario model is [QD-r1](../../contracts/QDRANT_V5.md), with [failure fixtures](../../contracts/fixtures/qdrant_consistency.json).
+This dated decision records the design at acceptance. It does not report current implementation or release completion; use the [current roadmap](../roadmap.md) and [RC1 notes](../releases/V6.md) for that state.
+
+Date: 25 October 2026. Task: V5-01. Status: ACCEPTED as a design specification after the failure walkthrough and independent review; implementation and native acceptance remain later tasks. The [current roadmap](../roadmap.md) owns completion state. The normative scenario model is [QD-r1](../../contracts/QDRANT_V5.md), with [failure fixtures](../../contracts/fixtures/qdrant_consistency.json).
 
 For example, if two source chunks are committed but only one vector write completes, the old generation stays active. The new source and vector records can exist without becoming searchable evidence. A separate publication decision makes the complete generation eligible.
 

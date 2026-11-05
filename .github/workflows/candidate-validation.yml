@@ -52,48 +52,5 @@ jobs:
           node --version
           npm --version
           uv --version
-      - name: Validate core and LangChain serially
-        run: python tools/check_sdk_packages.py --artifacts-dir artifacts/ci/sdks
-      - name: Prepare optional MCP from frozen locks
-        run: |
-          uv sync --project packages/mcp-python --frozen
-          npm --prefix packages/mcp-typescript ci --ignore-scripts --no-audit --no-fund
-      - name: Validate MCP serially
-        run: |
-          uv run --project packages/mcp-python --frozen --no-sync mypy --config-file packages/mcp-python/pyproject.toml packages/mcp-python/src/cragkit_mcp
-          uv run --project packages/mcp-python --frozen --no-sync pytest packages/mcp-python/tests -q
-          npm --prefix packages/mcp-typescript test
-      - name: Check entry points after all native SDK builds
-        run: >-
-          uv run --project packages/python --frozen --no-sync pytest
-          tools/tests/test_backend_conformance.py::test_node_entrypoint_resolves_checkout_dependencies_before_input
-          tools/tests/test_check_qdrant.py::test_explicit_node_candidate_import_has_no_driver_or_io -q
-      - name: Validate exact optional artifacts and installation profiles
-        run: python tools/check_qdrant_artifacts.py --core-artifacts artifacts/ci/sdks/core --output-dir artifacts/ci/optional
-      - name: Bound retained artifact upload
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          entries = list(Path('artifacts/ci').rglob('*'))
-          if any(path.is_symlink() for path in entries):
-              raise SystemExit('Candidate artifact links are not allowed.')
-          files = [path for path in entries if path.is_file()
-                   and path.name.endswith(('.json', '.whl', '.tar.gz', '.tgz'))]
-          total = sum(path.stat().st_size for path in files)
-          if not files or len(files) > 100 or total > 100 * 1024 * 1024:
-              raise SystemExit('Candidate artifacts exceed the approved upload limits.')
-          print(json.dumps({'artifact_files': len(files), 'upload_bytes': total}))
-          PY
-      - name: Retain candidate archives and reports
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: candidate-${{ github.sha }}
-          path: |
-            artifacts/ci/**/*.json
-            artifacts/ci/**/*.whl
-            artifacts/ci/**/*.tar.gz
-            artifacts/ci/**/*.tgz
-          retention-days: 1
-          if-no-files-found: error
+      - name: Check public packages serially
+        run: python tools/check_public_packages.py --allow-downloads --output-dir artifacts/ci/public-packages

@@ -13,7 +13,7 @@ These skills define the role-specific steps. This protocol holds the shared assi
 
 ## Assign work before editing
 
-The coordinator selects tasks whose dependencies are satisfied and assigns each an owner and explicit writable paths. Record assignments in the session handoff in [todo.md](../../tasks/todo.md). Workers report changes to the coordinator; the tracker retains one owner.
+The coordinator selects tasks whose dependencies are satisfied and assigns each an owner and explicit writable paths. Record assignments in the session handoff in [the roadmap handoff](../roadmap.md#session-handoff). Workers report changes to the coordinator; the handoff retains one owner.
 
 Use this small assignment record:
 
@@ -37,7 +37,7 @@ These are logical roles; use only the roles the task needs:
 
 | Role | Responsibility |
 | --- | --- |
-| Coordinator/final integrator | Own the active plan, assignments, shared-file changes, combined acceptance and tracker. |
+| Coordinator/final integrator | Own the current roadmap, assignments, shared-file changes, combined acceptance and roadmap handoff. |
 | Peer | Deliver substantive work within assigned paths and resolve concrete dependencies directly with the relevant peer. |
 | Assembler | Reconcile a managed pair's artifacts and report the shared outcome to the final integrator. |
 | Reviewer | Inspect contracts, edge-case coverage and evidence; report concrete locations. |
@@ -54,4 +54,4 @@ Worktrees isolate checkouts; ports, databases, model caches and filesystem outpu
 
 The final integrator reads the assembled artifacts and worker reports, checks contract revisions and runs the relevant combined acceptance checks. Worker success and assembly alone do not complete a task. Return failures to the smallest responsible slice and mark complete only after acceptance passes. Explain one important design choice and one failure case to the learner at the checkpoint.
 
-Before ending, record task state, changed files, actual checks/results, resource observations, learning gaps and the next smallest action in the tracker handoff. Before a new session, inspect that handoff, actual files and existing changes. Reuse evidence only while its inputs and configuration match. Never carry an unverified worker claim forward as a release result.
+Before ending, record task state, changed files, actual checks/results, resource observations, learning gaps and the next smallest action in the roadmap handoff. Before a new session, inspect that handoff, actual files and existing changes. Reuse evidence only while its inputs and configuration match. Never carry an unverified worker claim forward as a release result.

@@ -1,12 +1,14 @@
 # ADR 0001: First embedding profile
 
-Date: 22 October 2026. Task: V2-01. Status: ACCEPTED as a design decision. The owner selected hosted, opt-in OpenAI `text-embedding-3-small`, 1536 dimensions, fake providers for routine work and live access disabled until separately configured. No paid call, model-weight acquisition or document disclosure is approved by this record. The [tracker](../../tasks/todo.md) owns completion state.
+This dated decision records the design at acceptance. It does not report current implementation or release completion; use the [current roadmap](../roadmap.md) and [RC1 notes](../releases/V6.md) for that state.
+
+Date: 22 October 2026. Task: V2-01. Status: ACCEPTED as a design decision. The owner selected hosted, opt-in OpenAI `text-embedding-3-small`, 1536 dimensions, fake providers for routine work and live access disabled until separately configured. No paid call, model-weight acquisition or document disclosure is approved by this record. The [current roadmap](../roadmap.md) owns completion state.
 
 ## Why this decision comes first
 
 For example, “restart the service” and “reboot the daemon” can be close in a model's vector space even without matching words. A vector is a coordinate list, not a source citation or proof that a passage answers the question.
 
-The [BRD](../product/BRD.md) requires measured quality and cost (BR-05), bounded work (BR-06), compatible generations (BR-08), explicit disclosure choices (BR-09) and optional integrations (BR-10). The [architecture](../architecture/ARCHITECTURE.md) requires native Python and Node execution, optional model dependencies and immutable source references. The [V2 plan](../../tasks/versions/V2-hybrid-search.md) assigns adapters to V2-02/V2-03, vector storage to V2-04 and quality comparison to V2-08. This decision does not implement those tasks.
+The original product requirements (retained privately) require measured quality and cost (BR-05), bounded work (BR-06), compatible generations (BR-08), explicit disclosure choices (BR-09) and optional integrations (BR-10). The [architecture](../architecture/ARCHITECTURE.md) requires native Python and Node execution, optional model dependencies and immutable source references. The original V2 plan, retained privately, assigned adapters to V2-02/V2-03, vector storage to V2-04 and quality comparison to V2-08. This decision does not implement those tasks.
 
 ## Compared candidates
 

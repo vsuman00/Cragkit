@@ -1,5 +1,7 @@
 # ADR 0002: Bounded reranking contract and model shortlist
 
+This dated decision records the design at acceptance. It does not report current implementation or release completion; use the [current roadmap](../roadmap.md) and [RC1 notes](../releases/V6.md) for that state.
+
 Date: 2026-10-24. Task: V3-01. Contract revision: RK-r1.
 
 Status: contract and shortlist decision; real model selection, runtime adapters and quality acceptance remain pending.

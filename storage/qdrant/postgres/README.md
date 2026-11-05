@@ -2,7 +2,7 @@
 
 V5-03A supplies the separate PostgreSQL 17 namespace `cragkit_qdrant`. It stores authoritative source bytes and current authorization for the [source contract](../../../contracts/QDRANT_SOURCES_V5.md). This foundation does not implement the [QD-r1](../../../contracts/QDRANT_V5.md) intent registry, physical ownership reservation, mutation coordinator, publication CAS or repair protocol. It cannot by itself claim QD-r1 compatibility.
 
-The separate [publication migration guide](PUBLICATION.md) describes V5-04C1's additive SQL records and writer/supervisor permissions. Its local SQL acceptance does not establish a native publication manager. [C2](../../../evaluation/reports/V5/V5-04C2.md) adds explicit native reader compatibility; D-H implementation and fault acceptance remain required.
+The separate [publication migration guide](PUBLICATION.md) describes V5-04C1's additive SQL records and writer/supervisor permissions. Its local SQL acceptance does not establish a native publication manager. C2 (historical validation retained in the private maintainer archive) adds explicit native reader compatibility; D-H implementation and fault acceptance remain required.
 
 For example, an old Qdrant payload can still contain a revoked grant. The source reader must use current document authorization in this schema before returning any excerpt; a matching vector payload does not authorize it.
 
@@ -61,6 +61,6 @@ The native query computes source/excerpt lengths first and gates returned byte c
 
 ## Verification state
 
-This document describes the schema and required reader behavior. Worker review alone does not establish PostgreSQL execution, RLS behavior, source-adapter acceptance or concurrency safety. Root records actual transactional constraint/RLS checks and rollback cleanup separately. [V5-03B/C](../../../evaluation/reports/V5/V5-03BC.md) records native reader implementation and contract checks. [V5-03D/C1](../../../evaluation/reports/V5/V5-03D.md) records real local PostgreSQL/Qdrant stale-grant, provider-spy and final-release acceptance. V5-04 adds the independently required writer/publication capabilities.
+This document describes the schema and required reader behavior. Worker review alone does not establish PostgreSQL execution, RLS behavior, source-adapter acceptance or concurrency safety. Root records actual transactional constraint/RLS checks and rollback cleanup separately. V5-03B/C (historical validation retained in the private maintainer archive) records native reader implementation and contract checks. V5-03D/C1 (historical validation retained in the private maintainer archive) records real local PostgreSQL/Qdrant stale-grant, provider-spy and final-release acceptance. V5-04 adds the independently required writer/publication capabilities.
 
 A useful failure case is a byte span beginning inside a multibyte character: SQL can prove that the excerpt matches those exact bytes, but the native strict decoder must reject it. As a small exercise, explain why a superseded generation can satisfy the historical policy while remaining ineligible for a new search.

@@ -7,12 +7,12 @@ for tenant B is rejected; query text never chooses the tenant or grants.
 No active production target has been assessed or configured. This guide assigns
 deployment work to the consuming application's operator. Local tests, database
 development acceptance, hosted candidate CI and a production deployment are
-separate evidence. See the [finding closure](../evaluation/reports/V6/V6-04R-closure.md)
+separate evidence. See the finding closure (retained privately)
 for the current findings, commands, corrections and remaining gaps.
 
 ## Enforce reviewed release gates
 
-The [publication policy](../evaluation/release/V6-publication.json) uses an
+The publication policy (retained privately) uses an
 explicit boolean `security_hold`. While it is `true`, publication admission must
 fail before environment, asset or upload checks. Missing or malformed hold state
 also fails closed. Environment flags and the old candidate's passing receipt do
@@ -29,10 +29,9 @@ replacement artifact.
 
 Removing a hold is a reviewed release decision. It does not authorize a new
 paid CI run, registry/account setup, publication, public release or production
-deployment. The resumed RC1 deployment is authorized; npm bootstrap is
-byte-verified and selected PyPI first use remains in progress. Follow the
+deployment. RC1 registry acceptance has passed for all six packages and nine files. Future publication requires its own authorized scope. Follow the
 [publication procedure](publication.md), [release guide](releasing.md) and
-[tracker](../tasks/todo.md) for those separate gates.
+[current roadmap](roadmap.md) for those separate gates.
 
 ## Bind authority in the host
 
@@ -83,9 +82,9 @@ code.
 
 The first CSO run was partial with unavailable Docker/scanners and an unsubmitted
 assessment. After Docker started, the
-[fresh follow-up](../evaluation/reports/V6/V6-04R-docker-cso.md) recorded its
+fresh follow-up (retained privately) recorded its
 application model, completed Gitleaks and zizmor scans, and partial Semgrep
-coverage. The later [closure](../evaluation/reports/V6/V6-04R-closure.md) accounts
+coverage. The later closure (retained privately) accounts
 for all retained candidates, adds complete native source parsing, fresh dependency
 and Git-history checks, and verifies local installed replacement products. A
 fresh qualified helper run completed OSV, Trivy and selected-source Gitleaks;

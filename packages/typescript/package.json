@@ -104,8 +104,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test --test-concurrency=1 tests/*.test.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "26.6.5",

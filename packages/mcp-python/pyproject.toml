@@ -23,9 +23,6 @@ cragkit = { path = "../python", editable = true }
 [dependency-groups]
 dev = ["pytest==9.1.1", "mypy==2.4.0", "tiktoken==0.14.0"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
 [tool.mypy]
 python_version = "3.14"
 strict = true

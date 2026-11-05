@@ -1,6 +1,6 @@
 # Qdrant publication and recovery acceptance
 
-V5-04A design matrix for [QW-r1](../contracts/QDRANT_PUBLICATION_V5.md), [ADR 0004](decisions/0004-qdrant-managed-writes.md) and the [publication fixtures](../contracts/fixtures/qdrant_publication.json), revision QW-native-r1. Every row below is required evidence for later native acceptance, not a passed test. The tracker owns implementation state. [QD-r1](../contracts/QDRANT_V5.md), [QC-r1](../contracts/QDRANT_CANDIDATES_V5.md) and [QS-r1](../contracts/QDRANT_SOURCES_V5.md) remain protected dependencies.
+V5-04A design matrix for [QW-r1](../contracts/QDRANT_PUBLICATION_V5.md), [ADR 0004](decisions/0004-qdrant-managed-writes.md) and the [publication fixtures](../contracts/fixtures/qdrant_publication.json), revision QW-native-r1. This matrix specifies required native behavior; it is not an execution report. The declared local V5 milestone passed, with detailed results retained privately. See [RC1 limits](releases/V6.md) and the [current roadmap](roadmap.md) for present scope. [QD-r1](../contracts/QDRANT_V5.md), [QC-r1](../contracts/QDRANT_CANDIDATES_V5.md) and [QS-r1](../contracts/QDRANT_SOURCES_V5.md) remain protected dependencies.
 
 For example, an upsert can finish while its acknowledgment is lost. An exact point read may show the expected vector, but it cannot prove that another older request is no longer in flight. Publication remains blocked until the dispatch outcome and mutation exclusion are established.
 

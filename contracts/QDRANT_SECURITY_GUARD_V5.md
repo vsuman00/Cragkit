@@ -1,6 +1,6 @@
 # V5 current-security SQL guard (SG-r2)
 
-Status: SQL IMPLEMENTED AND VERIFIED under SG-r2; [G2b2d1 evidence](../evaluation/reports/V5/V5-04G2b2d1.md) records 23 native SQL checks. Runtime profile-4 admission, genuine guarded graph validation and receipt settlement remain TARGET dependencies. The [D0 counterexample](../evaluation/reports/V5/V5-04G2b2d0.md) establishes the need for same-transaction lock custody. It does not implement or validate this guard. Previous migrations remain unchanged, and library imports never apply this migration.
+Status: SQL IMPLEMENTED AND VERIFIED under SG-r2; G2b2d1 evidence (record retained in the private maintainer archive) records 23 native SQL checks. Runtime profile-4 admission, genuine guarded graph validation and receipt settlement remain TARGET dependencies. The D0 counterexample (record retained in the private maintainer archive) establishes the need for same-transaction lock custody. It does not implement or validate this guard. Previous migrations remain unchanged, and library imports never apply this migration.
 
 For example, the supervisor locks current authorization and settles retired writes in one transaction. A later authorization change waits for that transaction's commit or abort. An independently lost source-reader connection cannot release its lock.
 

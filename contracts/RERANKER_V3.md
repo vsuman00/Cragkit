@@ -1,6 +1,6 @@
 # V3-01 reranker boundary (RK-r1)
 
-Status: documented contract for the next adapter slice; no runtime implementation or real model selection. See the [policy and shortlist](../docs/decisions/0002-reranker-policy.md), [V3 plan](../tasks/versions/V3-evidence-quality.md) and [recorded fixtures](fixtures/reranking.json).
+Status: documented contract for the next adapter slice; no runtime implementation or real model selection. See the [policy and shortlist](../docs/decisions/0002-reranker-policy.md), [current maintenance roadmap](../docs/roadmap.md) and [recorded fixtures](fixtures/reranking.json).
 
 For example, scores `-2.5` and `1.25` from a higher-is-better profile order the second candidate first. Neither number measures source truth. A rank orders candidates; a logit is an uncalibrated model output; a calibrated decision needs separately reviewed labels and a versioned policy. RK-r1 adds no relevance threshold or sufficient-coverage decision.
 

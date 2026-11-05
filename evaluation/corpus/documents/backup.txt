@@ -1,4 +1,0 @@
-Backup policy
-BACK-4 snapshots run every six hours.
-Retain BACK-4 snapshots for 14 days.
-A restore-time objective has not been recorded.

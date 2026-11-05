@@ -4,11 +4,7 @@ For example, a PostgreSQL lexical application needs the core and PostgreSQL driv
 but no Qdrant server, embedding provider or MCP process. Choose the smallest profile
 that supplies the required capabilities.
 
-This guide covers local candidate artifacts and disposable operational examples.
-Current manifests use Python `1.0.0rc1` and npm `1.0.0-rc.1`; no registry release is
-implied. Older V5 reports retain their original `0.0.0` identities. Check the [tracker](../tasks/todo.md) and
-[V5-08 evidence](../evaluation/reports/V5/V5-08.md) for actual acceptance. Installation,
-native backend mechanics, live-model quality and hosted operation are separate evidence.
+This guide covers the published RC1 library and explicit operational boundaries. Current versions are Python `1.0.0rc1` and npm `1.0.0-rc.1`. See [RC1 notes](releases/V6.md) for recorded acceptance and limitations. Source builds, native backend mechanics, live-model quality and production operation require separate evidence.
 
 ## Select a profile
 
@@ -34,7 +30,7 @@ does not select or call that provider. Sparse encoding is separately declared;
 PostgreSQL native FTS is not BM25. Qdrant dense corrective retrieval does not silently
 supply lexical or hybrid search.
 
-LangChain is another separate optional artifact; its V4 installation procedure is in
+LangChain is another separate optional artifact; its installation guidance is in
 [development.md](development.md). MCP is a transport over the same native retrieval
 contracts, not a database or identity service. Tool input cannot choose trusted scope
 or expose database credentials. The supported host transport is stdio; this guide does
@@ -42,47 +38,11 @@ not deploy an HTTP service.
 
 ## Build and install local artifacts
 
-Run from the repository root. Use fresh output directories and serialize these tools.
-They install dependencies in temporary environments and leave acceptance reports in
-ignored `artifacts/`; imports do not install them. Dependency installation can use
-package registries, while guarded import probes reject covered product network/process APIs. These probes
-are focused regression checks, not a network security sandbox.
+Use [public package validation](development.md#public-package-validation) to build and check all six packages without private workbench inputs. Choose fresh output directories. Maintainer regression and native checks use the separate private harness; a package/import pass is not a live backend or model-quality result.
 
-```sh
-python3 tools/check_artifacts.py --output-dir artifacts/V5/V5-08/core
-python3 tools/check_qdrant_artifacts.py --core-artifacts artifacts/V5/V5-08/core --output-dir artifacts/V5/V5-08/optional
-```
+Install the exact reviewed local wheel/tarball into a fresh application environment when evaluating a source change. Select only needed extras: Python `postgres`, `qdrant` or `tokenizers`, and Node optional peers `pg@8.23.1` or `tiktoken@1.0.22`. Install matching local core artifacts alongside optional LangChain/MCP artifacts so their exact-version dependency resolves to the intended product. See [development](development.md) and package manifests for current commands.
 
-The first command builds and checks the core wheel, source distribution, rebuilt wheel
-and npm tarball. The second builds the optional MCP artifacts and checks separate
-clean core, PostgreSQL, Qdrant candidate-only, Qdrant authoritative, tokenizer and MCP installation profiles in each runtime.
-The MCP test environments additionally install locked test dependencies and a tokenizer;
-those are harness inputs rather than required core dependencies. Inspect their reports
-before using an archive. These checks do not start an application
-backend or prove a real embedding model's quality.
-
-For an application, install an explicit archive path from those reports into a new
-environment. For Python, select the wheel's extra using the quoted local path syntax
-`'/absolute/path/cragkit-1.0.0rc1-py3-none-any.whl[postgres]'`; select `qdrant` or
-`tokenizers` instead for the corresponding dependency. For the reference Qdrant
-PostgreSQL authority select both `postgres,qdrant`. Core needs no extra. Install the
-local core wheel alongside the local MCP wheel so its exact `cragkit==1.0.0rc1` dependency
-resolves to your built product.
-
-If an absolute wheel path contains spaces, use a percent-encoded file URI in a
-PEP 508 requirement, for example
-`'cragkit[postgres] @ file:///absolute/My%20Project/cragkit-1.0.0rc1-py3-none-any.whl'`.
-`Path('/absolute/My Project/cragkit-1.0.0rc1-py3-none-any.whl').as_uri()` produces
-that URI. If you also use a locked constraints file in this repository's spaced
-workspace, pass its relative path from the repository root. The local uv rehearsal
-rejected a spaced absolute `--constraints` path; the interpreter and wheel paths
-were independently verified to work.
-
-For Node, run `npm install --ignore-scripts /absolute/path/to/cragkit-1.0.0-rc.1.tgz`
-in a new application directory. Add `pg@8.23.1` or `tiktoken@1.0.22` only when that
-profile needs it. Install the local core tarball alongside the MCP tarball; do not
-resolve provisional package names from a public registry. Neither package is being
-published by these commands.
+For registry RC1 use the pinned package versions in [README](../README.md#quick-start). Local source builds and registry files have separate identities; do not label newly built bytes as the previously accepted registry products. Installation does not select or call an embedding provider, start a database or apply migrations.
 
 ## Connections, credentials and migrations
 
@@ -146,33 +106,11 @@ must refence old credentials, reconcile exact durable state, verify current read
 and settle uncertainty before reopening. A lost completed SQL reply instead needs
 same-identity durable confirmation, not a replacement point write.
 
-The following existing native acceptance example deliberately expires an actual
-publication operation with an independently retained HTTP request and exercises successor
-refusal and managed recovery. Despite the parent tool name, its `deadline` scenario
-uses public in-process managers rather than a child publisher. It owns only disposable local
-PostgreSQL/Qdrant servers and synthetic records. It requires the installed PostgreSQL
-17 binaries, the previously verified Qdrant binary with the exact hash below, current
-Node dependencies/build and the locked Python optional environment. It downloads no
-model and uses no provider or hosted database credentials.
+Native maintainer acceptance retains a deadline scenario with an independently held HTTP request, successor refusal and managed recovery, plus a supervisor-pause scenario. Those harnesses and their exact server binaries/receipts remain private. They require explicitly owned disposable PostgreSQL/Qdrant targets and separate local-process admission; the routine private regression runner does not start those services.
 
-```sh
-npm --prefix packages/typescript run build
-uv run --project packages/python --frozen --no-sync --extra qdrant --extra postgres python tools/check_qdrant_publication_worker.py --postgres-bin /opt/homebrew/opt/postgresql@17/bin --server-binary artifacts/V5/V5-02A/server-binary/qdrant --binary-sha256 830bd61d0efdba90e0737e174cefe32d4f9e0161b0e2b8684d655fb774544fd3 --allow-local-processes --scenario deadline --runtime all --artifacts-dir artifacts/V5/V5-08/operations-deadline
-```
+For an authorized native run, select one language suite at a time, a fresh private output directory and the exact supported server profiles. Record process/storage ownership and actual cleanup. Success must include verified client closure, worker reaping, stopped owned servers, listener absence and removal of owned fixture storage. A cleanup failure remains a failed run; do not delete unrelated processes or data. A paused-supervisor refusal demonstrates fencing, not automatic failover.
 
-Choose another fresh artifact directory when repeating it. The parent runs languages
-serially. Read its `results.json`: success must include `cleanup_verified=true`, not
-merely a completed business step. Cleanup closes owned clients, reaps owned workers,
-stops owned servers, verifies listener absence and removes only private fixture storage.
-A cleanup failure remains a failed run with diagnostics; do not mark it successful or
-delete unrelated processes/data. This is source-checkout native operational evidence;
-it is separate from installed-artifact import and MCP round-trip checks.
-
-For a second experiment, use `--scenario supervisor_pause` with a different fresh
-directory. It stops an admitted worker's actual supervisor, checks independent controller
-and SQL-owner refusal, then resumes the same owner for cleanup. It demonstrates refusal
-under a paused supervisor, not automatic failover. See the full
-[development commands](development.md) for setup and other accepted fault scenarios.
+See [development](development.md#private-maintainer-verification) for the private harness boundary. Current source/native operational results and installed-artifact import/MCP round trips remain separate evidence.
 
 As a small exercise, choose between PostgreSQL lexical and Qdrant dense for a local
 application with no embedding credential. List the dependencies and explain why an

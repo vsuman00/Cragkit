@@ -5,8 +5,7 @@ assert that no private exception text survives. Fixing that boundary must retain
 its error classification and usage accounting in both runtimes.
 
 Use this checklist with [support](support.md), [contribution guidance](../CONTRIBUTING.md)
-and the governing [architecture](architecture/ARCHITECTURE.md). The tracker owns
-completion state. V6-09 handoff and checkpoint C3 do not waive the pending formal
+and the governing [architecture](architecture/ARCHITECTURE.md). The [current roadmap](roadmap.md) owns completion state. V6-09 handoff and checkpoint C3 do not waive the pending formal
 version-exit and public benchmark-disclosure acceptance.
 
 ## Reproduce and classify
@@ -39,7 +38,7 @@ version-exit and public benchmark-disclosure acceptance.
    filters must hold in every branch, and packed evidence needs reassessment.
    Record unresolved issues and unsupported modes rather than weakening checks.
 
-Record a maintainer and next action for each accepted report in the tracker.
+Record a maintainer and next action for each accepted report in the roadmap handoff.
 Keep the reproduction command, regression path, patch review, release decision
 and communication status together. If the existing regression passes, record
 "not reproduced" and ask for a smaller safe failing example; do not invent a
@@ -84,5 +83,5 @@ measured user adoption or production acceptance without that evidence.
 Keep evaluation source/tape, reviewer exposure, dataset rights and contamination
 records intact. New live quality claims need separate reviewed evidence; replay
 or fake-provider success cannot replace it. Record who owns follow-up and the
-next smallest testable action in the tracker. Learning exercise: identify one
+next smallest testable action in the roadmap handoff. Learning exercise: identify one
 change that requires reindexing and one that requires a privacy-policy review.

@@ -48,17 +48,17 @@ The **npm** package runs natively in Node.js — no Python server required. The 
 | Version | Scope | Status | Evidence |
 |---------|-------|--------|----------|
 | **V0** | Baseline | ✅ Complete | — |
-| **V1** | Native lexical library, source authorization, cancellation, installed-artifact acceptance | ✅ Complete | [V1 evidence & limitations](evaluation/reports/V1/V1-10-12.md) |
-| **V2** | Dense/identifier retrieval, rank fusion, hybrid orchestration, synthetic comparison | ✅ Complete | [V2 exit evidence](evaluation/reports/V2/V2-07-08-exit.md) · [HY-r1 config](contracts/HYBRID_V2.md) |
-| **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete | [V3 calibration](evaluation/reports/V3/V3-07.md) · [V3 exit](evaluation/reports/V3/V3-08-exit.md) |
-| **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [V4 exit evidence](evaluation/reports/V4/V4-08-exit.md) |
-| **V5** | Qdrant publication and repair, existing indexes and optional MCP | ✅ Complete for the declared local native milestone | [V5 exit evidence](evaluation/reports/V5/V5-exit.md) · [Install and operations guide](docs/v5-operations.md) |
-| **V6** | Evaluation and release | 🚧 In progress; all six registry packages published and verified; maintenance/C3 passed; public-evidence exit pending | [V6 plan](tasks/versions/V6-release.md) · [Replacement CI](evaluation/reports/V6/V6-08C-CI2.md) · [Registry progress](evaluation/reports/V6/V6-08D-publication.md) |
+| **V1** | Native lexical library, source authorization, cancellation, installed-artifact acceptance | ✅ Complete for the declared milestone | [Release scope and limits](docs/releases/V6.md) |
+| **V2** | Dense/identifier retrieval, rank fusion, hybrid orchestration, synthetic comparison | ✅ Complete for the declared milestone | [HY-r1 configuration](contracts/HYBRID_V2.md) · [Release limits](docs/releases/V6.md) |
+| **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete for the curated milestone | [Release limits](docs/releases/V6.md) |
+| **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [Adapter guide](docs/integrations/langchain.md) |
+| **V5** | Qdrant publication and repair, existing indexes and optional MCP | ✅ Complete for the declared local native milestone | [Installation and operations](docs/v5-operations.md) |
+| **V6** | Evaluation and release | 🚧 RC1 published and verified; maintenance/C3 passed; formal public-evidence exit pending | [RC1 notes and limitations](docs/releases/V6.md) · [Current roadmap](docs/roadmap.md) |
 
 > [!NOTE]
 > V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. V6 records limited live-model results and declared-platform CI. Local migration acceptance passed. Reviewed security leads are closed, while qualified CSO coverage remains partial. RC1 registry acceptance passed; public-evidence exit and production acceptance remain separate gates.
 
-Track progress → [task tracker](tasks/todo.md) · [master plan](tasks/plan.md)
+Track current work → [roadmap and maintenance state](docs/roadmap.md)
 
 ## Quick Start
 
@@ -89,28 +89,15 @@ application; installation needs no built-in Cragkit key.
 
 ### Run Local Checks
 
-```sh
-python3 tools/check_core_pipeline.py
-```
-
-This runner:
-1. Installs frozen dependencies
-2. Checks both native packages and shared contracts
-3. Verifies approved development labels and sealed inputs
-4. Builds and checks clean Python/npm artifacts
-
-No database, model download or live provider is required. Temporary install environments are cleaned up; generated artifacts go to `artifacts/V0/` (git-ignored). This is the baseline check; use the development guide for current-version focused tests and optional native acceptance runs.
+Use the source-only type and package checks in [development.md](docs/development.md). They build the library without a private corpus, evaluation packet or example application. Full regression and native backend verification remain separate maintainer checks against the private workbench.
 
 📖 [Development commands](docs/development.md) · [Local CI profile](docs/ci.md)
 
 ## Evidence Examples
 
-The [Python example](examples/evidence.py) and [Node example](examples/evidence.mjs) demonstrate:
+For a question asking for both a retry rule and its delay, a supported retry facet and a missing delay facet produce `partial` coverage. If a strict token budget cannot fit any evidence, the result is `insufficient`; a provider timeout remains an operational failure.
 
-1. A supported **retry** facet with a missing **delay** facet → `partial` status
-2. A strict **one-token budget** → emits only `[]` with `insufficient` status
-
-Both use public synthetic source text and a caller-supplied local tokenizer asset — no model is installed or contacted. The [installed-package verifier](docs/development.md#v3-installed-evidence-release-checkpoint) copies these examples into fresh package environments and compares their complete outputs.
+The consuming application binds trusted scope, supplies its backend and tokenizer, and decides how to use those outcomes. See the [result contract](contracts/RESULTS.md) and [operations guide](docs/v5-operations.md). Maintainer demonstration applications and their regression fixtures are retained outside this source checkout.
 
 > [!NOTE]
 > Strict counting applies to the declared cl100k renderer and wrapper allowance. Reviewed-span support is a curated estimate; exact source bytes do not establish truth. See [TK-r1](contracts/TOKEN_CONTEXT_V3.md), [PK-r1](contracts/PACKING_V3.md), [AS-r1](contracts/ASSESSMENT_V3.md) and [EP-r1](contracts/EVIDENCE_PIPELINE_V3.md) for the public contract boundaries.
@@ -121,16 +108,16 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 <summary><strong>📐 Architecture & Design</strong></summary>
 
 - [Architecture](docs/architecture/ARCHITECTURE.md) — Governing boundaries and planned retrieval behavior
-- [Business requirements](docs/product/BRD.md) — Developer problem, intended users, product requirements, success measures and unvalidated assumptions
+- [Release scope and limits](docs/releases/V6.md) — Supported behavior and limits on quality, platform and usability claims
 
 </details>
 
 <details>
 <summary><strong>📋 Planning & Tracking</strong></summary>
 
-- [Master plan](tasks/plan.md) — Dependency order, acceptance evidence and current state
-- [Task tracker](tasks/todo.md) — Current progress and status
-- [Evaluation protocol](evaluation/protocol.md) — Human review, source spans and held-out handling
+- [Roadmap and maintenance state](docs/roadmap.md) — Current scope, pending decisions and handoff
+- [Maintenance checklist](docs/maintenance.md) — Reproduction, regressions and policy review
+- [Release limitations](docs/releases/V6.md) — Evaluation scope and disclosure boundaries
 
 </details>
 
@@ -145,14 +132,14 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 <details>
 <summary><strong>🗄️ Infrastructure</strong></summary>
 
-- [Neon migration plan](docs/neon-migration-plan.md) — Selected development PostgreSQL host
+- [PostgreSQL storage](storage/postgres/README.md) — Explicit migrations, role boundaries and schema profiles
 - [Secure setup runbook](docs/neon.md) — Security requirements and acceptance gates
-- [Direct Neon acceptance](evaluation/reports/V2/DB-NEON-01.md) — Verified development transport and native checks, with production and pooling limits
+- [PostgreSQL embedding profiles](docs/postgres-embedding-profiles.md) — Explicit fake/OpenAI profile selection
 - [V5 installation and operations](docs/v5-operations.md) — Optional profiles, connection ownership, explicit migrations, recovery and local shutdown
 - [Publishing and deployment guide](docs/releasing.md) — MIT notices, exact artifacts, CI, release permission and application hosting
 - [Migration and recovery guide](docs/migrations-and-recovery.md) — Explicit upgrades, quarantined restore and current access state
 
-> Historical Supabase results do not establish Neon acceptance; see the tracker before hosted use.
+> Development backend acceptance does not establish production or connection-pooling acceptance.
 
 </details>
 
@@ -166,15 +153,15 @@ Both use public synthetic source text and a caller-supplied local tokenizer asse
 - [Support scope](docs/support.md) — Supported evidence, safe reporting and triage
 - [Maintenance checklist](docs/maintenance.md) — Regressions, dependencies and release follow-through
 - [Tooling entry points](docs/tooling.md) — Current command roles and historical-name lookup
-- [First open-source release guide](docs/open-source-release-guide.md) — Learn package builds, testing, CI, publishing and maintenance
+- [Development guide](docs/development.md) — Source checks, package builds and private maintainer verification
 
 </details>
 
 > [!NOTE]
-> Earlier proposals, reviews, analysis artifacts and saved papers remain as project history. The consolidated architecture and later user decisions govern where those historical materials disagree.
+> Personal plans, reviews, evaluation records, examples and saved papers are retained in a separate private maintainer archive. This source checkout contains the library and current operational documentation. The architecture and current user decisions govern.
 
 ## Repository
 
 GitHub: [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) (private) · Remote: `origin` (HTTPS)
 
-The initial V0 baseline was committed and pushed to `main` as [`feb2bdd`](https://github.com/vsuman00/Cragkit/commit/feb2bdd). Current milestone evidence and Git handoffs are recorded in the [task tracker](tasks/todo.md). The [corrected candidate hosted CI run](https://github.com/vsuman00/Cragkit/actions/runs/41777862696) passed for source `a3ff7e81332d849724407356d220c991e8a8411d`; its exact retained archive passed independent verification. [RC1 registry acceptance](evaluation/reports/V6/V6-08D-publication.md) passed for all nine files. Repository visibility, archive choices and public evidence disclosure remain deferred.
+RC1 registry acceptance passed for all six packages and nine exact files. The [release notes](docs/releases/V6.md) distinguish those recorded results from current source validation. Personal workbench materials have been separated from the library checkout; original history remains private. Repository visibility and formal public evidence disclosure still require separate decisions.

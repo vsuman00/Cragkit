@@ -36,10 +36,6 @@ dev = [
     "tiktoken==0.14.0",
 ]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-ra"
-
 [tool.mypy]
 python_version = "3.14"
 strict = true

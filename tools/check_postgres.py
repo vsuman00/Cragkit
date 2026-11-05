@@ -380,7 +380,7 @@ def execute(script: str, environment: Mapping[str, str], *, executable: str = 'p
 
 def security_script(*, allow_managed_primitives: bool = False) -> str:
     """Validate deployment security independently of migration success."""
-    script = (ROOT / 'storage/postgres/tests/security.sql').read_text(encoding='utf-8')
+    script = (ROOT / 'storage/postgres/deployment/checks/security.sql').read_text(encoding='utf-8')
     profile = 'neon-managed' if allow_managed_primitives else 'strict'
     return script.replace('BEGIN;', f"BEGIN;\nSET LOCAL cragkit.security_vector_profile = '{profile}';", 1)
 
@@ -424,10 +424,10 @@ def main() -> int:
             if args.vector_storage:
                 execute(vector_storage_script(setup_items[1], apply=args.apply), environment, marker='cragkit_vector_storage_ok')
         if args.integration:
-            probe = (ROOT / 'storage/postgres/tests/invariants.sql').read_text(encoding='utf-8')
+            probe = (ROOT / 'storage/postgres/deployment/checks/invariants.sql').read_text(encoding='utf-8')
             execute(probe, environment)
             if args.vector_storage:
-                execute((ROOT / 'storage/postgres/tests/vectors.sql').read_text(), environment, marker='cragkit_vector_storage_ok')
+                execute((ROOT / 'storage/postgres/deployment/checks/vectors.sql').read_text(), environment, marker='cragkit_vector_storage_ok')
         if args.security:
             execute(security_script(allow_managed_primitives=args.allow_managed_vector_primitives),
                     environment, marker='cragkit_security_probe_ok')

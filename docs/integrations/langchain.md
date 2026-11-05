@@ -2,7 +2,7 @@
 
 For example, a tool can accept a question about a collection while the application binds the tenant, principal, filters and limits. A model cannot add another tenant or increase its budget through the tool's arguments.
 
-These integrations use native Python and Node execution. They live in separate packages; installing core Cragkit does not install LangChain Core, LangSmith, a model or an HTTP server. Python selects LangChain Core 1.7.0; TypeScript selects 1.3.0. See [the adapter contract](../../contracts/EXECUTION_V4.md) and [the V4 plan](../../tasks/versions/V4-corrective-alpha.md).
+These integrations use native Python and Node execution. They live in separate packages; installing core Cragkit does not install LangChain Core, LangSmith, a model or an HTTP server. Python selects LangChain Core 1.7.0; TypeScript selects 1.3.0. See [the adapter contract](../../contracts/EXECUTION_V4.md) and [current roadmap](../roadmap.md).
 
 ## Bind the application policy
 
@@ -26,7 +26,7 @@ Owned calls disable scoped tracing and bypass framework callback dispatch. Nonem
 
 Each call has a fresh deadline and request-local state. Python task cancellation and Node AbortSignal propagate to retrieval. Uncooperative callbacks are bounded by the outer deadline and late failures are observed. Typed operational errors stay errors; unknown engine exceptions use a fixed redacted provider error. No tracing/exporter service is started.
 
-The [corrective demonstration](../../examples/corrective.md) exercises the underlying engines without a model. Optional SDK tests and clean artifact results are recorded in the V4 exit report when acceptance completes. These checks validate integration behavior; they do not establish live model quality or production readiness.
+The corrective demonstration (retained in the private maintainer workbench) exercises the underlying engines without a model. The internal native/synthetic V4 milestone passed; detailed SDK tests and artifact results are retained privately. These checks validate integration behavior; they do not establish live model quality or production readiness.
 
 ## Small application example
 

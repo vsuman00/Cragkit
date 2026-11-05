@@ -2,7 +2,7 @@
 
 The user has authorized a private GitHub baseline and ongoing version control for completed, plan-aligned changes. After each accepted atomic change, commit and immediately push to the configured GitHub remote unless the user explicitly requests local-only work. Keep implementation, local verification, commit, push and hosted CI evidence distinct.
 
-The initial branch is `main`. The private repository [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) uses an HTTPS `origin` remote. The initial 119-file V0 baseline, commit `feb2bdd374041d0f5bf6990c81b5b3d71fa4f229`, was pushed successfully and verified against GitHub with zero ahead/behind and a clean working tree. Read [the tracker](../tasks/todo.md) for current state. Repository availability does not configure hosted CI. No workflows or package publication were activated by repository creation.
+The initial branch is `main`. The private repository [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) uses an HTTPS `origin` remote. The initial 119-file V0 baseline, commit `feb2bdd374041d0f5bf6990c81b5b3d71fa4f229`, was pushed successfully and verified against GitHub with zero ahead/behind and a clean working tree. Read [current roadmap](roadmap.md) for current state. Repository availability does not configure hosted CI. No workflows or package publication were activated by repository creation.
 
 ## Make a scoped commit
 
@@ -33,8 +33,10 @@ Also compare the local commit with `git ls-remote --heads origin <current-branch
 
 A failure case is staging the entire workspace while another peer has an unfinished edit: the commit would mix accepted and unaccepted work. Stop and correct the index scope without overwriting that edit. Do not reset or clean user work, force-push shared history, delete unrelated files or change repository visibility to make a check pass. Resolve a scope, credential or remote-protection blocker before the dependent Git action.
 
-## Baseline contents
+## Source checkout contents
 
-The initial upload may include reviewed native source, tests, contracts, locks, plans, project skills, evaluation sources and labels, review/seal records, reports, historical proposals and saved research papers. Historical documents remain labelled by their role and do not override the architecture. Local environments, dependency directories, caches, `.DS_Store`, compiled output and generated package archives remain excluded. The [GIT-01 upload review](../evaluation/reports/V0/GIT-01.md) records the actual inventory and audit; it is separate from root's final staged review and remote verification.
+Keep native library source, contracts, locks, migrations, project skills and current operational documentation in the source checkout. Personal plans, tests, example applications, evaluation records, historical reports and saved papers are retained outside the repository. Do not copy them back merely to satisfy a historical path. Local environments, dependency directories, caches, compiled output and generated package archives remain excluded.
+
+The initial private upload contained historical material. Separating current files does not remove committed Git history or make a private repository public. Visibility changes and history rewriting require separate authorization.
 
 Optional exercise: identify the files belonging to one small accepted change, then explain how the staged diff and remote commit checks protect different parts of the workflow.

@@ -1,4 +1,0 @@
-Key rotation policy
-KEY-3 keys rotate every 21 days.
-Keep the previous key valid for 12 hours after rotation.
-The rotation owner is not recorded.

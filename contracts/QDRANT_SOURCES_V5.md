@@ -1,6 +1,6 @@
 # Qdrant authoritative source reads
 
-Revision `QS-r1`, the V5-03 source boundary. [QD-r1](QDRANT_V5.md) owns consistency and publication; [QC-r1](QDRANT_CANDIDATES_V5.md) owns vector nominations and full embedding profiles. The [source scenarios](fixtures/qdrant_sources.json) define shared reader assertions. [The tracker](../tasks/todo.md) distinguishes schema, native reader, cross-store integration and publication acceptance.
+Revision `QS-r1`, the V5-03 source boundary. [QD-r1](QDRANT_V5.md) owns consistency and publication; [QC-r1](QDRANT_CANDIDATES_V5.md) owns vector nominations and full embedding profiles. The [source scenarios](fixtures/qdrant_sources.json) define shared reader assertions. [current maintenance roadmap](../docs/roadmap.md) distinguishes schema, native reader, cross-store integration and publication acceptance.
 
 For example, a vector can still name `gen-1` after `gen-2` becomes active. A new source fetch rejects that nomination. A live request that verified and bound `gen-1` while it was active may resolve its retained bytes after fresh authorization, with `stale=true`.
 
@@ -102,6 +102,6 @@ Driver/connection/source-authority outages raise redacted `ProviderUnavailable`;
 
 Missing SQL tables, columns, functions or namespace fail `UnsupportedCapability`. A server cancellation (`57014`) becomes `DeadlineExceeded` only after the shared deadline has elapsed; an earlier operational cancellation is `ProviderUnavailable`. Native caller cancellation remains native. A request handle may move between application tasks; ownership means the same private handle and store, with concurrent operations rejected. A store that has not initialized fails `IndexNotReady`.
 
-V5-03B/C implement these native boundaries; [V5-03D/C1 acceptance](../evaluation/reports/V5/V5-03D.md) records real local PostgreSQL/Qdrant stale-vector revocation, provider-spy and final-release checks. Existing CorrectiveRetriever private candidates and its outer candidate reservation remain a V5-07 integration dependency: do not duplicate QC-r1's reservation or reinterpret cosine similarity as cosine distance to force compatibility.
+V5-03B/C implement these native boundaries; V5-03D/C1 acceptance (record retained in the private maintainer archive) records real local PostgreSQL/Qdrant stale-vector revocation, provider-spy and final-release checks. Existing CorrectiveRetriever private candidates and its outer candidate reservation remain a V5-07 integration dependency: do not duplicate QC-r1's reservation or reinterpret cosine similarity as cosine distance to force compatibility.
 
 One failure to inspect: publishing a new generation between fetch and final release may legitimately produce stale retained evidence, but a copied old nomination cannot manufacture the private binding needed for that path. Practice unassessed: explain why fresh grants and an opaque request binding answer different questions.

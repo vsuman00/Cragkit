@@ -17,7 +17,7 @@ sys.path.insert(0,str(ROOT/'tools'))
 from check_postgres import LOCK, migrations
 from check_postgres_profiles import CATALOG_SHA256, SETUP_IDENTITIES, _registry_guard, _table_guard
 from cragkit._postgres_session import EXPECTED_HISTORY, _CATALOG_SQL, _TABLE_COLUMNS
-from evaluation_runtime import _regular_bytes
+from operator_support import regular_bytes as _regular_bytes
 
 ARTIFACT = ROOT/'storage/postgres/maintenance/0001_lexical_config.sql'
 ARTIFACT_SHA256 = '78d3b4c322e1e79c6e8ac012876308abba1724466b61548bad36904478da536c'
@@ -282,8 +282,7 @@ def main(argv=None):
     parser.add_argument('--expected-owner',required=True)
     parser.add_argument('--confirm-dedicated-target',action='store_true',required=True)
     async def execute(args):
-        from check_python_postgres import load_config
-        from check_postgres_profile_storage import connect
+        from operator_support import load_config, connect
         _regular_bytes(args.config,131072)
         async with await connect(load_config(args.config)) as connection:
             return await repair(connection,expected_database=args.expected_database,

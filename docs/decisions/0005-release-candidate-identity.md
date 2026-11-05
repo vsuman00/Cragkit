@@ -1,5 +1,7 @@
 # 0005: Coherent candidate identity before evaluation
 
+This dated decision records the design at acceptance. It does not report current implementation or release completion; use the [current roadmap](../roadmap.md) and [RC1 notes](../releases/V6.md) for that state.
+
 Accepted on 31 October 2026 as a sequencing amendment, before original held-out
 access. It changes neither frozen quality/resource targets nor publication
 authorization. Implementation and actual verification remain tracker-owned.

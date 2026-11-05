@@ -66,7 +66,7 @@ MRR-r2 requires a separately versioned operator repair of this derived field,
 with explicit check/apply modes, writer exclusion, exact catalog checks and
 before/after verification. It must record direct reader refusal before any
 repair, preserve source/vector/security state, and prove successful reads
-subsequently. The [local rehearsal](../evaluation/reports/V6/V6-07-recovery.md) passed with the
+subsequently. The local rehearsal (retained privately) passed with the
 required explicit repair. Do not edit migration 0002, delete its history row or
 normalize fixture setup to hide this result. Use the existing owner-only scalar
 operator config, with certificate and password-file paths, on the explicitly
@@ -132,8 +132,8 @@ publication and deployment approval separate.
 
 ## Rehearsal evidence
 
-[V6-07 acceptance](../evaluation/reports/V6/V6-07-recovery.md) records the passed
-backup, upgrade and explicit repair rehearsals, including their negative cases. The tracker records actual commands, source/artifact hashes, restoration
+V6-07 acceptance (retained privately) records the passed
+backup, upgrade and explicit repair rehearsals, including their negative cases. Private maintainer records retain actual commands, source/artifact hashes, restoration
 checks, resource observations and cleanup. No hosted target or model call is
 required for this rehearsal. A small exercise: explain why a valid old backup
 must still be denied release when its current authority snapshot is missing.

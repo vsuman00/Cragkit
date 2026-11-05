@@ -6,7 +6,7 @@ For example, a point carrying yesterday's grant can nominate a document identity
 
 ## Reference profile and ownership
 
-The selected baseline is Qdrant server `1.20.0`, optional Python `httpx==0.28.1` on Python `3.14.6`, and Node `26.5.0` built-in `fetch`. These access the same REST API natively. The first isolated target is one loopback-only single-node server on macOS arm64. [V5-02A evidence](../evaluation/reports/V5/V5-02A.md) separates version selection, transport prototypes and server readiness from later adapter acceptance. Reject an unverified server/client or distributed profile with `UnsupportedCapability`; do not auto-upgrade or create services.
+The selected baseline is Qdrant server `1.20.0`, optional Python `httpx==0.28.1` on Python `3.14.6`, and Node `26.5.0` built-in `fetch`. These access the same REST API natively. The first isolated target is one loopback-only single-node server on macOS arm64. V5-02A evidence (record retained in the private maintainer archive) separates version selection, transport prototypes and server readiness from later adapter acceptance. Reject an unverified server/client or distributed profile with `UnsupportedCapability`; do not auto-upgrade or create services.
 
 Official `qdrant-client==1.20.0` and `@qdrant/js-client-rest@1.20.0` archives were inspected as alternatives. They are not the selected runtime dependency profile: their default request paths do not establish this contract's streaming byte bound and request cancellation together. A later SDK binding must demonstrate those guarantees before acceptance. This choice also avoids adding the Python SDK's NumPy and gRPC dependencies for a REST-only adapter. No SDK package is installed by QC-r1.
 

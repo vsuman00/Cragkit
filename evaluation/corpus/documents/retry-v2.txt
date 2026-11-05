@@ -1,4 +1,0 @@
-Queue retry policy, revision r2
-ERR-17 permits four retry attempts.
-The delay between attempts is 250 milliseconds.
-After the last failed attempt, send the job to the dead-letter queue.
