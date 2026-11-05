@@ -12,6 +12,11 @@ hash and fresh-consumer checks. All six Python RC3 files have cryptographically
 verified publication attestations. npm `latest` and `next` both select RC2; the
 owner confirmed the core README is visible on npm.
 
+The [GitHub tester prerelease `v1.0.0-rc.3`](https://github.com/vsuman00/Cragkit/releases/tag/v1.0.0-rc.3)
+provides installation commands, package links, features, verification and tester
+guidance. Its tag identifies the project prerelease; Python remains RC3 and npm
+remains RC2 as listed above.
+
 The owner explicitly chose to keep GitHub public, knowing that earlier committed
 history still contains archived material. Current personal workbench files and
 release receipts remain outside the source checkout. [RC3 notes](releases/RC3.md)
@@ -143,3 +148,21 @@ quality, platform, human-trial and qualified-CSO limits remain in the public
 report. Stable `1.0.0` and production deployment are not claimed. Learning
 practice remains unassessed; normal maintenance starts from reproducible tester
 reports and preserves the same scope, source-fidelity and disclosure boundaries.
+
+
+`GITHUB-TESTER-RELEASE` is COMPLETE under the owner's explicit request to populate
+the GitHub Releases section. A new public prerelease `v1.0.0-rc.3` targets verified
+commit `02941507ce2bd628cdea79cd0846cd425d0e63a5`. The notes list all six registry
+packages, pinned installs, runtime requirements, features, publication evidence,
+known limits and contribution links. Anonymous API reads verified publication,
+the exact notes, tag target and presence in the public release listing. Three
+internal transport drafts and their asset identities remain unchanged and private.
+No private files were attached and no package version or runtime changed.
+
+One writer owned this bounded release-metadata task. Prose, tagged-source links
+and a scoped secret scan passed before publication. No new product tests, build,
+CI run, model request, installation or backend service was needed. Nine local
+edits remain unchanged. The server-rendered repository HTML supplies a loading
+skeleton for the Releases widget; a completed visual widget check is not claimed.
+The next action is normal tester feedback and issue-driven maintenance; learning
+practice remains unassessed.

@@ -3,7 +3,9 @@
 For example, building a wheel checks a local package, publishing makes exact bytes available from a registry, and deploying runs a consuming application. Treat these as separate outcomes.
 
 Cragkit is an MIT-licensed Python and TypeScript library with separate optional LangChain and MCP packages. The [current roadmap](roadmap.md) records scope; [RC1 notes](releases/V6.md) record release state and limits. The repository is public by its owner's decision. Current releases are Python
-`1.0.0rc3` and npm `1.0.0-rc.2`; a new or stable release needs separately authorized scope.
+`1.0.0rc3` and npm `1.0.0-rc.2`; a new or stable release needs separately authorized scope. The
+[GitHub tester prerelease `v1.0.0-rc.3`](https://github.com/vsuman00/Cragkit/releases/tag/v1.0.0-rc.3)
+provides release details for these existing registry versions.
 
 ## Prepare exact products
 
