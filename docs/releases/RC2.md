@@ -17,6 +17,11 @@ advance together. Runtime behavior and third-party dependency versions remain
 unchanged from RC1. Uncommitted application/source edits are excluded from the
 release products. Previously published RC1 files remain immutable.
 
+Distribution contents follow the earlier reviewed separation of the private
+maintainer workbench: obsolete npm test scripts and personal source-distribution
+harness files are omitted. This inherited packaging cleanup does not change
+runtime modules or third-party dependencies.
+
 ## Verification and limits
 
 Release admission requires exact product hashes, README metadata checks, clean

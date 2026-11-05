@@ -1,0 +1,189 @@
+name: Publish admitted RC2 files
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Private draft release containing the nine admitted RC2 files.
+        required: true
+        type: string
+      manifest_sha256:
+        description: SHA256 of the reviewed release-manifest.json.
+        required: true
+        type: string
+      admit_exact_upload:
+        description: Confirm exact products, security decision and bounded upload cost were reviewed.
+        required: true
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: publish-cragkit-descriptions-rc2
+  cancel-in-progress: false
+
+# Filled only after local acceptance of commit A and review of the manifest.
+# After acceptance of the public registry files, return RELEASE_UPLOAD_ENABLED to false.
+env:
+  RELEASE_UPLOAD_ENABLED: 'true'
+  ADMITTED_SOURCE_COMMIT: 'b06d89846e3f3124ee5f6fcf0a5f3b24340b0b2f'
+  ADMITTED_MANIFEST_SHA256: 'bf3ba52fa71e03604746d5e6be44fa9c81fe0672d3e7daca7d5ca11a1e50ef4f'
+  ADMITTED_RELEASE_TAG: 'cragkit-descriptions-rc2'
+
+jobs:
+  admit:
+    if: >-
+      inputs.admit_exact_upload == true &&
+      github.repository == 'vsuman00/Cragkit' &&
+      github.ref == 'refs/heads/main' && github.actor == 'vsuman00'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      transport_digest: ${{ steps.transport.outputs.artifact-digest }}
+    steps:
+      - name: Reject disabled or mismatched admission
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+          REQUESTED_DIGEST: ${{ inputs.manifest_sha256 }}
+        run: |
+          test "$RELEASE_UPLOAD_ENABLED" = true
+          test "$REQUESTED_TAG" = "$ADMITTED_RELEASE_TAG"
+          test "$REQUESTED_DIGEST" = "$ADMITTED_MANIFEST_SHA256"
+          [[ "$ADMITTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ADMITTED_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+      - name: Fetch only the reviewed verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: tools/check_candidate_upload.py
+          sparse-checkout-cone-mode: false
+      - name: Fetch exact private draft release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          repository = 'vsuman00/Cragkit'
+          tag = os.environ['ADMITTED_RELEASE_TAG']
+          release = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repository}/releases/tags/{tag}']))
+          if release.get('draft') is not True or release.get('tag_name') != tag:
+              raise SystemExit('release must remain the exact private draft')
+          if release.get('target_commitish') != os.environ['ADMITTED_SOURCE_COMMIT']:
+              raise SystemExit('draft source identity differs')
+          names = {'release-manifest.json'}
+          for package in ('cragkit', 'cragkit-langchain', 'cragkit-mcp'):
+              stem = package.replace('-', '_')
+              names.update((f'{stem}-1.0.0rc2-py3-none-any.whl', f'{stem}-1.0.0rc2.tar.gz', f'{package}-1.0.0-rc.2.tgz'))
+          assets = release.get('assets', [])
+          if len(assets) != 10 or {asset['name'] for asset in assets} != names:
+              raise SystemExit('draft assets differ from exact nine products and manifest')
+          if any(asset.get('state') != 'uploaded' or not 0 < asset.get('size', 0) <= 33554432 for asset in assets):
+              raise SystemExit('invalid draft asset state or size')
+          pathlib.Path('inbound').mkdir()
+          command = ['gh', 'release', 'download', tag, '--repo', repository, '--dir', 'inbound']
+          for name in sorted(names):
+              command.extend(('--pattern', name))
+          subprocess.run(command, check=True, timeout=90)
+          PY
+      - name: Verify archives, security admission and missing-only registry plan
+        run: >-
+          python3 tools/check_candidate_upload.py --input-dir inbound
+          --manifest-sha256 "$ADMITTED_MANIFEST_SHA256"
+          --release-source "$ADMITTED_SOURCE_COMMIT" --output-dir transport
+      - name: Transfer admitted bytes without repository credentials
+        id: transport
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: admitted-rc2-uploads
+          path: transport/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: admit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    steps:
+      - name: Receive admitted bytes only
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: admitted-rc2-uploads
+          path: transport
+      - name: Recheck exact identities and stage only missing files
+        id: plan
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, shutil
+          source = pathlib.Path('transport')
+          manifest_bytes = (source / 'release-manifest.json').read_bytes()
+          if hashlib.sha256(manifest_bytes).hexdigest() != os.environ['ADMITTED_MANIFEST_SHA256']:
+              raise SystemExit('transport manifest digest differs')
+          manifest = json.loads(manifest_bytes)
+          plan = json.loads((source / 'upload-plan.json').read_bytes())
+          if set(plan) != {'schema_version', 'manifest_sha256', 'missing'} or plan['schema_version'] != 1:
+              raise SystemExit('upload plan schema differs')
+          if plan['manifest_sha256'] != os.environ['ADMITTED_MANIFEST_SHA256']:
+              raise SystemExit('upload plan manifest differs')
+          expected = {item['filename']: item for item in manifest['artifacts']}
+          missing = plan['missing']
+          if len(missing) != len(set(missing)) or not set(missing) <= set(expected):
+              raise SystemExit('unknown or duplicate upload identity')
+          if set(path.name for path in source.iterdir()) != set(missing) | {'release-manifest.json', 'upload-plan.json'}:
+              raise SystemExit('unexpected transport files')
+          for directory in ('pypi', 'npm'):
+              pathlib.Path(directory).mkdir()
+          for name in missing:
+              record = expected[name]
+              path = source / name
+              if path.is_symlink() or not path.is_file() or path.stat().st_size != record['size']:
+                  raise SystemExit('transport file type/size differs')
+              if hashlib.sha256(path.read_bytes()).hexdigest() != record['sha256']:
+                  raise SystemExit('transport product digest differs')
+              shutil.copyfile(path, pathlib.Path(record['registry']) / name)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"python={str(any(expected[name]['registry'] == 'pypi' for name in missing)).lower()}\n")
+              output.write(f"npm={str(any(expected[name]['registry'] == 'npm' for name in missing)).lower()}\n")
+          print(json.dumps({'admitted_manifest': plan['manifest_sha256'], 'missing': missing}, sort_keys=True))
+          PY
+      - name: Set up exact Node runtime for npm upload
+        if: steps.plan.outputs.npm == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.5.0'
+          package-manager-cache: false
+      - name: Set up exact npm uploader
+        if: steps.plan.outputs.npm == 'true'
+        run: |
+          npm install --global --ignore-scripts --no-audit --no-fund npm@11.17.0
+          test "$(node --version)" = v26.5.0
+          test "$(npm --version)" = 11.17.0
+      - name: Publish only missing accepted Python files with OIDC
+        if: steps.plan.outputs.python == 'true'
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1 resolved 2026-11-05
+        with:
+          packages-dir: pypi/
+          repository-url: https://upload.pypi.org/legacy/
+          skip-existing: false
+          verify-metadata: true
+          attestations: false
+          verbose: false
+          print-hash: true
+      - name: Publish only missing accepted npm files with OIDC
+        if: steps.plan.outputs.npm == 'true'
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          NPM_CONFIG_PROVENANCE: 'false'
+          NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+          NPM_CONFIG_AUDIT: 'false'
+          NPM_CONFIG_FUND: 'false'
+        run: |
+          for product in npm/*.tgz; do
+            npm publish "$product" --ignore-scripts --tag next --access public --provenance=false
+          done
