@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cragkit-mcp"
-version = "1.0.0rc2"
+version = "1.0.0rc3"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE"]
 description = "MCP host for Cragkit retrieval with identity resolved by the application."
 readme = "README.md"
 authors = [{ name = "Vaibhav Suman" }]
 requires-python = ">=3.14,<3.15"
-dependencies = ["cragkit==1.0.0rc2", "mcp==2.3.0"]
+dependencies = ["cragkit==1.0.0rc3", "mcp==2.3.0"]
 
 [project.urls]
 Homepage = "https://github.com/vsuman00/Cragkit"

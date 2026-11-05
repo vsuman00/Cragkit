@@ -5,8 +5,8 @@ access scope, required filters and budgets under application control. The tool
 returns validated retrieval results with source references, coverage estimates,
 limitations and usage. It does not generate the final answer.
 
-This release updates package descriptions and version metadata. Runtime behavior
-is unchanged from RC1. See the [RC2 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC2.md).
+This release restores PyPI publication attestations and retains the package
+description. Runtime behavior is unchanged from RC2. See the [RC3 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC3.md).
 
 ## Install
 
@@ -14,7 +14,7 @@ Requires Python `>=3.14,<3.15`. This release candidate installs matching Cragkit
 core and the pinned LangChain Core dependency.
 
 ```sh
-python -m pip install "cragkit-langchain==1.0.0rc2"
+python -m pip install "cragkit-langchain==1.0.0rc3"
 ```
 
 The package provides `cragkit_langchain.create_tool`. Installing it does not

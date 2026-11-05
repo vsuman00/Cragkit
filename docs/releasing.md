@@ -10,6 +10,13 @@ Start from reviewed source and preserve unrelated work. Record commit, package v
 
 Build Python wheels/source distributions and npm tarballs, rebuild wheels from source distributions, and inspect exact members, versions and hashes. Include the reviewed [MIT license](../LICENSE) and [notice](../NOTICE); dependencies and models retain their own licenses. Keep secrets, private corpus, workbench history and model assets out of distributions. Install the exact products in fresh application environments and verify import origin and supported behavior. A source pass cannot establish archive contents.
 
+Preserve Python publication attestations. Local builds are compatible with
+publisher attestations; these identify the uploader and file digest, rather than
+certifying a build process. Require attestations explicitly in the publishing
+action and verify every published distribution's signature, digest and publisher
+identity. Do not mark a release complete if this provenance is missing. See the
+[RC3 correction](releases/RC3.md) and [PyPI attestation model](https://docs.pypi.org/attestations/security-model/).
+
 ## Review gates and hosted validation
 
 Release identity includes exact source and product hashes. Changed bytes require new acceptance; an earlier candidate receipt cannot validate a replacement. Keep any explicit security hold fail-closed until a reviewed correction and its required checks pass. Detailed historical RC1 receipts remain in the private maintainer archive.

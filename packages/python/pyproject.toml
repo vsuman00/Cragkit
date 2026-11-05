@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cragkit"
-version = "1.0.0rc2"
+version = "1.0.0rc3"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE"]
 description = "Native Python retrieval with source-linked evidence, coverage estimates and execution diagnostics."

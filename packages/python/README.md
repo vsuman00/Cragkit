@@ -8,23 +8,23 @@ owns authentication, documents, model clients and the final answer.
 This is the core package. LangChain and MCP integrations are separate optional
 packages; Python execution does not require a Cragkit server.
 
-This release updates package descriptions and version metadata. Runtime behavior
-is unchanged from RC1. See the [RC2 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC2.md).
+This release restores PyPI publication attestations and retains the package
+description. Runtime behavior is unchanged from RC2. See the [RC3 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC3.md).
 
 ## Install
 
 Requires Python `>=3.14,<3.15`. The current version is a release candidate.
 
 ```sh
-python -m pip install "cragkit==1.0.0rc2"
+python -m pip install "cragkit==1.0.0rc3"
 ```
 
 Install only the integrations your application needs:
 
 ```sh
-python -m pip install "cragkit[postgres]==1.0.0rc2"
-python -m pip install "cragkit[qdrant]==1.0.0rc2"
-python -m pip install "cragkit[tokenizers]==1.0.0rc2"
+python -m pip install "cragkit[postgres]==1.0.0rc3"
+python -m pip install "cragkit[qdrant]==1.0.0rc3"
+python -m pip install "cragkit[tokenizers]==1.0.0rc3"
 ```
 
 These extras install clients or tokenizer support. They do not provision a

@@ -95,3 +95,22 @@ publication and the final handoff. Shared contract: RC1 behavior with RC2 versio
 metadata and package READMEs. Security hold remains active until exact products
 and the publishing path pass review. No visibility change, stable release,
 production deployment, model call or hosted build is included.
+
+Task `RELEASE-PROVENANCE` is `RUNNING` after RC2's missing PyPI publication
+attestations were reported. Exact RC2 downloads and installed consumers passed;
+the upload configuration disabled attestations, causing a provenance regression.
+Supported PyPI uploads cannot retrofit an attestation to an existing file.
+
+The corrective target is Python `1.0.0rc3` for all three Python packages, with
+publish attestations enabled and verified for all six distributions. npm remains
+`1.0.0-rc.2`; owner-authenticated tag promotion and main-page README verification
+are separate work. No npm publisher permissions or repository visibility change.
+Result schema `0.1` stays unchanged. Python engine `1.0.0-rc.3` and npm engine
+`1.0.0-rc.2` identify their respective releases; metadata differences are expected.
+
+The Python Sol peer owns private artifact/consumer/provenance verification and
+assembles evidence. The Node Sol peer owns the six-product publisher proposal
+and admission guards. The coordinator owns tracked source, versions, locks,
+documentation, exact release admission, uploads and final integration. Installs
+and tests run serially. Existing user edits and earlier release evidence remain
+untouched; old distributions will not be deleted or rewritten.
