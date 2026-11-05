@@ -67,6 +67,36 @@ upload attempts incurred an estimated $0.03 in base compute before any allowance
 RC3 used a standard public-repository runner. User practice and production
 acceptance remain unassessed.
 
-The next smallest action is the separately scoped formal V6 evidence/disclosure
-review or an authorized maintenance change. The current publishing correction is
-finished; stable release and production acceptance are separate decisions.
+V6-EXIT-AUDIT is COMPLETE for the requirement review and private disclosure
+preparation. Sol release_python inspected the twelve engineering tasks/checkpoints
+and their recorded acceptance; Sol release_node prepared the aggregate report and
+assembled the pair's work. They coordinated directly, with separate private output
+ownership. The coordinator inspected the assembled evidence and owns final
+integration and this handoff. Astra resolved the written gate: public configurations,
+metrics, applicable confidence intervals and limitations can accompany genuine
+private reproduction without publishing raw evaluation files. Public independent
+rerun availability must remain explicitly unclaimed.
+
+The audit checked frozen input and selected evidence hashes, all 42 recorded C3
+return codes, 85 aggregate facts and five independently recalculated Wilson
+intervals. The disclosure draft passed the scoped secret scan and prose hygiene
+checks. These were evidence/documentation checks; no product, backend, live-model,
+CI or registry tests were rerun. The twelve engineering gates retain their stated
+limits, including unavailable human usability evidence and partial qualified CSO
+coverage. The original archive and nine existing edits remain unchanged.
+
+V6-EXIT remains PENDING_OWNER_DISCLOSURE_APPROVAL. The exact aggregate report is
+prepared privately for a proposed `docs/releases/validation.md`; it has not been
+added to the public checkout. The owner previously reserved the evidence-disclosure
+decision, and approving public repository visibility does not decide it. After
+approval, add that reviewed report, link the release notes, verify the public
+documentation and then record formal exit. Raw test cases, labels, recordings and
+personal archived files do not need to be republished for this gate.
+
+This audit used bounded file reads, one small validation process at a time and no
+installs, backend services, model calls or paid CI. Observed headroom was 30 GiB
+disk and 52 percent system memory free; no task-owned background process remains.
+Learning practice is unassessed. An optional exercise is to explain why zero
+false-sufficient observations under universal abstention do not prove useful
+coverage assessment. Stable release and production acceptance remain separate
+decisions; the next action is approval of the prepared disclosure.
