@@ -18,35 +18,28 @@ For each authorized behavior change, name the task, define its failure case, ins
 
 ## Session handoff
 
-Task `PUBLIC-SEPARATION`: separate approved private workbench materials from the library source while preserving the originals and validating the current library. Documentation and package/check tooling are independent assigned lanes; the final integrator owns filesystem moves, protected user edits, combined validation and completion state.
+Task `DOCS-ONBOARDING` is `COMPLETE` for the README, API/Qdrant guides and
+contributor workflows. The README preserves its centered banner, top-level section
+order, status table, callouts and five collapsible guides, with application setup
+and usage replacing internal milestone history.
 
-State: `COMPLETE` for the authorized source/private-workbench separation. The
-original589 approved files and198 dependent validation/workflow files were moved
-outside this checkout with byte hashes verified. A full1063-file pre-change source
-snapshot and private Git history bundle were also preserved. Generated remainders
-from the former private directories were moved intact; no original file was deleted.
+Two Sol peers owned API/Qdrant reference and contribution/templates; the API peer
+assembled their shared outcome. The coordinator integrated README and this handoff,
+verified source-derived coverage across 28 Python modules and 21 TypeScript entry
+points, checked templates and validated the executable examples. The catalog
+separates methods, constructors, properties, schemas and protocol/type declarations.
 
-The final public package profile passed33 serial stages without private inputs:
-all six package typechecks, builds, nine artifacts, source-distribution rebuilds,
-fresh installed imports and locked Node integrity checks. The private overlay
-passed4434 core/tool Python,113 LangChain Python,54 MCP Python,1639 core Node,
-108 LangChain Node and42 MCP Node tests. Current operator guards passed19 cases;
-new package-checker boundaries passed5. Six copied legacy CLI fakes were updated
-to the extracted helper seam after their failure was diagnosed; assertions and
-archived originals were preserved. Disposable verified-TLS PostgreSQL/pgvector
-operator acceptance passed8 checks with listener cleanup. No live-provider call,
-model download, new package publication, visibility change or paid CI ran.
+Python and Node service-free request examples passed. The README retrieval examples
+returned the same exact excerpt through a disposable TLS PostgreSQL fixture, and an
+ungranted identity received no evidence. The fixture listener closed. TypeScript
+examples passed strict checks against the released declarations, including exact
+optional-property handling. Python guide imports/definitions passed with external
+I/O blocked. Both issue forms parsed with unique fields; documentation links and
+README structure passed. Qdrant/MCP construction examples were checked without
+calling a live model or running a new end-to-end Qdrant/MCP deployment.
 
-The original frozen publisher and its validation closure remain private. Current
-public CI is manual build verification with read-only permissions and no upload
-step. Current operational security SQL is available under deployment/checks;
-applied migrations and native library source were unchanged by this task.
-Protected pre-existing native edits remain uncommitted and separately preserved.
-
-Use one test process and small fixtures; final checks ran serially. The known-
-advisory check covers133 exact versions across six frozen locks and found no
-matches at its recorded time; this does not establish universal security. Original
-receipts, detailed logs, source hashes and private runner instructions are retained
-in the owner-only workbench. Learning explanation was provided; user practice is
-unassessed. The next action is the separately authorized public-history/disclosure
-decision. Formal V6 exit and production acceptance remain separate from this task.
+No native source, dependencies, locks, private workbench, package publication,
+repository visibility or paid CI changed. Existing user edits were preserved.
+Verification used one process at a time and small synthetic inputs; no task-owned
+service remains. User practice is unassessed. The next action remains the separate
+public-history/disclosure decision and subsequent maintenance under the current scope.

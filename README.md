@@ -4,164 +4,455 @@
 
 **Native Python & TypeScript retrieval library**
 
-Source-linked evidence · Coverage estimates · Limitations · Execution diagnostics
+Source-linked evidence · Coverage estimates · Bounded retrieval · Execution diagnostics
 
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](packages/python)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Node_26-3178C6?logo=typescript&logoColor=white)](packages/typescript)
-[![Status](https://img.shields.io/badge/Status-V6_In_Progress-yellow)](#current-status)
+[![Status](https://img.shields.io/badge/Status-Release_Candidate-yellow)](#current-status)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 </div>
 
 ---
 
-Cragkit is a retrieval library with native Python and TypeScript packages. It returns source-linked evidence, coverage estimates, explicit limitations and execution diagnostics. The consuming application owns identity, data, providers and final answers — Cragkit never generates answers on its own.
+Cragkit helps applications retrieve useful passages from their documents and return
+those passages with source references, coverage estimates and execution diagnostics.
+Use it in document-backed assistants, RAG pipelines and agent tools when the caller
+needs to inspect what evidence was found, what is missing and whether a fallback ran.
 
-Coverage remains unknown unless the application configures a suitable assessment policy.
+The Python and TypeScript packages execute natively in the consuming application.
+The Node package does not require a Python server. PostgreSQL and Qdrant are optional
+backend integrations; LangChain and MCP are separate optional packages.
 
-Provider credentials belong to each consuming application. For example, Project
-A loads its own OpenAI key from its private `.env`, while Project B uses its own
-configuration. The application configures its provider client and injects a
-transport into Cragkit's adapter. Cragkit does not load `.env` files or supply a built-in key.
-Keep credentials in trusted backend configuration, outside retrieval/tool input.
-The separate V6 live benchmark needs a test credential; using the library does
-not require our development key or the Codex key-setup plugin.
+Your application supplies authentication, trusted access scope, source data and any
+model clients. Cragkit returns evidence; your application decides whether to answer,
+abstain, ask a follow-up question or pass that evidence to a model.
 
 > [!IMPORTANT]
-> Python `1.0.0rc1` and npm `1.0.0-rc.1` identify the published MIT-licensed RC1. All six registry packages and nine files passed exact download and installed-consumer acceptance. Maintenance and C3 passed; formal public-evidence exit remains pending.
+> The current published packages are release candidates: Python `1.0.0rc1` and npm
+> `1.0.0-rc.1`. Pin these versions when following this guide. Review the
+> [release notes](docs/releases/V6.md) for the tested scope and limitations.
+> MIT covers the project code; model-provider usage and hosting have separate terms and costs.
 
 ## What Cragkit Does
 
-| Your application owns | Cragkit handles |
+| Feature | What it provides |
 |---|---|
-| Authentication & trusted identity | Source-linked evidence retrieval |
-| Data, crawling & enterprise connectors | Hybrid search (lexical + dense + fusion) |
-| Final-answer generation & actions | Bounded reranking & corrective retrieval |
-| Hosting, credentials & provider accounts | Extractive packing within token budgets |
-| Truth & completeness of source documents | Coverage estimates & explicit limitations |
-| | Typed results, cancellation & diagnostics |
+| Text ingestion | Canonical Markdown/plain-text revisions, bounded chunks, digests and explicit generation publication |
+| PostgreSQL search | Native full-text search, exact vector search, identifiers and hybrid rank fusion |
+| Qdrant search | Profile-checked vector candidates with an authoritative source/access boundary |
+| Reranking | Optional bounded relevance ordering through an application-supplied transport |
+| Corrective retrieval | Budgeted planning/retry decisions that preserve scope, required filters and deadlines |
+| Evidence packing | Exact source excerpts, UTF-8 byte spans, context budgets and optional strict token counting |
+| Coverage assessment | Supported, missing, unknown or conflicting facets and explicit limitations |
+| Lifecycle operations | Controlled reindexing, revocation, tombstones and backend publication/recovery paths |
+| Integrations | Native LangChain tools and an application-configured MCP host |
+| Diagnostics | Typed errors, usage accounting, cancellation and privacy-controlled events |
 
-The **npm** package runs natively in Node.js — no Python server required. The **Python** package runs in its own Python application. Optional MCP is a separate process wrapper around a library instance.
+Cragkit fits backend applications that want control over their stores, access policy
+and model clients. It does not supply authentication, a crawler, PDF/OCR ingestion,
+a hosted chat interface or final-answer verification; add those at the application
+boundary when needed.
+
+The retrieval flow is:
+
+```mermaid
+flowchart LR
+    A[Application resolves trusted scope] --> B[Search bounded candidates]
+    B --> C[Reauthorize and verify source bytes]
+    C --> D[Rerank and pack evidence]
+    D --> E[Assess remaining coverage]
+    E --> F[Return evidence and diagnostics]
+```
+
+Search does not establish that a source is true. PostgreSQL native FTS is not BM25.
+A good similarity score alone does not prove that every part of a question is answered.
+Required access filters survive search, reranking, corrective attempts and source release.
 
 ## Current Status
 
-| Version | Scope | Status | Evidence |
-|---------|-------|--------|----------|
-| **V0** | Baseline | ✅ Complete | — |
-| **V1** | Native lexical library, source authorization, cancellation, installed-artifact acceptance | ✅ Complete for the declared milestone | [Release scope and limits](docs/releases/V6.md) |
-| **V2** | Dense/identifier retrieval, rank fusion, hybrid orchestration, synthetic comparison | ✅ Complete for the declared milestone | [HY-r1 configuration](contracts/HYBRID_V2.md) · [Release limits](docs/releases/V6.md) |
-| **V3** | Bounded reranking, exact context accounting, extractive packing, reviewed-span coverage | ✅ Complete for the curated milestone | [Release limits](docs/releases/V6.md) |
-| **V4** | Bounded corrective retrieval, privacy-controlled events and optional LangChain Core adapters | ✅ Complete for the internal native/synthetic milestone | [Adapter guide](docs/integrations/langchain.md) |
-| **V5** | Qdrant publication and repair, existing indexes and optional MCP | ✅ Complete for the declared local native milestone | [Installation and operations](docs/v5-operations.md) |
-| **V6** | Evaluation and release | 🚧 RC1 published and verified; maintenance/C3 passed; formal public-evidence exit pending | [RC1 notes and limitations](docs/releases/V6.md) · [Current roadmap](docs/roadmap.md) |
+| Package or capability | Published version / scope | Status | Guide |
+|---|---|---|---|
+| Python / Node core `cragkit` | `1.0.0rc1` / `1.0.0-rc.1` | Published RC1 | [API reference](docs/api-reference.md) |
+| `cragkit-langchain` | Matching Python / npm RC1 | Optional integration | [LangChain](docs/integrations/langchain.md) |
+| `cragkit-mcp` | Matching Python / npm RC1 | Optional stdio host | [Host API](docs/api-reference.md#mcp-packages) |
+| PostgreSQL / pgvector | Native FTS and exact-vector profiles | Explicit database setup | [Storage](storage/postgres/README.md) |
+| Qdrant | Declared single-node candidate/publication profiles | Optional backend | [Qdrant setup](docs/integrations/qdrant.md) |
+| Public source checks | Types, builds, archives and fresh installed imports | Available without private workbench | [Development](docs/development.md) |
 
 > [!NOTE]
-> V3 calibration is curated in-sample evidence, not general semantic quality. V4 and V5 are complete for their declared internal milestones. V5 acceptance covers single-node native publication/recovery, existing-index contracts, backend/transport conformance and clean local optional artifacts. V6 records limited live-model results and declared-platform CI. Local migration acceptance passed. Reviewed security leads are closed, while qualified CSO coverage remains partial. RC1 registry acceptance passed; public-evidence exit and production acceptance remain separate gates.
-
-Track current work → [roadmap and maintenance state](docs/roadmap.md)
+> Local and recorded release checks cover declared environments and small bounded
+> workloads. They do not establish general model quality, all-platform compatibility
+> or production acceptance for your deployment. The [release notes](docs/releases/V6.md)
+> keep these boundaries separate. Current maintenance work is in the [roadmap](docs/roadmap.md).
 
 ## Quick Start
 
 ### Prerequisites
 
-| Tool | Version |
-|------|---------|
-| Python | 3.14 |
-| Node.js | `>=26.5.0, <27` |
-| npm | 11.17.0 |
-| uv | 0.11.8 |
+Install only the runtime needed by your application:
 
-The corrected hosted candidate used Python 3.14.6, Node 26.5.0, npm 11.17.0
-and uv 0.11.8 on macOS 15.8.2 ARM64. This measured tuple does not establish
-acceptance for every version in the declared ranges or for other platforms.
+| Application | Required runtime | Optional dependencies |
+|---|---|---|
+| Python | Python `>=3.14,<3.15` | PostgreSQL, Qdrant and tokenizer extras as needed |
+| JavaScript / TypeScript | Node.js `>=26.5.0,<27` | Matching optional `pg` / `tiktoken` peers as needed |
+| Contributor checkout | The relevant runtime; uv and npm for repository checks | See [development setup](docs/development.md) |
 
-Install the reviewed RC1 in your application's environment. Python uses an
-active virtual environment; Node uses its own project directory:
+Recorded checks used Python 3.14.6, Node 26.5.0, npm 11.17.0 and uv 0.11.8.
+Installing the core package does not start a database, download a model or apply migrations.
+
+### Install in an application
+
+Python, in a new virtual environment:
 
 ```sh
-uv pip install 'cragkit==1.0.0rc1'
+python3.14 -m venv .venv
+. .venv/bin/activate
+python -m pip install 'cragkit==1.0.0rc1'
+```
+
+Node, from your application's directory:
+
+```sh
+npm init -y
 npm install 'cragkit@1.0.0-rc.1'
 ```
 
-The optional `cragkit-langchain` and `cragkit-mcp` packages use the matching
-version in each registry. Provider credentials belong to the consuming
-application; installation needs no built-in Cragkit key.
+Select optional integrations explicitly:
+
+| Need | Python | Node |
+|---|---|---|
+| PostgreSQL driver | `python -m pip install 'cragkit[postgres]==1.0.0rc1'` | `npm install 'pg@8.23.1'` |
+| Qdrant HTTP dependency | `python -m pip install 'cragkit[qdrant]==1.0.0rc1'` | Provide a Node HTTP transport; see the Qdrant guide |
+| Strict tokenizer support | `python -m pip install 'cragkit[tokenizers]==1.0.0rc1'` | `npm install 'tiktoken@1.0.22'` |
+| LangChain tool | `python -m pip install 'cragkit-langchain==1.0.0rc1'` | `npm install 'cragkit-langchain@1.0.0-rc.1'` |
+| MCP host | `python -m pip install 'cragkit-mcp==1.0.0rc1'` | `npm install 'cragkit-mcp@1.0.0-rc.1'` |
+
+Strict counting also requires the explicitly acquired, pinned local tokenizer asset.
+An installed tokenizer dependency alone does not configure that asset or a final model wrapper.
+
+Cragkit has **no shared API key** and does not automatically read `.env` files.
+Your backend may load its own `.env` or secret-manager configuration and inject a
+provider transport. Lexical PostgreSQL retrieval needs no embedding or reranker API key.
+Keep database passfiles, provider keys and trusted scope outside model-facing tool input.
+
+### Verify installation without a database
+
+The root imports expose the package version. Feature APIs live in named modules.
+These two examples validate a request and an illustrative scope without opening a connection.
+
+Python:
+
+```python
+from cragkit.contracts import parse_request, parse_scope
+
+request = parse_request({
+    "query": "What is the retry limit?",
+    "collection": "handbook",
+})
+scope = parse_scope({
+    "tenant_id": "example-tenant",
+    "principal_id": "example-reader",
+    "authorization_revision": "scope-1",
+    "grant_ids": [],
+})
+print(request.collection, scope.principal_id)
+```
+
+Node, saved as `check.mjs` and run with `node check.mjs`:
+
+```javascript
+import { parse_request, parse_scope } from 'cragkit/contracts';
+
+const request = parse_request({
+  query: 'What is the retry limit?',
+  collection: 'handbook',
+});
+const scope = parse_scope({
+  tenant_id: 'example-tenant',
+  principal_id: 'example-reader',
+  authorization_revision: 'scope-1',
+  grant_ids: [],
+});
+console.log(request.collection, scope.principal_id);
+```
+
+Both print `handbook example-reader`. In a real application, derive scope from
+an authenticated session and current authorization state. Never accept tenant or grant
+values directly from an untrusted request merely because they pass schema validation.
+
+### Retrieve from PostgreSQL
+
+First provision the schema, a bounded least-privilege reader role and authorized
+source data using the [database guide](storage/postgres/README.md) and
+[secure connection guide](docs/neon.md). Administrative setup is separate from runtime
+retrieval. The snippets below search the keyword `retry` in an existing collection;
+they do not create tables or grants. Dense or hybrid mode adds the configured
+embedding-based search path for semantic queries.
+
+Have your application provide `APP_DB_HOST`, `APP_DB_NAME`, `APP_DB_USER`,
+`APP_DB_CA_FILE` and `APP_DB_PASSFILE`; `APP_DB_PORT` is optional and defaults to 5432.
+The two file paths must be absolute;
+the passfile must be owner-only and contain the exact endpoint/login entry.
+Use a deployment-supported trusted CA. Do not put the password in these snippets.
+
+Python:
+
+```python
+import asyncio
+import os
+from pathlib import Path
+
+from cragkit.contracts import RetrievalRequest, TrustedScope
+from cragkit.postgres import PoolConfig, PoolResource, PostgresRetriever
+
+
+async def retrieve_handbook(scope: TrustedScope):
+    resource = PoolResource(PoolConfig(
+        host=os.environ["APP_DB_HOST"],
+        port=int(os.environ.get("APP_DB_PORT", "5432")),
+        dbname=os.environ["APP_DB_NAME"],
+        user=os.environ["APP_DB_USER"],
+        sslrootcert=Path(os.environ["APP_DB_CA_FILE"]),
+        passfile=Path(os.environ["APP_DB_PASSFILE"]),
+    ))
+    await resource.open()
+    try:
+        retriever = PostgresRetriever(resource, mode="lexical")
+        request = RetrievalRequest(
+            query="retry", collection="handbook")
+        return await retriever.retrieve(
+            request, scope=scope,
+            deadline=asyncio.get_running_loop().time() + 10,
+        )
+    finally:
+        await resource.close()
+```
+
+TypeScript:
+
+```typescript
+import { PoolResource, parse_pool_config, PostgresRetriever, now } from 'cragkit/postgres';
+import { parse_request, type TrustedScope } from 'cragkit/contracts';
+
+async function retrieveHandbook(scope: TrustedScope) {
+  const resource = new PoolResource(parse_pool_config({
+    host: process.env.APP_DB_HOST,
+    port: Number(process.env.APP_DB_PORT ?? '5432'),
+    dbname: process.env.APP_DB_NAME,
+    user: process.env.APP_DB_USER,
+    sslrootcert: process.env.APP_DB_CA_FILE,
+    passfile: process.env.APP_DB_PASSFILE,
+  }));
+  await resource.open();
+  try {
+    const retriever = new PostgresRetriever(resource, { mode: 'lexical' });
+    return await retriever.retrieve(parse_request({
+      query: 'retry', collection: 'handbook',
+    }), { scope, deadline: now() + 10 });
+  } finally {
+    await resource.close();
+  }
+}
+```
+
+Call the function with your application-resolved trusted scope and inspect its returned
+result as shown below. Deadlines are monotonic **seconds**, not Unix timestamps or
+`Date.now()` milliseconds. Owned PostgreSQL resources reject ambient `PG*` settings;
+use explicit configuration rather than mixing connection sources. Reuse a resource
+for the application's lifetime in a server, and close it during shutdown. These compact
+functions show an independently owned operation with cleanup.
+
+For ingestion, construct `PostgresIndexer(writer_resource, authorize_write=...)` in
+Python or its Node equivalent with a separate writer resource and application-owned
+write authorizer. Its `ingest` operation canonicalizes input, stages an immutable
+revision and publishes the validated generation. See the [API reference](docs/api-reference.md)
+for the complete signature, intent replay rules and required authorization callback.
+
+### Enable Qdrant or agent integrations
+
+**Qdrant** is a vector database integration, not a single utility function. Its search
+store returns candidate IDs and scores. The supported source store verifies current
+access and immutable source bytes before text is exposed. A managed writer also needs
+the selected authority schema, caller-owned supervisor, publication and recovery setup.
+
+Use the [Qdrant guide](docs/integrations/qdrant.md) for installation, profile selection,
+transport contracts, retrieval construction and shutdown. The [publication guide](docs/qdrant-publication.md)
+covers managed indexing, repair and purge. Qdrant dense search does not provide
+PostgreSQL lexical search or BM25.
+
+For agent tools, install the matching optional package and follow
+[LangChain setup](docs/integrations/langchain.md) or the
+[MCP host reference](docs/api-reference.md#mcp-packages). The application supplies the
+engine, trusted identity policy and final serializer. Installing `cragkit-mcp` does not
+create an automatically configured standalone server.
 
 ### Run Local Checks
 
-Use the source-only type and package checks in [development.md](docs/development.md). They build the library without a private corpus, evaluation packet or example application. Full regression and native backend verification remain separate maintainer checks against the private workbench.
+Contributors should fork or clone an accessible checkout, inspect existing changes,
+and install the locked development dependencies described in [CONTRIBUTING.md](CONTRIBUTING.md).
+From the repository root, the complete public package profile is:
 
-📖 [Development commands](docs/development.md) · [Local CI profile](docs/ci.md)
+```sh
+python3 tools/check_public_packages.py --output-dir artifacts/public-check
+```
+
+Use a fresh output directory. The default uses populated offline caches;
+`--allow-downloads` explicitly permits locked dependency downloads. This serial profile
+checks types, builds all six packages, inspects nine archives and tests fresh installed
+imports. The private maintainer regression suite is separate; contributors do not need
+access to it to submit a reproduction or pull request.
+
+📖 [Development commands](docs/development.md) · [CI behavior](docs/ci.md) · [Contribution process](CONTRIBUTING.md)
 
 ## Evidence Examples
 
-For a question asking for both a retry rule and its delay, a supported retry facet and a missing delay facet produce `partial` coverage. If a strict token budget cannot fit any evidence, the result is `insufficient`; a provider timeout remains an operational failure.
+A retrieval result keeps evidence quality separate from execution health:
 
-The consuming application binds trusted scope, supplies its backend and tokenizer, and decides how to use those outcomes. See the [result contract](contracts/RESULTS.md) and [operations guide](docs/v5-operations.md). Maintainer demonstration applications and their regression fixtures are retained outside this source checkout.
+| Field | How to use it |
+|---|---|
+| `status` | `sufficient`, `partial` or `insufficient`: the selected evidence assessment |
+| `execution` | `complete` or `degraded`: whether an explicitly allowed fallback ran |
+| `evidence` | Exact excerpts with source/revision identity, byte spans and digests |
+| `facets` | Supported, missing, unknown or conflicting parts of the question |
+| `context` | The packed representation for the consuming application/model |
+| `limitations` | Explicit reasons such as unknown coverage, truncation or degraded search |
+| `usage` / `versions` | Attempts, provider usage, context accounting and configuration identities |
+
+Python result handling:
+
+```python
+result = await retrieve_handbook(authenticated_scope)
+if result.execution == "degraded":
+    print("An allowed fallback ran; inspect limitations.")
+if result.status == "sufficient":
+    context_for_application = result.context
+elif result.status == "partial":
+    context_for_application = result.context  # Also surface missing/unknown facets.
+else:
+    context_for_application = None
+```
+
+TypeScript result handling:
+
+```typescript
+const result = await retrieveHandbook(authenticatedScope);
+if (result.execution === 'degraded') {
+  console.log('An allowed fallback ran; inspect limitations.');
+}
+const contextForApplication = result.status === 'insufficient' ? null : result.context;
+```
+
+These are integration fragments: `authenticated_scope` / `authenticatedScope` come
+from your application's identity layer. Default lexical retrieval reports `partial` when it returns useful
+excerpts and `insufficient` when it finds none, with `coverage_unknown`. Configure a
+suitable assessment policy before relying on `sufficient`. A provider timeout or
+failed authorization store remains an operational error, not an empty successful result.
+
+For a question asking for a retry rule and a delay, evidence for the retry rule alone
+cannot establish the delay. A strict context budget may exclude otherwise relevant
+passages. Exact excerpts establish source fidelity, not truth or answer correctness.
 
 > [!NOTE]
-> Strict counting applies to the declared cl100k renderer and wrapper allowance. Reviewed-span support is a curated estimate; exact source bytes do not establish truth. See [TK-r1](contracts/TOKEN_CONTEXT_V3.md), [PK-r1](contracts/PACKING_V3.md), [AS-r1](contracts/ASSESSMENT_V3.md) and [EP-r1](contracts/EVIDENCE_PIPELINE_V3.md) for the public contract boundaries.
+> A hard token ceiling requires the declared tokenizer, the actual serialized
+> representation and enough reserve for its wrapper. Estimated counting provides
+> no hard guarantee. See [token context](contracts/TOKEN_CONTEXT_V3.md),
+> [packing](contracts/PACKING_V3.md) and [assessment](contracts/ASSESSMENT_V3.md).
 
 ## Project Guide
+
+The [complete API reference](docs/api-reference.md) lists public imports, functions,
+classes, constructors and methods for both runtimes. Start with these entry points:
+
+| Task | Public entry points | Responsibility |
+|---|---|---|
+| Validate boundaries | `parse_request`, `parse_tool_request`, `parse_scope`, `parse_result` | Reject malformed request, scope and result envelopes |
+| Manage PostgreSQL connections | `PoolConfig` / `parse_pool_config`, `PoolResource.open/close` | Explicit bounded connections, verified TLS and ownership |
+| Index text | `PostgresIndexer.ingest`, `PostgresVectorIndexer.ingest` | Authorized immutable source/vector generation workflows |
+| Retrieve with PostgreSQL | `PostgresRetriever.retrieve` | Lexical, dense or hybrid candidates and source-linked evidence |
+| Manage document lifecycle | `PostgresLifecycle` | Authorized generation and document lifecycle operations |
+| Supply embeddings | `EmbeddingAdapter`, `EmbeddingProfile`, `EmbeddingLimits`, `EmbeddingPolicy` | Profile-bound query/batch vectors through an injected transport |
+| Rerank candidates | `RerankingAdapter.rank`, `RerankProfile` | Bounded candidate ordering and usage accounting |
+| Count and pack context | `Cl100kCounter`, `render_context`, `count_context`, `pack_evidence`, `pack_and_assess` | Exact declared counting, source-verified spans and final coverage |
+| Assess evidence | `assess_evidence`, `validate_assessment` | Facet estimates under the configured policy |
+| Execute corrective retrieval | `CorrectiveRetriever.retrieve` | Request-local bounded planning, search and recovery |
+| Search Qdrant | `QdrantSearchStore.initialize/search_candidates/close` | Validate a selected replica profile and return text-free nominations |
+| Authorize Qdrant sources | `PostgresQdrantSourceStore` | Read current authoritative revisions and access state |
+| Retrieve with Qdrant | `QdrantCorrectiveBackend`, `CorrectiveRetriever` | Combine nominations, source checks, packing and corrective execution |
+| Publish or repair Qdrant | `QdrantPublicationManager`, worker hosts and recovery interfaces | Stage, publish, recover and purge under the managed consistency contract |
+| Expose a LangChain tool | `create_tool` | Bind trusted engine/scope/limits and serialize the final tool result |
+| Host MCP | `RetrievalHost`, `create_server`, Node `BoundedStdioTransport` | Resolve identity outside tool input and serve the configured retrieval engine |
+
+The reference separates runtime-specific names, model/schema types, public protocols
+and implementation helpers. Do not substitute proposed architecture pseudocode for
+actual imports or assume that Python-only low-level helpers are exported by the Node package.
 
 <details>
 <summary><strong>📐 Architecture & Design</strong></summary>
 
-- [Architecture](docs/architecture/ARCHITECTURE.md) — Governing boundaries and planned retrieval behavior
-- [Release scope and limits](docs/releases/V6.md) — Supported behavior and limits on quality, platform and usability claims
+- [Architecture](docs/architecture/ARCHITECTURE.md) — Runtime boundaries and source/access contracts
+- [Diagrams](docs/architecture/DIAGRAMS.md) — Retrieval, ingestion, data and authorization flows
+- [API reference](docs/api-reference.md) — Actual function/class imports, signatures and lifecycle
 
 </details>
 
 <details>
-<summary><strong>📋 Planning & Tracking</strong></summary>
+<summary><strong>📋 Roadmap & Compatibility</strong></summary>
 
-- [Roadmap and maintenance state](docs/roadmap.md) — Current scope, pending decisions and handoff
-- [Maintenance checklist](docs/maintenance.md) — Reproduction, regressions and policy review
-- [Release limitations](docs/releases/V6.md) — Evaluation scope and disclosure boundaries
-
-</details>
-
-<details>
-<summary><strong>📦 Contracts</strong></summary>
-
-- [Wire contracts](contracts/README.md) — Current validation behavior
-- [Evidence/result contracts](contracts/RESULTS.md) — Result structure and guarantees
+- [Current roadmap](docs/roadmap.md) — Maintenance scope and pending release decisions
+- [RC1 notes](docs/releases/V6.md) — Supported profiles, recorded checks and material limitations
+- [Migration and recovery](docs/migrations-and-recovery.md) — Explicit upgrades and safe restore boundaries
 
 </details>
 
 <details>
-<summary><strong>🗄️ Infrastructure</strong></summary>
+<summary><strong>📦 Packages & Contracts</strong></summary>
 
-- [PostgreSQL storage](storage/postgres/README.md) — Explicit migrations, role boundaries and schema profiles
-- [Secure setup runbook](docs/neon.md) — Security requirements and acceptance gates
-- [PostgreSQL embedding profiles](docs/postgres-embedding-profiles.md) — Explicit fake/OpenAI profile selection
-- [V5 installation and operations](docs/v5-operations.md) — Optional profiles, connection ownership, explicit migrations, recovery and local shutdown
-- [Publishing and deployment guide](docs/releasing.md) — MIT notices, exact artifacts, CI, release permission and application hosting
-- [Migration and recovery guide](docs/migrations-and-recovery.md) — Explicit upgrades, quarantined restore and current access state
-
-> Development backend acceptance does not establish production or connection-pooling acceptance.
+- [Shared contracts](contracts/README.md) — Request/result, source and backend behavior
+- [Result contract](contracts/RESULTS.md) — Evidence, coverage and execution meanings
+- [LangChain integration](docs/integrations/langchain.md) — Trusted binding and final message counting
+- [Qdrant integration](docs/integrations/qdrant.md) — Dense retrieval and authority requirements
 
 </details>
 
 <details>
-<summary><strong>🤖 Agent & Development Workflow</strong></summary>
+<summary><strong>🗄️ Backend Setup & Operations</strong></summary>
 
-- [Agent instructions](AGENTS.md) — Bounded ownership and resource policy
-- [Coordination protocol](docs/agents/WORKFLOW.md) — Multi-agent coordination
-- [Version control](docs/version-control.md) — Scoped commits, immediate pushes and synchronization checks
-- [Contributing](CONTRIBUTING.md) — Focused changes and synthetic bug reports
-- [Support scope](docs/support.md) — Supported evidence, safe reporting and triage
-- [Maintenance checklist](docs/maintenance.md) — Regressions, dependencies and release follow-through
-- [Tooling entry points](docs/tooling.md) — Current command roles and historical-name lookup
-- [Development guide](docs/development.md) — Source checks, package builds and private maintainer verification
+- [PostgreSQL storage](storage/postgres/README.md) — Migrations, least-privilege roles and schema profiles
+- [Secure connection setup](docs/neon.md) — Explicit configuration, passfiles and verified TLS
+- [Embedding profiles](docs/postgres-embedding-profiles.md) — Supported fake/live profile storage
+- [Operations](docs/v5-operations.md) — Optional dependencies, ownership and shutdown
+- [Qdrant publication](docs/qdrant-publication.md) — Managed publication, repair and purge
+- [Production security](docs/production-security.md) — Application and deployment responsibilities
+
+</details>
+
+<details>
+<summary><strong>🤝 Contributing & Support</strong></summary>
+
+- [Contribution guide](CONTRIBUTING.md) — Setup, roles, branches, checks, issue and PR formats
+- [Report a bug](.github/ISSUE_TEMPLATE/bug_report.yml) — Versions, synthetic reproduction and expected/actual behavior
+- [Request a feature](.github/ISSUE_TEMPLATE/feature_request.yml) — Problem, scope, proposal and acceptance criteria
+- [PR template](.github/pull_request_template.md) — Change summary, validation and compatibility review
+- [Support scope](docs/support.md) — Safe diagnostics, triage and sensitive reports
+- [Development checks](docs/development.md) — Public builds and private maintainer verification
+- [Agent instructions](AGENTS.md) — Repository automation boundaries
 
 </details>
 
 > [!NOTE]
-> Personal plans, reviews, evaluation records, examples and saved papers are retained in a separate private maintainer archive. This source checkout contains the library and current operational documentation. The architecture and current user decisions govern.
+> Core imports do not perform migrations or network calls. Apply schema changes
+> explicitly, keep administrative credentials out of runtime pools, and close the
+> resources your application owns. See the [operations guide](docs/v5-operations.md).
 
 ## Repository
 
-GitHub: [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) (private) · Remote: `origin` (HTTPS)
+[Source](https://github.com/vsuman00/Cragkit) ·
+[Issues](https://github.com/vsuman00/Cragkit/issues) ·
+[Pull requests](https://github.com/vsuman00/Cragkit/pulls) ·
+[Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
-RC1 registry acceptance passed for all six packages and nine exact files. The [release notes](docs/releases/V6.md) distinguish those recorded results from current source validation. Personal workbench materials have been separated from the library checkout; original history remains private. Repository visibility and formal public evidence disclosure still require separate decisions.
+Repository access follows its current visibility settings. Registry installation is
+independent of checkout access. Maintainers review behavioral changes, run the retained
+regression checks and authorize releases separately; a merged PR does not itself publish
+a package. See [release procedure](docs/releasing.md).

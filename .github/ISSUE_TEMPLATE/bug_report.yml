@@ -7,8 +7,9 @@ body:
       value: |
         Use synthetic input only. Never submit keys, tokens, passwords, database connection strings, raw private queries or documents.
         This form serves collaborators with repository access. It is not a confidential security channel or a response-time promise.
-        Complete every requested reproduction field and the redaction check. Required-field enforcement is documented for public repositories only; maintainers must review completeness and redaction here.
-        Start with CONTRIBUTING.md and docs/support.md. If sensitive details cannot be removed, do not attach them here.
+        Search existing issues first. Complete every requested reproduction field and the redaction check; mark unavailable values as unknown. Maintainers review completeness and redaction even when fields are marked required.
+        Start with [contribution guidance](https://github.com/vsuman00/Cragkit/blob/main/CONTRIBUTING.md) and [support scope](https://github.com/vsuman00/Cragkit/blob/main/docs/support.md).
+        For a suspected authorization bypass, credential exposure or other security issue, do not post sensitive details here. Request a private exchange through an existing trusted maintainer contact; no confidential inbox or private-reporting feature is assumed.
   - type: input
     id: package-version
     attributes:
@@ -41,7 +42,7 @@ body:
     id: reproduction
     attributes:
       label: Minimal synthetic reproduction
-      description: Give exact commands and a small synthetic document, request and scope. Keep any prerequisites explicit; do not require a paid call for a routine unit reproduction.
+      description: Give exact commands, working directory and a small synthetic document, request, trusted scope and required filters with invented identities. Make prerequisites explicit; routine reproduction should not need a paid call.
       placeholder: |
         1. Install the stated version or check out the stated commit.
         2. Create synthetic input and a fake provider.
@@ -59,21 +60,21 @@ body:
     id: actual
     attributes:
       label: Actual behavior and safe status
-      description: Include sufficient, partial or insufficient separately from complete or degraded when available, plus safe error codes. Say unknown when unavailable.
+      description: Include sufficient, partial or insufficient separately from complete or degraded when available, plus safe error codes and whether fallback was enabled. Say unknown when unavailable.
     validations:
       required: true
   - type: textarea
     id: regression
     attributes:
       label: Regression range and checks
-      description: Optional last working version, focused test path, commands run and results. Distinguish unrun checks and live or installed-artifact evidence.
+      description: Optional frequency, last working version, synthetic check or test path, commands run and results. Distinguish unrun checks and local, native-backend, live-provider or installed-artifact evidence.
     validations:
       required: false
   - type: textarea
     id: logs
     attributes:
       label: Short redacted logs
-      description: Optional safe diagnostic codes only. Remove credentials, connection strings, private endpoints, queries and document contents before sharing.
+      description: Optional short redacted output or safe diagnostic codes. Remove credentials, connection strings, private endpoints, queries, document contents and raw provider errors before sharing.
       render: text
     validations:
       required: false

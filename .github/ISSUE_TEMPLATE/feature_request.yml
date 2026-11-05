@@ -1,0 +1,69 @@
+name: Feature request
+description: Propose a focused capability or improvement for the retrieval library.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before proposing an implementation. Search existing issues and read the current roadmap first.
+        Use synthetic examples and invented identities. Never include credentials, connection strings, private queries or source documents.
+        This form does not authorize a new subsystem, provider run or release. Repository access and maintainer review are required; no response time is promised.
+        See [contribution guidance](https://github.com/vsuman00/Cragkit/blob/main/CONTRIBUTING.md) and [support scope](https://github.com/vsuman00/Cragkit/blob/main/docs/support.md). Do not post sensitive security details here.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and use case
+      description: Who encounters the problem, what are they trying to do, and what cannot they do today? Include a small synthetic example.
+    validations:
+      required: true
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current behavior or workaround
+      description: State affected packages and versions or source commit, enabled profiles, and the current workaround with its limits. Use unknown where necessary.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the observable result you need. Separate required behavior from an optional implementation idea.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe existing APIs, application-side approaches or other options you considered, and why they do not meet the use case. State none if you have not evaluated alternatives.
+    validations:
+      required: true
+  - type: textarea
+    id: contract-scope
+    attributes:
+      label: Scope and contract impact
+      description: Identify Python, TypeScript, adapters or backends affected. Note any API, schema, dependency, migration, authorization, budget or data-disclosure effect. State unknown rather than guessing.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance and failure cases
+      description: Give a small synthetic success case and a failure or denied-access case. Explain how someone could verify the result without private data or a paid provider call where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optional related issues, contracts or safe examples. Do not attach private logs or sensitive security payloads.
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope-and-redaction
+    attributes:
+      label: Proposal check
+      options:
+        - label: I searched existing issues and checked the current roadmap for related work.
+          required: true
+        - label: I used synthetic examples and removed credentials, connection strings and private source or query data.
+          required: true
