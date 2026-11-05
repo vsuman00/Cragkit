@@ -257,6 +257,6 @@ jobs:
           NPM_CONFIG_AUDIT: 'false'
           NPM_CONFIG_FUND: 'false'
         run: |
-          for product in npm/*.tgz; do
+          for product in ./npm/*.tgz; do
             npm publish "$product" --ignore-scripts --tag next --access public --provenance=false
           done
