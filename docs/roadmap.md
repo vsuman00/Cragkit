@@ -85,13 +85,13 @@ CI or registry tests were rerun. The twelve engineering gates retain their state
 limits, including unavailable human usability evidence and partial qualified CSO
 coverage. The original archive and nine existing edits remain unchanged.
 
-V6-EXIT remains PENDING_OWNER_DISCLOSURE_APPROVAL. The exact aggregate report is
-prepared privately for a proposed `docs/releases/validation.md`; it has not been
-added to the public checkout. The owner previously reserved the evidence-disclosure
-decision, and approving public repository visibility does not decide it. After
-approval, add that reviewed report, link the release notes, verify the public
-documentation and then record formal exit. Raw test cases, labels, recordings and
-personal archived files do not need to be republished for this gate.
+V6-EXIT is PENDING_PUBLIC_VERIFICATION. The owner approved the exact aggregate
+disclosure to close the supported release-candidate build phase. The report is
+integrated locally and still needs public availability verification. The [validation report](releases/validation.md) records
+all five compared configurations, aggregate results, applicable confidence
+intervals and limitations. Raw test cases, labels, recordings and personal archived
+files remain in the private workbench. The report does not provide an independently
+runnable public dataset or turn historical quality measurements into RC3 results.
 
 This audit used bounded file reads, one small validation process at a time and no
 installs, backend services, model calls or paid CI. Observed headroom was 30 GiB
@@ -99,7 +99,9 @@ disk and 52 percent system memory free; no task-owned background process remains
 Learning practice is unassessed. An optional exercise is to explain why zero
 false-sufficient observations under universal abstention do not prove useful
 coverage assessment. Stable release and production acceptance remain separate
-decisions; the next action is approval of the prepared disclosure.
+decisions. Release-candidate engineering gates retain their recorded acceptance;
+formal exit awaits public verification. After that acceptance, the next action is
+issue-driven maintenance under [the maintenance workflow](maintenance.md).
 
 `DOC-PUBLIC-ONBOARDING` is COMPLETE. The owner confirmed that public access is
 intentional for testers and contributors. Read-only GitHub checks confirmed public
@@ -109,5 +111,22 @@ direct routes to the quick start, bug form and fork/PR workflow. The correction
 passed 26 relative-link/anchor checks and the required prose checks. One writer
 owned the dependent documentation slice; no runtime, registry, account setting,
 backend service or paid job changed. Nine pre-existing edits were preserved.
-The aggregate disclosure draft remains private and unchanged; its separately
-reserved approval decision and formal V6 exit status remain pending.
+The onboarding correction did not authorize benchmark disclosure. Its later
+approval and public integration are recorded above.
+
+
+`V6-EXIT-PUBLISH` is IN_PROGRESS under the owner's release instruction. The
+concrete outcome is public disclosure of the exact reviewed aggregate report and
+formal closure of the supported V0-V6 release-candidate scope. Sol release_python
+owns a read-only current-registry audit in its private output directory. Sol
+release_node owns the private disclosure/completion review and assembles both
+reports. Both coordinate concrete dependencies directly. The coordinator owns all
+public documentation, Git, availability checks and final acceptance. Report bytes,
+package identities, migrations, locks, archived originals and the nine existing
+edits are protected; peers make no public edits or registry/account mutations.
+The shared report is pinned to SHA-256
+`02c3cf47ba204ef5f86cca0906077daf1194c31d84a3e1a1f6058940a89a4c06`.
+No new provider calls, installs, backend service, paid CI or package upload are
+part of this documentation publication. One local validation process remains the
+limit. Completion requires the combined review and exact unauthenticated public
+readback after the scoped documentation push.

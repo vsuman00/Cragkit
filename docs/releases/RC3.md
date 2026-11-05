@@ -29,8 +29,10 @@ installed consumers, exact registry downloads and verification of all six
 publication attestations against their file hashes and the configured publisher.
 A successful upload or a provenance API response alone is insufficient.
 
-The [recorded runtime limitations](V6.md) still apply. This correction does not
-establish production readiness, general model quality or universal hardware support. The repository is public by the owner's explicit
+The [recorded runtime limitations](V6.md) and [validation report](validation.md)
+still apply. The report separates the historical quality comparison from RC3
+package verification. This correction does not establish production readiness,
+general model quality or universal hardware support. The repository is public by the owner's explicit
 decision; this does not certify a consuming application's deployment.
 
 ## Verified publication

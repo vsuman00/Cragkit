@@ -5,8 +5,10 @@ assert that no private exception text survives. Fixing that boundary must retain
 its error classification and usage accounting in both runtimes.
 
 Use this checklist with [support](support.md), [contribution guidance](../CONTRIBUTING.md)
-and the governing [architecture](architecture/ARCHITECTURE.md). The [current roadmap](roadmap.md) owns completion state. V6-09 handoff and checkpoint C3 do not waive the pending formal
-version-exit and public benchmark-disclosure acceptance.
+and the governing [architecture](architecture/ARCHITECTURE.md). The
+[current roadmap](roadmap.md) owns completion state. V6-09 handoff, checkpoint C3
+and the [public validation report](releases/validation.md) retain their separate
+evidence scopes and limitations.
 
 ## Reproduce and classify
 

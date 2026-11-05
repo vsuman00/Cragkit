@@ -7,8 +7,9 @@ Python `1.0.0rc3` and npm `1.0.0-rc.2` are published for `cragkit`,
 passed their scoped checks. All six Python RC3 distributions have cryptographically
 verified publish attestations; [RC3 notes](releases/RC3.md) explain the correction
 to RC2. Historical receipts remain in the private maintainer archive. GitHub is
-public by the owner's explicit decision; formal V6 disclosure acceptance remains
-separate from these publication results.
+public by the owner's explicit decision. The [validation report](releases/validation.md)
+records configurations, aggregate evidence and limitations for formal V6 exit;
+its historical measurements remain separate from these publication results.
 
 ## Package descriptions and registry pages
 
