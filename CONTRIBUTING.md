@@ -4,7 +4,7 @@ A useful first contribution is a small reproduction: two synthetic passages and 
 
 Cragkit welcomes focused bug fixes, documentation improvements and proposals that fit its native Python and TypeScript retrieval library. Read the [current roadmap](docs/roadmap.md), the relevant [public contract](contracts/README.md) and [architecture](docs/architecture/ARCHITECTURE.md) before changing behavior. Repository agents also follow [AGENTS.md](AGENTS.md).
 
-The repository currently requires access. Forking, issues and pull requests are available only where your repository permissions allow them; this guide does not change repository visibility. There is no response-time commitment. Contributions use the project's [MIT license](LICENSE); this guide adds no separate contributor agreement.
+The repository is public for testers and contributors. Testers can follow the [README quick start](README.md#quick-start) and report reproducible problems through the [bug report form](https://github.com/vsuman00/Cragkit/issues/new?template=bug_report.yml). Contributors can fork the repository and open a pull request using the workflow below. There is no response-time commitment. Contributions use the project's [MIT license](LICENSE); this guide adds no separate contributor agreement.
 
 ## Choose and discuss the change
 
@@ -24,7 +24,7 @@ For a suspected authorization bypass, credential exposure or other security issu
 
 Install Git, Python `>=3.14,<3.15`, Node.js `>=26.5.0 <27`, uv and npm. The recorded RC1 tool tuple is Python 3.14.6, Node 26.5.0, npm 11.17.0 and uv 0.11.8. Manifest ranges are installation constraints; tested platform and profile limits are in the [release notes](docs/releases/V6.md).
 
-If forking is available, fork `vsuman00/Cragkit` in GitHub, replace `YOUR-USERNAME` below, then run:
+Fork `vsuman00/Cragkit` in GitHub, replace `YOUR-USERNAME` below, then run:
 
 ```sh
 git clone https://github.com/YOUR-USERNAME/Cragkit.git
@@ -155,6 +155,6 @@ Merging a fix does not change published RC1 bytes. A corrective version, registr
 
 Use synthetic data and invented identities. Include affected packages and versions, install method or source commit, runtime/platform, enabled profiles, provider mode, exact reproduction commands, expected behavior and actual evidence/execution state. A short redacted log or stable error code is more useful than a raw dump. Mark unavailable fields as unknown and unrun checks explicitly.
 
-Never attach credentials, connection strings, `.env` files, private queries, source documents, raw provider errors, database dumps or unreviewed logs. A private repository is still a disclosure surface. If you cannot remove sensitive details, stop and arrange a safe path as described in [support](docs/support.md). Issue forms help structure reports; maintainers still review completeness and redaction, especially while the repository is private.
+Never attach credentials, connection strings, `.env` files, private queries, source documents, raw provider errors, database dumps or unreviewed logs. Issues and pull requests in this repository are public. If you cannot remove sensitive details, stop and arrange a safe path as described in [support](docs/support.md). Issue forms help structure reports; maintainers still review completeness and redaction.
 
 For a small practice exercise, trace one synthetic failure from the bug form to a focused patch and PR, then identify which checks require a maintainer or a backend. No provider call is needed.

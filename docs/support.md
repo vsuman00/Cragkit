@@ -19,11 +19,13 @@ key. Routine synthetic reproduction needs no live provider or development key.
 
 ## Report a reproducible problem
 
-Use the [bug report form](../.github/ISSUE_TEMPLATE/bug_report.yml) when you have
-repository access. This GitHub repository remains private; a public issue or
-security-reporting channel is not assumed. If you lack access, use an existing
-trusted contact with the maintainer to arrange a safe reporting path. Do not
-post secrets while trying to obtain access.
+The repository is public for testers and contributors. Use the
+[bug report form](https://github.com/vsuman00/Cragkit/issues/new?template=bug_report.yml)
+for a reproducible non-sensitive problem. For setup, start with the
+[README quick start](../README.md#quick-start); for a patch, follow
+[contribution guidance](../CONTRIBUTING.md). Issues and pull requests are public.
+GitHub private vulnerability reporting is not enabled; use the private-exchange
+guidance below for suspected security issues.
 
 Include:
 

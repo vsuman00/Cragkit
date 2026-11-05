@@ -100,3 +100,14 @@ Learning practice is unassessed. An optional exercise is to explain why zero
 false-sufficient observations under universal abstention do not prove useful
 coverage assessment. Stable release and production acceptance remain separate
 decisions; the next action is approval of the prepared disclosure.
+
+`DOC-PUBLIC-ONBOARDING` is COMPLETE. The owner confirmed that public access is
+intentional for testers and contributors. Read-only GitHub checks confirmed public
+visibility, enabled issues and forking, and disabled private vulnerability reporting.
+Contribution, support and version-control guidance now reflect that state, with
+direct routes to the quick start, bug form and fork/PR workflow. The correction
+passed 26 relative-link/anchor checks and the required prose checks. One writer
+owned the dependent documentation slice; no runtime, registry, account setting,
+backend service or paid job changed. Nine pre-existing edits were preserved.
+The aggregate disclosure draft remains private and unchanged; its separately
+reserved approval decision and formal V6 exit status remain pending.
