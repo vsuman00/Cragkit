@@ -1,0 +1,250 @@
+name: Publish admitted Python RC3 files
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Private draft release containing the six admitted Python RC3 files.
+        required: true
+        type: string
+      manifest_sha256:
+        description: SHA256 of the reviewed release-manifest.json.
+        required: true
+        type: string
+      admit_exact_upload:
+        description: Confirm exact products, security decision and bounded upload cost were reviewed.
+        required: true
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: publish-cragkit-python-provenance-rc3
+  cancel-in-progress: false
+
+# Filled only after local acceptance of commit A and review of the manifest.
+# After acceptance of the public registry files, return RELEASE_UPLOAD_ENABLED to false.
+env:
+  RELEASE_UPLOAD_ENABLED: 'true'
+  ADMITTED_SOURCE_COMMIT: '0930c191097397521fb269e6947edd0dea5f7afd'
+  ADMITTED_MANIFEST_SHA256: '8ad398dd39633f398064242b7ddc9a8555cee7e641970151ec819792b4f1b799'
+  ADMITTED_RELEASE_TAG: 'cragkit-python-provenance-rc3'
+  ADMITTED_RELEASE_ID: '435360626'
+
+jobs:
+  admit:
+    if: >-
+      inputs.admit_exact_upload == true &&
+      github.repository == 'vsuman00/Cragkit' &&
+      github.event.repository.private == false &&
+      github.ref == 'refs/heads/main' && github.actor == 'vsuman00'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      # GitHub draft visibility follows push access; token is fetch-job only.
+      contents: write
+    outputs:
+      transport_digest: ${{ steps.transport.outputs.artifact-digest }}
+    steps:
+      - name: Reject disabled or mismatched admission
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+          REQUESTED_DIGEST: ${{ inputs.manifest_sha256 }}
+        run: |
+          test "$RELEASE_UPLOAD_ENABLED" = true
+          test "$REQUESTED_TAG" = "$ADMITTED_RELEASE_TAG"
+          test "$REQUESTED_DIGEST" = "$ADMITTED_MANIFEST_SHA256"
+          [[ "$ADMITTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ADMITTED_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$ADMITTED_RELEASE_ID" =~ ^[0-9]+$ ]]
+      - name: Fetch only the reviewed verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: tools/check_candidate_upload.py
+          sparse-checkout-cone-mode: false
+      - name: Fetch exact private draft assets by admitted IDs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, tempfile, threading
+          repository = 'vsuman00/Cragkit'
+          release_id = int(os.environ['ADMITTED_RELEASE_ID'])
+          # Root fills the exact seven admitted name -> {id, size, digest} records.
+          expected = json.loads(r"""{
+            "cragkit-1.0.0rc3-py3-none-any.whl": {
+              "digest": "sha256:fa583626b1cdddbf65fe75029dcd7955a4b8cf1e3a5675dfce0ffc8b92efca46",
+              "id": 713813358,
+              "size": 235477
+            },
+            "cragkit-1.0.0rc3.tar.gz": {
+              "digest": "sha256:c7193d7a568b202483d75c4aaee8cfdc0cfdd7c1a68cc31e61fa69c4797eff53",
+              "id": 713813449,
+              "size": 234771
+            },
+            "cragkit_langchain-1.0.0rc3-py3-none-any.whl": {
+              "digest": "sha256:11b5ee658e8b54c3487f6743003060a1ea1db440da8da4dbefcee3d983f540c4",
+              "id": 713813361,
+              "size": 8534
+            },
+            "cragkit_langchain-1.0.0rc3.tar.gz": {
+              "digest": "sha256:d5ce7efb0d46b0674ab7d067be427b432f3cd474a5871e514d89835e933e7aeb",
+              "id": 713813354,
+              "size": 56841
+            },
+            "cragkit_mcp-1.0.0rc3-py3-none-any.whl": {
+              "digest": "sha256:c86f7dbc6cecb52020b1632b60e871ea0540a67901350bfbe0563c475c841828",
+              "id": 713813362,
+              "size": 9559
+            },
+            "cragkit_mcp-1.0.0rc3.tar.gz": {
+              "digest": "sha256:59f56e1ce59e12ce36c3e07eb39cb2da352d62d82d357a4ed5ef27266dfbbb7e",
+              "id": 713813409,
+              "size": 53249
+            },
+            "release-manifest.json": {
+              "digest": "sha256:8ad398dd39633f398064242b7ddc9a8555cee7e641970151ec819792b4f1b799",
+              "id": 713813404,
+              "size": 2510
+            }
+          }""")
+          names = {'release-manifest.json'}
+          for package in ('cragkit', 'cragkit-langchain', 'cragkit-mcp'):
+              stem = package.replace('-', '_')
+              names.update((f'{stem}-1.0.0rc3-py3-none-any.whl', f'{stem}-1.0.0rc3.tar.gz'))
+          if set(expected) != names or len(expected) != 7:
+              raise SystemExit('exact six Python products and manifest must be admitted')
+          repo = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repository}']))
+          if repo.get('private') is not False:
+              raise SystemExit('repository visibility differs from the owner-approved public state')
+          release = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repository}/releases/{release_id}']))
+          if release.get('id') != release_id or release.get('draft') is not True:
+              raise SystemExit('transport must remain the admitted private draft')
+          if release.get('tag_name') != os.environ['ADMITTED_RELEASE_TAG'] or release.get('target_commitish') != os.environ['ADMITTED_SOURCE_COMMIT']:
+              raise SystemExit('draft identity differs')
+          assets = release.get('assets', [])
+          if len(assets) != 7 or {a['name'] for a in assets} != set(expected):
+              raise SystemExit('draft asset membership differs')
+          for asset in assets:
+              admitted = expected[asset['name']]
+              if asset.get('state') != 'uploaded' or any(asset.get(key) != value for key, value in admitted.items()):
+                  raise SystemExit('draft asset ID, size or digest differs')
+          pathlib.Path('inbound').mkdir()
+          for name, asset in sorted(expected.items()):
+              command = ['gh', 'api', '-H', 'Accept: application/octet-stream', f"repos/{repository}/releases/assets/{asset['id']}"]
+              with tempfile.TemporaryFile() as errors:
+                  process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors)
+                  timer = threading.Timer(30, process.kill)
+                  timer.start()
+                  try:
+                      body = process.stdout.read(asset['size'] + 1)
+                      process.stdout.close()
+                      if len(body) != asset['size']:
+                          process.kill()
+                          raise SystemExit('asset byte bound differs')
+                      if process.wait(timeout=3) != 0:
+                          raise SystemExit('asset download failed')
+                  finally:
+                      timer.cancel()
+                      if process.poll() is None:
+                          process.kill()
+                      process.wait()
+              if 'sha256:' + hashlib.sha256(body).hexdigest() != asset['digest']:
+                  raise SystemExit('asset content digest differs')
+              (pathlib.Path('inbound') / name).write_bytes(body)
+          print(json.dumps({'draft_release_id': release_id, 'verified_asset_count': len(expected)}))
+          PY
+      - name: Verify archives, security admission and missing-only registry plan
+        run: >-
+          python3 tools/check_candidate_upload.py --input-dir inbound
+          --manifest-sha256 "$ADMITTED_MANIFEST_SHA256"
+          --release-source "$ADMITTED_SOURCE_COMMIT" --output-dir transport
+      - name: Transfer admitted bytes without repository credentials
+        id: transport
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: admitted-python-rc3-uploads
+          path: transport/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: admit
+    if: >-
+      inputs.admit_exact_upload == true &&
+      github.repository == 'vsuman00/Cragkit' &&
+      github.event.repository.private == false &&
+      github.ref == 'refs/heads/main' && github.actor == 'vsuman00'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    steps:
+      - name: Receive admitted bytes only
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: admitted-python-rc3-uploads
+          path: transport
+      - name: Recheck exact identities and stage only missing files
+        id: plan
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, shutil
+          source = pathlib.Path('transport')
+          manifest_bytes = (source / 'release-manifest.json').read_bytes()
+          if hashlib.sha256(manifest_bytes).hexdigest() != os.environ['ADMITTED_MANIFEST_SHA256']:
+              raise SystemExit('transport manifest digest differs')
+          manifest = json.loads(manifest_bytes)
+          if manifest.get('require_publish_attestations') is not True:
+              raise SystemExit('publish attestations must be explicitly required')
+          if manifest.get('security_hold') is not False or manifest.get('python_version') != '1.0.0rc3':
+              raise SystemExit('transport security/version policy differs')
+          if manifest.get('repository') != 'vsuman00/Cragkit' or manifest.get('source_commit') != os.environ['ADMITTED_SOURCE_COMMIT']:
+              raise SystemExit('transport source/repository differs')
+          plan = json.loads((source / 'upload-plan.json').read_bytes())
+          if set(plan) != {'schema_version', 'manifest_sha256', 'missing'} or plan['schema_version'] != 1:
+              raise SystemExit('upload plan schema differs')
+          if plan['manifest_sha256'] != os.environ['ADMITTED_MANIFEST_SHA256']:
+              raise SystemExit('upload plan manifest differs')
+          expected = {item['filename']: item for item in manifest['artifacts']}
+          names = set()
+          for package in ('cragkit', 'cragkit-langchain', 'cragkit-mcp'):
+              stem = package.replace('-', '_')
+              names.update((f'{stem}-1.0.0rc3-py3-none-any.whl', f'{stem}-1.0.0rc3.tar.gz'))
+          if len(manifest['artifacts']) != 6 or set(expected) != names:
+              raise SystemExit('transport product identities differ')
+          if any(record['registry'] != 'pypi' or record['version'] != '1.0.0rc3' for record in expected.values()):
+              raise SystemExit('only admitted Python RC3 files may be published')
+          missing = plan['missing']
+          if len(missing) != len(set(missing)) or not set(missing) <= set(expected):
+              raise SystemExit('unknown or duplicate upload identity')
+          if set(path.name for path in source.iterdir()) != set(missing) | {'release-manifest.json', 'upload-plan.json'}:
+              raise SystemExit('unexpected transport files')
+          pathlib.Path('pypi').mkdir()
+          for name in missing:
+              record = expected[name]
+              path = source / name
+              if path.is_symlink() or not path.is_file() or path.stat().st_size != record['size']:
+                  raise SystemExit('transport file type/size differs')
+              if hashlib.sha256(path.read_bytes()).hexdigest() != record['sha256']:
+                  raise SystemExit('transport product digest differs')
+              shutil.copyfile(path, pathlib.Path(record['registry']) / name)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"python={str(any(expected[name]['registry'] == 'pypi' for name in missing)).lower()}\n")
+          print(json.dumps({'admitted_manifest': plan['manifest_sha256'], 'missing': missing}, sort_keys=True))
+          PY
+      - name: Publish only missing accepted Python files with OIDC
+        if: steps.plan.outputs.python == 'true'
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1 resolved 2026-11-05
+        with:
+          packages-dir: pypi/
+          repository-url: https://upload.pypi.org/legacy/
+          skip-existing: false
+          verify-metadata: true
+          attestations: true
+          verbose: false
+          print-hash: true
