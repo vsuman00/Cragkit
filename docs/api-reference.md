@@ -5,8 +5,8 @@ For example, import `PostgresRetriever` from `cragkit.postgres` in Python or
 trusted scope separately from the request. The package root exports only the
 version: `cragkit.__version__` in Python and `version` in TypeScript.
 
-This reference covers the RC1 native interfaces and optional LangChain/MCP
-packages. Python packages use `1.0.0rc1`; npm packages use `1.0.0-rc.1`. Use the
+This reference covers the native interfaces and optional LangChain/MCP packages.
+Current Python packages use `1.0.0rc3`; npm packages use `1.0.0-rc.2`. Use the
 [README](../README.md) for installation and a first retrieval call,
 [development guide](development.md) for source builds, and
 [contracts](../contracts/README.md) for validation rules and failure behavior.
@@ -2445,11 +2445,11 @@ before the client supplies tool arguments.
 Install the matching optional package in your application environment:
 
 ```sh
-python -m pip install 'cragkit-mcp==1.0.0rc1'
+python -m pip install 'cragkit-mcp==1.0.0rc3'
 ```
 
 ```sh
-npm install 'cragkit-mcp@1.0.0-rc.1' 'cragkit@1.0.0-rc.1'
+npm install 'cragkit-mcp@1.0.0-rc.2' 'cragkit@1.0.0-rc.2'
 ```
 
 Use the runtime and backend setup in the [README](../README.md#quick-start).

@@ -2,13 +2,26 @@
 
 For example, changing a reranker error requires a synthetic regression and checks in both native runtimes. It does not require a new model benchmark or permission to publish a stable release.
 
-Cragkit's current scope is maintenance of the native Python and TypeScript RC1 libraries and their optional LangChain/MCP packages. The [architecture](architecture/ARCHITECTURE.md) and public [contracts](../contracts/README.md) govern behavior. Personal implementation plans, evaluation packets, reports, tests and demonstration applications are preserved outside this source checkout in a private maintainer archive.
+Cragkit's current scope is maintenance of the native Python and TypeScript release-candidate libraries and their optional LangChain/MCP packages. The [architecture](architecture/ARCHITECTURE.md) and public [contracts](../contracts/README.md) govern behavior. Personal implementation plans, evaluation packets, reports, tests and demonstration applications are preserved outside this source checkout in a private maintainer archive.
 
 ## Release state
 
-Python `1.0.0rc1` and npm `1.0.0-rc.1` are published for `cragkit`, `cragkit-langchain` and `cragkit-mcp`. Recorded acceptance covers six registry packages and nine exact files. Maintenance and checkpoint C3 passed their scoped checks. Formal V6 exit still awaits the deferred public disclosure of limitations and benchmark evidence; the GitHub repository remains private. [RC1 notes](releases/V6.md) retain the scope and material limitations.
+Python `1.0.0rc3` and npm `1.0.0-rc.2` are published for `cragkit`,
+`cragkit-langchain` and `cragkit-mcp`. All current registry artifacts passed exact
+hash and fresh-consumer checks. All six Python RC3 files have cryptographically
+verified publication attestations. npm `latest` and `next` both select RC2; the
+owner confirmed the core README is visible on npm.
 
-Stable `1.0.0`, a new registry upload, repository visibility changes, production deployment, live-provider runs and paid hosted CI require their own authorized scope. OCR, dependent multi-hop, answer verification and a hosted dashboard remain later research.
+The owner explicitly chose to keep GitHub public, knowing that earlier committed
+history still contains archived material. Current personal workbench files and
+release receipts remain outside the source checkout. [RC3 notes](releases/RC3.md)
+record the provenance correction and limitations. Formal V6 evidence/disclosure
+acceptance remains distinct from package publication.
+
+Stable `1.0.0`, another upload, repository visibility changes, production
+deployment, live-provider runs and paid hosted CI require their own authorized
+scope. OCR, dependent multi-hop, answer verification and a hosted dashboard
+remain later research.
 
 ## Next work
 
@@ -18,99 +31,42 @@ For each authorized behavior change, name the task, define its failure case, ins
 
 ## Session handoff
 
-Task `DOCS-ONBOARDING` is `COMPLETE` for the README, API/Qdrant guides and
-contributor workflows. The README preserves its centered banner, top-level section
-order, status table, callouts and five collapsible guides, with application setup
-and usage replacing internal milestone history.
+Tasks `RELEASE-DESCRIPTIONS` and `RELEASE-PROVENANCE` are `COMPLETE` for the
+published package descriptions, npm default tags and corrective Python provenance.
+RC2 Python files remain unchanged with their historical missing-attestation
+warning. RC3 restores publication attestations without changing runtime behavior
+or third-party dependencies beyond the declared package/engine version metadata.
+Python engine `1.0.0-rc.3`, npm engine `1.0.0-rc.2` and schema `0.1` are explicit;
+this version difference is not a behavioral-parity result.
 
-Two Sol peers owned API/Qdrant reference and contribution/templates; the API peer
-assembled their shared outcome. The coordinator integrated README and this handoff,
-verified source-derived coverage across 28 Python modules and 21 TypeScript entry
-points, checked templates and validated the executable examples. The catalog
-separates methods, constructors, properties, schemas and protocol/type declarations.
+The Python Sol peer owned artifact, consumer and signature verification and
+assembled the evidence. The Node Sol peer owned the publisher and admission
+checks. Peers coordinated directly and serialized test processes. Astra resolved
+the draft-access and provenance-route questions. The coordinator owned tracked
+versions, locks, documentation, exact upload admission and final integration.
 
-Python and Node service-free request examples passed. The README retrieval examples
-returned the same exact excerpt through a disposable TLS PostgreSQL fixture, and an
-ungranted identity received no evidence. The fixture listener closed. TypeScript
-examples passed strict checks against the released declarations, including exact
-optional-property handling. Python guide imports/definitions passed with external
-I/O blocked. Both issue forms parsed with unique fields; documentation links and
-README structure passed. Qdrant/MCP construction examples were checked without
-calling a live model or running a new end-to-end Qdrant/MCP deployment.
+The clean source passed 33 serial package stages. Six Python RC3 files passed
+source/archive and native-payload comparisons, fresh installation and 11 synthetic
+consumer groups. The publisher passed 32 failure-case checks. Official verifier
+`pypi-attestations` 0.0.31 checked all six published signatures, exact file digests,
+repository, workflow, publisher commit and run; altered digests, workflows and
+signatures were rejected. Python descriptions match source. npm RC2's three exact
+downloads, fresh installation and six synthetic consumer groups passed earlier.
 
-No native source, dependencies, locks, private workbench, package publication,
-repository visibility or paid CI changed. Existing user edits were preserved.
-Verification used one process at a time and small synthetic inputs; no task-owned
-service remains. User practice is unassessed. The next action remains the separate
-public-history/disclosure decision and subsequent maintenance under the current scope.
+Python RC3 was published in run `42054210894` from publisher commit
+`0b9bfbba2dbf716517e1312ac624273f6f4b97cc`; product source was
+`0930c191097397521fb269e6947edd0dea5f7afd`. The temporary upload workflow is
+disabled, and its exact files and reports are preserved privately. No registry
+credentials were committed. Nine pre-existing user edits remain byte-for-byte
+unchanged. No model, database service or production deployment was started.
 
-Task `REGISTRY-CONSUMER-CHECK` is `COMPLETE` for installed-consumer verification
-and preparation of the missing registry descriptions. Updating the live
-descriptions remains `PENDING_PUBLICATION` for a separately authorized version.
+The npm API omits the README text even though the version payload and archives
+contain it. The owner confirmed the core npm page displays its full guide;
+automated visual checks of all package pages are not claimed. The first private
+upload attempts incurred an estimated $0.03 in base compute before any allowance;
+RC3 used a standard public-repository runner. User practice and production
+acceptance remain unassessed.
 
-Two Sol peers owned Python and Node evidence and their three package READMEs;
-the Python peer assembled the shared outcome. Peers resolved the serial process
-slot and published wrapper contract directly. The coordinator owns the Python
-`readme` metadata, package checker, development/publication guides, final
-integration and this handoff. README ownership transferred before integration.
-
-Fresh public installs of all six exact RC1 packages passed on Python 3.14.6 and
-Node 26.5.0. `pip check`, `npm ls --all`, installed-origin and artifact-integrity
-checks passed. Consumer checks covered valid and invalid input, trusted-scope
-boundaries, UTF-8 spans/digests, and synthetic adapter calls. Six package README
-examples passed against the published packages. A shared request/scope/defaults
-and blank-query failure check matched across runtimes. An optional Python
-dependency's loopback IPv6 capability probe was blocked and recorded separately;
-no outbound provider call occurred. This is not full backend or model acceptance.
-
-The live audit found six nonempty short summaries, three empty PyPI long
-descriptions and three missing npm READMEs. Six package READMEs now supply setup,
-real API examples, configuration, identity boundaries, limitations and license.
-Python manifests declare `readme`; the checker preserves and verifies the README
-in wheels, source distributions and npm tarballs. All six original missing
-descriptions failed the new guard as expected. A clean export of reviewed source
-plus this change passed all 33 serial package checks, nine built artifacts and
-six description checks; 44 documentation links passed. Prose hygiene passed.
-
-Existing user edits were preserved byte-for-byte. Registry pages, versions,
-visibility and publication remain unchanged. Google indexing was not established
-by public search results; registry availability is separate. Evidence and fresh
-consumer environments remain private outside the source checkout. No services,
-models, provider calls or paid CI were started; no task-owned process remains.
-User practice is unassessed. The next smallest action is review and authorization
-of a new release if the prepared descriptions should appear on the live pages;
-the separate public-history/disclosure decision remains pending.
-
-Task `RELEASE-DESCRIPTIONS` is `RUNNING`, authorized by the user's instruction
-to publish the prepared descriptions. The target versions are Python `1.0.0rc2`
-and npm `1.0.0-rc.2` for the three existing package names. Runtime changes are
-limited to version identifiers; uncommitted native edits remain excluded.
-
-The Python Sol peer owns private wheel/source-distribution audits and consumer
-acceptance and assembles the pair's evidence. The Node Sol peer owns private npm
-audits, consumer acceptance and a proposed bounded upload-only publisher. Peers
-coordinate contracts and the serial process slot directly. The coordinator owns
-all tracked versions, manifests, locks, documentation, workflow integration,
-publication and the final handoff. Shared contract: RC1 behavior with RC2 version
-metadata and package READMEs. Security hold remains active until exact products
-and the publishing path pass review. No visibility change, stable release,
-production deployment, model call or hosted build is included.
-
-Task `RELEASE-PROVENANCE` is `RUNNING` after RC2's missing PyPI publication
-attestations were reported. Exact RC2 downloads and installed consumers passed;
-the upload configuration disabled attestations, causing a provenance regression.
-Supported PyPI uploads cannot retrofit an attestation to an existing file.
-
-The corrective target is Python `1.0.0rc3` for all three Python packages, with
-publish attestations enabled and verified for all six distributions. npm remains
-`1.0.0-rc.2`; owner-authenticated tag promotion and main-page README verification
-are separate work. No npm publisher permissions or repository visibility change.
-Result schema `0.1` stays unchanged. Python engine `1.0.0-rc.3` and npm engine
-`1.0.0-rc.2` identify their respective releases; metadata differences are expected.
-
-The Python Sol peer owns private artifact/consumer/provenance verification and
-assembles evidence. The Node Sol peer owns the six-product publisher proposal
-and admission guards. The coordinator owns tracked source, versions, locks,
-documentation, exact release admission, uploads and final integration. Installs
-and tests run serially. Existing user edits and earlier release evidence remain
-untouched; old distributions will not be deleted or rewritten.
+The next smallest action is the separately scoped formal V6 evidence/disclosure
+review or an authorized maintenance change. The current publishing correction is
+finished; stable release and production acceptance are separate decisions.

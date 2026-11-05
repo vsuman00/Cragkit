@@ -1,6 +1,6 @@
 # Cragkit version control
 
-The user has authorized a private GitHub baseline and ongoing version control for completed, plan-aligned changes. After each accepted atomic change, commit and immediately push to the configured GitHub remote unless the user explicitly requests local-only work. Keep implementation, local verification, commit, push and hosted CI evidence distinct.
+The user authorized the original private GitHub baseline and ongoing version control for completed, plan-aligned changes. The owner later explicitly chose to keep the repository public; this does not authorize future visibility changes or history rewriting. After each accepted atomic change, commit and immediately push to the configured GitHub remote unless the user explicitly requests local-only work. Keep implementation, local verification, commit, push and hosted CI evidence distinct.
 
 The initial branch is `main`. The private repository [vsuman00/Cragkit](https://github.com/vsuman00/Cragkit) uses an HTTPS `origin` remote. The initial 119-file V0 baseline, commit `feb2bdd374041d0f5bf6990c81b5b3d71fa4f229`, was pushed successfully and verified against GitHub with zero ahead/behind and a clean working tree. Read [current roadmap](roadmap.md) for current state. Repository availability does not configure hosted CI. No workflows or package publication were activated by repository creation.
 

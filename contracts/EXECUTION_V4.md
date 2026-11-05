@@ -1,5 +1,9 @@
 # V4 execution contract
 
+Engine identifiers in this frozen contract describe its reference fixture. Current
+native release identities are defined in [Results](RESULTS.md#release-identities);
+schema `0.1` and historical fixture values remain unchanged.
+
 ## EL-r1: request-local execution ledger
 
 A ledger binds validated Limits and one effective monotonic deadline at construction. It has synchronous atomic reservation transitions with no await/dispatch inside a transition. Native event-loop concurrency is supported; Python thread sharing and cross-process quotas are not. Every provider transport attempt, including a configured retry, needs its own reservation before dispatch. SDK retries must be disabled unless each underlying attempt uses this boundary.

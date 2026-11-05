@@ -1,5 +1,9 @@
 # V1-08 runtime contract E-r1
 
+Engine identifiers in this frozen contract describe its reference fixture. Current
+native release identities are defined in [Results](RESULTS.md#release-identities);
+schema `0.1` and historical fixture values remain unchanged.
+
 This freezes the internal Python/Node source-release and minimal result behavior for V1-08. Public revision 0.1 wire schemas, immutable migrations and the approved corpus remain unchanged. V1-09/V1-10 retain their lifecycle/race acceptance tasks.
 
 ## Ownership and interface

@@ -2,7 +2,13 @@
 
 For example, an npm trust entry can be saved without an OIDC publication ever succeeding. Verify actual registry files and authentication outcomes separately.
 
-RC1 is already published as Python `1.0.0rc1` and npm `1.0.0-rc.1` for `cragkit`, `cragkit-langchain` and `cragkit-mcp`. Recorded acceptance covers six packages and nine exact files. The detailed bootstrap records, upload receipts and release packet are retained in the private maintainer archive. [RC1 notes](releases/V6.md) summarize scope and limitations. Formal public-evidence exit remains pending while GitHub is private.
+Python `1.0.0rc3` and npm `1.0.0-rc.2` are published for `cragkit`,
+`cragkit-langchain` and `cragkit-mcp`. Exact registry files and fresh consumers
+passed their scoped checks. All six Python RC3 distributions have cryptographically
+verified publish attestations; [RC3 notes](releases/RC3.md) explain the correction
+to RC2. Historical receipts remain in the private maintainer archive. GitHub is
+public by the owner's explicit decision; formal V6 disclosure acceptance remains
+separate from these publication results.
 
 ## Package descriptions and registry pages
 
@@ -31,9 +37,8 @@ Keep these six guides specific to their package and runtime: purpose, supported
 versions, installation, real public APIs, configuration, identity boundaries,
 limitations and license. Link to the full API reference with absolute URLs so
 registry readers can follow the links. The root GitHub README is a separate page;
-editing it does not update registry descriptions. While GitHub is private, those
-repository links require collaborator access, so essential setup stays in each
-registry README itself.
+editing it does not update registry descriptions. GitHub is now public. Essential
+setup still belongs in each registry README itself so consumers do not depend on a separate documentation site.
 
 Registry descriptions are part of release products. npm updates its README when
 a new version is published. PyPI stores the first uploaded metadata for a release;
@@ -53,7 +58,7 @@ Google indexing.
 
 A new version, stable release, upload, account change or hosted publishing run needs its own authorized scope. Follow [releasing](releasing.md) for source/product acceptance. Bind admission to exact reviewed source, archive hashes and package/version/registry identities. Reject an active, missing or malformed security-hold decision. An old receipt never approves changed products.
 
-The frozen RC1 publisher is retained privately; the public checkout contains no upload workflow. A future publisher requires a new review of its exact source, products, admission controls and transport. Separate repository fetching from credential-bearing publication and give each stage only the rights it needs. Never commit or paste registry tokens, private connection data or a credential-bearing URL.
+The frozen RC1, RC2 and Python RC3 publishers are retained privately; the public checkout contains no upload workflow. A future publisher requires a new review of its exact source, products, admission controls and transport. Separate repository fetching from credential-bearing publication and give each stage only the rights it needs. Never commit or paste registry tokens, private connection data or a credential-bearing URL.
 
 ## Prepare and authenticate
 
@@ -68,3 +73,8 @@ Use an explicit missing-only upload plan. If an upload partially succeeds, enume
 Download every selected registry file into fresh application environments. Verify version/hash policy, imports, optional adapters, source-distribution builds and the appropriate source-linked smoke/failure behavior. Preserve redacted evidence for each exact product. An upload success alone is not installed-consumer acceptance.
 
 Publication does not deploy a consuming application, authorize a public GitHub release, change repository visibility or prove production readiness. Keep those outcomes separate in the [roadmap](roadmap.md).
+
+For Python, keep publish attestations enabled and require verification for every
+file before accepting the release. An existing file without provenance must not
+be silently skipped as complete. Attestations attach at upload time; an identical
+file reupload cannot repair RC2. See [release verification](releasing.md).

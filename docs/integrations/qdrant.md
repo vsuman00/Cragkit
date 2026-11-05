@@ -20,13 +20,13 @@ convergence and purge. The supported profiles are deliberately narrow; the
 Choose your application's native runtime. Python requires `>=3.14,<3.15`:
 
 ```sh
-python -m pip install 'cragkit[postgres,qdrant,tokenizers]==1.0.0rc1'
+python -m pip install 'cragkit[postgres,qdrant,tokenizers]==1.0.0rc3'
 ```
 
 Node requires `>=26.5.0 <27`:
 
 ```sh
-npm install 'cragkit@1.0.0-rc.1' 'pg@8.23.1' 'tiktoken@1.0.22'
+npm install 'cragkit@1.0.0-rc.2' 'pg@8.23.1' 'tiktoken@1.0.22'
 ```
 
 The Python `qdrant` extra supplies HTTPX; Node includes

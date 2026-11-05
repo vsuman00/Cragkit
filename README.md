@@ -29,9 +29,9 @@ model clients. Cragkit returns evidence; your application decides whether to ans
 abstain, ask a follow-up question or pass that evidence to a model.
 
 > [!IMPORTANT]
-> The prepared package versions are release candidates: Python `1.0.0rc3` and npm
-> `1.0.0-rc.2`. Publication is pending; see the roadmap for live release status. Review the
-> [release notes](docs/releases/V6.md) for the tested scope and limitations.
+> The published packages are release candidates: Python `1.0.0rc3` and npm
+> `1.0.0-rc.2`. Pin these versions when following this guide. Review the
+> [release notes](docs/releases/RC3.md) for publication provenance and runtime limitations.
 > MIT covers the project code; model-provider usage and hosting have separate terms and costs.
 
 ## What Cragkit Does
@@ -73,7 +73,7 @@ Required access filters survive search, reranking, corrective attempts and sourc
 
 | Package or capability | Published version / scope | Status | Guide |
 |---|---|---|---|
-| Python / Node core `cragkit` | `1.0.0rc3` / `1.0.0-rc.2` | Python RC3 pending; npm RC2 published | [API reference](docs/api-reference.md) |
+| Python / Node core `cragkit` | `1.0.0rc3` / `1.0.0-rc.2` | Published RCs | [API reference](docs/api-reference.md) |
 | `cragkit-langchain` | Python RC3 / npm RC2 | Optional integration | [LangChain](docs/integrations/langchain.md) |
 | `cragkit-mcp` | Python RC3 / npm RC2 | Optional stdio host | [Host API](docs/api-reference.md#mcp-packages) |
 | PostgreSQL / pgvector | Native FTS and exact-vector profiles | Explicit database setup | [Storage](storage/postgres/README.md) |

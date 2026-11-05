@@ -36,12 +36,21 @@ Sufficient requires at least one required facet, all required facets supported, 
 
 Stage names are unique identity strings and durations are finite numbers 0-300000. Unknown cost requires null cost; known/estimated cost requires a number. Unknown context counting requires null tokens; estimated/strict counting requires a token number. Strict context counting also requires a declared tokenizer in versions. Missing provider usage remains null, not zero. Zero is accepted only when explicitly supplied as known usage.
 
-`Versions` defaults: `engine: "1.0.0-rc.1"`, `policy: "unassessed.v0"`, `model: null`, `tokenizer: null`, `index: null`. All non-null values use identity rules. Top-level schema version identifies the wire schema. These fields declare identities; V0 does not validate model/tokenizer capabilities or claim a hard token ceiling.
+## Release identities
 
-The RC preparation updates the declared engine identity; schema version remains
-`0.1`. Explicit historical engine identities such as `0.0.0` remain valid. Both
-native runtimes emit `1.0.0-rc.1`; Python package metadata separately uses the
-PEP 440 spelling `1.0.0rc1`. See [the identity decision](../docs/decisions/0005-release-candidate-identity.md).
+`Versions` defaults to policy `unassessed.v0` and null model, tokenizer and index.
+The engine default identifies the installed native release: current Python
+`1.0.0rc3` emits `1.0.0-rc.3`, while npm `1.0.0-rc.2` emits `1.0.0-rc.2`.
+All non-null values use identity rules. Schema `0.1` identifies the wire format;
+package, engine, schema and backend profile versions are separate identities.
+
+Explicit historical engine identities such as `0.0.0` and `1.0.0-rc.1` remain
+valid. The reference `0.1` JSON Schema's default annotation and frozen fixtures
+retain the RC1 snapshot; they must not be used to infer an installed SDK version.
+Native parsers apply their current engine default, and explicit fixture identities
+are preserved. Do not erase version differences when comparing runtime results.
+See the [historical RC identity decision](../docs/decisions/0005-release-candidate-identity.md)
+and [current release notes](../docs/releases/RC3.md).
 
 ## Public validation and temporary V1 behavior
 

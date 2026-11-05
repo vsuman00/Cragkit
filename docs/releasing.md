@@ -2,7 +2,8 @@
 
 For example, building a wheel checks a local package, publishing makes exact bytes available from a registry, and deploying runs a consuming application. Treat these as separate outcomes.
 
-Cragkit is an MIT-licensed Python and TypeScript library with separate optional LangChain and MCP packages. The [current roadmap](roadmap.md) records scope; [RC1 notes](releases/V6.md) record release state and limits. The repository remains private. RC1 registry acceptance passed for six packages and nine files; a new or stable release needs separately authorized scope.
+Cragkit is an MIT-licensed Python and TypeScript library with separate optional LangChain and MCP packages. The [current roadmap](roadmap.md) records scope; [RC1 notes](releases/V6.md) record release state and limits. The repository is public by its owner's decision. Current releases are Python
+`1.0.0rc3` and npm `1.0.0-rc.2`; a new or stable release needs separately authorized scope.
 
 ## Prepare exact products
 
@@ -25,7 +26,7 @@ The [candidate workflow](../.github/workflows/candidate-validation.yml) is manua
 
 ## Publish and verify
 
-Follow [publication](publication.md) only for an authorized version and exact reviewed products. Verify registry ownership and current authentication/trust configuration without exposing tokens. The frozen RC1 publisher is retained privately. The public checkout has no upload workflow; any future publisher requires a new review and separately authorized scope. Do not change tracked npm `private` settings as an incidental source-build step.
+Follow [publication](publication.md) only for an authorized version and exact reviewed products. Verify registry ownership and current authentication/trust configuration without exposing tokens. The frozen release publishers are retained privately. The public checkout has no upload workflow; any future publisher requires a new review and separately authorized scope. Do not change tracked npm `private` settings as an incidental source-build step.
 
 After upload, download exact registry files into fresh environments, verify hashes/version policy and check installed consumers. Record partial uploads and retry only missing accepted products. Published bytes are immutable: a broken release needs a corrective version, rather than different local bytes under the same version.
 

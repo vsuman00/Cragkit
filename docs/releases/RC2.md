@@ -1,8 +1,8 @@
 # RC2 package descriptions
 
-Python `1.0.0rc2` and npm `1.0.0-rc.2` are the prepared description-update release
-for `cragkit`, `cragkit-langchain` and `cragkit-mcp`. Publication is pending;
-the [roadmap](../roadmap.md) records actual registry acceptance.
+Python `1.0.0rc2` and npm `1.0.0-rc.2` are the published description-update release
+for `cragkit`, `cragkit-langchain` and `cragkit-mcp`. Exact-download and installed-consumer checks passed;
+the [roadmap](../roadmap.md) records current registry acceptance.
 
 ## Changes
 
@@ -34,3 +34,14 @@ The source repository remains private, so GitHub documentation links require
 collaborator access. Essential package setup and service-free examples are
 included in each registry README. Publication does not make GitHub public or
 deploy a consuming application.
+
+
+## Python provenance correction
+
+The Python RC2 uploader disabled attestations. PyPI consequently reports loss of
+provenance relative to RC1 even though the files match the reviewed artifacts.
+Use [Python RC3](RC3.md) for the corrective attested release. RC2 files and their
+historical warning are preserved; they were not overwritten or deleted.
+
+npm RC2 remains current. Its packages contain their full READMEs, and the owner
+confirmed the core page displays the guide. Both `latest` and `next` select RC2.
