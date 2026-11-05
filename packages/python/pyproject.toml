@@ -8,6 +8,7 @@ version = "1.0.0rc1"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE"]
 description = "Native Python retrieval with source-linked evidence, coverage estimates and execution diagnostics."
+readme = "README.md"
 authors = [{ name = "Vaibhav Suman" }]
 requires-python = ">=3.14,<3.15"
 dependencies = ["pydantic==2.14.1"]

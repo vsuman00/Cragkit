@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+from email import policy
+from email.parser import BytesParser
 import hashlib
 import json
 import os
@@ -62,12 +64,36 @@ def read_members(entries: list, result: dict[str, bytes]) -> None:
         result[name] = reader()
 
 
+def check_python_description(members: dict[str, bytes], readme: bytes) -> None:
+    """Require the shipped wheel's Markdown description to match its README."""
+    metadata = [body for name, body in members.items() if name.endswith('.dist-info/METADATA')]
+    if len(metadata) != 1:
+        raise CheckFailure('wheel metadata missing or ambiguous')
+    message = BytesParser(policy=policy.default).parsebytes(metadata[0])
+    content_type = str(message.get('Description-Content-Type', '')).split(';', 1)[0].strip()
+    payload = message.get_payload(decode=True)
+    if (not str(message.get('Summary', '')).strip() or content_type != 'text/markdown'
+            or not readme.strip() or not isinstance(payload, bytes)
+            or payload.strip() != readme.strip()):
+        raise CheckFailure('wheel Markdown description missing or different')
+
+
+def check_node_description(members: dict[str, bytes], readme: bytes) -> None:
+    """Check npm's root README and short description in the actual tarball."""
+    manifest = json.loads(members.get('package/package.json', b'{}'))
+    description = manifest.get('description') if isinstance(manifest, dict) else None
+    if (not readme.strip() or members.get('package/README.md') != readme
+            or not isinstance(description, str) or not description.strip()):
+        raise CheckFailure('npm README or description missing')
+
+
 class Checker:
     def __init__(self, output: Path, downloads: bool) -> None:
         self.output = output
         self.report: dict = {'state': 'running', 'profile': 'public-package-build-and-import',
                             'private_inputs': False, 'dependency_downloads_allowed': downloads,
-                            'steps': [], 'artifacts': [], 'source_digests': {}}
+                            'steps': [], 'artifacts': [], 'source_digests': {},
+                            'description_checks': []}
         # Do not pass caller credentials, provider configuration or import overrides to children.
         allowed = ('PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'SYSTEMROOT', 'UV_CACHE_DIR', 'NPM_CONFIG_CACHE')
         self.env = {key: os.environ[key] for key in allowed if key in os.environ}
@@ -121,12 +147,15 @@ class Checker:
             target.mkdir(parents=True)
             # This allowlist makes private directories unnecessary and unavailable to builds.
             for name in ('src', 'pyproject.toml', 'uv.lock', 'package.json', 'package-lock.json',
-                         'tsconfig.json', 'LICENSE', 'NOTICE'):
+                         'tsconfig.json', 'LICENSE', 'NOTICE', 'README.md'):
                 item = original / name
                 if item.is_dir():
                     shutil.copytree(item, target / name, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
                 elif item.is_file():
                     shutil.copyfile(item, target / name)
+            readme = target / 'README.md'
+            if not readme.is_file() or not readme.read_text(encoding='utf-8').strip():
+                raise CheckFailure(f'{package}-README-missing')
         for package in PYTHON + NODE:
             digest = hashlib.sha256()
             native = source / 'packages' / package / 'src'
@@ -149,7 +178,16 @@ class Checker:
             wheel, = built.glob('*.whl')
             sdist, = built.glob('*.tar.gz')
             expected = self.record(wheel)
-            self.record(sdist)
+            readme = (project / 'README.md').read_bytes()
+            check_python_description(expected, readme)
+            sdist_members = self.record(sdist)
+            sdist_readmes = [body for name, body in sdist_members.items()
+                             if len(PurePosixPath(name).parts) == 2 and name.endswith('/README.md')]
+            if sdist_readmes != [readme]:
+                raise CheckFailure(f'{package}-sdist-README-missing')
+            self.report['description_checks'].append({'package': package,
+                'wheel_markdown': True, 'sdist_readme': True,
+                'readme_sha256': hashlib.sha256(readme).hexdigest()})
             rebuilt = work / 'rebuilt' / package
             self.run(f'{package}-sdist-wheel', ['uv', 'build', str(sdist), '--wheel', '--out-dir', str(rebuilt)], work)
             rebuilt_wheel, = rebuilt.glob('*.whl')
@@ -165,7 +203,12 @@ class Checker:
             built.mkdir()
             self.run(f'{package}-archive', ['npm', 'pack', '--ignore-scripts', '--json', '--pack-destination', str(built)], project)
             tarball, = built.glob('*.tgz')
-            self.record(tarball)
+            members = self.record(tarball)
+            readme = (project / 'README.md').read_bytes()
+            check_node_description(members, readme)
+            self.report['description_checks'].append({'package': package,
+                'tarball_readme': True, 'description': True,
+                'readme_sha256': hashlib.sha256(readme).hexdigest()})
             tarballs.append(tarball)
         consumer = work / 'consumer'
         consumer.mkdir()

@@ -35,6 +35,11 @@ python3 tools/check_public_packages.py --output-dir artifacts/public-check
 
 The checker runs serial frozen installs, strict Python and TypeScript checks, builds for all six packages, Python wheel/source-distribution and npm archive checks, source-distribution wheel rebuild comparison and fresh installed-import smoke checks. It does not need private test suites, a database or provider credentials. The default requires already populated offline dependency caches; missing packages fail without downloading. `--allow-downloads` explicitly permits dependency downloads, as used by hosted CI. Read its report before claiming acceptance; the existence of the script is not a passing run.
 
+Each package's `README.md` is a required build input. The checker verifies its
+contents in Python wheel metadata and source distributions, and in npm tarballs,
+along with the short descriptions. These local checks do not change the live
+registry pages; see [package descriptions](publication.md#package-descriptions-and-registry-pages).
+
 A public package pass establishes the checked source/build/import boundaries only. It cannot replace regression, model-quality, native backend or deployment evidence.
 
 ## Private maintainer verification

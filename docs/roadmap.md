@@ -43,3 +43,40 @@ repository visibility or paid CI changed. Existing user edits were preserved.
 Verification used one process at a time and small synthetic inputs; no task-owned
 service remains. User practice is unassessed. The next action remains the separate
 public-history/disclosure decision and subsequent maintenance under the current scope.
+
+Task `REGISTRY-CONSUMER-CHECK` is `COMPLETE` for installed-consumer verification
+and preparation of the missing registry descriptions. Updating the live
+descriptions remains `PENDING_PUBLICATION` for a separately authorized version.
+
+Two Sol peers owned Python and Node evidence and their three package READMEs;
+the Python peer assembled the shared outcome. Peers resolved the serial process
+slot and published wrapper contract directly. The coordinator owns the Python
+`readme` metadata, package checker, development/publication guides, final
+integration and this handoff. README ownership transferred before integration.
+
+Fresh public installs of all six exact RC1 packages passed on Python 3.14.6 and
+Node 26.5.0. `pip check`, `npm ls --all`, installed-origin and artifact-integrity
+checks passed. Consumer checks covered valid and invalid input, trusted-scope
+boundaries, UTF-8 spans/digests, and synthetic adapter calls. Six package README
+examples passed against the published packages. A shared request/scope/defaults
+and blank-query failure check matched across runtimes. An optional Python
+dependency's loopback IPv6 capability probe was blocked and recorded separately;
+no outbound provider call occurred. This is not full backend or model acceptance.
+
+The live audit found six nonempty short summaries, three empty PyPI long
+descriptions and three missing npm READMEs. Six package READMEs now supply setup,
+real API examples, configuration, identity boundaries, limitations and license.
+Python manifests declare `readme`; the checker preserves and verifies the README
+in wheels, source distributions and npm tarballs. All six original missing
+descriptions failed the new guard as expected. A clean export of reviewed source
+plus this change passed all 33 serial package checks, nine built artifacts and
+six description checks; 44 documentation links passed. Prose hygiene passed.
+
+Existing user edits were preserved byte-for-byte. Registry pages, versions,
+visibility and publication remain unchanged. Google indexing was not established
+by public search results; registry availability is separate. Evidence and fresh
+consumer environments remain private outside the source checkout. No services,
+models, provider calls or paid CI were started; no task-owned process remains.
+User practice is unassessed. The next smallest action is review and authorization
+of a new release if the prepared descriptions should appear on the live pages;
+the separate public-history/disclosure decision remains pending.

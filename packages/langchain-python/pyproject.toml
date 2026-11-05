@@ -8,6 +8,7 @@ version = "1.0.0rc1"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE"]
 description = "LangChain adapter for Cragkit retrieval with access scope bound by the application."
+readme = "README.md"
 authors = [{ name = "Vaibhav Suman" }]
 requires-python = ">=3.14,<3.15"
 dependencies = ["cragkit==1.0.0rc1", "langchain-core==1.7.0"]
