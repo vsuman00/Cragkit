@@ -8,20 +8,23 @@ owns authentication, documents, model clients and the final answer.
 This is the core package. LangChain and MCP integrations are separate optional
 packages; Python execution does not require a Cragkit server.
 
+This release updates package descriptions and version metadata. Runtime behavior
+is unchanged from RC1. See the [RC2 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC2.md).
+
 ## Install
 
 Requires Python `>=3.14,<3.15`. The current version is a release candidate.
 
 ```sh
-python -m pip install "cragkit==1.0.0rc1"
+python -m pip install "cragkit==1.0.0rc2"
 ```
 
 Install only the integrations your application needs:
 
 ```sh
-python -m pip install "cragkit[postgres]==1.0.0rc1"
-python -m pip install "cragkit[qdrant]==1.0.0rc1"
-python -m pip install "cragkit[tokenizers]==1.0.0rc1"
+python -m pip install "cragkit[postgres]==1.0.0rc2"
+python -m pip install "cragkit[qdrant]==1.0.0rc2"
+python -m pip install "cragkit[tokenizers]==1.0.0rc2"
 ```
 
 These extras install clients or tokenizer support. They do not provision a
@@ -97,7 +100,7 @@ inject its clients; never put secrets in retrieval or tool arguments.
 and still lack evidence. Unknown coverage cannot become sufficient; operational
 errors remain errors. Inspect evidence, facets and limitations before answering.
 
-RC1 checks cover declared configurations and bounded workloads. They do not
+Release-candidate checks cover declared configurations and bounded workloads. They do not
 establish universal model quality, all-platform compatibility or production
 acceptance for your application. Cragkit does not supply OCR, crawling, final
 answer generation or answer verification.

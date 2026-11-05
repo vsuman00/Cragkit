@@ -8,13 +8,16 @@ identity, store access, model clients and the final answer.
 This is an optional transport package. It is not a hosted retrieval service or a
 general-purpose database administration server.
 
+This release updates package descriptions and version metadata. Runtime behavior
+is unchanged from RC1. See the [RC2 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC2.md).
+
 ## Install
 
 Requires Python `>=3.14,<3.15`. This release candidate installs matching Cragkit
 core and the pinned MCP SDK dependency.
 
 ```sh
-python -m pip install "cragkit-mcp==1.0.0rc1"
+python -m pip install "cragkit-mcp==1.0.0rc2"
 ```
 
 The package exports `create_server` and `RetrievalHost`. It does not supply a
@@ -126,7 +129,7 @@ apply migrations or download model assets.
 failure, and an operational failure must not be presented as missing evidence.
 The example demonstrates complete execution with insufficient evidence.
 
-RC1 covers declared configurations and bounded workloads. It does not establish
+Release-candidate checks cover declared configurations and bounded workloads. It does not establish
 production readiness, universal compatibility or live model quality. A local
 method call does not validate an end-to-end MCP client deployment.
 

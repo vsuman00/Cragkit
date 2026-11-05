@@ -4,12 +4,15 @@ Native TypeScript retrieval with source-linked evidence, coverage estimates and 
 
 Your application owns identity, data, provider clients and final answers. Cragkit supplies retrieval contracts and optional execution components for working with that application-owned configuration.
 
+This release updates package descriptions and version metadata. Runtime behavior
+is unchanged from RC1. See the [RC2 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC2.md).
+
 ## Install
 
 Requires Node.js `>=26.5.0 <27`. The package uses ECMAScript modules and includes TypeScript declarations.
 
 ```sh
-npm install cragkit@1.0.0-rc.1
+npm install cragkit@1.0.0-rc.2
 ```
 
 Use an `.mjs` file or set `"type": "module"` in your application's `package.json`.
@@ -35,7 +38,7 @@ const scope = parse_scope({
   authorization_revision: 'auth-1',
 });
 
-console.log(version); // 1.0.0-rc.1
+console.log(version); // 1.0.0-rc.2
 console.log(request.limits.deadline_ms); // 10000
 console.log(request.output_profile.counting_mode); // estimated
 console.log(scope.grant_ids); // []
@@ -62,7 +65,7 @@ Results distinguish evidence coverage (`sufficient`, `partial`, `insufficient`) 
 
 Estimated token counting does not establish a hard tokenizer-based ceiling. Strict counting requires the declared tokenizer and actual serialized wrapper. Bind trusted access scope outside query/tool input and enforce it in every backend branch and when releasing sources.
 
-This is release candidate `1.0.0-rc.1`. Installation and contract examples do not establish production readiness, live-model quality or backend deployment acceptance. The application remains responsible for its security configuration and final answer.
+This is release candidate `1.0.0-rc.2`. Installation and contract examples do not establish production readiness, live-model quality or backend deployment acceptance. The application remains responsible for its security configuration and final answer.
 
 ## Documentation
 

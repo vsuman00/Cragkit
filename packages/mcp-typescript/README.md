@@ -2,12 +2,15 @@
 
 A retrieval-only MCP host for Cragkit. Expose source-linked evidence through an MCP tool while your application supplies the engine, trusted identity and retrieval policy.
 
+This release updates package descriptions and version metadata. Runtime behavior
+is unchanged from RC1. See the [RC2 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC2.md).
+
 ## Install
 
 Requires Node.js `>=26.5.0 <27` and ECMAScript modules. The package includes TypeScript declarations and its MCP SDK dependency.
 
 ```sh
-npm install cragkit@1.0.0-rc.1 cragkit-mcp@1.0.0-rc.1
+npm install cragkit@1.0.0-rc.2 cragkit-mcp@1.0.0-rc.2
 ```
 
 Use an `.mjs` file or set `"type": "module"` in your application's `package.json`.
@@ -60,7 +63,7 @@ try {
 }
 ```
 
-The RC1 engine contract returns an envelope containing `result`. The result must validate and its `request_id` must match the request. The fake example has no evidence and reports coverage as insufficient.
+The engine contract returns an envelope containing `result`. The result must validate and its `request_id` must match the request. The fake example has no evidence and reports coverage as insufficient.
 
 ## Serve over stdio
 
@@ -80,7 +83,7 @@ Importing or constructing the host does not open a database, start stdio serving
 
 Coverage (`sufficient`, `partial`, `insufficient`) is separate from execution (`complete`, `degraded`). Source fidelity does not prove relevance or source truth. Your application configures backend permissions; the retrieval engine must reauthorize source release. Your application owns the final answer.
 
-This is release candidate `1.0.0-rc.1`. The direct fake-engine example does not establish a deployed MCP client's behavior, live-model quality or production readiness.
+This is release candidate `1.0.0-rc.2`. The direct fake-engine example does not establish a deployed MCP client's behavior, live-model quality or production readiness.
 
 ## Documentation
 

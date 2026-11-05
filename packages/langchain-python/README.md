@@ -5,13 +5,16 @@ access scope, required filters and budgets under application control. The tool
 returns validated retrieval results with source references, coverage estimates,
 limitations and usage. It does not generate the final answer.
 
+This release updates package descriptions and version metadata. Runtime behavior
+is unchanged from RC1. See the [RC2 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC2.md).
+
 ## Install
 
 Requires Python `>=3.14,<3.15`. This release candidate installs matching Cragkit
 core and the pinned LangChain Core dependency.
 
 ```sh
-python -m pip install "cragkit-langchain==1.0.0rc1"
+python -m pip install "cragkit-langchain==1.0.0rc2"
 ```
 
 The package provides `cragkit_langchain.create_tool`. Installing it does not
@@ -117,7 +120,7 @@ owns that disclosure choice. Deadlines and Python task cancellation propagate to
 retrieval. The adapter does not own your injected engine or backend resources.
 
 Coverage and execution remain separate: `insufficient` can accompany `complete`,
-as the example shows. Source fidelity is not proof of truth. RC1 does not establish
+as the example shows. Source fidelity is not proof of truth. This release does not establish
 general model quality, production readiness or all-platform compatibility.
 
 ## Documentation and license

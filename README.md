@@ -29,8 +29,8 @@ model clients. Cragkit returns evidence; your application decides whether to ans
 abstain, ask a follow-up question or pass that evidence to a model.
 
 > [!IMPORTANT]
-> The current published packages are release candidates: Python `1.0.0rc1` and npm
-> `1.0.0-rc.1`. Pin these versions when following this guide. Review the
+> The prepared package versions are release candidates: Python `1.0.0rc2` and npm
+> `1.0.0-rc.2`. Publication is pending; see the roadmap for live release status. Review the
 > [release notes](docs/releases/V6.md) for the tested scope and limitations.
 > MIT covers the project code; model-provider usage and hosting have separate terms and costs.
 
@@ -73,9 +73,9 @@ Required access filters survive search, reranking, corrective attempts and sourc
 
 | Package or capability | Published version / scope | Status | Guide |
 |---|---|---|---|
-| Python / Node core `cragkit` | `1.0.0rc1` / `1.0.0-rc.1` | Published RC1 | [API reference](docs/api-reference.md) |
-| `cragkit-langchain` | Matching Python / npm RC1 | Optional integration | [LangChain](docs/integrations/langchain.md) |
-| `cragkit-mcp` | Matching Python / npm RC1 | Optional stdio host | [Host API](docs/api-reference.md#mcp-packages) |
+| Python / Node core `cragkit` | `1.0.0rc2` / `1.0.0-rc.2` | Prepared RC2 | [API reference](docs/api-reference.md) |
+| `cragkit-langchain` | Matching Python / npm RC2 | Optional integration | [LangChain](docs/integrations/langchain.md) |
+| `cragkit-mcp` | Matching Python / npm RC2 | Optional stdio host | [Host API](docs/api-reference.md#mcp-packages) |
 | PostgreSQL / pgvector | Native FTS and exact-vector profiles | Explicit database setup | [Storage](storage/postgres/README.md) |
 | Qdrant | Declared single-node candidate/publication profiles | Optional backend | [Qdrant setup](docs/integrations/qdrant.md) |
 | Public source checks | Types, builds, archives and fresh installed imports | Available without private workbench | [Development](docs/development.md) |
@@ -108,25 +108,25 @@ Python, in a new virtual environment:
 ```sh
 python3.14 -m venv .venv
 . .venv/bin/activate
-python -m pip install 'cragkit==1.0.0rc1'
+python -m pip install 'cragkit==1.0.0rc2'
 ```
 
 Node, from your application's directory:
 
 ```sh
 npm init -y
-npm install 'cragkit@1.0.0-rc.1'
+npm install 'cragkit@1.0.0-rc.2'
 ```
 
 Select optional integrations explicitly:
 
 | Need | Python | Node |
 |---|---|---|
-| PostgreSQL driver | `python -m pip install 'cragkit[postgres]==1.0.0rc1'` | `npm install 'pg@8.23.1'` |
-| Qdrant HTTP dependency | `python -m pip install 'cragkit[qdrant]==1.0.0rc1'` | Provide a Node HTTP transport; see the Qdrant guide |
-| Strict tokenizer support | `python -m pip install 'cragkit[tokenizers]==1.0.0rc1'` | `npm install 'tiktoken@1.0.22'` |
-| LangChain tool | `python -m pip install 'cragkit-langchain==1.0.0rc1'` | `npm install 'cragkit-langchain@1.0.0-rc.1'` |
-| MCP host | `python -m pip install 'cragkit-mcp==1.0.0rc1'` | `npm install 'cragkit-mcp@1.0.0-rc.1'` |
+| PostgreSQL driver | `python -m pip install 'cragkit[postgres]==1.0.0rc2'` | `npm install 'pg@8.23.1'` |
+| Qdrant HTTP dependency | `python -m pip install 'cragkit[qdrant]==1.0.0rc2'` | Provide a Node HTTP transport; see the Qdrant guide |
+| Strict tokenizer support | `python -m pip install 'cragkit[tokenizers]==1.0.0rc2'` | `npm install 'tiktoken@1.0.22'` |
+| LangChain tool | `python -m pip install 'cragkit-langchain==1.0.0rc2'` | `npm install 'cragkit-langchain@1.0.0-rc.2'` |
+| MCP host | `python -m pip install 'cragkit-mcp==1.0.0rc2'` | `npm install 'cragkit-mcp@1.0.0-rc.2'` |
 
 Strict counting also requires the explicitly acquired, pinned local tokenizer asset.
 An installed tokenizer dependency alone does not configure that asset or a final model wrapper.

@@ -80,3 +80,18 @@ models, provider calls or paid CI were started; no task-owned process remains.
 User practice is unassessed. The next smallest action is review and authorization
 of a new release if the prepared descriptions should appear on the live pages;
 the separate public-history/disclosure decision remains pending.
+
+Task `RELEASE-DESCRIPTIONS` is `RUNNING`, authorized by the user's instruction
+to publish the prepared descriptions. The target versions are Python `1.0.0rc2`
+and npm `1.0.0-rc.2` for the three existing package names. Runtime changes are
+limited to version identifiers; uncommitted native edits remain excluded.
+
+The Python Sol peer owns private wheel/source-distribution audits and consumer
+acceptance and assembles the pair's evidence. The Node Sol peer owns private npm
+audits, consumer acceptance and a proposed bounded upload-only publisher. Peers
+coordinate contracts and the serial process slot directly. The coordinator owns
+all tracked versions, manifests, locks, documentation, workflow integration,
+publication and the final handoff. Shared contract: RC1 behavior with RC2 version
+metadata and package READMEs. Security hold remains active until exact products
+and the publishing path pass review. No visibility change, stable release,
+production deployment, model call or hosted build is included.

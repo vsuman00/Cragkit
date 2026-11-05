@@ -2,12 +2,15 @@
 
 Expose Cragkit retrieval as a native LangChain tool while keeping trusted access scope and retrieval policy in application code. The adapter returns a serialized Cragkit evidence result; your application owns the final answer.
 
+This release updates package descriptions and version metadata. Runtime behavior
+is unchanged from RC1. See the [RC2 release notes](https://github.com/vsuman00/Cragkit/blob/main/docs/releases/RC2.md).
+
 ## Install
 
 Requires Node.js `>=26.5.0 <27` and ECMAScript modules. The package includes TypeScript declarations and installs its LangChain dependencies.
 
 ```sh
-npm install cragkit@1.0.0-rc.1 cragkit-langchain@1.0.0-rc.1
+npm install cragkit@1.0.0-rc.2 cragkit-langchain@1.0.0-rc.2
 ```
 
 Use an `.mjs` file or set `"type": "module"` in your application's `package.json`.
@@ -58,7 +61,7 @@ const serialized = await tool.invoke({
 console.log(JSON.parse(serialized).status); // insufficient
 ```
 
-The RC1 engine contract returns an envelope containing `result`. The result must validate and its `request_id` must match the request. The fake example reports unknown coverage and supplies no evidence; it does not establish retrieval quality.
+The engine contract returns an envelope containing `result`. The result must validate and its `request_id` must match the request. The fake example reports unknown coverage and supplies no evidence; it does not establish retrieval quality.
 
 ## Boundaries and behavior
 
@@ -74,7 +77,7 @@ Your application owns outer tracing and final wire serialization. Importing the 
 
 Cragkit separates coverage (`sufficient`, `partial`, `insufficient`) from execution (`complete`, `degraded`). Exact source-linked excerpts do not establish relevance or source truth. Your application configures backend permissions; the retrieval engine must reauthorize source release. Your application owns the final answer.
 
-This is release candidate `1.0.0-rc.1`. A fake-engine invocation verifies adapter use only; it does not prove live-model quality, production readiness or backend deployment behavior.
+This is release candidate `1.0.0-rc.2`. A fake-engine invocation verifies adapter use only; it does not prove live-model quality, production readiness or backend deployment behavior.
 
 ## Documentation
 
