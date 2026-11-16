@@ -14,7 +14,7 @@ All objects reject unknown keys. Required policy fields: `policy_id`, `version`,
 
 Each facet has at most 16 anchors; a policy has at most 64 anchors and 262,144 anchor-text UTF-8 bytes. Anchor fields are exactly `claim_id`, `collection`, `document_id`, `revision_id`, `source_sha256`, `start_byte`, `end_byte`, `text`. Identities follow existing bounds, offsets are safe nonnegative integers, end is greater than start, and UTF-8 text length equals the span length with a 32,768-byte cap. Anchor text contains valid Unicode scalar values and is preserved exactly. Duplicate anchors within a facet are invalid. All collection values used here obey the existing Evidence identity bound.
 
-`claim_id` groups compatible alternatives. Different claim IDs in the same facet declare mutually incompatible assertions according to the reviewer, including applicability. The assessor does not decide whether historical revisions are applicable; the trusted policy must encode that decision. A query digest mismatch is `InvalidRequest`, preventing reuse of a policy for another question. Configuration, evidence and facet arrays are copied/revalidated before use.
+`claim_id` groups compatible alternatives. Different claim IDs in the same facet declare mutually incompatible assertions according to the reviewer, including applicability. The assessor does not decide whether historical revisions are applicable; the trusted policy must encode that decision. A query digest mismatch on an otherwise valid policy is `QueryBindingMismatch` (`query_binding_mismatch`, not retryable), preventing reuse of a policy for another question; a malformed policy remains `InvalidRequest`. Configuration, evidence and facet arrays are copied/revalidated before use.
 
 ## Assessment
 

@@ -17,7 +17,8 @@ _STOPS = {'sufficient', 'repeated_query', 'repeated_candidates', 'no_progress', 
           'coverage_unknown', 'attempts_exhausted', 'subqueries_exhausted', 'plan_complete', 'budget_exhausted'}
 _ERRORS = {'invalid_request', 'unauthorized_scope', 'unsupported_capability', 'index_not_ready',
            'embedding_profile_mismatch', 'provider_unavailable', 'deadline_exceeded',
-           'context_budget_too_small', 'integrity_violation'}
+           'context_budget_too_small', 'integrity_violation',
+           'query_binding_mismatch'}
 _UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 
 

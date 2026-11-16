@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { render_context } from './context.js';
-import { InvalidRequest } from './errors.js';
+import { InvalidRequest, QueryBindingMismatch } from './errors.js';
 import { EvidenceSchema, FacetSchema, type Evidence, type Facet } from './results.js';
 import { deep_freeze, identity, integer, text, valid_native_json } from './shared.js';
 
@@ -55,7 +55,7 @@ export function assess_evidence(query: unknown, evidence: unknown, policy: unkno
     } else {
       if (!valid_native_json(policy)) throw new InvalidRequest();
       const configured = Policy.parse(policy);
-      if (configured.query_sha256 !== hash(original)) throw new InvalidRequest();
+      if (configured.query_sha256 !== hash(original)) throw new QueryBindingMismatch();
       policyVersion = `${configured.policy_id}:${configured.version}`;
       facets = configured.facets.map(facet => {
         const declared = new Set(facet.anchors.map(anchor => anchor.claim_id));
@@ -83,5 +83,8 @@ export function assess_evidence(query: unknown, evidence: unknown, policy: unkno
     const status = items.length === 0 ? 'insufficient'
       : required.length > 0 && required.every(facet => facet.state === 'supported') ? 'sufficient' : 'partial';
     return deep_freeze({facets, status, policy: policyVersion});
-  } catch { throw new InvalidRequest(); }
+  } catch (error) {
+    if (error instanceof QueryBindingMismatch) throw error;
+    throw new InvalidRequest();
+  }
 }

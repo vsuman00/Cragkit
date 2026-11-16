@@ -1409,7 +1409,7 @@
           }
         ]
       },
-      "expected_error": "invalid_request"
+      "expected_error": "query_binding_mismatch"
     },
     {
       "id": "wrong-source-digest",

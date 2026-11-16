@@ -8,7 +8,7 @@ const StageSchema=z.enum(['start','search','capture','planning','retry','stop','
 const stops=['sufficient','repeated_query','repeated_candidates','no_progress','no_plan','coverage_unknown',
   'attempts_exhausted','subqueries_exhausted','plan_complete','budget_exhausted'] as const;
 const errors=['invalid_request','unauthorized_scope','unsupported_capability','index_not_ready','embedding_profile_mismatch',
-  'provider_unavailable','deadline_exceeded','context_budget_too_small','integrity_violation'] as const;
+  'provider_unavailable','deadline_exceeded','context_budget_too_small','integrity_violation','query_binding_mismatch'] as const;
 const FieldsSchema=z.strictObject({trace_id:z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
   attempt:integer(0,10),elapsed_ms:safe_number.min(0).max(300000),candidate_count:integer(0,Number.MAX_SAFE_INTEGER).default(0),
   provider_calls:integer(0,Number.MAX_SAFE_INTEGER).default(0),stop_reason:z.string().nullable().default(null)});

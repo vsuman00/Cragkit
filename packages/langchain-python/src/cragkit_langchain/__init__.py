@@ -17,13 +17,13 @@ from cragkit.contracts import parse_request, parse_result, parse_scope, parse_to
 from cragkit.contracts._validation import identity, native_json
 from cragkit.errors import (CragkitError, ContextBudgetTooSmall, DeadlineExceeded,
     EmbeddingProfileMismatch, IndexNotReady, IntegrityViolation, InvalidRequest,
-    ProviderUnavailable, UnauthorizedScope, UnsupportedCapability)
+    ProviderUnavailable, QueryBindingMismatch, UnauthorizedScope, UnsupportedCapability)
 
 __all__ = ['create_tool']
 _FACTORY = object()
 _ERROR_TYPES: tuple[type[CragkitError], ...] = (InvalidRequest, UnauthorizedScope,
     UnsupportedCapability, IndexNotReady, EmbeddingProfileMismatch, ProviderUnavailable,
-    DeadlineExceeded, ContextBudgetTooSmall, IntegrityViolation)
+    DeadlineExceeded, ContextBudgetTooSmall, IntegrityViolation, QueryBindingMismatch)
 
 
 def _reject(*args: Any, **kwargs: Any) -> Any:

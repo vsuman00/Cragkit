@@ -16,7 +16,8 @@ export type CreateServerOptions = {engine:RetrievalEngine;template:unknown;scope
   final_serializer:(actual:CallToolResult)=>string;counter?:Cl100kCounter|null};
 const MAX_FRAME=65536,MAX_OUTPUT=262144;
 const CODES=new Set(['invalid_request','unauthorized_scope','unsupported_capability','index_not_ready',
-  'embedding_profile_mismatch','provider_unavailable','deadline_exceeded','context_budget_too_small','integrity_violation']);
+  'embedding_profile_mismatch','provider_unavailable','deadline_exceeded','context_budget_too_small','integrity_violation',
+  'query_binding_mismatch']);
 // Public pipe accessors select the concrete object between native-JSON
 // admission and the output freeze transform. Custom UTF-8 predicates remain
 // enforced by parse_tool_request, since JSON Schema counts code points.

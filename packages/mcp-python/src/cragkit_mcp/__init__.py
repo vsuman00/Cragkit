@@ -26,7 +26,8 @@ from cragkit.errors import (CragkitError, ContextBudgetTooSmall, DeadlineExceede
 __all__ = ['create_server', 'RetrievalHost']
 _CODES = frozenset({'invalid_request', 'unauthorized_scope', 'unsupported_capability',
     'index_not_ready', 'embedding_profile_mismatch', 'provider_unavailable',
-    'deadline_exceeded', 'context_budget_too_small', 'integrity_violation'})
+    'deadline_exceeded', 'context_budget_too_small', 'integrity_violation',
+    'query_binding_mismatch'})
 _MAX_FRAME = 65536
 _MAX_OUTPUT = 262144
 

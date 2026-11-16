@@ -59,3 +59,8 @@ class ContextBudgetTooSmall(CragkitError):
 class IntegrityViolation(CragkitError):
     code = "integrity_violation"
     message = "Source integrity validation failed."
+
+
+class QueryBindingMismatch(CragkitError):
+    code = "query_binding_mismatch"
+    message = "The query doesn’t match the one this policy was reviewed for."

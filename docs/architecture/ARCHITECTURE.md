@@ -155,7 +155,7 @@ The instance closes only resources it created or was explicitly given ownership 
 
 `sufficient` means all required facets pass the selected assessment policy after packing, with no unresolved required conflict. It does not mean proven true. Without a suitable coverage assessor, coverage is `unknown` and cannot produce `sufficient`. Useful excerpts may still return `partial`.
 
-Operational failures use typed exceptions in both runtimes: `InvalidRequest`, `UnauthorizedScope`, `UnsupportedCapability`, `IndexNotReady`, `EmbeddingProfileMismatch`, `ProviderUnavailable`, `DeadlineExceeded`, `ContextBudgetTooSmall`, and `IntegrityViolation`. Expected lack of evidence is a result, not an exception. Errors carry stable codes, retryability, and redacted details. Cancellation uses the runtime's cancellation semantics. Error paths never masquerade as missing documentation.
+Operational failures use typed exceptions in both runtimes: `InvalidRequest`, `UnauthorizedScope`, `UnsupportedCapability`, `IndexNotReady`, `EmbeddingProfileMismatch`, `ProviderUnavailable`, `DeadlineExceeded`, `ContextBudgetTooSmall`, `IntegrityViolation`, and `QueryBindingMismatch`. Expected lack of evidence is a result, not an exception. Errors carry stable codes, retryability, and redacted details. Cancellation uses the runtime's cancellation semantics. Error paths never masquerade as missing documentation.
 
 ## 6. Ingestion and document lifecycle
 

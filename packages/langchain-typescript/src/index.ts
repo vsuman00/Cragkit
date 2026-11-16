@@ -10,14 +10,14 @@ import { parse_request, parse_tool_request, parse_scope, parse_result,
   type RetrievalRequest, type TrustedScope, type ToolRequest } from 'cragkit/contracts';
 import { Cl100kCounter, count_context } from 'cragkit/context';
 import { CragkitError, ContextBudgetTooSmall, DeadlineExceeded, EmbeddingProfileMismatch, IndexNotReady,
-  IntegrityViolation, InvalidRequest, ProviderUnavailable, UnauthorizedScope, UnsupportedCapability } from 'cragkit/errors';
+  IntegrityViolation, InvalidRequest, ProviderUnavailable, QueryBindingMismatch, UnauthorizedScope, UnsupportedCapability } from 'cragkit/errors';
 
 export type ToolEngine={retrieve(request:RetrievalRequest,options:{scope:TrustedScope;deadline:number;signal:AbortSignal}):Promise<unknown>};
 export type FinalSerializer=(actual:string|ToolMessage)=>string;
 export type CreateToolOptions={engine:ToolEngine;template:unknown;scope:unknown;final_serializer:FinalSerializer;counter?:Cl100kCounter|null;name?:string};
 const factory=Symbol('cragkit.tool.factory');
 const publicErrors=[InvalidRequest,UnauthorizedScope,UnsupportedCapability,IndexNotReady,EmbeddingProfileMismatch,
-  ProviderUnavailable,DeadlineExceeded,ContextBudgetTooSmall,IntegrityViolation] as const;
+  ProviderUnavailable,DeadlineExceeded,ContextBudgetTooSmall,IntegrityViolation,QueryBindingMismatch] as const;
 function publicError(error:unknown,fallback:typeof ProviderUnavailable|typeof InvalidRequest=ProviderUnavailable):CragkitError{
   try{const Kind=publicErrors.find(kind=>error instanceof kind);if(Kind)return new Kind();}catch{}
   return new fallback();

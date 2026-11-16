@@ -142,6 +142,7 @@ envelope; Node additionally supplies `toJSON()`.
 | `DeadlineExceeded` | `deadline_exceeded` | The shared operation deadline expired. |
 | `ContextBudgetTooSmall` | `context_budget_too_small` | The selected serialized output cannot fit the configured budget. |
 | `IntegrityViolation` | `integrity_violation` | Source, digest, identity, profile or durable-state validation failed. |
+| `QueryBindingMismatch` | `query_binding_mismatch` | A valid assessment policy is bound to a different query digest. |
 
 `BudgetExhausted` belongs to the execution module. It signals that the next
 reservation cannot fit the ledger. It is distinct from a search that finds no
@@ -1366,6 +1367,14 @@ Public fixed-message error with code integrity_violation; see the error table ab
 
 Construct this concrete error with no arguments; it inherits to_dict from CragkitError.
 
+#### `QueryBindingMismatch`
+
+Public fixed-message error with code query_binding_mismatch; see the error table above.
+
+[Source](../packages/python/src/cragkit/errors.py#L64).
+
+Construct this concrete error with no arguments; it inherits to_dict from CragkitError.
+
 
 ### `cragkit.contracts.models`
 
@@ -1648,6 +1657,14 @@ Public fixed-message error with code context_budget_too_small; see the error tab
 Public fixed-message error with code integrity_violation; see the error table above.
 
 [Source](../packages/typescript/src/errors.ts#L42).
+
+- `constructor()`: Construct configuration and bind dependencies; perform explicit initialization separately where required.
+
+#### `QueryBindingMismatch`
+
+Public fixed-message error with code query_binding_mismatch; see the error table above.
+
+[Source](../packages/typescript/src/errors.ts#L45).
 
 - `constructor()`: Construct configuration and bind dependencies; perform explicit initialization separately where required.
 

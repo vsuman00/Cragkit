@@ -1,6 +1,6 @@
 export type ErrorCode = 'invalid_request' | 'unauthorized_scope' | 'unsupported_capability'
   | 'index_not_ready' | 'embedding_profile_mismatch' | 'provider_unavailable'
-  | 'deadline_exceeded' | 'context_budget_too_small' | 'integrity_violation';
+  | 'deadline_exceeded' | 'context_budget_too_small' | 'integrity_violation' | 'query_binding_mismatch';
 export type ErrorEnvelope = Readonly<{ code: ErrorCode; message: string; retryable: boolean }>;
 
 export class CragkitError extends Error {
@@ -41,4 +41,7 @@ export class ContextBudgetTooSmall extends CragkitError {
 }
 export class IntegrityViolation extends CragkitError {
   constructor() { super('integrity_violation', 'Source integrity validation failed.', false); }
+}
+export class QueryBindingMismatch extends CragkitError {
+  constructor() { super('query_binding_mismatch', 'The query doesn’t match the one this policy was reviewed for.', false); }
 }
